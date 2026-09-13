@@ -698,7 +698,7 @@ extension View {
             accessibilityHidden(true)
         } else if let s, !s.accessibilityLabel.isEmpty {
             accessibilityElement(children: .combine)
-                .accessibilityLabel(s.accessibilityLabel)
+                .accessibilityLabel(grMobCurrentLabel(s.accessibilityLabel, kind: s.accessibilityCurrent))
                 .grMobA11yHint(s.accessibilityHint)
         } else if let s, !s.accessibilityHint.isEmpty {
             grMobA11yHint(s.accessibilityHint)
@@ -1247,6 +1247,14 @@ private func grMobTraitsFor(_ role: String) -> AccessibilityTraits {
     // .isSelected, which grMobSelectedTrait adds on any view, and the word
     // "radio button" is what this platform cannot say.
     case "radiogroup", "radio": []
+    // An interactive grid and one cell in it. No trait names a grid, and
+    // VoiceOver moves through one by swiping rather than by arrow key, so the
+    // container's word is the loss. The cell is a control and .isButton is the
+    // control word this platform has — the same trait comps.Calendar's days
+    // carried while they were RoleButton, so moving the widget onto the grid
+    // pair changed nothing a VoiceOver user hears.
+    case "grid": []
+    case "gridcell": .isButton
     // A progress bar. No trait names one, and — unlike `tab` above, whose
     // state VoiceOver can at least be told — there is nothing this platform
     // can be told about the position either: `accessibilityValue` takes a
@@ -1308,8 +1316,28 @@ private func grMobSelectedTrait(_ state: String) -> AccessibilityTraits {
 /// A stated core.SelectedState wins, including "false": grMobSelectedTrait has
 /// already answered for it, and a node that says both is making the more
 /// specific claim with that field.
+///
+/// "date" is not folded. A calendar's today cell carrying .isSelected would be
+/// announced as the chosen day, and a calendar has a chosen day of its own; the
+/// fact goes into the label instead, through grMobCurrentLabel. See Go's
+/// core.CurrentKind, "CurrentDate is the exception to the fold".
 private func grMobCurrentTrait(_ kind: String, selected: String) -> AccessibilityTraits {
-    !kind.isEmpty && selected.isEmpty ? .isSelected : []
+    !kind.isEmpty && kind != "date" && selected.isEmpty ? .isSelected : []
+}
+
+/// The accessibility label with core.CurrentDate spoken into it.
+///
+/// SwiftUI has no current trait and "today" must not become .isSelected (see
+/// grMobCurrentTrait), so the label is the one channel left. The suffix is the
+/// one comps.Calendar used to write in Go for every target; it moved here when
+/// the web targets gained aria-current="date", which a browser's screen reader
+/// announces in the user's own language. It is still English on this
+/// platform, as it was before.
+///
+/// Only called with a non-empty label (grMobAccessibility's branch requires
+/// one), so there is no bare ", today" to guard against here.
+private func grMobCurrentLabel(_ label: String, kind: String) -> String {
+    kind == "date" ? label + ", today" : label
 }
 
 

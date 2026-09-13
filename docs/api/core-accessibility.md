@@ -130,7 +130,7 @@ CompositeWalkStopsAt is CompositeWalkAt for a caller that only wants the bool, a
 
 It answers true for both non-descending values, which is exactly the conflation CompositeWalkAt exists to undo — so this is safe only for a caller that has already established both roles are composites, and every caller in this repository has (AuditTree tests hasKeyboard on both ends before it asks, and wasm/verify's pins iterate KeyboardComposites()). A caller that has not should ask CompositeWalkAt and handle the third value, because for a role with no walk this returns a confident \`true\` about a rotation that does not exist.
 
-<small>[core/role.go:912](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L912)</small>
+<small>[core/role.go:983](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L983)</small>
 
 ## Types
 
@@ -148,7 +148,7 @@ This started as CompositeWalkStopsAt alone, returning a bool. Two of its three a
 
 Making it a value rather than a doc note is the same move CompositeMemberRole made one function up when its two empty answers became (member, composite): the fact is put where the compiler and the caller can both see it, instead of in a sentence asking the caller to have already checked something.
 
-<small>[core/role.go:935](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L935)</small>
+<small>[core/role.go:1006](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L1006)</small>
 
 ```go
 const (
@@ -212,7 +212,7 @@ Member roles are unique per container, so the middle case is the same set of pai
 
 A descending pair is still two tab stops — both containers keep a roving tabindex either way, which is the part of the finding that never varies. What differs is the reach: where a stopping pair's outer arrows step over the inner widget whole, a descending pair's outer arrows can land \*inside\* it, on any element of the outer's member role buried in the inner's subtree. Neither is what ARIA describes for nested composites, and the framework's refusal to guess is documented at ConcernNestedComposite.
 
-<small>[core/role.go:876](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L876)</small>
+<small>[core/role.go:947](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L947)</small>
 
 #### func (CompositeWalk) String
 
@@ -222,7 +222,7 @@ func (w CompositeWalk) String() string
 
 String names the value for a message. The three spellings are the words the audit's finding and this file's docs already use, so a report built from a %v and a report written by hand read the same.
 
-<small>[core/role.go:962](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L962)</small>
+<small>[core/role.go:1033](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L1033)</small>
 
 ### type CurrentKind
 
@@ -248,11 +248,9 @@ ARIA's attribute takes page, step, location, date, time, true and false. This ca
 	step      comps.StepIndicator's current step.
 	true      comps.ActionSheet's Checked action: the current choice in a
 	          "Sort by" sheet, which is a current item and not a page or step.
-	date      left out. comps.Calendar's today cell is ARIA's own example,
-	          and it keeps its ", today" suffix because both natives map a
-	          current item to their selected state (below), which would
-	          announce today as the selected day. That is a lie on the two
-	          platforms the suffix is still true on.
+	date      comps.Calendar's today cell, which is ARIA's own example of
+	          the value. It is the one kind the natives do NOT fold into
+	          their selected state; see below.
 	location  no widget has either.
 	time
 	false     the absence of a claim, which is CurrentNone.
@@ -261,7 +259,19 @@ ARIA's attribute takes page, step, location, date, time, true and false. This ca
 
 Both web targets write aria-current verbatim, on any role, unless the node is hidden. Neither native has a current property. Compose's \`selected\` semantics and SwiftUI's \`.isSelected\` trait are the nearest true thing, and they are what Material's navigation bar and UIKit's tab bar use for the current destination. So both natives set that state for a node stating any kind, unless the node states AccessibilitySelected itself, which wins.
 
-<small>[core/current.go:56](https://github.com/rohanthewiz/grmob/blob/master/core/current.go#L56)</small>
+#### CurrentDate is the exception to the fold
+
+Folding "today" into selected would be a lie in exactly the widget that states it: a calendar has a selected day already, and it is usually not today. So neither native sets selected for CurrentDate. They append ", today" to the node's accessible name instead — the suffix comps.Calendar used to add in Go for every target — because a name is the one channel both platforms read that can carry the fact at all.
+
+	target      CurrentDate becomes
+	web (both)  aria-current="date", which the screen reader announces in
+	            its own language; the name is left as the widget wrote it
+	Compose     contentDescription + ", today"
+	SwiftUI     accessibilityLabel + ", today"
+
+The suffix moved rather than disappeared, and it is still English on the two natives. That is not a regression — it was English in Go too — and the web targets, where a platform word exists, no longer carry it.
+
+<small>[core/current.go:73](https://github.com/rohanthewiz/grmob/blob/master/core/current.go#L73)</small>
 
 ```go
 const (
@@ -278,6 +288,10 @@ const (
 
 	// CurrentTrue — the current item of a set that is not pages or steps.
 	CurrentTrue CurrentKind = "true"
+
+	// CurrentDate — the day a date grid is on, "today". Not folded into the
+	// natives' selected state; see "CurrentDate is the exception to the fold".
+	CurrentDate CurrentKind = "date"
 )
 ```
 
@@ -289,7 +303,7 @@ func CurrentKinds() []CurrentKind
 
 CurrentKinds returns every stated value, in declaration order. CurrentNone is excluded for the reason PopupKinds() excludes PopupNone: it is the absence of a claim rather than one of the kinds.
 
-<small>[core/current.go:77](https://github.com/rohanthewiz/grmob/blob/master/core/current.go#L77)</small>
+<small>[core/current.go:98](https://github.com/rohanthewiz/grmob/blob/master/core/current.go#L98)</small>
 
 ### type ExpandedState
 
@@ -524,17 +538,18 @@ The set has to be \*some\* vocabulary, and the four renderers do not share one. 
 	alert         | role="alert"    | —              | liveRegion = Assertive
 	log           | role="log"      | —              | liveRegion = Polite
 	progressbar   | role=…          | —              | — (but see below)
-	the other 14  | role=…          | —              | —
+	gridcell      | role="gridcell" | .isButton      | role = Role.Button
+	the other 15  | role=…          | —              | —
 
-The other fourteen are table, rowgroup, row, cell, list, listitem, listbox, option, tabpanel, banner, navigation, toolbar, combobox and group — the tabular set, both collection pairs, the region a tab shows, the landmarks, the field that owns a popup list, and the naming role.
+The other fifteen are table, rowgroup, row, cell, list, listitem, listbox, option, grid, tabpanel, banner, navigation, toolbar, combobox and group — the tabular set, both collection pairs, the container of an interactive grid, the region a tab shows, the landmarks, the field that owns a popup list, and the naming role.
 
 progressbar has a row of its own because its dashes mean less than the others'. The \*role\* maps to nothing on either phone — neither has a word for what a progress bar is — while the value beside it maps to Compose's progressBarRangeInfo, which is one of the better mappings in this framework: TalkBack turns the numbers into a percentage it localizes itself. So the thing a reader most wants to hear does arrive on one native; it arrives through Style.AccessibilityValue rather than through this field. See core.ValueRange.
 
 The tab pair is the one row of that table where the two natives disagree about \*which half\* they can say, and it is a useful illustration of why the vocabulary is ARIA's rather than either platform's. Compose has a Role.Tab for the control and nothing for the strip around it; SwiftUI has .isTabBar for the strip and nothing for the control. Neither could have supplied the pair, and a caller marking up a tab strip sets both and gets whichever half each platform knows.
 
-Fifteen of the twenty-eight do nothing on either native, and that is the honest state of those platforms rather than a gap to be filled later: neither has a tabular semantics vocabulary a role can be mapped onto (Compose has collectionInfo, which describes counts and indices this prop does not carry), neither has a listbox in its semantics vocabulary (both spell a chosen item as a \*state\* instead, which is why the selectable pair costs them nothing to leave out — see RoleListBox), and neither has landmarks at all — VoiceOver's rotor navigates by heading, not by banner.
+Sixteen of the thirty do nothing on either native, and that is the honest state of those platforms rather than a gap to be filled later: neither has a tabular semantics vocabulary a role can be mapped onto (Compose has collectionInfo, which describes counts and indices this prop does not carry), neither has a listbox in its semantics vocabulary (both spell a chosen item as a \*state\* instead, which is why the selectable pair costs them nothing to leave out — see RoleListBox), and neither has landmarks at all — VoiceOver's rotor navigates by heading, not by banner.
 
-RoleGroup is the one empty pair in that fifteen that is empty for the opposite reason, and it is worth telling apart. The other fourteen are silent because the platform has no way to say the thing; \`group\` is silent because neither platform \*needs\* it — both honour an accessibility label on any node at all, and making that label legal is the whole of what the role does. See its own block below.
+RoleGroup is the one empty pair in that sixteen that is empty for the opposite reason, and it is worth telling apart. The other fifteen are silent because the platform has no way to say the thing; \`group\` is silent because neither platform \*needs\* it — both honour an accessibility label on any node at all, and making that label legal is the whole of what the role does. See its own block below.
 
 A role that maps to nothing is still worth setting. The web is a first-class target here, the mapping can improve later without the call sites changing, and a role that is right on one platform and inert on two is strictly better than a div.
 
@@ -578,7 +593,7 @@ RoleTab and RoleTabList were never in the same position and were always present:
 
 Both natives dispatch on the string, arm by arm, so a role with no arm falls into a catch-all and is silently inert — the same failure ContentMode has, where a mode nobody taught the natives about draws as \`fit\` on device and as the browser default on the web with no error anywhere. So each native spells out the roles it does \*not\* implement alongside the ones it does, and mobile/verify/role\_test.go holds both dispatches against Roles(). Adding a constant below without adding it there fails \`go test ./...\`.
 
-<small>[core/role.go:212](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L212)</small>
+<small>[core/role.go:214](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L214)</small>
 
 Tabular structure. The five together describe a table to a screen reader — separately they describe nothing, since a cell outside a row outside a table is not a thing ARIA recognizes. DataTable sets all five.
 
@@ -665,6 +680,44 @@ The state is Style.AccessibilitySelected, the field every other choice uses, and
 const (
 	RoleRadioGroup Role = "radiogroup"
 	RoleRadio      Role = "radio"
+)
+```
+
+The interactive grid: a two-dimensional set of cells that is one tab stop, and one cell in it. The fourth composite pair, and the only one whose members do not sit directly inside their container — ARIA's grid owns rows and a row owns the gridcells, so the tabular RoleRow above is the middle level:
+
+	grid                       one tab stop for the whole widget
+	├── row  (RoleRow)
+	│   ├── gridcell           Left/Right move along the row
+	│   └── gridcell
+	└── row                    Up/Down move to the same column one row over
+	    ├── gridcell
+	    └── gridcell
+
+##### Why a grid rather than a run of buttons
+
+comps.Calendar is what asked. Its forty-two day cells were role="button" toggles inside plain divs, which kept every day reachable and charged a keyboard user one Tab per day — about thirty stops to cross a month. ARIA's date-picker pattern is a grid instead: the month is one stop, the arrows move by day and by week, and the chosen day is aria-selected.
+
+RoleCell cannot stand in for the member. A table cell is content and ARIA gives it no selection, where a gridcell is a control that takes one — the cell/gridcell distinction aria/verify holds as a near miss. A display-only arrangement of values is a RoleTable; a grid here is always interactive, because it is a keyboard composite (KeyboardComposites) and the runtime gives it arrow keys whether or not a cell does anything when pressed.
+
+##### What each target does with it
+
+	web       role="grid" / role="row" / role="gridcell", aria-selected on a
+	          cell; the WASM runtime supplies the two-dimensional keyboard
+	          (docs/platforms/wasm.md, "A grid"). htmlout writes no tabindex,
+	          as for every composite.
+	Compose   grid maps to nothing; gridcell is Role.Button
+	SwiftUI   grid maps to nothing; gridcell is .isButton
+
+Neither native has a grid vocabulary, and both navigate a collection by swipe rather than by arrow key, so the container's word is the loss. The cell is announced with the control word each platform does have — which is also exactly what a Calendar day announced as on both natives while it was a RoleButton, so moving the widget onto the grid changed nothing a TalkBack or VoiceOver user hears.
+
+##### A grid owns rows, and rows own cells
+
+The structural rule above, one level deeper. Every child of the container is a row — or an aria-hidden decoration, which is not in the accessibility tree to be a foreign child — and every child of a row is a gridcell. A month header with arrows \*inside\* the grid would be a foreign child, which is why Calendar keeps its header outside the grid container and hides its weekday captions.
+
+```go
+const (
+	RoleGrid     Role = "grid"
+	RoleGridCell Role = "gridcell"
 )
 ```
 
@@ -886,6 +939,7 @@ CompositeMemberRole returns the role ARIA gives the members of a composite conta
 
 	listbox      option
 	radiogroup   radio
+	grid         gridcell  one level down, inside a row; see RoleGrid
 	tablist      tab
 	toolbar      ""      ARIA defines no `toolbaritem`
 
@@ -906,7 +960,7 @@ So the two cases are separated where they are made:
 
 \`composite\` is exactly membership of KeyboardComposites, and role\_control\_test.go holds the two to each other — a container added to that list and not here would report false for a role that has a keyboard, which is the same class of quiet wrong answer one table over.
 
-<small>[core/role.go:813](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L813)</small>
+<small>[core/role.go:882](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L882)</small>
 
 #### func KeyboardComposites
 
@@ -918,21 +972,23 @@ KeyboardComposites returns the container roles that get an ARIA keyboard pattern
 
 ##### Why core states a fact about one target's runtime
 
-It is not a list of what the runtime happens to implement; it is the list of roles for which \*setting a composite-keyboard style prop means anything at all\*, and that is a question a caller asks of core. AuditTree is the first reader: core.AccessibilitySelectionFollowsFocus is a statement about what a widget's keyboard does, and on a role with no keyboard it is a claim about nothing — which no exporter can notice, because knowing these four roles where an attribute is written would put the list in two places.
+It is not a list of what the runtime happens to implement; it is the list of roles for which \*setting a composite-keyboard style prop means anything at all\*, and that is a question a caller asks of core. AuditTree is the first reader: core.AccessibilitySelectionFollowsFocus is a statement about what a widget's keyboard does, and on a role with no keyboard it is a claim about nothing — which no exporter can notice, because knowing these five roles where an attribute is written would put the list in two places.
 
-The runtime keeps the same four in two tables split by a different question (whether ARIA names the members), and wasm/verify holds their union to this function. So a fourth pattern is one edit here and a failing check there, rather than a role that quietly gains a keyboard the audit still calls inert.
+The runtime keeps the same five in two tables split by a different question (whether ARIA names the members), and wasm/verify holds their union to this function. So a sixth pattern is one edit here and a failing check there, rather than a role that quietly gains a keyboard the audit still calls inert.
 
-##### Why these four and not the rest of ARIA's patterns
+##### Why these five and not the rest of ARIA's patterns
 
 \`listbox\`, \`radiogroup\` and \`tablist\` are the three ARIA structures that both name their members and own their children, so the runtime can find a container's members by role. A radio group differs from a listbox in one behaviour rather than in its walk: its arrows move the check itself, so the runtime follows focus inside one without being asked, and AccessibilitySelectionFollowsFocus on it states what it already does. \`toolbar\` names no member role — ARIA defines no \`toolbaritem\` — and is here anyway because the pattern is real and the runtime supplies the membership rule itself: a toolbar's controls are the natively focusable tags plus the containers that say they are controls.
 
-\`menu\`, \`menubar\`, \`tree\`, \`treegrid\` and \`grid\` are the patterns ARIA describes that this framework refuses, each for a stated reason — aria/verify/refusals\_test.go holds every refusal to what the pattern actually requires. \`list\` is deliberately absent and is the near miss worth naming: it is content rather than a control, and ARIA gives it no keyboard at all.
+\`grid\` names its members too (gridcell), and differs from the first three in where they sit rather than in how they are found: one level down, inside the rows ARIA makes a grid own. The runtime's member walk already descends through wrappers looking for a role, so it finds a grid's cells unchanged; what the grid added is a second axis in the arrow keys, which groups the cells by the row each one is in. See RoleGrid.
+
+\`menu\`, \`menubar\`, \`tree\` and \`treegrid\` are the patterns ARIA describes that this framework refuses, each for a stated reason — aria/verify/refusals\_test.go holds every refusal to what the pattern actually requires (\`grid\` was the fifth until comps.Calendar needed it). \`list\` is deliberately absent and is the near miss worth naming: it is content rather than a control, and ARIA gives it no keyboard at all.
 
 \`combobox\` is absent for the opposite reason: it has a keyboard, and the keyboard is not a composite's. Its focus never moves — the field keeps it and aria-activedescendant names the option the arrows reached — so there is no tab stop to rove and nothing for the member walk or the audit's nested-composite rule to say. The listbox it controls is in this list, and the runtime stands it down while it is a combobox's popup; see RoleComboBox.
 
 Container order matches Roles(); the members are not here, because being a member is a fact about a role's parent rather than about the role.
 
-<small>[core/role.go:768](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L768)</small>
+<small>[core/role.go:836](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L836)</small>
 
 #### func Roles
 
@@ -942,13 +998,13 @@ func Roles() []Role
 
 Roles returns every declared Role except RoleNone, in declaration order.
 
-RoleNone is excluded because it is the absence of a role rather than one of them: it is the field's zero value, no renderer has an arm for it, and a coverage check that demanded one would be asking each renderer to implement "unset". Everything downstream that iterates roles — the native dispatch pins, the DOM export test — wants the twenty-seven that do something.
+RoleNone is excluded because it is the absence of a role rather than one of them: it is the field's zero value, no renderer has an arm for it, and a coverage check that demanded one would be asking each renderer to implement "unset". Everything downstream that iterates roles — the native dispatch pins, the DOM export test — wants the thirty that do something.
 
-A fresh slice per call rather than a package-level var, which any importer could write to. Twenty-seven elements are cheaper to build than to defend.
+A fresh slice per call rather than a package-level var, which any importer could write to. Thirty elements are cheaper to build than to defend.
 
 Pinned to the const blocks above by role\_enum\_test.go, which reads this file's syntax tree: adding a constant without adding it here should fail \`go test ./...\` rather than silently shrink the set every renderer's coverage check rests on.
 
-<small>[core/role.go:704](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L704)</small>
+<small>[core/role.go:763](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L763)</small>
 
 #### func TappableContainerRoles
 
@@ -972,7 +1028,7 @@ The fact is here now, and role\_control\_test.go is what makes it a property rat
 
 Because the question is narrower than it looks: not "is this thing interactive" but "does putting this role on a plain container make it a control the browser should give a tab stop to". RoleOption and RoleTab are interactive and are \*not\* here — they are members of a composite, whose tab stop belongs to their container and not to them, and taking one as a toolbar's control would put a second keyboard on a widget that has one.
 
-<small>[core/role.go:1018](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L1018)</small>
+<small>[core/role.go:1089](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L1089)</small>
 
 ### type SelectedState
 

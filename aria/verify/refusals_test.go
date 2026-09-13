@@ -163,21 +163,13 @@ var refusals = []refusal{
 			"scoped to that role. So nothing is missing but the walk, and the walk " +
 			"is the hardest one on this list",
 	},
-	{
-		Role:    "grid",
-		Members: []string{"gridcell"},
-		Blocked: "vocabulary",
-		Nesting: "through",
-		Shape: "two dimensions. A grid's arrows move by row and by column, and " +
-			"Home/End mean the ends of a row rather than of a list",
-		Why: "comps.Calendar is the widget that would be one — forty-two " +
-			"tappable day cells laid out in six rows of seven — and it is built as " +
-			"a run of role=button toggle cells instead, with the argument written " +
-			"at its cell builder. The vocabulary is closer than it looks: core " +
-			"already carries row, cell and columnheader, so a grid needs one " +
-			"container role and one member role rather than five. What it does not " +
-			"have is the walk",
-	},
+	// `grid` was a row here, blocked on vocabulary with Nesting "through", until
+	// comps.Calendar needed it. It closed the way this file's header says a row
+	// can: core gained RoleGrid and RoleGridCell, the vocabulary half flipped,
+	// and TestEachRefusalKnowsWhichHalfIsStillInTheWay said "close it and give
+	// grid a keyboard" — which the runtime's handleGridKey now is. No row
+	// argues "through" any more; the value stays in the type because a
+	// treegrid re-argued member by member would need it.
 }
 
 // Every refusal is a refusal of something real, and is still in force.

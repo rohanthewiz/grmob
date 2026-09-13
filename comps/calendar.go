@@ -167,12 +167,12 @@ type Calendar struct {
 	// way round.
 	//
 	// It changes what a tap *reports* and nothing about how the cell is drawn.
-	// What it does change is how well the announcement fits: every cell states
-	// core.AccessibilitySelected, which reaches the web as aria-pressed, and a
-	// pressed toggle button that un-presses when you activate it is exactly
-	// what a deselectable day is. Without this field the cell is a toggle that
-	// only turns on, which is the honest report of a grid where the selection
-	// can move but not clear.
+	// What it does not change is the announcement: every cell states
+	// core.AccessibilitySelected, which reaches the web as aria-selected on a
+	// gridcell (ARIA's own date-picker spelling) and both natives as their
+	// selected state. The difference is only what activating the chosen day
+	// does, which a reader discovers by doing it — the selection moves or it
+	// clears.
 	//
 	// That state used to be a ", selected" suffix on the spoken name, because
 	// core.Style had no slot for a state. It has one now, and the suffix is
@@ -222,9 +222,9 @@ type Calendar struct {
 	// MonthLabel names the month in the header; nil gives "January 2006".
 	// WeekdayLabel captions a column; nil gives the first two letters of the
 	// English name ("Su", "Mo", …). DayLabel is the *spoken* name of a cell
-	// for a screen reader; nil gives "Monday, January 2, 2006", to which the
-	// widget appends ", today" when it applies. The selection is not part of
-	// the name — it is announced as the control state it is; see dayLabel.
+	// for a screen reader; nil gives "Monday, January 2, 2006". Neither today
+	// nor the selection is part of the name: both are announced as the states
+	// they are (core.CurrentDate and core.AccessibilitySelected); see dayLabel.
 	MonthLabel   func(time.Time) string
 	WeekdayLabel func(time.Weekday) string
 	DayLabel     func(time.Time) string
@@ -298,7 +298,29 @@ func (c Calendar) Render(ctx *core.Context) *core.Node {
 	} else {
 		items = append(items, c.monthHeader(ctx, first, loc))
 	}
-	items = append(items, c.weekdayRow(ctx))
+	// The grid proper: the weekday captions and the six weeks, in a container
+	// of their own that carries core.RoleGrid.
+	//
+	//	Column (the widget, caller's Style)
+	//	├── month header             outside the grid: a grid owns only rows,
+	//	│                            and arrows and a title are not rows
+	//	└── Column  role=grid        one tab stop on the web; arrows by day/week
+	//	    ├── weekday captions     aria-hidden, so not a foreign child
+	//	    └── Row  role=row  ×6
+	//	        └── Box  role=gridcell  ×7
+	//
+	// The grid is not named. A name would be the natural thing ("March 2026"),
+	// and on SwiftUI an accessibility label on a container collapses its
+	// children into one element — the forty-two days would become a single
+	// VoiceOver stop reading the month's name. The header right above says the
+	// month for the eye, and each cell's own name carries its date for the ear.
+	grid := make([]core.PropsAndChildren, 0, calendarRows+4)
+	grid = append(grid,
+		core.Padding(0),
+		core.Gap(float64(t.Spacing.XS)),
+		core.AccessibilityRole(core.RoleGrid),
+		c.weekdayRow(ctx),
+	)
 
 	// Column-major offset of the first cell: how many days of the previous
 	// month have to precede the 1st for it to land under its own weekday.
@@ -311,7 +333,10 @@ func (c Calendar) Render(ctx *core.Context) *core.Node {
 		// Gap(0) between cells: the day pills are the grid's visible
 		// structure and they should tile, not float. Padding(0) sheds the
 		// theme Row's inset for the same reason the column above does.
-		cells = append(cells, core.Padding(0), core.Gap(0))
+		// RoleRow is the middle level ARIA puts between a grid and its cells;
+		// without it the grid would own seven divs per week and no rows. See
+		// core.RoleGrid.
+		cells = append(cells, core.Padding(0), core.Gap(0), core.AccessibilityRole(core.RoleRow))
 		for col := range calendarCols {
 			// time.Date normalizes an out-of-range day, so day 0 is the last
 			// of the previous month and day 32 the 1st of the next — the
@@ -321,10 +346,22 @@ func (c Calendar) Render(ctx *core.Context) *core.Node {
 			day := 1 - lead + row*calendarCols + col
 			cells = append(cells, c.dayCell(ctx, time.Date(year, month, day, 12, 0, 0, 0, loc), month))
 		}
-		items = append(items, core.Row(cells...))
+		grid = append(grid, core.Row(cells...))
 	}
+	items = append(items, core.Column(grid...))
 
-	return core.Column(items...).Render(ctx)
+	root := core.Column(items...).Render(ctx)
+	// The week rows used to be the widget's own children, so a caller's Gap in
+	// Style set the air between weeks. They sit one container down now, so the
+	// resolved gap is handed on after the caller's props have been applied —
+	// reading it off the rendered root rather than re-parsing the StyleProps,
+	// which would be a second resolution of the same list that could disagree
+	// with the first. The header-to-grid spacing takes the same value, which is
+	// what it was when the header was a sibling of the weeks.
+	if gridNode := root.Children[len(root.Children)-1]; gridNode.Style != nil && root.Style != nil {
+		gridNode.Style.Gap = root.Style.Gap
+	}
+	return root
 }
 
 // anchor resolves the month the grid is drawn around: Month, else Selected,
@@ -424,8 +461,11 @@ func (c Calendar) monthArrow(t *core.Theme, first time.Time, loc *time.Location,
 func (c Calendar) weekdayRow(ctx *core.Context) core.View {
 	t := ctx.Theme()
 
-	items := make([]core.PropsAndChildren, 0, calendarCols+2)
-	items = append(items, core.Padding(0), core.Gap(0))
+	items := make([]core.PropsAndChildren, 0, calendarCols+3)
+	// Hidden on the row as well as on each caption below. Inside a grid the row
+	// is a child of role="grid", and ARIA lets a grid own only rows; a hidden
+	// subtree is out of the accessibility tree, so it cannot be a foreign child.
+	items = append(items, core.Padding(0), core.Gap(0), core.AccessibilityHidden())
 	for col := range calendarCols {
 		wd := time.Weekday((int(c.WeekStart) + col) % 7)
 		items = append(items, core.Box(
@@ -544,39 +584,48 @@ func (c Calendar) dayCell(ctx *core.Context, day time.Time, month time.Month) co
 		)
 	}
 	items = append(items,
-		core.AccessibilityLabel(c.dayLabel(day, isToday)),
+		core.AccessibilityLabel(c.dayLabel(day)),
 		// Which day is chosen, as a state rather than as part of the name.
-		// Paired with the role below: a cell is a button in this vocabulary,
-		// so "on" is spelled aria-pressed on the web and the platform's own
-		// selected property on the two natives.
+		// Paired with the role below: a gridcell's "on" is aria-selected on the
+		// web and the platform's own selected property on the two natives.
 		//
-		// ARIA's own date-picker pattern would say this differently — a grid
-		// of role="gridcell" carrying aria-selected — and core.Role has no
-		// value for a gridcell, deliberately: the role would oblige the whole
-		// scaffold around it (a grid, rows, and the roving focus a grid
-		// promises) and a lone gridcell inside plain divs describes a table
-		// with no table, which role.go's structural rule calls worse than no
-		// role at all. A pressed toggle button is the true thing this widget
-		// can say about itself as it is actually built.
+		// This is ARIA's own date-picker spelling — a grid of role="gridcell"
+		// carrying aria-selected. It used to be a pressed toggle button,
+		// because a lone gridcell inside plain divs describes a table with no
+		// table; the scaffold a gridcell obliges (the grid, the rows, the
+		// roving focus a grid promises) now exists, in Render and in the WASM
+		// runtime's handleGridKey.
 		//
 		// Stated on every cell in the grid, including the adjacent and
-		// out-of-range ones. They are already announced as disabled buttons;
+		// out-of-range ones. They are already announced as disabled cells;
 		// a cell that said nothing about its state would be the one square
-		// the reader could not place, and "not pressed" is exactly what an
+		// the reader could not place, and "not selected" is exactly what an
 		// unselectable day is.
 		core.AccessibilitySelected(core.SelectedWhen(selected)),
 		// A day cell is a Box with a tap handler, which every renderer draws
 		// as scenery and every screen reader announces as text — the label
 		// above names it and nothing said it could be activated. The role is
-		// what makes forty-two of them controls rather than a paragraph.
+		// what makes forty-two of them controls rather than a paragraph: a
+		// gridcell of a keyboard grid on the web, and the platform's button on
+		// both natives, which have no grid vocabulary (see core.RoleGrid).
 		//
-		// Set on every cell, including the unselectable ones: a disabled
-		// button is still a button, and the renderers announce the disabled
-		// state separately (core.Disabled, applied just above). A cell that
-		// dropped the role when it went out of range would change kind as the
-		// reader paged, which is stranger than a dimmed control.
-		core.AccessibilityRole(core.RoleButton),
+		// Set on every cell, including the unselectable ones: a disabled cell
+		// is still a cell, the renderers announce the disabled state
+		// separately (core.Disabled, applied just above), and a grid whose
+		// rows lost members out of range would be a grid whose arrows skip
+		// columns. Adjacent days stay in the rotation, as ARIA's date-picker
+		// grid keeps every day reachable.
+		core.AccessibilityRole(core.RoleGridCell),
 	)
+	// Today as a state rather than a word in the name. The web targets write
+	// aria-current="date", which a screen reader announces in its own
+	// language; both natives, which have no current-date property, speak it as
+	// a ", today" suffix on the name (see core.CurrentKind). The ring above is
+	// the same fact for the eye, and like the ring it goes on the cell whether
+	// or not the day is selectable.
+	if isToday {
+		items = append(items, core.AccessibilityCurrent(core.CurrentDate))
+	}
 
 	items = append(items, core.Text(itoa(dayNum),
 		core.UseStyle(t.Typography.Body),
@@ -646,9 +695,8 @@ func (c Calendar) dayCell(ctx *core.Context, day time.Time, month time.Month) co
 	return core.Box(items...)
 }
 
-// dayLabel is the cell's spoken name. The "today" suffix is appended to
-// whatever names the day — a caller's DayLabel included — so a translated
-// calendar still announces which square is today.
+// dayLabel is the cell's spoken name: the caller's DayLabel, or an English
+// date. Nothing is appended to it.
 //
 // The selection used to be a second suffix here and is not any more: it goes
 // out as core.AccessibilitySelected, which every renderer announces as a
@@ -658,16 +706,17 @@ func (c Calendar) dayCell(ctx *core.Context, day time.Time, month time.Month) co
 // reader re-announcing the cell after a tap read out the whole altered name
 // rather than the one thing that changed.
 //
-// "Today" stays a suffix because it is not a state a control can be in. There
-// is no platform property for "this is the current date"; it is a fact about
-// the day the cell names, which is what a name is for.
-func (c Calendar) dayLabel(day time.Time, isToday bool) string {
+// Today used to be a ", today" suffix here, on the reasoning that no platform
+// had a property for "this is the current date". The web does — aria-current
+// takes "date", and ARIA's example of the value is this cell — so today now
+// goes out as core.CurrentDate (see dayCell). A translated calendar loses
+// nothing by the move: on the web the screen reader says "current date" in its
+// own language, and on the two natives the runtime appends the same ", today"
+// this function used to, after a caller's DayLabel as before.
+func (c Calendar) dayLabel(day time.Time) string {
 	label := day.Format("Monday, January 2, 2006")
 	if c.DayLabel != nil {
 		label = c.DayLabel(day)
-	}
-	if isToday {
-		label += ", today"
 	}
 	return label
 }

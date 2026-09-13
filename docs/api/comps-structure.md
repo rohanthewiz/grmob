@@ -782,7 +782,18 @@ Only done steps, and only when OnTap is set. Going back to fix an address is wha
 
 The strip is RoleNavigation when OnTap is set, because done steps then are destinations, and RoleGroup when it is not, because a picture of progress is not navigation. Either way its name states the position: "Step 2 of 4: Address", prefixed by Label when one is given. Each step is named ("Step 1: Account, done", "Step 2: Address", "Step 3: Payment") and a tappable one is RoleButton. The circle, its glyph and the rules are drawn for sighted users and hidden from assistive technology, so a step is read once.
 
-The current step states core.CurrentStep: aria-current="step" on the web and the selected state on both natives. It used to be a ", current" name suffix. ", done" stays an English suffix, because no platform has a completed state: ARIA has no attribute for it, and Compose's and SwiftUI's semantics have no property either.
+The current step states core.CurrentStep: aria-current="step" on the web and the selected state on both natives. It used to be a ", current" name suffix. ", done" stays an English suffix, because no platform has a completed state: ARIA has no attribute for it, and Compose's and SwiftUI's semantics have no property either. The three ARIA near misses each say something false:
+
+	aria-current    names the one step the flow is on. A done step is exactly
+	                the one it is not on, and core.CurrentStep already marks
+	                the step that is.
+	aria-checked    a checkbox's state. It announces a control the user ticks
+	                and unticks, and no step is ticked by being tapped.
+	aria-selected   one choice of a set. Every done step is done at once, so
+	                there is no set for it to be one of — and a tappable done
+	                step is a button, which ARIA does not give aria-selected.
+
+comps.Calendar's ", today" left its name when core.CurrentDate gave the web targets a word for it; ", done" has no such word to move to.
 
 #### Theme roles read
 
@@ -797,7 +808,7 @@ The current step states core.CurrentStep: aria-current="step" on the web and the
 	Glyphs             Typography.Caption, bold
 	Gap                Spacing.XS
 
-<small>[comps/step_indicator.go:76](https://github.com/rohanthewiz/grmob/blob/master/comps/step_indicator.go#L76)</small>
+<small>[comps/step_indicator.go:88](https://github.com/rohanthewiz/grmob/blob/master/comps/step_indicator.go#L88)</small>
 
 #### func (StepIndicator) Render
 
@@ -807,7 +818,7 @@ func (s StepIndicator) Render(ctx *core.Context) *core.Node
 
 Render builds the horizontal Scroll of steps and rules.
 
-<small>[comps/step_indicator.go:110](https://github.com/rohanthewiz/grmob/blob/master/comps/step_indicator.go#L110)</small>
+<small>[comps/step_indicator.go:122](https://github.com/rohanthewiz/grmob/blob/master/comps/step_indicator.go#L122)</small>
 
 ### type Tabs
 

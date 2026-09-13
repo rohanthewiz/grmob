@@ -842,20 +842,26 @@ and ARIA ties it to particular roles: `aria-pressed` on a button would announce
 a toggle a second tap does not undo. `aria-current` is a global, so both web
 targets write it on any role and need no guard.
 
-`core.CurrentKind` carries `CurrentPage`, `CurrentStep` and `CurrentTrue`. ARIA's
-`location`, `date` and `time` are left out until a widget uses them. `date` in
-particular would fit `comps.Calendar`'s today cell, but the natives' mapping
-(below) would announce today as the selected day, so that cell keeps its
-", today" suffix.
+`core.CurrentKind` carries `CurrentPage`, `CurrentStep`, `CurrentTrue` and
+`CurrentDate`. ARIA's `location` and `time` are left out until a widget uses
+them.
 
 Neither native has a current property. Both fold the state into their selected
 state (`selected = true` on Compose, `.isSelected` on SwiftUI), which is how
 their own navigation bars announce the current destination. A stated
 `AccessibilitySelected` wins over the fold.
 
-`comps.BottomBar`, `comps.Drawer`, `comps.StepIndicator` and
-`comps.ActionSheet`'s `Checked` action set it for you, and no longer add
-", selected" or ", current" to the spoken name.
+`CurrentDate` is the exception. `comps.Calendar` states it on today's cell, and
+a calendar already has a selected day that is usually not today, so folding it
+would announce the wrong day as chosen. Neither native folds it; both append
+", today" to the node's name instead. The web targets write `aria-current="date"`
+and leave the name alone, so a screen reader says "current date" in its own
+language.
+
+`comps.BottomBar`, `comps.Drawer`, `comps.StepIndicator`,
+`comps.ActionSheet`'s `Checked` action and `comps.Calendar` set it for you, and
+no longer add ", selected", ", current" or ", today" to the spoken name.
+`StepIndicator`'s ", done" stays: no ARIA state means "completed".
 
 #### `AccessibilityID` and `AccessibilityControls`
 

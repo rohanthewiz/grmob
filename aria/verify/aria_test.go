@@ -280,11 +280,18 @@ func TestTheGroupFallbacksPremiseHolds(t *testing.T) {
 // table lives — the same treatment wasm/verify gives it, one question further
 // along: that file checks the pair against core's spellings, and this checks it
 // against ARIA's structure.
+//
+// A grid is the one pair whose member is not in its container's own list: ARIA
+// has grid owning `row` and a row owning `gridcell`. So the member may be found
+// one hop down, through an owned role that owns it — the same one-hop closure
+// refusals_test.go uses for "through", and stopped at one hop for the same
+// reason: two would let any role reach any other through `row` and `group`.
 func TestTheCompositeMembersAreARIAsRequiredChildren(t *testing.T) {
 	spec := loadSpec(t)
 	for _, pair := range []struct{ container, member core.Role }{
 		{core.RoleListBox, core.RoleOption},
 		{core.RoleRadioGroup, core.RoleRadio},
+		{core.RoleGrid, core.RoleGridCell},
 		{core.RoleTabList, core.RoleTab},
 	} {
 		owned := spec.Roles[string(pair.container)].RequiredOwned
@@ -292,6 +299,11 @@ func TestTheCompositeMembersAreARIAsRequiredChildren(t *testing.T) {
 		for _, o := range owned {
 			if o == string(pair.member) {
 				found = true
+			}
+			for _, deep := range spec.Roles[o].RequiredOwned {
+				if deep == string(pair.member) {
+					found = true
+				}
 			}
 		}
 		if !found {
@@ -313,7 +325,8 @@ func TestTheNearMissesAreRealDistinctions(t *testing.T) {
 	}{
 		{"cell", "gridcell", "aria-selected",
 			"a table cell is not selectable; a grid cell in an interactive grid is, " +
-				"and core.Role has no grid"},
+				"which is why comps.DataTable's cells are RoleCell and comps.Calendar's " +
+				"days are RoleGridCell"},
 		{"listitem", "option", "aria-selected",
 			"a list item is content and an option is a control in a listbox, which is " +
 				"why comps.ListRow has to give up one role to take the other"},

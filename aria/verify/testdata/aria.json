@@ -48,6 +48,13 @@
     "radio": {
       "attributes": ["aria-checked"]
     },
+    "grid": {
+      "attributes": ["aria-activedescendant"],
+      "requiredOwned": ["row", "rowgroup"]
+    },
+    "gridcell": {
+      "attributes": ["aria-selected", "aria-expanded", "aria-haspopup"]
+    },
     "tab": {
       "attributes": ["aria-selected", "aria-expanded", "aria-haspopup"]
     },
@@ -111,9 +118,6 @@
     "switch": {
       "attributes": ["aria-checked", "aria-expanded"]
     },
-    "gridcell": {
-      "attributes": ["aria-selected", "aria-expanded", "aria-haspopup"]
-    },
     "meter": {
       "attributes": ["aria-valuenow", "aria-valuemin", "aria-valuemax", "aria-valuetext"]
     },
@@ -156,10 +160,6 @@
     },
     "rowheader": {
       "attributes": ["aria-selected", "aria-expanded", "aria-haspopup"]
-    },
-    "grid": {
-      "attributes": ["aria-activedescendant"],
-      "requiredOwned": ["row", "rowgroup"]
     },
     "menuitem": {
       "attributes": ["aria-expanded", "aria-haspopup"]

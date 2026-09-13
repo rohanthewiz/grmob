@@ -15,18 +15,36 @@ func renderCalendar(t *testing.T, c Calendar) *core.Node {
 	return c.Render(ctx)
 }
 
+// calendarGrid is the role=grid container: the root's second child, after the
+// month header. It holds the weekday captions and then the six weeks.
+func calendarGrid(t *testing.T, n *core.Node) *core.Node {
+	t.Helper()
+	if len(n.Children) != 2 {
+		t.Fatalf("root children = %d, want 2 (header + grid)", len(n.Children))
+	}
+	grid := n.Children[1]
+	if len(grid.Children) != calendarRows+1 {
+		t.Fatalf("grid children = %d, want %d (captions + %d weeks)",
+			len(grid.Children), calendarRows+1, calendarRows)
+	}
+	return grid
+}
+
+// captionRow is the weekday caption line, the grid's first child.
+func captionRow(t *testing.T, n *core.Node) *core.Node {
+	t.Helper()
+	return calendarGrid(t, n).Children[0]
+}
+
 // dayCells flattens the six week rows into the 42 cells in reading order. The
-// first two children of the root are the month header and the weekday
-// captions; everything after is a week.
+// root holds the month header and the grid; the grid holds the weekday
+// captions and then one row per week.
 func dayCells(t *testing.T, n *core.Node) []*core.Node {
 	t.Helper()
-	if len(n.Children) != calendarRows+2 {
-		t.Fatalf("root children = %d, want %d (header + captions + %d weeks)",
-			len(n.Children), calendarRows+2, calendarRows)
-	}
+	grid := calendarGrid(t, n)
 	cells := make([]*core.Node, 0, calendarRows*calendarCols)
 	for row := range calendarRows {
-		week := n.Children[row+2]
+		week := grid.Children[row+1]
 		if len(week.Children) != calendarCols {
 			t.Fatalf("week %d has %d cells, want %d", row, len(week.Children), calendarCols)
 		}
@@ -97,7 +115,7 @@ func TestCalendarLaysDaysUnderTheirWeekday(t *testing.T) {
 func TestCalendarWeekStartShiftsColumnsAndCaptions(t *testing.T) {
 	n := renderCalendar(t, Calendar{Month: sep2026, WeekStart: time.Monday})
 
-	captions := n.Children[1]
+	captions := captionRow(t, n)
 	if len(captions.Children) != calendarCols {
 		t.Fatalf("captions = %d, want %d", len(captions.Children), calendarCols)
 	}
@@ -121,7 +139,14 @@ func TestCalendarWeekStartShiftsColumnsAndCaptions(t *testing.T) {
 // are hidden rather than read a second time per row.
 func TestCalendarWeekdayCaptionsAreDecorative(t *testing.T) {
 	n := renderCalendar(t, Calendar{Month: sep2026})
-	for i, cap := range n.Children[1].Children {
+	// The row is hidden as well, and that half is structural rather than
+	// cosmetic: it is a child of the role=grid container, and a grid may own
+	// only rows. A hidden subtree is out of the accessibility tree, so it is
+	// not a foreign child.
+	if !captionRow(t, n).Style.AccessibilityHidden {
+		t.Error("the caption row is not hidden, so the grid owns a child that is not a row")
+	}
+	for i, cap := range captionRow(t, n).Children {
 		if !cap.Children[0].Style.AccessibilityHidden && !cap.Style.AccessibilityHidden {
 			t.Errorf("caption %d is announced; it should be hidden from assistive technology", i)
 		}
@@ -323,8 +348,8 @@ func TestCalendarEveryCellStatesWhetherItIsChosen(t *testing.T) {
 
 	stated := 0
 	for _, cell := range cells {
-		if cell.Style.AccessibilityRole != core.RoleButton {
-			t.Fatalf("a cell lost the button role, which is what carries the state")
+		if cell.Style.AccessibilityRole != core.RoleGridCell {
+			t.Fatalf("a cell lost the gridcell role, which is what carries the state")
 		}
 		switch cell.Style.AccessibilitySelected {
 		case core.SelectedOn:
@@ -661,16 +686,21 @@ func TestCalendarLabelSeamsAreTheLocalizationPoints(t *testing.T) {
 	if findText(n.Children[0], "Setembro de 2026") == nil {
 		t.Error("MonthLabel should name the header")
 	}
-	if got := n.Children[1].Children[0].Children[0].Props["content"]; got != "D" {
+	if got := captionRow(t, n).Children[0].Children[0].Props["content"]; got != "D" {
 		t.Errorf("first caption = %v, want the caller's %q", got, "D")
 	}
-	// "today" is appended to whatever names the day, so a translated calendar
-	// still says which square is the current date. The selection is not a
-	// suffix — it is a control state, announced separately — which is why a
-	// translated calendar needs no translation for it at all.
+	// The caller's name is the whole name. Neither today nor the selection is
+	// a suffix any more — both are states, announced separately — which is why
+	// a translated calendar needs no translation for either: the web says
+	// "current date" and "selected" in the reader's own language. (Both
+	// natives still append an English ", today" themselves, having no
+	// current-date property; see core.CurrentKind.)
 	cell := cellFor(t, dayCells(t, n), 2, 12)
-	if got := cell.Style.AccessibilityLabel; got != "dia 12, today" {
-		t.Errorf("spoken name = %q, want the caller's name with only the day fact appended", got)
+	if got := cell.Style.AccessibilityLabel; got != "dia 12" {
+		t.Errorf("spoken name = %q, want exactly the caller's name", got)
+	}
+	if got := cell.Style.AccessibilityCurrent; got != core.CurrentDate {
+		t.Errorf("current = %q, want today stated as core.CurrentDate", got)
 	}
 	if got := cell.Style.AccessibilitySelected; got != core.SelectedOn {
 		t.Errorf("selected state = %q, want the selection announced as a state", got)
@@ -705,6 +735,12 @@ func TestCalendarStyleOverridesTheDefaults(t *testing.T) {
 	if n.Style.Gap != 0 {
 		t.Errorf("gap = %v, want the caller's 0", n.Style.Gap)
 	}
+	// The weeks sit inside the grid container now, one level below the Style
+	// the caller reaches. The resolved gap is handed on so Gap still sets the
+	// air between weeks, as it did when they were the widget's own children.
+	if grid := calendarGrid(t, n); grid.Style.Gap != 0 {
+		t.Errorf("grid gap = %v, want the caller's 0 handed on to the weeks", grid.Style.Gap)
+	}
 }
 
 // Cells divide the row evenly rather than sizing to their content, so a "9"
@@ -718,7 +754,7 @@ func TestCalendarCellsShareTheRowEvenly(t *testing.T) {
 			t.Fatalf("cell %d: grow %v basis %q, want 1 and \"0\"", i, cell.Style.FlexGrow, cell.Style.FlexBasis)
 		}
 	}
-	for i, cap := range n.Children[1].Children {
+	for i, cap := range captionRow(t, n).Children {
 		if cap.Style.FlexGrow != 1 || cap.Style.FlexBasis != "0" {
 			t.Fatalf("caption %d is sized differently from the cells below it", i)
 		}
@@ -760,10 +796,10 @@ func TestSameDayComparesInTheCellsLocation(t *testing.T) {
 // Forty-two tappable Boxes are forty-two paragraphs to a screen reader unless
 // something says otherwise: the label names the day and nothing said it could
 // be activated. The role is set on every cell including the inert ones — a
-// disabled button is still a button, and the renderers announce the disabled
-// state separately, so dropping the role out of range would make the cell
-// change kind as the reader pages.
-func TestCalendarDayCellsAreButtons(t *testing.T) {
+// disabled cell is still a cell, the renderers announce the disabled state
+// separately, and a week row that lost members out of range would be a grid
+// whose arrows skip columns.
+func TestCalendarDayCellsAreGridCells(t *testing.T) {
 	// A Min part-way through the month, so the grid holds both kinds of cell.
 	n := renderCalendar(t, Calendar{
 		Month:    sep2026,
@@ -773,8 +809,8 @@ func TestCalendarDayCellsAreButtons(t *testing.T) {
 
 	inert := 0
 	for i, cell := range dayCells(t, n) {
-		if cell.Style.AccessibilityRole != core.RoleButton {
-			t.Fatalf("cell %d (%s) = %q, want button", i, dayNumber(t, cell), cell.Style.AccessibilityRole)
+		if cell.Style.AccessibilityRole != core.RoleGridCell {
+			t.Fatalf("cell %d (%s) = %q, want gridcell", i, dayNumber(t, cell), cell.Style.AccessibilityRole)
 		}
 		if cell.Style.Disabled {
 			inert++
@@ -783,5 +819,80 @@ func TestCalendarDayCellsAreButtons(t *testing.T) {
 	if inert == 0 {
 		t.Error("the fixture should include out-of-range cells; they keep the role and carry " +
 			"Disabled rather than losing the role")
+	}
+}
+
+// The grid is a structure, not a label: role=grid owning role=row owning
+// role=gridcell, which is what lets the WASM runtime make the month one tab
+// stop with arrows by day and week. The header sits outside it — a grid owns
+// only rows — and the caption line inside it is hidden. A caller's Header is
+// held to the same placement, because comps/nested_composite_test.go excuses
+// Calendar.Header from the closed-widget rule on exactly that ground: a view
+// beside the grid cannot put a composite inside it.
+func TestCalendarIsAGridOfRowsOfCells(t *testing.T) {
+	for name, c := range map[string]Calendar{
+		"default header": {Month: sep2026, OnMonthChange: func(time.Time) {}, OnSelect: func(time.Time) {}},
+		"caller header":  {Month: sep2026, OnSelect: func(time.Time) {}, Header: core.Text("Pick a service")},
+	} {
+		n := renderCalendar(t, c)
+		grid := calendarGrid(t, n)
+		if grid.Style.AccessibilityRole != core.RoleGrid {
+			t.Fatalf("%s: grid container role = %q, want grid", name, grid.Style.AccessibilityRole)
+		}
+		if n.Style.AccessibilityRole != core.RoleNone {
+			t.Errorf("%s: the widget's own column claims role %q; the header inside it is not a row",
+				name, n.Style.AccessibilityRole)
+		}
+		if grid.Style.AccessibilityLabel != "" {
+			t.Errorf("%s: the grid is named %q — on SwiftUI a label on a container collapses its "+
+				"children, and the month would become one VoiceOver stop", name, grid.Style.AccessibilityLabel)
+		}
+		for i, week := range grid.Children[1:] {
+			if week.Style.AccessibilityRole != core.RoleRow {
+				t.Errorf("%s: week %d role = %q, want row", name, i, week.Style.AccessibilityRole)
+			}
+		}
+		if c.Header != nil {
+			if findText(grid, "Pick a service") != nil {
+				t.Errorf("%s: the caller's Header rendered inside the grid", name)
+			}
+			if findText(n.Children[0], "Pick a service") == nil {
+				t.Errorf("%s: the caller's Header should be the root's first child, beside the grid", name)
+			}
+		}
+	}
+}
+
+// Today is a state, not a word in the name. core.CurrentDate reaches the web as
+// aria-current="date" and both natives as a ", today" suffix they append
+// themselves; a suffix written here as well would be said twice on a phone.
+// Only today's cell carries it — selected or not, selectable or not — and a
+// zero Today puts it nowhere.
+func TestCalendarTodayIsTheCurrentDateNotASuffix(t *testing.T) {
+	today := time.Date(2026, time.September, 12, 0, 0, 0, 0, time.UTC)
+	for name, c := range map[string]Calendar{
+		"unselected": {Month: sep2026, Today: today, OnSelect: func(time.Time) {}},
+		"selected":   {Month: sep2026, Today: today, Selected: today, OnSelect: func(time.Time) {}},
+		"display":    {Month: sep2026, Today: today},
+	} {
+		cells := dayCells(t, renderCalendar(t, c))
+		for i, cell := range cells {
+			want := core.CurrentNone
+			if cell == cellFor(t, cells, 2, 12) {
+				want = core.CurrentDate
+			}
+			if cell.Style.AccessibilityCurrent != want {
+				t.Errorf("%s: cell %d (%s) current = %q, want %q",
+					name, i, dayNumber(t, cell), cell.Style.AccessibilityCurrent, want)
+			}
+		}
+		if got := cellFor(t, cells, 2, 12).Style.AccessibilityLabel; got != "Saturday, September 12, 2026" {
+			t.Errorf("%s: today's name = %q, want the date alone", name, got)
+		}
+	}
+	for i, cell := range dayCells(t, renderCalendar(t, Calendar{Month: sep2026})) {
+		if cell.Style.AccessibilityCurrent != core.CurrentNone {
+			t.Errorf("with no Today, cell %d is stated as current", i)
+		}
 	}
 }

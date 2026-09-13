@@ -36,11 +36,9 @@ package core
 //	step      comps.StepIndicator's current step.
 //	true      comps.ActionSheet's Checked action: the current choice in a
 //	          "Sort by" sheet, which is a current item and not a page or step.
-//	date      left out. comps.Calendar's today cell is ARIA's own example,
-//	          and it keeps its ", today" suffix because both natives map a
-//	          current item to their selected state (below), which would
-//	          announce today as the selected day. That is a lie on the two
-//	          platforms the suffix is still true on.
+//	date      comps.Calendar's today cell, which is ARIA's own example of
+//	          the value. It is the one kind the natives do NOT fold into
+//	          their selected state; see below.
 //	location  no widget has either.
 //	time
 //	false     the absence of a claim, which is CurrentNone.
@@ -53,6 +51,25 @@ package core
 // what Material's navigation bar and UIKit's tab bar use for the current
 // destination. So both natives set that state for a node stating any kind,
 // unless the node states AccessibilitySelected itself, which wins.
+//
+// # CurrentDate is the exception to the fold
+//
+// Folding "today" into selected would be a lie in exactly the widget that
+// states it: a calendar has a selected day already, and it is usually not
+// today. So neither native sets selected for CurrentDate. They append
+// ", today" to the node's accessible name instead — the suffix comps.Calendar
+// used to add in Go for every target — because a name is the one channel
+// both platforms read that can carry the fact at all.
+//
+//	target      CurrentDate becomes
+//	web (both)  aria-current="date", which the screen reader announces in
+//	            its own language; the name is left as the widget wrote it
+//	Compose     contentDescription + ", today"
+//	SwiftUI     accessibilityLabel + ", today"
+//
+// The suffix moved rather than disappeared, and it is still English on the
+// two natives. That is not a regression — it was English in Go too — and the
+// web targets, where a platform word exists, no longer carry it.
 type CurrentKind string
 
 const (
@@ -69,11 +86,15 @@ const (
 
 	// CurrentTrue — the current item of a set that is not pages or steps.
 	CurrentTrue CurrentKind = "true"
+
+	// CurrentDate — the day a date grid is on, "today". Not folded into the
+	// natives' selected state; see "CurrentDate is the exception to the fold".
+	CurrentDate CurrentKind = "date"
 )
 
 // CurrentKinds returns every stated value, in declaration order. CurrentNone
 // is excluded for the reason PopupKinds() excludes PopupNone: it is the absence
 // of a claim rather than one of the kinds.
 func CurrentKinds() []CurrentKind {
-	return []CurrentKind{CurrentPage, CurrentStep, CurrentTrue}
+	return []CurrentKind{CurrentPage, CurrentStep, CurrentTrue, CurrentDate}
 }

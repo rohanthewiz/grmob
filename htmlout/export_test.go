@@ -1008,6 +1008,7 @@ func TestSelectedStateBecomesTheAttributeTheRoleCallsFor(t *testing.T) {
 		core.RoleTab:          "aria-selected",
 		core.RoleRow:          "aria-selected",
 		core.RoleColumnHeader: "aria-selected",
+		core.RoleGridCell:     "aria-selected",
 		core.RoleButton:       "aria-pressed",
 	}
 
@@ -1109,6 +1110,7 @@ func TestExpandedStateIsScopedToItsOwnRoles(t *testing.T) {
 		core.RoleListBox:      true,
 		core.RoleRow:          true,
 		core.RoleColumnHeader: true,
+		core.RoleGridCell:     true,
 		core.RoleTab:          true,
 		core.RoleComboBox:     true,
 	}

@@ -540,10 +540,12 @@ test("a nested composite keeps its own members", () => {
     // arrow key in the inner one walk out into the outer one's rows.
     //
     // Reachable from real widgets: comps.RadioGroup (radiogroup),
-    // comps.BottomBar (toolbar) and comps.RichTextEditor's formatting strip
-    // (toolbar) declare their own container roles, so one placed inside a
-    // caller's hand-roled composite is a nested composite. All three are
-    // closed (no core.View slot), so two widgets cannot nest on their own;
+    // comps.BottomBar (toolbar), comps.RichTextEditor's formatting strip
+    // (toolbar) and comps.Calendar (grid) declare their own container roles,
+    // so one placed inside a caller's hand-roled composite is a nested
+    // composite. All four are closed (no core.View slot inside the composite;
+    // Calendar's Header renders beside its grid), so two widgets cannot nest on
+    // their own;
     // comps/nested_composite_test.go holds that premise.
     const lb = mountTree({
         Type: "Column",
@@ -1024,6 +1026,151 @@ test("a search in another widget starts over", () => {
     second[0].focus();
     type(second[0], "e");
     assert.equal(rt.document.activeElement, second[1], "Easter, not a continued search");
+});
+
+// --------------------------------------------------------------------------
+// The grid: the same stop, a second axis
+// --------------------------------------------------------------------------
+//
+// comps.Calendar's shape: role="grid" over role="row" over role="gridcell".
+// The cells are found by role, one level down, the way an option inside a
+// wrapper is; what is new is that the arrows move on both axes, stop at the
+// edges, and Home and End mean the ends of a row.
+
+// A grid of `rows` rows of `cols` cells, numbered in reading order. `widths`
+// gives each row its own length, for a ragged grid; `current` marks one cell
+// aria-current="date", as Calendar marks today; `disabled` lists cells that
+// are aria-disabled, as an adjacent month's days are.
+function monthGrid({ rows = 3, cols = 3, widths, selected, current, disabled = [] } = {}) {
+    const children = [];
+    let i = 0;
+    for (let r = 0; r < rows; r++) {
+        const cells = [];
+        const n = widths ? widths[r] : cols;
+        for (let c = 0; c < n; c++, i++) {
+            const cell = member("gridcell", {
+                selected: selected === undefined ? undefined : i === selected,
+                onClick: `cb_${i}`,
+                disabled: disabled.includes(i),
+            });
+            if (current === i) cell.Style.AccessibilityCurrent = "date";
+            cells.push(cell);
+        }
+        children.push({ Type: "Row", Style: { AccessibilityRole: "row" }, Children: cells });
+    }
+    const t = mountTree({ Type: "Column", Style: { AccessibilityRole: "grid" }, Children: children });
+    return { ...t, cells: () => t.root.children.flatMap((row) => row.children) };
+}
+
+test("a grid is one tab stop over every cell in every row", () => {
+    // The claim the grid exists for: a month was forty-two stops as buttons.
+    const g = monthGrid({ selected: 4 });
+    assert.deepEqual(g.cells().map((c) => c.getAttribute("tabindex")),
+        ["-1", "-1", "-1", "-1", "0", "-1", "-1", "-1", "-1"]);
+    // The rows are structure, not members, and hold no stop of their own.
+    for (const row of g.root.children) assert.equal(row.getAttribute("tabindex"), null);
+});
+
+test("the arrows move by cell along a row and by row down a column", () => {
+    const g = monthGrid();
+    const cells = g.cells();
+    cells[0].focus();
+
+    cells[0].dispatch("keydown", { key: "ArrowRight" });
+    assert.equal(g.focused(), cells[1]);
+    cells[1].dispatch("keydown", { key: "ArrowDown" });
+    assert.equal(g.focused(), cells[4], "Down keeps the column");
+    cells[4].dispatch("keydown", { key: "ArrowLeft" });
+    assert.equal(g.focused(), cells[3]);
+    cells[3].dispatch("keydown", { key: "ArrowUp" });
+    assert.equal(g.focused(), cells[0]);
+
+    // The stop travelled with focus, as for every composite.
+    assert.equal(cells[0].getAttribute("tabindex"), "0");
+    assert.equal(cells[3].getAttribute("tabindex"), "-1");
+});
+
+test("a grid does not wrap, and an arrow at its edge is still the grid's", () => {
+    // Wrapping Right off a Saturday onto the next Sunday would make Down
+    // redundant and a month's edges unfindable. ARIA's grid stops; and all four
+    // arrows belong to it, so the page does not scroll instead.
+    const g = monthGrid();
+    const cells = g.cells();
+    for (const [at, key] of [[0, "ArrowLeft"], [0, "ArrowUp"], [8, "ArrowRight"], [8, "ArrowDown"]]) {
+        cells[at].focus();
+        const e = cells[at].dispatch("keydown", { key });
+        assert.equal(g.focused(), cells[at], `${key} at cell ${at} moved focus`);
+        assert.equal(e.defaultPrevented, true, `${key} at cell ${at} was left to scroll the page`);
+    }
+});
+
+test("Home and End stay in the row; with Ctrl they go to the corners", () => {
+    const g = monthGrid();
+    const cells = g.cells();
+    cells[4].focus();
+
+    cells[4].dispatch("keydown", { key: "Home" });
+    assert.equal(g.focused(), cells[3], "Home is the start of the week, not of the month");
+    cells[3].dispatch("keydown", { key: "End" });
+    assert.equal(g.focused(), cells[5]);
+    cells[5].dispatch("keydown", { key: "Home", ctrlKey: true });
+    assert.equal(g.focused(), cells[0]);
+    cells[0].dispatch("keydown", { key: "End", ctrlKey: true });
+    assert.equal(g.focused(), cells[8]);
+});
+
+test("a shorter row clamps the column rather than skipping the row", () => {
+    const g = monthGrid({ rows: 2, widths: [3, 2] });
+    const cells = g.cells();
+    cells[2].focus();
+    cells[2].dispatch("keydown", { key: "ArrowDown" });
+    assert.equal(g.focused(), cells[4]);
+});
+
+test("with nothing chosen the way in is today, and never a greyed day", () => {
+    // A month grid opens on the previous month's days, which are aria-disabled.
+    const today = monthGrid({ current: 5, disabled: [0, 1] });
+    assert.equal(today.cells()[5].getAttribute("tabindex"), "0");
+
+    const noToday = monthGrid({ disabled: [0, 1] });
+    assert.deepEqual(noToday.cells().slice(0, 3).map((c) => c.getAttribute("tabindex")),
+        ["-1", "-1", "0"], "the first day that can be chosen holds the stop");
+
+    // A selection outranks today: the way in is the day the user picked.
+    const picked = monthGrid({ selected: 7, current: 5 });
+    assert.equal(picked.cells()[7].getAttribute("tabindex"), "0");
+    assert.equal(picked.cells()[5].getAttribute("tabindex"), "-1");
+
+    // And the disabled days stay reachable by arrow, as ARIA's date picker keeps
+    // every day in the rotation.
+    const cells = today.cells();
+    cells[2].focus();
+    cells[2].dispatch("keydown", { key: "ArrowLeft" });
+    assert.equal(today.focused(), cells[1]);
+});
+
+test("Enter and Space choose a cell; letters and PageDown are the page's", () => {
+    for (const key of ["Enter", " "]) {
+        const g = monthGrid();
+        const cells = g.cells();
+        cells[4].focus();
+        const e = cells[4].dispatch("keydown", { key });
+        assert.deepEqual(g.rt.dispatched, [{ id: "cb_4", payload: {} }], key);
+        assert.equal(e.defaultPrevented, true, key);
+    }
+
+    // A grid has no typeahead, and PageUp/PageDown page a month in ARIA's date
+    // picker — which is Go state the runtime cannot change, so the keys are
+    // left alone rather than half-implemented.
+    const g = monthGrid();
+    const cells = g.cells();
+    cells[4].focus();
+    for (const key of ["a", "PageDown"]) {
+        const e = cells[4].dispatch("keydown", { key });
+        assert.equal(e.defaultPrevented, false, key);
+        assert.equal(g.focused(), cells[4], key);
+    }
+    assert.deepEqual(g.rt.dispatched, []);
 });
 
 // --------------------------------------------------------------------------

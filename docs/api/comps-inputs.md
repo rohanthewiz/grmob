@@ -101,12 +101,12 @@ type Calendar struct {
 	// way round.
 	//
 	// It changes what a tap *reports* and nothing about how the cell is drawn.
-	// What it does change is how well the announcement fits: every cell states
-	// core.AccessibilitySelected, which reaches the web as aria-pressed, and a
-	// pressed toggle button that un-presses when you activate it is exactly
-	// what a deselectable day is. Without this field the cell is a toggle that
-	// only turns on, which is the honest report of a grid where the selection
-	// can move but not clear.
+	// What it does not change is the announcement: every cell states
+	// core.AccessibilitySelected, which reaches the web as aria-selected on a
+	// gridcell (ARIA's own date-picker spelling) and both natives as their
+	// selected state. The difference is only what activating the chosen day
+	// does, which a reader discovers by doing it — the selection moves or it
+	// clears.
 	//
 	// That state used to be a ", selected" suffix on the spoken name, because
 	// core.Style had no slot for a state. It has one now, and the suffix is
@@ -156,9 +156,9 @@ type Calendar struct {
 	// MonthLabel names the month in the header; nil gives "January 2006".
 	// WeekdayLabel captions a column; nil gives the first two letters of the
 	// English name ("Su", "Mo", …). DayLabel is the *spoken* name of a cell
-	// for a screen reader; nil gives "Monday, January 2, 2006", to which the
-	// widget appends ", today" when it applies. The selection is not part of
-	// the name — it is announced as the control state it is; see dayLabel.
+	// for a screen reader; nil gives "Monday, January 2, 2006". Neither today
+	// nor the selection is part of the name: both are announced as the states
+	// they are (core.CurrentDate and core.AccessibilitySelected); see dayLabel.
 	MonthLabel   func(time.Time) string
 	WeekdayLabel func(time.Weekday) string
 	DayLabel     func(time.Time) string

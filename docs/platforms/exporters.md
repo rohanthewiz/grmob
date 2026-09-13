@@ -183,7 +183,7 @@ indented HTML. Properties worth relying on:
   entirety and their border *is* the control. See
   [WASM — The user-agent border](wasm.md#the-user-agent-border-and-the-third-value-totality-needs).
 
-- **No `tabindex`, on any node, ever.** A `listbox` and a `tablist` are ARIA
+- **No `tabindex`, on any node, ever.** A `listbox`, a `tablist` and a `grid` are ARIA
   *controls*, and the pattern each one names includes a roving `tabindex` that
   puts the widget's one tab stop on its active member. The WASM runtime writes
   that and moves it with the arrow keys; this exporter deliberately writes

@@ -1080,11 +1080,17 @@ func TestCalendarDemoRingsItsPinnedTodayAndStopsAtTheRange(t *testing.T) {
 	openLesson(t, mgr, "Calendars: a month grid and a date field")
 	cur := tree(t, mgr)
 
+	// Found by the state, not by a suffix: the name is the date alone, and
+	// today is core.CurrentDate — aria-current="date" on the web, a ", today"
+	// the natives append themselves.
 	today := findNode(cur, func(n *node) bool {
-		return n.Style != nil && n.Style.AccessibilityLabel == "Wednesday, March 11, 2026, today"
+		return n.Style != nil && n.Style.AccessibilityLabel == "Wednesday, March 11, 2026"
 	})
 	if today == nil {
-		t.Fatal("the pinned today should be announced as today")
+		t.Fatal("the pinned today's cell should be in the grid, named by its date")
+	}
+	if today.Style.AccessibilityCurrent != string(core.CurrentDate) {
+		t.Errorf("the pinned today states current %q, want core.CurrentDate", today.Style.AccessibilityCurrent)
 	}
 	if today.Style.BorderWidth != 1 {
 		t.Errorf("today is drawn without its ring: border width %v", today.Style.BorderWidth)

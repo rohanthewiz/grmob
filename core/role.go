@@ -44,12 +44,14 @@ import "strconv"
 //	alert         | role="alert"    | —              | liveRegion = Assertive
 //	log           | role="log"      | —              | liveRegion = Polite
 //	progressbar   | role=…          | —              | — (but see below)
-//	the other 14  | role=…          | —              | —
+//	gridcell      | role="gridcell" | .isButton      | role = Role.Button
+//	the other 15  | role=…          | —              | —
 //
-// The other fourteen are table, rowgroup, row, cell, list, listitem, listbox,
-// option, tabpanel, banner, navigation, toolbar, combobox and group — the
-// tabular set, both collection pairs, the region a tab shows, the landmarks,
-// the field that owns a popup list, and the naming role.
+// The other fifteen are table, rowgroup, row, cell, list, listitem, listbox,
+// option, grid, tabpanel, banner, navigation, toolbar, combobox and group — the
+// tabular set, both collection pairs, the container of an interactive grid, the
+// region a tab shows, the landmarks, the field that owns a popup list, and the
+// naming role.
 //
 // progressbar has a row of its own because its dashes mean less than the
 // others'. The *role* maps to nothing on either phone — neither has a word for
@@ -68,7 +70,7 @@ import "strconv"
 // supplied the pair, and a caller marking up a tab strip sets both and gets
 // whichever half each platform knows.
 //
-// Fifteen of the twenty-eight do nothing on either native, and that is the
+// Sixteen of the thirty do nothing on either native, and that is the
 // honest state of those platforms rather than a gap to be filled later:
 // neither has a tabular semantics vocabulary a role can be mapped onto (Compose
 // has collectionInfo, which describes counts and indices this prop does not
@@ -77,8 +79,8 @@ import "strconv"
 // them nothing to leave out — see RoleListBox), and neither has landmarks at
 // all — VoiceOver's rotor navigates by heading, not by banner.
 //
-// RoleGroup is the one empty pair in that fifteen that is empty for the
-// opposite reason, and it is worth telling apart. The other fourteen are silent
+// RoleGroup is the one empty pair in that sixteen that is empty for the
+// opposite reason, and it is worth telling apart. The other fifteen are silent
 // because the platform has no way to say the thing; `group` is silent because
 // neither platform *needs* it — both honour an accessibility label on any node
 // at all, and making that label legal is the whole of what the role does. See
@@ -356,6 +358,63 @@ const (
 const (
 	RoleRadioGroup Role = "radiogroup"
 	RoleRadio      Role = "radio"
+)
+
+// The interactive grid: a two-dimensional set of cells that is one tab stop,
+// and one cell in it. The fourth composite pair, and the only one whose members
+// do not sit directly inside their container — ARIA's grid owns rows and a row
+// owns the gridcells, so the tabular RoleRow above is the middle level:
+//
+//	grid                       one tab stop for the whole widget
+//	├── row  (RoleRow)
+//	│   ├── gridcell           Left/Right move along the row
+//	│   └── gridcell
+//	└── row                    Up/Down move to the same column one row over
+//	    ├── gridcell
+//	    └── gridcell
+//
+// # Why a grid rather than a run of buttons
+//
+// comps.Calendar is what asked. Its forty-two day cells were role="button"
+// toggles inside plain divs, which kept every day reachable and charged a
+// keyboard user one Tab per day — about thirty stops to cross a month. ARIA's
+// date-picker pattern is a grid instead: the month is one stop, the arrows
+// move by day and by week, and the chosen day is aria-selected.
+//
+// RoleCell cannot stand in for the member. A table cell is content and ARIA
+// gives it no selection, where a gridcell is a control that takes one — the
+// cell/gridcell distinction aria/verify holds as a near miss. A display-only
+// arrangement of values is a RoleTable; a grid here is always interactive,
+// because it is a keyboard composite (KeyboardComposites) and the runtime
+// gives it arrow keys whether or not a cell does anything when pressed.
+//
+// # What each target does with it
+//
+//	web       role="grid" / role="row" / role="gridcell", aria-selected on a
+//	          cell; the WASM runtime supplies the two-dimensional keyboard
+//	          (docs/platforms/wasm.md, "A grid"). htmlout writes no tabindex,
+//	          as for every composite.
+//	Compose   grid maps to nothing; gridcell is Role.Button
+//	SwiftUI   grid maps to nothing; gridcell is .isButton
+//
+// Neither native has a grid vocabulary, and both navigate a collection by
+// swipe rather than by arrow key, so the container's word is the loss. The
+// cell is announced with the control word each platform does have — which is
+// also exactly what a Calendar day announced as on both natives while it was a
+// RoleButton, so moving the widget onto the grid changed nothing a TalkBack or
+// VoiceOver user hears.
+//
+// # A grid owns rows, and rows own cells
+//
+// The structural rule above, one level deeper. Every child of the container is
+// a row — or an aria-hidden decoration, which is not in the accessibility tree
+// to be a foreign child — and every child of a row is a gridcell. A month
+// header with arrows *inside* the grid would be a foreign child, which is why
+// Calendar keeps its header outside the grid container and hides its weekday
+// captions.
+const (
+	RoleGrid     Role = "grid"
+	RoleGridCell Role = "gridcell"
 )
 
 // The tab pair: a strip of controls that switches what the screen is showing,
@@ -692,10 +751,10 @@ const RoleGroup Role = "group"
 // them: it is the field's zero value, no renderer has an arm for it, and a
 // coverage check that demanded one would be asking each renderer to implement
 // "unset". Everything downstream that iterates roles — the native dispatch
-// pins, the DOM export test — wants the twenty-seven that do something.
+// pins, the DOM export test — wants the thirty that do something.
 //
 // A fresh slice per call rather than a package-level var, which any importer
-// could write to. Twenty-seven elements are cheaper to build than to defend.
+// could write to. Thirty elements are cheaper to build than to defend.
 //
 // Pinned to the const blocks above by role_enum_test.go, which reads this
 // file's syntax tree: adding a constant without adding it here should fail
@@ -707,6 +766,7 @@ func Roles() []Role {
 		RoleList, RoleListItem,
 		RoleListBox, RoleOption,
 		RoleRadioGroup, RoleRadio,
+		RoleGrid, RoleGridCell,
 		RoleTab, RoleTabList, RoleTabPanel,
 		RoleBanner, RoleNavigation, RoleSearch, RoleToolbar,
 		RoleStatus, RoleAlert, RoleLog,
@@ -728,16 +788,16 @@ func Roles() []Role {
 // all*, and that is a question a caller asks of core. AuditTree is the first
 // reader: core.AccessibilitySelectionFollowsFocus is a statement about what a
 // widget's keyboard does, and on a role with no keyboard it is a claim about
-// nothing — which no exporter can notice, because knowing these four roles
+// nothing — which no exporter can notice, because knowing these five roles
 // where an attribute is written would put the list in two places.
 //
-// The runtime keeps the same four in two tables split by a different
+// The runtime keeps the same five in two tables split by a different
 // question (whether ARIA names the members), and wasm/verify holds their union
-// to this function. So a fourth pattern is one edit here and a failing check
+// to this function. So a sixth pattern is one edit here and a failing check
 // there, rather than a role that quietly gains a keyboard the audit still
 // calls inert.
 //
-// # Why these four and not the rest of ARIA's patterns
+// # Why these five and not the rest of ARIA's patterns
 //
 // `listbox`, `radiogroup` and `tablist` are the three ARIA structures that both
 // name their members and own their children, so the runtime can find a
@@ -749,10 +809,18 @@ func Roles() []Role {
 // runtime supplies the membership rule itself: a toolbar's controls are the
 // natively focusable tags plus the containers that say they are controls.
 //
-// `menu`, `menubar`, `tree`, `treegrid` and `grid` are the patterns ARIA
-// describes that this framework refuses, each for a stated
-// reason — aria/verify/refusals_test.go holds every refusal to what the
-// pattern actually requires. `list` is deliberately absent and is the near
+// `grid` names its members too (gridcell), and differs from the first three in
+// where they sit rather than in how they are found: one level down, inside the
+// rows ARIA makes a grid own. The runtime's member walk already descends
+// through wrappers looking for a role, so it finds a grid's cells unchanged;
+// what the grid added is a second axis in the arrow keys, which groups the
+// cells by the row each one is in. See RoleGrid.
+//
+// `menu`, `menubar`, `tree` and `treegrid` are the patterns ARIA describes
+// that this framework refuses, each for a stated reason —
+// aria/verify/refusals_test.go holds every refusal to what the pattern
+// actually requires (`grid` was the fifth until comps.Calendar needed it).
+// `list` is deliberately absent and is the near
 // miss worth naming: it is content rather than a control, and ARIA gives it no
 // keyboard at all.
 //
@@ -766,7 +834,7 @@ func Roles() []Role {
 // Container order matches Roles(); the members are not here, because being a
 // member is a fact about a role's parent rather than about the role.
 func KeyboardComposites() []Role {
-	return []Role{RoleListBox, RoleRadioGroup, RoleTabList, RoleToolbar}
+	return []Role{RoleListBox, RoleRadioGroup, RoleGrid, RoleTabList, RoleToolbar}
 }
 
 // CompositeMemberRole returns the role ARIA gives the members of a composite
@@ -774,6 +842,7 @@ func KeyboardComposites() []Role {
 //
 //	listbox      option
 //	radiogroup   radio
+//	grid         gridcell  one level down, inside a row; see RoleGrid
 //	tablist      tab
 //	toolbar      ""      ARIA defines no `toolbaritem`
 //
@@ -816,6 +885,8 @@ func CompositeMemberRole(container Role) (member Role, composite bool) {
 		return RoleOption, true
 	case RoleRadioGroup:
 		return RoleRadio, true
+	case RoleGrid:
+		return RoleGridCell, true
 	case RoleTabList:
 		return RoleTab, true
 	case RoleToolbar:

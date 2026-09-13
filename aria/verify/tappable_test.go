@@ -124,6 +124,7 @@ var notTappable = map[core.Role]nonControl{
 	// the same collision ConcernNestedComposite reports.
 	core.RoleListBox:    {kindComposite, "it owns a keyboard, it is not a control"},
 	core.RoleRadioGroup: {kindComposite, "it owns a keyboard, it is not a control"},
+	core.RoleGrid:       {kindComposite, "it owns a keyboard, it is not a control"},
 	core.RoleTabList:    {kindComposite, "it owns a keyboard, it is not a control"},
 	core.RoleToolbar:    {kindComposite, "it owns a keyboard, it is not a control"},
 
@@ -133,7 +134,11 @@ var notTappable = map[core.Role]nonControl{
 	// the same element two owners writing tabindex onto it.
 	core.RoleOption: {kindMember, "its tab stop belongs to its container"},
 	core.RoleRadio:  {kindMember, "its tab stop belongs to its container"},
-	core.RoleTab:    {kindMember, "its tab stop belongs to its container"},
+	// A gridcell is announced as a button on both natives (core.RoleGrid), and
+	// is still not a tappable container: on the web its tab stop is the grid's
+	// roving one, and a toolbar taking it as a control would be a second owner.
+	core.RoleGridCell: {kindMember, "its tab stop belongs to its container"},
+	core.RoleTab:      {kindMember, "its tab stop belongs to its container"},
 
 	// Regions. A screen's landmarks, which a reader jumps between rather than
 	// operates. (RoleToolbar is a landmark too and is above, under the louder
