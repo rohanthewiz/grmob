@@ -184,6 +184,22 @@ func Width(w string) StyleProp {
 		s.Width = w
 	})
 }
+// MaxWidth caps a node's width: CSS `max-width`, honoured on all four targets.
+//
+// The value is a dimension string: "320px" (or a bare number, in points on the
+// natives), a percentage of the width the parent offers, or "" / "none" for no
+// cap. The cap limits the painted box, padding included, and never the margin
+// around it. It never grows a box — a label narrower than its cap keeps its own
+// width — and it wins over a wider Width: Width("600px") with MaxWidth("520px")
+// draws 520.
+//
+// A stretched child of a Column (the default for most children) fills the
+// column up to the cap and sits at the start of the line, as in a browser;
+// centre it with the parent's AlignItems. The web targets pass the string
+// through verbatim, so units the natives do not read ("vw", "em") cap only
+// there. One case differs on the natives: a FlexGrow child of a Row whose cap
+// binds keeps its share of the row and leaves the rest empty, where CSS hands
+// the remainder to the other growers.
 func MaxWidth(w string) StyleProp {
 	return styleFunc(func(s *Style) {
 		s.MaxWidth = w

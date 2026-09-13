@@ -162,6 +162,38 @@ func checkMinContent() -> [String] {
         problems.append("an empty box should have no floor at all")
     }
 
+    // --- a cap clamps the floor --------------------------------------------
+    //
+    // CSS clamps the content size suggestion by a definite max-width, so a
+    // capped box never holds a row open wider than it can ever be drawn. The
+    // cap limits the padded box (border-box, as on the WASM page); the margin
+    // stays outside it.
+    let long = text("Supercalifragilistic")
+    let longWidth = GrMobMinContent.width(of: long)
+    var capped = GrMobStyle()
+    capped.maxWidth = "40px"
+    if abs(GrMobMinContent.width(of: text("Supercalifragilistic", style: capped)) - 40) > 0.01 {
+        problems.append("a points MaxWidth should clamp the floor: got "
+            + "\(GrMobMinContent.width(of: text("Supercalifragilistic", style: capped))), want 40")
+    }
+    var cappedBox = capped
+    cappedBox.padding = GrMobStyle.Edges(top: 0, right: 8, bottom: 0, left: 8)
+    cappedBox.margin = GrMobStyle.Edges(top: 0, right: 5, bottom: 0, left: 5)
+    if abs(GrMobMinContent.width(of: text("Supercalifragilistic", style: cappedBox)) - 50) > 0.01 {
+        problems.append("a MaxWidth caps the padded box and leaves the margin outside: got "
+            + "\(GrMobMinContent.width(of: text("Supercalifragilistic", style: cappedBox))), want 50")
+    }
+    var roomy = GrMobStyle()
+    roomy.maxWidth = "4000px"
+    if abs(GrMobMinContent.width(of: text("Supercalifragilistic", style: roomy)) - longWidth) > 0.01 {
+        problems.append("a MaxWidth wider than the content should not change the floor")
+    }
+    var pctCap = GrMobStyle()
+    pctCap.maxWidth = "10%"
+    if abs(GrMobMinContent.width(of: text("Supercalifragilistic", style: pctCap)) - longWidth) > 0.01 {
+        problems.append("a percentage MaxWidth has no container here and should not clamp")
+    }
+
     // --- everywhere it floors at zero on purpose ---------------------------
     //
     // Each of these is an UNDER-estimate rather than an omission, and the

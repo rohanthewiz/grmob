@@ -168,8 +168,8 @@ type Drawer struct {
 
 	// Width is the panel's width. Empty is "280px", which leaves a tappable
 	// scrim beside it on a 320-point phone. A percentage is honoured on all
-	// four targets; core.MaxWidth is read by the web targets only, so cap a
-	// percentage through PanelStyle for the browser alone.
+	// four targets, and so is a core.MaxWidth passed through PanelStyle to cap
+	// it.
 	Width string
 
 	// Backdrop overrides the scrim colour. Empty is core.Modal's default.

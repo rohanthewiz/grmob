@@ -390,3 +390,43 @@ func checkWrapSolver() -> [String] {
     }
     return problems
 }
+
+// Checks for GrMobMaxWidth — core.MaxWidth's arithmetic on iOS.
+//
+// The Layout that applies the cap needs a view hierarchy; which strings are a
+// cap, what a percentage resolves against, and how a cap meets a rigid Width
+// do not. Expected values are CSS's: `max-width` in px, in % of the containing
+// block (none when that block is indefinite), `none` as the initial value, and
+// min(width, max-width) for a declared width.
+func checkMaxWidth() -> [String] {
+    var problems: [String] = []
+    func limit(_ name: String, _ value: String, _ available: CGFloat?, _ want: CGFloat?) {
+        let got = GrMobMaxWidth.limit(value, available: available)
+        if got != want { problems.append("maxWidth \(name): got \(String(describing: got)), want \(String(describing: want))") }
+    }
+    limit("px", "320px", 400, 320)
+    limit("bare number is points", "320", nil, 320)
+    limit("px binds with no parent width", "320px", nil, 320)
+    limit("percent of the offer", "50%", 400, 200)
+    limit("percent with no offer is none", "50%", nil, nil)
+    limit("percent of an infinite probe is none", "50%", .infinity, nil)
+    limit("percent above 100 is kept", "150%", 200, 300)
+    limit("empty", "", 400, nil)
+    limit("none", "none", 400, nil)
+    limit("auto", "auto", 400, nil)
+    limit("negative is invalid, not zero", "-5px", 400, nil)
+    limit("unknown unit", "20vw", 400, nil)
+    limit("junk percent", "abc%", 400, nil)
+    limit("zero is a cap", "0px", 400, 0)
+
+    if GrMobMaxWidth.fixedLimit("50%") != nil {
+        problems.append("maxWidth fixedLimit: a percentage has no length before the Layout resolves it")
+    }
+    if GrMobMaxWidth.fixedLimit("320px") != 320 {
+        problems.append("maxWidth fixedLimit: points should resolve without a parent")
+    }
+    check("maxWidth clamps a wider width", GrMobMaxWidth.clamp(600, to: 520), 520, into: &problems)
+    check("maxWidth leaves a narrower width", GrMobMaxWidth.clamp(400, to: 520), 400, into: &problems)
+    check("maxWidth with no cap", GrMobMaxWidth.clamp(600, to: nil), 600, into: &problems)
+    return problems
+}

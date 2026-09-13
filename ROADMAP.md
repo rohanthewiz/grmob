@@ -46,10 +46,12 @@
       releases — a filling frame is greedy — and no longer does; see the
       overlay `Layout` entry below
 - [x] `Position` (`Sticky`/`Absolute`/`Relative`/`Fixed`) with `Top`/`Right`/
-      `Bottom`/`Left`/`ZIndex`, plus `MinWidth`/`MaxWidth`/`MinHeight`/
+      `Bottom`/`Left`/`ZIndex`, plus `MinWidth`/`MinHeight`/
       `MaxHeight`, `Overflow`, `WhiteSpace`, `AlignSelf`,
       `FlexBasis` — **web targets only**
-      (WASM DOM and `htmlout`). Compose and SwiftUI have no direct equivalent
+      (WASM DOM and `htmlout`). `MaxWidth` has left this list: Compose resolves
+      it with `Width` in one layout modifier and SwiftUI caps the proposal in a
+      `Layout` outside the grow frame, so a stretched child is capped too. Compose and SwiftUI have no direct equivalent
       for out-of-flow placement; a layout that depends on these will not look
       the same on device. The one exception is `Position: sticky` on a `List`
       child, which both natives now honour as a pinned header — see
