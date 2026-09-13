@@ -167,7 +167,7 @@
 // missing an optional tool is a pass people learn to ignore.
 
 import { spawn } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -180,6 +180,7 @@ import { startupVerdict } from "./startup.mjs";
 import { foldVerdict } from "./fold.mjs";
 import { bandTargetCensus, bandTargetRead } from "./bandtarget.mjs";
 import { CSSOM_READS } from "./cssstyle.mjs";
+import { writeInkFaceOverride } from "./inkface.mjs";
 
 // The widget swatches come from the transcript rather than from a .mjs table,
 // because they are real components rendered by Go: gen.go builds the trees and
@@ -237,44 +238,6 @@ const CHROME_CANDIDATES = [
 
 function findChrome() {
     return CHROME_CANDIDATES.find((p) => existsSync(p)) || null;
-}
-
-// GRMOB_INK_FACE: draw the grid in a face this machine has installed rather
-// than in its platform default, by writing it into the scratch profile as
-// Chrome's standard and serif font before Chrome starts.
-//
-// # Why this exists
-//
-// INK_CALIBRATED_ON's skip, and the calibration report printed under it, were
-// only reachable on a machine whose DEFAULT serif is a face nothing here was
-// measured on — and every machine this project met resolved Times or
-// Liberation Serif. So the report's "WHICH DOES NOT SEPARATE" arm had fired
-// once, under fractions since retired, and a third face was a thing to wait
-// for. Any installed face can be the third one on demand this way, with the
-// same Chrome, flags and grid, so the skip and the report are drills rather
-// than accidents.
-//
-// # Why the profile, and why both families
-//
-// Chrome has no command-line flag for a default font; the preference is the
-// only lever, and the profile is already a fresh directory per run, so nothing
-// outside it is touched. The grid asks for core.Theme's typography, which this
-// Chrome does not have, and a family list with no generic keyword falls back to
-// the STANDARD font, not the serif one — so both are set, or the override would
-// hold only for text that happens to say `serif`.
-//
-// Unset, nothing is written and the run is the one CI takes.
-function writeInkFaceOverride(profile) {
-    const face = process.env.GRMOB_INK_FACE;
-    if (!face) return null;
-    mkdirSync(join(profile, "Default"), { recursive: true });
-    writeFileSync(join(profile, "Default", "Preferences"), JSON.stringify({
-        webkit: { webprefs: { fonts: {
-            standard: { Zyyy: face },
-            serif: { Zyyy: face },
-        } } },
-    }));
-    return face;
 }
 
 // Carry out startup.mjs's decision. The stances live there; what is here is
@@ -3176,7 +3139,7 @@ const INK_OWN_MEASURED_ON = {
 //
 // For a long time no machine this project met resolved a third face, so the
 // report's "WHICH DOES NOT SEPARATE" arm had fired once, under fractions since
-// retired. GRMOB_INK_FACE (see writeInkFaceOverride) makes any installed face
+// retired. GRMOB_INK_FACE (see inkface.mjs) makes any installed face
 // the grid's default, and on this project's macOS machine (Chrome 152) every
 // serif it has installed was run through the grid — the report's brackets, in
 // percent, over and at-or-under:
@@ -5445,7 +5408,10 @@ async function main() {
     const origin = `http://127.0.0.1:${server.address().port}`;
 
     const profile = mkdtempSync(join(tmpdir(), "grmob-chrome-"));
-    const inkFace = writeInkFaceOverride(profile);
+    // GRMOB_INK_FACE: draw the grid in a face this machine has installed
+    // rather than in its platform default. The write, and why it is shaped
+    // the way it is, are in inkface.mjs, where a test reaches them.
+    const inkFace = writeInkFaceOverride(profile, process.env.GRMOB_INK_FACE);
     if (inkFace) console.log(`GRMOB_INK_FACE: the grid's default face is set to ${inkFace}`);
     const chrome = spawn(chromePath, [
         "--headless=new",
