@@ -6,11 +6,11 @@ import "github.com/rohanthewiz/grmob/hooks"
 
 Package hooks is the layer of conveniences built on core's state slots: effects, timers, memoisation, a reducer, and read-only views of the things the host reports asynchronously (audio status, location, lifecycle, permission decisions).
 
-Everything here is built from [core.NewState](core.md#func-newstate) and [core.Context.OnClose](core.md#func-context-onclose) and could be written by an app instead. What the package adds is the part that is easy to get wrong — deciding when to re-run, and cleaning up when the context closes.
+Everything here is built from [core.NewState](core-views.md#func-newstate) and [core.Context.OnClose](core-views.md#func-context-onclose) and could be written by an app instead. What the package adds is the part that is easy to get wrong — deciding when to re-run, and cleaning up when the context closes.
 
 ## Slots, and therefore order
 
-Every hook here occupies one or more of the calling context's slots, and slots are positional (see [core.NewState](core.md#func-newstate)). So the rules of hooks apply to this package exactly as they do to core's: call them unconditionally, in the same order, on every pass. A hook behind an \`if\` does not merely skip itself; it shifts every hook after it onto the wrong slot.
+Every hook here occupies one or more of the calling context's slots, and slots are positional (see [core.NewState](core-views.md#func-newstate)). So the rules of hooks apply to this package exactly as they do to core's: call them unconditionally, in the same order, on every pass. A hook behind an \`if\` does not merely skip itself; it shifts every hook after it onto the wrong slot.
 
 ## Dependencies
 
