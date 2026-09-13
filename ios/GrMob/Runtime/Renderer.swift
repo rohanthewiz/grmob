@@ -1059,6 +1059,16 @@ private struct GrMobList: View {
         // once came apart, and a helper it cannot see would hide the next
         // drift exactly as effectively.
         let stretch = columnStretches(crossAxisValue(s))
+        // A List with no Height inside a scrolled page needs no special arm
+        // here, unlike Compose's GrMobList (LazyColumn throws under an infinite
+        // height). The page's ScrollView proposes this one no height, and a
+        // ScrollView answers that with its content's height. Measured on a
+        // simulator: the tutorial's 4.3 outline came out 228pt with all six rows
+        // inside the frame, 4.6's grouped list 248pt including its Load more
+        // footer, and a drag that starts on the list scrolls the page rather
+        // than bouncing the list. Whether the LazyVStack stays lazy under that
+        // proposal has not been measured; a long feed should carry a Height
+        // anyway so that OnEndReached has a viewport to act on.
         ScrollView {
             // Two stacks rather than one taking an empty pinnedViews, because
             // a Section is not free of consequence: it changes what the lazy

@@ -254,7 +254,7 @@ func TestNeitherNativeCodeEditorWraps(t *testing.T) {
 		{"textView.textContainer.lineBreakMode = .byClipping", "and must not break lines"},
 	})
 	pinExprs(t, kotlinCodeEditor, []struct{ expr, why string }{
-		{"Box(Modifier.horizontalScroll(horizontal))",
+		{"Box(Modifier.horizontalScrollWhenBounded(horizontal))",
 			"the field sits in an unbounded-width scroll, so a long line pans " +
 				"rather than wrapping"},
 	})

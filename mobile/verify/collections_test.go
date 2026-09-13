@@ -59,7 +59,7 @@ func TestNativeScrollHonoursTheHorizontalAxis(t *testing.T) {
 		{swiftRenderer, "private struct GrMobScroll",
 			`flexDirection == "row"`, "ScrollView(.horizontal"},
 		{kotlinRenderer, "private fun GrMobScroll(",
-			`flexDirection == "row"`, "horizontalScroll("},
+			`flexDirection == "row"`, "horizontalScrollWhenBounded("},
 	} {
 		src := valuesOf(t, pin.file, pin.decl)
 		if !strings.Contains(src, pin.reads) {

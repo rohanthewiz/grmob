@@ -142,3 +142,68 @@ func TestComposeListHasAnArmForAnUnboundedHeight(t *testing.T) {
 			"arm) — a new one needs the same unbounded-height arm", total)
 	}
 }
+
+// The same crash on the other axis. Compose's horizontal scroll container
+// throws under an infinite maximum width ("Horizontally scrollable component
+// was measured with an infinity maximum width constraints"). A sideways region
+// inside another sideways region is that shape: a chip strip in a carousel
+// card, a TextGrid in a strip, or a CodeEditor in a strip, since the editor's
+// field pans in a horizontal scroll of its own. No shipped screen has it yet,
+// because a phone page does not scroll sideways, but the Go is legal and the
+// DOM draws it at its content width.
+//
+// Renderer.kt's horizontalScrollWhenBounded is the one spelling. Same refusal as
+// the vertical test: one bare call in the runtime, inside the helper, and every
+// sideways region goes through it.
+func TestNoBareHorizontalScrollOnCompose(t *testing.T) {
+	const helper = "internal fun Modifier.horizontalScrollWhenBounded("
+
+	bare := regexp.MustCompile(`(^|[^A-Za-z0-9_])horizontalScroll\(`)
+
+	dir := filepath.Dir(kotlinRenderer)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("reading %s: %v", dir, err)
+	}
+
+	total := 0
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".kt") {
+			continue
+		}
+		file := filepath.Join(dir, e.Name())
+		n := len(bare.FindAllStringIndex(codeIn(t, file), -1))
+		total += n
+		if n > 0 && file != kotlinRenderer {
+			t.Errorf("%s: %d bare horizontalScroll call(s) — use horizontalScrollWhenBounded, "+
+				"or this region crashes the app whenever its parent scrolls sideways", file, n)
+		}
+	}
+	if total != 1 {
+		t.Errorf("found %d bare horizontalScroll calls in the Compose runtime, want 1 "+
+			"(inside horizontalScrollWhenBounded)", total)
+	}
+
+	body := codeOf(t, kotlinRenderer, helper)
+	for _, pin := range []struct{ expr, why string }{
+		{"constraints.hasBoundedWidth", "the branch: a bounded width is a real viewport"},
+		{"maxIntrinsicWidth(", "the unbounded branch's content width, which intrinsics answer without the check"},
+		{".horizontalScroll(state)", "the bare call lives here and nowhere else"},
+	} {
+		if !strings.Contains(body, pin.expr) {
+			t.Errorf("%s: horizontalScrollWhenBounded has no %q — %s", kotlinRenderer, pin.expr, pin.why)
+		}
+	}
+
+	// The three sideways regions the runtime has: the editor's field, a
+	// Horizontal() Scroll, and a TextGrid.
+	for _, c := range []struct{ file, decl string }{
+		{kotlinCodeEditor, "internal fun GrMobCodeEditor("},
+		{kotlinRenderer, "private fun GrMobScroll("},
+		{kotlinRenderer, "private fun GrMobTextGrid("},
+	} {
+		if !strings.Contains(codeOf(t, c.file, c.decl), "horizontalScrollWhenBounded(") {
+			t.Errorf("%s: %s does not scroll sideways through horizontalScrollWhenBounded", c.file, c.decl)
+		}
+	}
+}

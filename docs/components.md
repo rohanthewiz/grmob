@@ -95,7 +95,9 @@ A region that sizes to its content is not that case: a `CodeEditor` with no
 `Height` in a scrolled `Screen` lays out at its full height on every host and
 pans only sideways. (On Compose that took a guard — a bare `verticalScroll`
 under an unbounded height throws, and every tutorial lesson crashed on it until
-the renderer capped the viewport at the content; see `core.Scroll`.)
+the renderer capped the viewport at the content; see `core.Scroll`. SwiftUI
+sizes a nested scroll view to its content without one, which a simulator pass
+over lessons 4.3 and 4.6 confirmed.)
 Of the nine app packages in `examples/`, two scroll at the root
 (`fintechapp`, `signup`), and the `tutorial`'s `lesson_screen` and chapter 6
 scroll as a whole. The rest do not: `chat` scrolls its message list, `todoapp`

@@ -172,10 +172,19 @@ func Spacer(size int) View {
 // picture — and that is a guard in the renderer, not Compose's default: a bare
 // verticalScroll throws under an infinite height, and the same guard is what
 // lets a CodeEditor with no Height sit in a comps.Screen{Scroll: true}.
-// SwiftUI's sizing of a nested ScrollView has not been measured against
-// either. Give the inner region a Height when its size matters, and avoid the
+// SwiftUI needs no guard: the outer ScrollView proposes no height, and an inner
+// ScrollView answers with its content's height. On a simulator the tutorial's
+// Height-less Lists in a scrolled lesson (4.3's outline, 4.6's GroupedLists)
+// came out exactly as tall as their rows, and a drag that starts on one scrolls
+// the page. Give the inner region a Height when its size matters, and avoid the
 // shape where it can: two nested regions that both *can* pan fight for the
 // same drag, which is the reason comps.Screen.Scroll gives.
+//
+// The same shape sideways: a Horizontal() Scroll, a TextGrid or a CodeEditor
+// inside a Horizontal() Scroll. Compose's horizontal scroll throws under an
+// infinite width just as the vertical one does, so the renderer caps that axis
+// too, and on an emulator the inner regions draw at their content width while
+// the outer strip pans. SwiftUI's sideways nesting has not been measured.
 func Scroll(stylePropsAndChildren ...PropsAndChildren) View {
 	return ComponentFunc(func(ctx *Context) *Node {
 		return containerNode(ctx, "Scroll", Style{}, stylePropsAndChildren)

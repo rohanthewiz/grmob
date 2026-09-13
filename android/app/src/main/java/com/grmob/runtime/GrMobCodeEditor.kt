@@ -1,6 +1,5 @@
 package com.grmob.runtime
 
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Box
@@ -295,7 +294,11 @@ internal fun GrMobCodeEditor(node: GrMobNode, extra: Modifier) {
                 }
             }
         }
-        Box(Modifier.horizontalScroll(horizontal)) {
+        // horizontalScrollWhenBounded for the same reason as the Row's vertical
+        // helper, on the other axis. The Row hands the field whatever width is
+        // left beside the gutter, which is infinite when the editor sits in a
+        // sideways Scroll. A bare horizontalScroll throws there.
+        Box(Modifier.horizontalScrollWhenBounded(horizontal)) {
             BasicTextField(
                 value = buffer,
                 onValueChange = { next ->

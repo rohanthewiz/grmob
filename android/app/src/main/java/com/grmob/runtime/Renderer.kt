@@ -447,7 +447,9 @@ private fun GrMobTextGrid(node: GrMobNode, extra: Modifier) {
     val base = textStyle(s)
     Column(
         s.boxModifier(extra, gestureModifier(node))
-            .horizontalScroll(rememberScrollState())
+            // WhenBounded: a grid inside a sideways Scroll is measured under an
+            // infinite width, and a bare horizontalScroll throws there.
+            .horizontalScrollWhenBounded(rememberScrollState())
     ) {
         node.children.forEachIndexed { i, row ->
             key(i) { GrMobGridRow(row, base) }
@@ -1601,9 +1603,13 @@ private fun GrMobScroll(node: GrMobNode, extra: Modifier) {
     // axis is horizontal, the height is whatever the parent proposes, and a
     // grow child in a horizontal strip has no cross-axis meaning to grow
     // into — the same reason GrMobList has no main-axis FlexGrow either.
+    //
+    // The strip scrolls through horizontalScrollWhenBounded for the same reason
+    // the column below uses the vertical helper: a strip inside another strip
+    // (or anywhere else the width is unbounded) would otherwise throw.
     if (node.style?.flexDirection == "row") {
         Row(
-            node.style.boxModifier(extra).horizontalScroll(rememberScrollState()),
+            node.style.boxModifier(extra).horizontalScrollWhenBounded(rememberScrollState()),
             horizontalArrangement = packedHorizontally(node.style),
         ) {
             RowChildren(node)
@@ -1684,6 +1690,59 @@ internal fun Modifier.verticalScrollWhenBounded(state: ScrollState): Modifier =
         val placeable = measurable.measure(bounded)
         layout(placeable.width, placeable.height) { placeable.place(0, 0) }
     }.verticalScroll(state)
+
+/**
+ * Modifier.horizontalScroll that survives an infinite maximum width: the other
+ * axis of verticalScrollWhenBounded, with the same reasoning turned on its side.
+ *
+ * Compose's horizontal scroll container has the mirror-image check and throws
+ * "Horizontally scrollable component was measured with an infinity maximum
+ * width constraints". A width is unbounded far less often than a height,
+ * because a phone screen does not scroll sideways, so no shipped screen has hit
+ * it. It takes a sideways region inside another sideways region:
+ *
+ *     Scroll(Horizontal)              infinite width for everything in it
+ *       └─ Scroll(Horizontal)         a chip strip inside a carousel card
+ *       └─ TextGrid                   a terminal in a sideways strip
+ *       └─ CodeEditor                 its field pans in a horizontalScroll of its own
+ *
+ * The DOM lays each of those out at its content width. SwiftUI answers the
+ * vertical version of this shape with the content's height (measured on a
+ * simulator), and the sideways version is expected to match but has not been
+ * read. So each is legal Go, and on this host it killed the app on first
+ * layout (reproduced on an emulator before this helper existed): the class of
+ * crash every tutorial lesson hit on the vertical axis.
+ *
+ *     incoming maxWidth       what the scroll is measured with
+ *     -----------------       --------------------------------
+ *     bounded                 unchanged                     (a real viewport)
+ *     infinite                content width, as a maximum   (viewport == content,
+ *                                                            so nothing to scroll)
+ *
+ * The content width is maxIntrinsicWidth at the height on offer; the scroll
+ * node answers intrinsics by asking its content, which skips the check. The
+ * incoming minWidth is kept as a floor. As with the vertical helper, this is a
+ * layout modifier rather than BoxWithConstraints so that a caller measured
+ * intrinsically (a stretched Row asks every child) does not hit a
+ * SubcomposeLayout's refusal to answer intrinsics.
+ *
+ * The outer region still scrolls: it is the one with a real viewport, and the
+ * inner one reports its whole content width to it.
+ *
+ * mobile/verify's TestNoBareHorizontalScrollOnCompose refuses a horizontalScroll
+ * call anywhere in the runtime but here.
+ */
+internal fun Modifier.horizontalScrollWhenBounded(state: ScrollState): Modifier =
+    layout { measurable, constraints ->
+        val bounded = if (constraints.hasBoundedWidth) {
+            constraints
+        } else {
+            val content = measurable.maxIntrinsicWidth(constraints.maxHeight)
+            constraints.copy(maxWidth = maxOf(content, constraints.minWidth))
+        }
+        val placeable = measurable.measure(bounded)
+        layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+    }.horizontalScroll(state)
 
 /**
  * Whether a container stretches its children across the cross axis.

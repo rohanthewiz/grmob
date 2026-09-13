@@ -6187,7 +6187,7 @@ func BackgroundColor(hex string) StyleProp
 func BorderColor(hex string) StyleProp
 ```
 
-<small>[core/layout.go:342](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L342)</small>
+<small>[core/layout.go:351](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L351)</small>
 
 #### func BorderRadius
 
@@ -6203,7 +6203,7 @@ func BorderRadius(px float64) StyleProp
 func BorderWidth(px float64) StyleProp
 ```
 
-<small>[core/layout.go:347](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L347)</small>
+<small>[core/layout.go:356](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L356)</small>
 
 #### func Bottom
 
@@ -6354,7 +6354,7 @@ A vertical Scroll emits no overflow on the web at all: the page scrolls, and the
 
 It is not a horizontal List. core.List's laziness, its cross-axis stretch and its FlexGrow contract are all written for a vertical main axis on both natives, and nothing yet asks for a lazily-materialized carousel. A strip of chips or a handful of cards is short by construction, which is what Scroll is for.
 
-<small>[core/layout.go:424](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L424)</small>
+<small>[core/layout.go:433](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L433)</small>
 
 #### func Justify
 
@@ -7033,7 +7033,7 @@ It is not an overlay, on any target. Both natives used to draw it as one (a Comp
 
 ZStack, below, is the container that does overlay — and it exists because this one stopped. The two are the same argument from both ends: one shape per node type, stated once, rather than a container whose meaning depended on which renderer was reading it.
 
-<small>[core/layout.go:249](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L249)</small>
+<small>[core/layout.go:258](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L258)</small>
 
 #### func Button
 
@@ -7159,7 +7159,7 @@ value is the text; rows are a \*decoration of that text\*, computed in Go from t
 func Column(stylePropsAndChildren ...PropsAndChildren) View
 ```
 
-<small>[core/layout.go:227](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L227)</small>
+<small>[core/layout.go:236](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L236)</small>
 
 #### func DefaultErrorFallback
 
@@ -7179,7 +7179,7 @@ The detail line is gated on debug mode on purpose. A panic message is developer-
 func Divider(height int, color string) View
 ```
 
-<small>[core/layout.go:335](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L335)</small>
+<small>[core/layout.go:344](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L344)</small>
 
 #### func ErrorBoundary
 
@@ -7245,7 +7245,7 @@ func For[T any](items []T, render func(item T, index int) View) View
 func Fragment(children ...View) View
 ```
 
-<small>[core/layout.go:215](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L215)</small>
+<small>[core/layout.go:224](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L224)</small>
 
 #### func If
 
@@ -7528,7 +7528,7 @@ Like Scroll it has no theme base: the theme Column's screen padding would otherw
 
 Below the inset it is a Column, on every target: children stack and, with no cross-axis alignment set, stretch to its width. Both natives used to draw it as an overlay (a Compose Box, a SwiftUI ZStack), which stacked two children on top of each other and let a lone one — a screen's whole content column, usually — hug its widest child instead of filling the screen.
 
-<small>[core/layout.go:209](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L209)</small>
+<small>[core/layout.go:218](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L218)</small>
 
 #### func SafeRender
 
@@ -7556,9 +7556,11 @@ See KeyboardAware for the software-keyboard behavior.
 
 ##### Inside another vertical scroll
 
-A vertical Scroll whose parent is itself a vertical scroll has no viewport to be smaller than. In the DOM an overflow box of auto height is simply as tall as its content and never pans. Compose caps the scroll at the content's intrinsic height when the incoming height is unbounded, which draws the same picture — and that is a guard in the renderer, not Compose's default: a bare verticalScroll throws under an infinite height, and the same guard is what lets a CodeEditor with no Height sit in a comps.Screen{Scroll: true}. SwiftUI's sizing of a nested ScrollView has not been measured against either. Give the inner region a Height when its size matters, and avoid the shape where it can: two nested regions that both \*can\* pan fight for the same drag, which is the reason comps.Screen.Scroll gives.
+A vertical Scroll whose parent is itself a vertical scroll has no viewport to be smaller than. In the DOM an overflow box of auto height is simply as tall as its content and never pans. Compose caps the scroll at the content's intrinsic height when the incoming height is unbounded, which draws the same picture — and that is a guard in the renderer, not Compose's default: a bare verticalScroll throws under an infinite height, and the same guard is what lets a CodeEditor with no Height sit in a comps.Screen{Scroll: true}. SwiftUI needs no guard: the outer ScrollView proposes no height, and an inner ScrollView answers with its content's height. On a simulator the tutorial's Height-less Lists in a scrolled lesson (4.3's outline, 4.6's GroupedLists) came out exactly as tall as their rows, and a drag that starts on one scrolls the page. Give the inner region a Height when its size matters, and avoid the shape where it can: two nested regions that both \*can\* pan fight for the same drag, which is the reason comps.Screen.Scroll gives.
 
-<small>[core/layout.go:179](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L179)</small>
+The same shape sideways: a Horizontal() Scroll, a TextGrid or a CodeEditor inside a Horizontal() Scroll. Compose's horizontal scroll throws under an infinite width just as the vertical one does, so the renderer caps that axis too, and on an emulator the inner regions draw at their content width while the outer strip pans. SwiftUI's sideways nesting has not been measured.
+
+<small>[core/layout.go:188](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L188)</small>
 
 #### func Select
 
@@ -7776,7 +7778,7 @@ That holds on all four targets including a stack with a placed layer, which it d
 
 Like Box and Scroll it carries no theme base — a theme Column's screen inset applied to an overlay would offset every layer by 16px and change nothing about their relationship.
 
-<small>[core/layout.go:329](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L329)</small>
+<small>[core/layout.go:338](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L338)</small>
 
 ### type Weight
 
