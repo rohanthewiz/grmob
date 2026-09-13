@@ -139,6 +139,11 @@ func cmdNew(args []string) error {
 		}
 	}
 
+	// `grmob web` is listed beside dev.sh rather than among the native
+	// targets: it is the browser build, and it is the only command that
+	// notices a host page left behind by a grmob upgrade. dev.sh builds
+	// whatever wasm/index.html holds, so without this line a new app's
+	// author would not learn the check exists until the page misbehaves.
 	rel := dir
 	fmt.Printf(`
 Done. Next:
@@ -146,13 +151,18 @@ Done. Next:
   cd %s
   ./dev.sh                 # http://localhost:8080 — rebuilds and hot-swaps on every save
 
+A one-off browser build, after checking wasm/index.html against go.mod's grmob
+(it warns when an upgrade changed the page; -refresh re-renders it):
+
+  go run %s/cmd/grmob web
+
 Native targets, once their SDKs are installed:
 
   go run %s/cmd/grmob doctor     # what this machine can build, and what to install
   go run %s/cmd/grmob android    # APK via the Android SDK + NDK
   go run %s/cmd/grmob ios        # simulator build via Xcode
 
-`, rel, grmobModule, grmobModule, grmobModule)
+`, rel, grmobModule, grmobModule, grmobModule, grmobModule)
 	return nil
 }
 
