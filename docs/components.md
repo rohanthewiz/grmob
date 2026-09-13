@@ -91,6 +91,11 @@ thing — the absence of a gap, not the imposition of one.
 **`Scroll` is for screens with no scrolling region inside them.** Leave it
 false when the screen already contains a `core.List` or its own `Scroll` — a
 scroll view nested in a scroll view fights for the same drag on both natives.
+A region that sizes to its content is not that case: a `CodeEditor` with no
+`Height` in a scrolled `Screen` lays out at its full height on every host and
+pans only sideways. (On Compose that took a guard — a bare `verticalScroll`
+under an unbounded height throws, and every tutorial lesson crashed on it until
+the renderer capped the viewport at the content; see `core.Scroll`.)
 Of the nine app packages in `examples/`, two scroll at the root
 (`fintechapp`, `signup`), and the `tutorial`'s `lesson_screen` and chapter 6
 scroll as a whole. The rest do not: `chat` scrolls its message list, `todoapp`

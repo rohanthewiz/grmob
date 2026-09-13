@@ -162,6 +162,20 @@ func Spacer(size int) View {
 // Column's screen padding would inset every screen that wraps itself in one.
 //
 // See KeyboardAware for the software-keyboard behavior.
+//
+// # Inside another vertical scroll
+//
+// A vertical Scroll whose parent is itself a vertical scroll has no viewport
+// to be smaller than. In the DOM an overflow box of auto height is simply as
+// tall as its content and never pans. Compose caps the scroll at the content's
+// intrinsic height when the incoming height is unbounded, which draws the same
+// picture — and that is a guard in the renderer, not Compose's default: a bare
+// verticalScroll throws under an infinite height, and the same guard is what
+// lets a CodeEditor with no Height sit in a comps.Screen{Scroll: true}.
+// SwiftUI's sizing of a nested ScrollView has not been measured against
+// either. Give the inner region a Height when its size matters, and avoid the
+// shape where it can: two nested regions that both *can* pan fight for the
+// same drag, which is the reason comps.Screen.Scroll gives.
 func Scroll(stylePropsAndChildren ...PropsAndChildren) View {
 	return ComponentFunc(func(ctx *Context) *Node {
 		return containerNode(ctx, "Scroll", Style{}, stylePropsAndChildren)

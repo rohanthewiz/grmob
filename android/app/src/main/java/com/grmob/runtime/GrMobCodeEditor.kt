@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -259,7 +258,18 @@ internal fun GrMobCodeEditor(node: GrMobNode, extra: Modifier) {
     // number N stays beside line N with nothing measured. The horizontal scroll
     // wraps the field alone: the buffer pans sideways for a long line and the
     // numbers stay put.
-    Row(s.boxModifier(extra).verticalScroll(vertical)) {
+    //
+    // verticalScrollWhenBounded, not a bare verticalScroll. An editor with no
+    // Height sizes to its content (comps.CodeEditor.Height says so), and the
+    // ordinary place for one is a scrolled page: every tutorial code block is a
+    // read-only editor inside comps.Screen{Scroll: true}. There the page's own
+    // scroll hands this Row an infinite maximum height, and Compose's scroll
+    // refuses to measure under one — IllegalStateException, "Vertically
+    // scrollable component was measured with an infinity maximum height
+    // constraints", on the first layout of every lesson. The helper caps the
+    // viewport at the content in that case, which is the picture the web and
+    // iOS already draw; see it in Renderer.kt.
+    Row(s.boxModifier(extra).verticalScrollWhenBounded(vertical)) {
         if (lineNumbers) {
             val lines = buffer.text.count { it == '\n' } + 1
             // Wide enough for the largest number plus a column of room, in the

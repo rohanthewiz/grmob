@@ -272,7 +272,7 @@ func TestBothNativeCodeEditorsDrawTheGutterBesideTheBuffer(t *testing.T) {
 	})
 	pinExprs(t, kotlinCodeEditor, []struct{ expr, why string }{
 		{"if (lineNumbers) {", "the gutter is a sibling composable, not text in the field"},
-		{"Row(s.boxModifier(extra).verticalScroll(vertical))",
+		{"Row(s.boxModifier(extra).verticalScrollWhenBounded(vertical))",
 			"the gutter and the field share one vertical scroll, so number N " +
 				"stays beside line N"},
 	})

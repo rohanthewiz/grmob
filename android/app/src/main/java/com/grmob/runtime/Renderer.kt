@@ -3,6 +3,7 @@ package com.grmob.runtime
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.Animatable
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -1580,6 +1581,11 @@ private fun ColumnScope.ColumnChildren(node: GrMobNode, growMinHeight: Dp? = nul
  * can actually occupy; the Column inside carries only the scroll. When the
  * Scroll is itself unbounded (a Scroll nested in a Scroll, say) there is no
  * viewport to fill and grow children keep wrapping their content.
+ *
+ * That last case is also why the scroll goes through verticalScrollWhenBounded.
+ * A bare verticalScroll throws when it is measured under an infinite height,
+ * so the nested Scroll the sentence above describes used to crash the screen
+ * rather than wrap; the DOM and SwiftUI both lay it out at its content height.
  */
 @Composable
 private fun GrMobScroll(node: GrMobNode, extra: Modifier) {
@@ -1613,13 +1619,71 @@ private fun GrMobScroll(node: GrMobNode, extra: Modifier) {
         // justify-content dispatch, because a scrolling axis has no leftover
         // space to distribute — the content defines the length.
         Column(
-            Modifier.verticalScroll(rememberScrollState()),
+            Modifier.verticalScrollWhenBounded(rememberScrollState()),
             verticalArrangement = packedVertically(node.style),
         ) {
             ColumnChildren(node, growMinHeight = viewport)
         }
     }
 }
+
+/**
+ * Modifier.verticalScroll that survives an infinite maximum height.
+ *
+ * # The crash it exists for
+ *
+ * Compose's scroll container measures its content with unbounded height and
+ * sizes itself to min(content, incoming maxHeight). An incoming maxHeight that
+ * is already infinite leaves that with no answer, so ScrollingLayoutNode checks
+ * for it and throws:
+ *
+ *     IllegalStateException: Vertically scrollable component was measured
+ *     with an infinity maximum height constraints
+ *
+ * The DOM has no such rule — an `overflow: auto` box of auto height is simply
+ * as tall as its content and never scrolls — and neither does SwiftUI. So a
+ * scroll region whose parent is itself a vertical scroll was legal Go, drew in
+ * the browser and on iOS, and killed the Android app on first layout. The one
+ * that shipped: every comps.CodeEditor without a Height inside
+ * comps.Screen{Scroll: true}, which is every code block in every tutorial
+ * lesson.
+ *
+ * # What it does instead
+ *
+ *     incoming maxHeight      what the scroll is measured with
+ *     ------------------      --------------------------------
+ *     bounded                 unchanged                      (a real viewport)
+ *     infinite                content height, as a maximum   (viewport == content,
+ *                                                             so nothing to scroll)
+ *
+ * The content height comes from maxIntrinsicHeight at the width on offer,
+ * which the scroll node answers by asking its content — intrinsics never pass
+ * through the constraint check. The incoming minHeight is kept as a floor, so
+ * a FlexGrow child's heightIn(min = viewport) from ColumnChildren still holds.
+ *
+ * A layout modifier ahead of the scroll rather than BoxWithConstraints: this
+ * sits on a node that may be measured intrinsically itself (a stretched Row
+ * asks every child for IntrinsicSize.Max), and a SubcomposeLayout throws on
+ * that. A plain layout modifier forwards intrinsics untouched.
+ *
+ * The intrinsic pass costs one extra measurement of the content, and only on
+ * the unbounded branch — the bounded one, which is every screen-level scroll,
+ * measures exactly as verticalScroll alone did.
+ *
+ * mobile/verify's TestNoBareVerticalScrollOnCompose refuses a verticalScroll
+ * call anywhere in the runtime but here.
+ */
+internal fun Modifier.verticalScrollWhenBounded(state: ScrollState): Modifier =
+    layout { measurable, constraints ->
+        val bounded = if (constraints.hasBoundedHeight) {
+            constraints
+        } else {
+            val content = measurable.maxIntrinsicHeight(constraints.maxWidth)
+            constraints.copy(maxHeight = maxOf(content, constraints.minHeight))
+        }
+        val placeable = measurable.measure(bounded)
+        layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+    }.verticalScroll(state)
 
 /**
  * Whether a container stretches its children across the cross axis.
@@ -1732,73 +1796,163 @@ private fun GrMobList(node: GrMobNode, extra: Modifier) {
     // Reading node.children in composition subscribes this scope to the
     // SnapshotStateList, so structural patches recompose the list.
     val rows = flattenFragments(node.children)
+    // Composed outside the branch below, so the scroll position and the
+    // reporter's positional slot survive a flip between the two arms.
     val listState = rememberLazyListState()
     EndReachedReporter(node, listState, rows.size)
-    LazyColumn(
-        state = listState,
-        modifier = s.boxModifier(extra, gestureModifier(node)),
-        verticalArrangement = verticalArrangement(s),
-        // The lazy sibling of GrMobColumn's dispatch, with the same contract
-        // and the same two vocabularies. Held to core.AlignItemsValues() by
-        // TestKotlinListAlignmentCoversEveryAlignItems in mobile/verify.
-        horizontalAlignment = when (s?.alignItems?.ifEmpty { s.align }) {
-            "flex-start", "start" -> Alignment.Start
-            "center" -> Alignment.CenterHorizontally
-            "flex-end", "end" -> Alignment.End
-            // A stretched row is filled by the modifier the item loop applies,
-            // not placed by the stack. Same shape as Row and Column above.
-            "stretch" -> Alignment.Start
-            else -> Alignment.Start
-        },
-    ) {
-        // A hand-written loop rather than itemsIndexed, because the two kinds
-        // of row are declared with two different DSL calls: core.StickyHeader
-        // marks a child as a group band, and a band is emitted through
-        // stickyHeader {} so the lazy list pins it while its run scrolls
-        // underneath. Everything else is an ordinary item {}. itemsIndexed
-        // can only emit one kind, so it cannot express a list that has both.
-        //
-        // The key and contentType arguments are the same values itemsIndexed
-        // was deriving — row key falling back to position, node type — so row
-        // identity and view recycling are unchanged for a list with no
-        // headers in it.
 
-        // Cross-axis stretch, in the same spelling ColumnChildren uses: a
-        // List's cross axis is horizontal like a Column's, so it takes the
-        // column helper — the one that reads the Style.Align fallback. This
-        // used to call isStretch, the Row spelling that tests alignItems
-        // alone, while the placement dispatch above read the fallback:
-        // Align(AlignStretch) with AlignItems unset took the "stretch" arm,
-        // whose comment promises this modifier fills the row, and then
-        // nothing filled it. A lazy item has no weight to combine the fill
-        // with, since a lazy list's main axis is scrollable and therefore
-        // unbounded.
-        //
-        // Read here, in GrMobList itself, rather than in a helper beside
-        // rowPlacement: this is what mobile/verify's
-        // TestListStretchFillReadsTheAlignFallback anchors on, and a helper
-        // the test cannot see would hide the next drift as well as the first
-        // one hid itself.
-        val stretch = isColumnStretch(s)
-        rows.forEachIndexed { i, row ->
-            val key = row.key.ifEmpty { i }
-            val fill = if (stretch && !hugsContent(row.style)) {
-                Modifier.fillMaxWidth()
-            } else {
-                Modifier
+    // The lazy sibling of GrMobColumn's dispatch, with the same contract
+    // and the same two vocabularies. Held to core.AlignItemsValues() by
+    // TestKotlinListAlignmentCoversEveryAlignItems in mobile/verify. A local
+    // rather than inline in the LazyColumn call because both arms place rows
+    // with it.
+    val rowAlignment = when (s?.alignItems?.ifEmpty { s.align }) {
+        "flex-start", "start" -> Alignment.Start
+        "center" -> Alignment.CenterHorizontally
+        "flex-end", "end" -> Alignment.End
+        // A stretched row is filled by the modifier the item loop applies,
+        // not placed by the stack. Same shape as Row and Column above.
+        "stretch" -> Alignment.Start
+        else -> Alignment.Start
+    }
+
+    // # A List with no height to be lazy in
+    //
+    // LazyColumn is a scroll container, and like verticalScroll it throws when
+    // measured under an infinite maximum height ("Vertically scrollable
+    // component was measured with an infinity maximum height constraints").
+    // A List with no Height inside a scrolled page is exactly that — the
+    // tutorial's outline demo (4.3) and both GroupedList demos (4.6) sit in
+    // comps.Screen{Scroll: true} — and the DOM draws it as a plain column of
+    // every row at content height, since a List there is a flex column with
+    // no overflow of its own.
+    //
+    //     incoming maxHeight   arm
+    //     ------------------   ---------------------------------------------
+    //     bounded              LazyColumn, as before: rows on screen composed
+    //     infinite             GrMobListAtContentHeight: every row, in a Column
+    //
+    // Laziness has nothing to save in the second case anyway: with no viewport
+    // every row is "on screen", and LazyColumn would compose them all.
+    //
+    // BoxWithConstraints is how composition learns the constraint; it is a
+    // SubcomposeLayout and so cannot answer intrinsic measurements, which a
+    // LazyColumn could not either — nothing that worked stops working.
+    //
+    // The Box carries the node's modifiers (the parent's weight or fill, size,
+    // padding, background, gestures) where the LazyColumn used to, and
+    // propagateMinConstraints hands the Box's own min/max down unchanged, so a
+    // bounded List measures exactly as it did: a fixed Height is still both
+    // bounds of the lazy list, and a wrapping List still wraps.
+    BoxWithConstraints(
+        s.boxModifier(extra, gestureModifier(node)),
+        propagateMinConstraints = true,
+    ) {
+        if (!constraints.hasBoundedHeight) {
+            GrMobListAtContentHeight(s, rows, rowAlignment)
+        } else {
+            LazyColumn(
+                state = listState,
+                verticalArrangement = verticalArrangement(s),
+                horizontalAlignment = rowAlignment,
+            ) {
+                // A hand-written loop rather than itemsIndexed, because the two kinds
+                // of row are declared with two different DSL calls: core.StickyHeader
+                // marks a child as a group band, and a band is emitted through
+                // stickyHeader {} so the lazy list pins it while its run scrolls
+                // underneath. Everything else is an ordinary item {}. itemsIndexed
+                // can only emit one kind, so it cannot express a list that has both.
+                //
+                // The key and contentType arguments are the same values itemsIndexed
+                // was deriving — row key falling back to position, node type — so row
+                // identity and view recycling are unchanged for a list with no
+                // headers in it.
+
+                // Cross-axis stretch, in the same spelling ColumnChildren uses: a
+                // List's cross axis is horizontal like a Column's, so it takes the
+                // column helper — the one that reads the Style.Align fallback. This
+                // used to call isStretch, the Row spelling that tests alignItems
+                // alone, while the placement dispatch above read the fallback:
+                // Align(AlignStretch) with AlignItems unset took the "stretch" arm,
+                // whose comment promises this modifier fills the row, and then
+                // nothing filled it. A lazy item has no weight to combine the fill
+                // with, since a lazy list's main axis is scrollable and therefore
+                // unbounded.
+                //
+                // Read here, in GrMobList itself, rather than in a helper beside
+                // rowPlacement: this is what mobile/verify's
+                // TestListStretchFillReadsTheAlignFallback anchors on, and a helper
+                // the test cannot see would hide the next drift as well as the first
+                // one hid itself.
+                val stretch = isColumnStretch(s)
+                rows.forEachIndexed { i, row ->
+                    val key = row.key.ifEmpty { i }
+                    val fill = if (stretch && !hugsContent(row.style)) {
+                        Modifier.fillMaxWidth()
+                    } else {
+                        Modifier
+                    }
+                    if (isStickyHeader(row)) {
+                        stickyHeader(key = key, contentType = row.type) {
+                            // No placement animation on a pinned header: while it is
+                            // stuck, the lazy list is positioning it itself every
+                            // frame, and an animation competing for the same offset
+                            // makes it drift. Its rows still animate.
+                            RenderNode(row, fill)
+                        }
+                    } else {
+                        item(key = key, contentType = row.type) {
+                            RenderNode(row, rowPlacement(s).then(fill))
+                        }
+                    }
+                }
             }
-            if (isStickyHeader(row)) {
-                stickyHeader(key = key, contentType = row.type) {
-                    // No placement animation on a pinned header: while it is
-                    // stuck, the lazy list is positioning it itself every
-                    // frame, and an animation competing for the same offset
-                    // makes it drift. Its rows still animate.
-                    RenderNode(row, fill)
+        }
+    }
+}
+
+/**
+ * A core.List measured under an unbounded height: every row, in a plain Column,
+ * at the content's height. See "A List with no height to be lazy in" in
+ * GrMobList for when this arm is taken and why it cannot be a LazyColumn.
+ *
+ * The rows are the lazy arm's rows with the same identity and fill: keyed by
+ * row key falling back to position, and stretched across by the same
+ * isColumnStretch/hugsContent pair, so a List that changes arms between passes
+ * keeps each row's composition.
+ *
+ * Three lazy behaviours have nothing to act on here and are absent on purpose:
+ *
+ *  - core.StickyHeader. A band pins to *this* list's viewport, and this list
+ *    has none — the page around it is what scrolls. The header renders as an
+ *    ordinary row, which is also what the DOM draws for a sticky element whose
+ *    scroll container is taller than it.
+ *  - Placement animation. animateItemPlacement exists only in a lazy item
+ *    scope; rows still animate their own style under their own Transition.
+ *  - core.OnEndReached. EndReachedReporter watches the lazy state's visible
+ *    rows, which this arm never feeds, so it does not fire. An endless feed
+ *    needs a viewport to have an end — give the List a Height (the tutorial's
+ *    4.8 does).
+ */
+@Composable
+private fun GrMobListAtContentHeight(
+    s: GrMobStyle?,
+    rows: List<GrMobNode>,
+    rowAlignment: Alignment.Horizontal,
+) {
+    val stretch = isColumnStretch(s)
+    Column(
+        verticalArrangement = verticalArrangement(s),
+        horizontalAlignment = rowAlignment,
+    ) {
+        rows.forEachIndexed { i, row ->
+            key(row.key.ifEmpty { i }) {
+                val fill = if (stretch && !hugsContent(row.style)) {
+                    Modifier.fillMaxWidth()
+                } else {
+                    Modifier
                 }
-            } else {
-                item(key = key, contentType = row.type) {
-                    RenderNode(row, rowPlacement(s).then(fill))
-                }
+                RenderNode(row, fill)
             }
         }
     }
