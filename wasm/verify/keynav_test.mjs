@@ -1525,3 +1525,112 @@ test("an arrow steps over a disabled radio", () => {
     assert.equal(radios[1].getAttribute("tabindex"), null,
         "a radio the walk skips is not given a stop to rove through");
 });
+
+// --------------------------------------------------------------------------
+// A container control outside any toolbar
+// --------------------------------------------------------------------------
+//
+// The same Box-with-a-role-and-a-handler the toolbar test above takes as a
+// member, standing on its own. comps.DatePicker's trigger is exactly this
+// shape, and before the runtime gave it a tab stop, 80 presses of Tab in a real
+// Chrome never reached it on tutorial lesson 4.9.
+
+function boxControl(role, { onClick = "cb_0", disabled, type = "Row" } = {}) {
+    const Style = { AccessibilityRole: role, AccessibilityLabel: "Choose a date" };
+    if (disabled) Style.Disabled = true;
+    const Props = {};
+    if (onClick) Props.onClick = onClick;
+    return { Type: type, Style, Props };
+}
+
+test("a Box that says it is a button and has a handler is a tab stop on its own", () => {
+    const t = mountTree({ Type: "Column", Children: [boxControl("button"), boxControl("link", { onClick: "cb_1" })] });
+    assert.deepEqual(t.tabindexes(), ["0", "0"]);
+});
+
+test("Enter and Space run a standalone button's onClick, once, and claim the key", () => {
+    const t = mountTree({ Type: "Column", Children: [boxControl("button")] });
+    const trigger = t.root.children[0];
+    for (const key of ["Enter", " "]) {
+        const e = trigger.dispatch("keydown", { key });
+        assert.equal(e.defaultPrevented, true, key);
+    }
+    assert.deepEqual(t.rt.dispatched, [{ id: "cb_0", payload: {} }, { id: "cb_0", payload: {} }]);
+});
+
+test("a standalone link answers Enter and leaves Space to the page", () => {
+    // <a href> is activated by Enter alone; Space scrolls.
+    const t = mountTree({ Type: "Column", Children: [boxControl("link")] });
+    const link = t.root.children[0];
+    const space = link.dispatch("keydown", { key: " " });
+    assert.equal(space.defaultPrevented, false);
+    assert.deepEqual(t.rt.dispatched, []);
+    link.dispatch("keydown", { key: "Enter" });
+    assert.deepEqual(t.rt.dispatched, [{ id: "cb_0", payload: {} }]);
+});
+
+test("a standalone control refuses modified, repeated and descendant keystrokes", () => {
+    const t = mountTree({ Type: "Column", Children: [boxControl("button")] });
+    const trigger = t.root.children[0];
+    trigger.dispatch("keydown", { key: "Enter", ctrlKey: true });
+    trigger.dispatch("keydown", { key: "Enter", metaKey: true });
+    trigger.dispatch("keydown", { key: "Enter", repeat: true });
+    trigger.dispatch("keydown", { key: "Enter", target: {} });
+    assert.deepEqual(t.rt.dispatched, []);
+});
+
+test("no handler, no role, or a native tag: no tab stop written", () => {
+    const t = mountTree({
+        Type: "Column",
+        Children: [
+            boxControl("button", { onClick: "" }),
+            { Type: "Row", Style: {}, Props: { onClick: "cb_1" } },
+            { Type: "Button", Style: { AccessibilityRole: "button" }, Props: { onClick: "cb_2" } },
+        ],
+    });
+    assert.deepEqual(t.tabindexes(), [null, null, null]);
+});
+
+test("a disabled standalone control has no tab stop, and gets it back when enabled", () => {
+    // A disabled <button> is out of the tab order; the Box control matches it.
+    const rt = loadRuntime();
+    rt.GrMob.mount(JSON.stringify({ Type: "Column", Children: [boxControl("button", { disabled: true })] }));
+    rt.drainFrames();
+    const trigger = nodeAt(rt.document, "root/0");
+    assert.equal(trigger.getAttribute("tabindex"), null);
+    trigger.dispatch("keydown", { key: "Enter" });
+    assert.deepEqual(rt.dispatched, []);
+
+    rt.GrMob.patch(JSON.stringify([{
+        Type: "update-style", TargetID: "root/0",
+        Changes: { AccessibilityRole: "button", AccessibilityLabel: "Choose a date" },
+    }]));
+    rt.drainFrames();
+    assert.equal(trigger.getAttribute("tabindex"), "0");
+
+    rt.GrMob.patch(JSON.stringify([{
+        Type: "update-style", TargetID: "root/0",
+        Changes: { AccessibilityLabel: "Choose a date" },
+    }]));
+    rt.drainFrames();
+    assert.equal(trigger.getAttribute("tabindex"), null, "losing the role loses the stop");
+});
+
+test("a standalone control inside an aria-hidden subtree gets no tab stop", () => {
+    const t = mountTree({
+        Type: "Column",
+        Children: [{ Type: "Box", Style: { AccessibilityHidden: true }, Children: [boxControl("button")] }],
+    });
+    assert.equal(t.root.children[0].children[0].getAttribute("tabindex"), null);
+});
+
+test("a toolbar member keeps the roving tabindex and answers Enter once", () => {
+    // The toolbar's handleCompositeKey activates its members; the standalone
+    // handler must stand aside, or Enter would run the handler twice.
+    const tb = toolbar([boxControl("button"), boxControl("button", { onClick: "cb_1" })]);
+    assert.deepEqual(tb.tabindexes(), ["0", "-1"]);
+    const first = tb.root.children[0];
+    first.focus();
+    first.dispatch("keydown", { key: "Enter" });
+    assert.deepEqual(tb.rt.dispatched, [{ id: "cb_0", payload: {} }]);
+});

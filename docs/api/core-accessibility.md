@@ -895,13 +895,15 @@ These are the two the "Content roles" block above argues for in as many words: a
 
 The WASM runtime's toolbar keyboard needs it. A toolbar's members are named by no role (ARIA defines no \`toolbaritem\`), so the runtime has to be told what a control is, and its answer is two rules: a natively focusable tag, or a container carrying one of \*these\* roles together with an OnTap. That second rule was a pair of bare strings in the runtime pinned against a pair of constants hand-written in a test — three copies of one fact, none of which was the fact itself.
 
+The same two roles decide the other half of the web keyboard: a container carrying one with an OnTap and standing \*outside\* any toolbar gets a tab stop of its own and Enter/Space activation from the runtime, which is what a \<button> gets from the browser (docs/platforms/wasm.md, "A container control outside any toolbar"). comps.DatePicker's trigger was unreachable by Tab until that rule existed.
+
 The fact is here now, and role\_control\_test.go is what makes it a property rather than a fourth copy: every role core declares is either in this list or in a table saying why it is not one, so a new role cannot be added without somebody deciding. That was the actual hole — a future RoleCheckbox would be a tappable container by exactly the argument above, and would silently not be a toolbar member.
 
 ##### Why not "every role a screen reader calls a widget"
 
 Because the question is narrower than it looks: not "is this thing interactive" but "does putting this role on a plain container make it a control the browser should give a tab stop to". RoleOption and RoleTab are interactive and are \*not\* here — they are members of a composite, whose tab stop belongs to their container and not to them, and taking one as a toolbar's control would put a second keyboard on a widget that has one.
 
-<small>[core/role.go:1011](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L1011)</small>
+<small>[core/role.go:1018](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L1018)</small>
 
 ### type SelectedState
 
