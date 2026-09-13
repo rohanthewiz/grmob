@@ -583,14 +583,22 @@ trailing edge, and the **whole row** tappable rather than only the control.
 comps.SwitchRow{Title: "Notifications", Subtitle: "Push and email",
     On: notify.Get(), OnToggle: notify.Set}
 
-comps.CheckboxRow{Title: "I agree to the terms",
-    Checked: agreed.Get(), OnToggle: agreed.Set}
+comps.CheckboxRow{Title: "Also delete attachments",
+    Checked: purge.Get(), OnToggle: purge.Set}
 ```
 
 Both are a `ListRow` with the trailing slot fixed to `core.Switch` or
 `core.Checkbox` and `OnTap` wired to the same setter. Pick the switch for a
 setting that takes effect on the tap and the checkbox for a value a form
 collects later; see `core.Switch` for why those are different controls.
+
+**Which edge the checkbox is on.** `CheckboxRow` is for a row that *is an
+option* — a setting, a filter, "also delete attachments" — and puts the
+checkbox trailing, in the same column as a `SwitchRow`'s switch. A row that is
+*the thing being marked* — a task done, a sentence agreed to — leads with the
+checkbox instead, because the mark is read before the content; build that with
+`ListRow{Leading: core.Checkbox(…)}`, as the todo list above and the terms box
+in the forms section do.
 
 **One tap, one change.** The row and the control are both tappable, and the
 targets disagree about what a tap on the control reaches:
