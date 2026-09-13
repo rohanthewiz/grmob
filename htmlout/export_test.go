@@ -1820,6 +1820,41 @@ func TestSpinExportsAnAnimationAndItsKeyframes(t *testing.T) {
 	}
 }
 
+// A Transition brings the reduced-motion rule, and only that rule: an inline
+// transition can be switched off from a sheet alone, so an export without it
+// would slide and resize for a reader who asked the system not to.
+func TestTransitionExportsTheReducedMotionRule(t *testing.T) {
+	out := ExportHTML(&core.Node{
+		Type:  "Box",
+		Props: map[string]any{},
+		Style: &core.Style{Transition: "250ms ease"},
+	})
+	if !strings.Contains(out, core.ReducedMotionCSS) {
+		t.Errorf("a transitioning export has no reduced-motion rule:\n%s", out)
+	}
+	if strings.Contains(out, core.SpinKeyframes) {
+		t.Errorf("nothing spins, yet the export carries the spin keyframes:\n%s", out)
+	}
+	// Inside the head, not before it: the builder writes tags as they are
+	// called, so a rule built ahead of Head() lands outside it.
+	head, rule := strings.Index(out, "<head>"), strings.Index(out, core.ReducedMotionCSS)
+	if head < 0 || rule < head || rule > strings.Index(out, "</head>") {
+		t.Errorf("the reduced-motion rule is not inside <head>:\n%s", out)
+	}
+}
+
+// A tree with no motion writes no head, so every such export is byte-for-byte
+// what it was before the motion rules existed.
+func TestStillExportWritesNoHead(t *testing.T) {
+	out := ExportHTML(&core.Node{
+		Type:     "Column",
+		Children: []*core.Node{{Type: "Box", Props: map[string]any{}, Style: &core.Style{Rotate: 10}}},
+	})
+	if strings.Contains(out, "<head") {
+		t.Errorf("a still export gained a head:\n%s", out)
+	}
+}
+
 // Anticlockwise is the same rule reversed, and an author's Animation rides in
 // the same list after the spin rather than in a second declaration that would
 // replace it.

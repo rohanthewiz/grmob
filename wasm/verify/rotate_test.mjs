@@ -75,6 +75,21 @@ test("a spinning node names grmob-spin and the document gains its keyframes once
         "@keyframes grmob-spin{from{rotate:0deg}to{rotate:360deg}}");
 });
 
+// core.Transition: the reduced-motion rule, once, in a sheet of its own so a
+// page that only spins keeps exactly the one sheet the test above counts.
+test("a transitioning node adds the reduced-motion rule once, beside the spin's", () => {
+    const { rt, at } = mount([
+        box({ Transition: "250ms ease" }),
+        box({ Transition: "100ms linear", Spin: 1000 }),
+    ]);
+    assert.equal(at(0).style.transition, "all 250ms ease");
+    const texts = rt.document.head.children.map((s) => s.textContent);
+    assert.equal(texts.length, 2, "one sheet per rule, however many nodes need it");
+    assert.ok(texts.includes(
+        `@media (prefers-reduced-motion:reduce){[style*="transition"]{transition:none!important}}`));
+    assert.ok(texts.includes("@keyframes grmob-spin{from{rotate:0deg}to{rotate:360deg}}"));
+});
+
 test("a still page adds no stylesheet", () => {
     const { rt } = mount([box({ Rotate: 10 })]);
     assert.equal(rt.document.head.children.length, 0);

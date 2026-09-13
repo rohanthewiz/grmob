@@ -1049,6 +1049,9 @@ private struct GrMobList: View {
     let node: GrMobNode
     let grow: GrMobGrow
     @Environment(\.grMobDispatch) private var dispatch
+    /// Row placement animates under the List's Transition, so it snaps under
+    /// Reduce Motion like every other Transition (see grMobTransition).
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let s = node.style
@@ -1104,14 +1107,14 @@ private struct GrMobList: View {
                         }
                     }
                 }
-                .animation(s?.swiftUIAnimation, value: rows.map(\.viewID))
+                .animation(reduceMotion ? nil : s?.swiftUIAnimation, value: rows.map(\.viewID))
             } else {
                 LazyVStack(alignment: crossAlignmentH(s), spacing: s?.verticalGap ?? 0) {
                     ForEach(rows, id: \.viewID) { child in
                         rowView(child, stretch: stretch, last: rows.last)
                     }
                 }
-                .animation(s?.swiftUIAnimation, value: rows.map(\.viewID))
+                .animation(reduceMotion ? nil : s?.swiftUIAnimation, value: rows.map(\.viewID))
             }
         }
         .grMobKeyboardAware(node.boolProp("keyboardAware"))

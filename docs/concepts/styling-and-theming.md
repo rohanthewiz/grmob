@@ -1542,6 +1542,20 @@ core.Button(label, onTap,
 )
 ```
 
+**Reduced motion snaps it.** With the platform's reduce-motion setting on, a
+transitioned change lands at once, on every target, and the setting is read
+live, so turning it on applies to the next change:
+
+| target | how |
+|---|---|
+| htmlout / WASM | `core.ReducedMotionCSS` in the document: `transition: none !important` on elements with an inline transition, under `prefers-reduced-motion: reduce` |
+| Compose | nothing added: "Remove animations" sets the animator duration scale to 0, and Compose's tweens already play straight to their end under it |
+| SwiftUI | `@Environment(\.accessibilityReduceMotion)` swaps the node's `Animation` for nil |
+
+Colour fades snap too. Only motion is the setting's concern, but SwiftUI scopes an
+animation to a value rather than a property, and one rule held by every target
+beats a finer one held by two.
+
 ## Spin
 
 `Spin(periodMs)` turns a node one revolution every `periodMs` milliseconds,
@@ -1569,5 +1583,8 @@ fixed angle and a spin together.
 **Hidden stops it.** A node with `Display` none is not composed on the natives
 and runs no CSS animation, so it draws no frames.
 
-**Reduced motion is not read.** No target consults the platform's reduce-motion
-setting, for `Transition` or for `Spin`.
+**Reduced motion: it keeps turning.** A spin is not stopped or slowed under the
+platform's reduce-motion setting. Its motion is the message ("still working"),
+an in-place turn of a small glyph is not the sliding or zooming the setting is
+for, and iOS's own activity indicator keeps spinning too. Use `Spin` for status,
+not for decoration. `Transition` is the opposite: see below.

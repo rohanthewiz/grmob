@@ -26,7 +26,7 @@ func ExportHTML(node *core.Node) string {
 	b := element.NewBuilder()
 	// b.Html writes the <!DOCTYPE html> declaration itself.
 	b.Html("lang", "en").R(
-		spinStylesheet(b, node),
+		motionStylesheet(b, node),
 		b.Body().R(
 			// "root" is the node path of the tree's root, the same name Go's
 			// reconciler gives it (reconcile.Patch's TargetIDs are "root/1/0")
@@ -44,44 +44,64 @@ func ExportHTML(node *core.Node) string {
 	return b.Pretty()
 }
 
-// spinStylesheet writes a <head> holding core.SpinKeyframes when any node in
-// the tree spins, and nothing otherwise.
+// motionStylesheet writes a <head> holding the rules the tree's motion needs:
+// core.SpinKeyframes when any node spins, core.ReducedMotionCSS when any node
+// declares a Transition. A tree with neither gets no head at all.
 //
-// Conditional rather than always present so that every export without a
-// spinning node is byte-for-byte what it was before Spin existed: the head is
-// the one stylesheet this exporter writes, and it exists only because an
-// `animation` naming grmob-spin is inert without its rule (the gap the
-// Style.Animation note below describes for author-named animations). The
-// constant is core's, not a copy, and the WASM runtime's restatement is held
-// to it by wasm/verify. Returns any for the same reason renderNode does.
-func spinStylesheet(b *element.Builder, node *core.Node) (x any) {
-	if !treeSpins(node) {
+// Conditional rather than always present so that every export without motion
+// is byte-for-byte what it was before these rules existed: the head is the one
+// stylesheet this exporter writes. The keyframes exist because an `animation`
+// naming grmob-spin is inert without its rule (the gap the Style.Animation
+// note below describes for author-named animations); the reduced-motion rule
+// exists because an inline transition can only be switched off from a sheet
+// (see core.ReducedMotionCSS). The constants are core's, not copies, and the
+// WASM runtime's restatements are held to them by wasm/verify. Returns any for
+// the same reason renderNode does.
+func motionStylesheet(b *element.Builder, node *core.Node) (x any) {
+	spins, transitions := treeMotion(node)
+	if !spins && !transitions {
 		return
 	}
+	// The rules are built as arguments of Head().R, not collected beforehand:
+	// element's builder writes each tag the moment it is called, so a <style>
+	// built before b.Head() would land in front of the <head> it belongs in.
 	b.Head().R(
-		// T, not TE: the rule is a constant of this module, not user text,
-		// and entity-escaping would break the braces' meaning for no gain.
-		b.Style().R(b.T(core.SpinKeyframes)),
+		motionRule(b, spins, core.SpinKeyframes),
+		motionRule(b, transitions, core.ReducedMotionCSS),
 	)
 	return
 }
 
-// treeSpins reports whether any node in the tree declares core.Spin. A full
-// walk, transparent grouping nodes included: a Fragment's children still
-// render, so a spin under one still needs the rule.
-func treeSpins(n *core.Node) bool {
-	if n == nil {
-		return false
+// motionRule writes one <style> holding rule when wanted, and nothing
+// otherwise. T, not TE: the rules are constants of this module, not user text,
+// and entity-escaping would break the braces' and quotes' meaning for no gain.
+func motionRule(b *element.Builder, wanted bool, rule string) (x any) {
+	if wanted {
+		b.Style().R(b.T(rule))
 	}
-	if n.Style != nil && n.Style.Spin != 0 {
-		return true
+	return
+}
+
+// treeMotion reports whether any node in the tree declares core.Spin, and
+// whether any declares core.Transition. A full walk, transparent grouping
+// nodes included: a Fragment's children still render, so motion under one
+// still needs its rule.
+func treeMotion(n *core.Node) (spins, transitions bool) {
+	if n == nil {
+		return false, false
+	}
+	if n.Style != nil {
+		spins = n.Style.Spin != 0
+		transitions = n.Style.Transition != ""
 	}
 	for _, c := range n.Children {
-		if treeSpins(c) {
-			return true
+		if spins && transitions {
+			break
 		}
+		s, t := treeMotion(c)
+		spins, transitions = spins || s, transitions || t
 	}
-	return false
+	return spins, transitions
 }
 
 // animationDecl is the value of the CSS `animation` property for a style: the

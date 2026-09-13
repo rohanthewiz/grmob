@@ -74,6 +74,18 @@ func TestRuntimeSpinKeyframesMatchCore(t *testing.T) {
 	}
 }
 
+// The runtime's REDUCED_MOTION_CSS is core.ReducedMotionCSS, restated. A drift
+// here fails silently in the other direction from a spin: nothing stops moving,
+// the rule just never matches, and a reader who asked for reduced motion gets
+// every slide and resize anyway on the live page while the export honours it.
+func TestRuntimeReducedMotionRuleMatchesCore(t *testing.T) {
+	want := "const REDUCED_MOTION_CSS = `" + core.ReducedMotionCSS + "`;"
+	if !strings.Contains(runtimeSource(t), want) {
+		t.Errorf("grmob-runtime.js: no %s — the live page's reduced-motion rule has "+
+			"drifted from core.ReducedMotionCSS, which htmlout writes into exports", want)
+	}
+}
+
 // parseRuntimeTable lifts the object literal out of the named runtime lookup
 // and returns it as a map, having first proved that it found the right braces:
 // the literal must be followed by the `[type] || "<fallback>"` that makes it a

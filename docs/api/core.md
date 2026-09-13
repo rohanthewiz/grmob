@@ -130,7 +130,7 @@ Package core's reference is split into 10 topic pages by source file. The index 
     - [`type StackAlignment`](core-layout.md#type-stackalignment)
         - [`func StackAlignments`](core-layout.md#func-stackalignments)
 - [Styling](core-style.md)
-    - [Constants](core-style.md#constants) — `AlignItemsCenter`, `AlignItemsEnd`, `AlignItemsStart`, `AlignItemsStretch`, `DisplayFlex`, `FlexColumn`, `FlexRow`, `JustifyAround`, `JustifyBetween`, `JustifyCenter`, `JustifyEnd`, `JustifyEvenly`, and 3 more
+    - [Constants](core-style.md#constants) — `AlignItemsCenter`, `AlignItemsEnd`, `AlignItemsStart`, `AlignItemsStretch`, `DisplayFlex`, `FlexColumn`, `FlexRow`, `JustifyAround`, `JustifyBetween`, `JustifyCenter`, `JustifyEnd`, `JustifyEvenly`, and 4 more
     - [Variables](core-style.md#variables) — `TextInputStyle`
     - [`func DangerColor`](core-style.md#func-dangercolor)
     - [`func LinearGradient`](core-style.md#func-lineargradient)

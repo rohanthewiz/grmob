@@ -496,6 +496,14 @@ struct GrMobBoxModifier: ViewModifier {
     let onLongPress: String
     let axis: Axis?
 
+    /// The system's Reduce Motion setting. Read here, once per box, rather
+    /// than folded into GrMobStyle.swiftUIAnimation, because the style is
+    /// parsed from the wire and has no environment; reading it in the view
+    /// also means toggling the setting re-evaluates the chain without a patch.
+    /// Only Transition consults it: GrMobSpin keeps turning (see core.Spin,
+    /// "Reduced motion: it keeps turning").
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     func body(content: Content) -> some View {
         // Bound once so the chain below reads exactly as it did when it was
         // a chain of extensions on `self`.
@@ -563,7 +571,7 @@ struct GrMobBoxModifier: ViewModifier {
             .grMobAccessibility(s)
             .grMobRole(s)
             .grMobValueText(s)
-            .grMobTransition(s)
+            .grMobTransition(s, reduceMotion: reduceMotion)
     }
 }
 
@@ -608,8 +616,12 @@ extension View {
     /// layer on top of grMobBox's opaque-type tower crashes the Swift
     /// compiler ("non-terminating conformance substitution" in
     /// substOpaqueTypesWithUnderlyingTypes).
-    fileprivate func grMobTransition(_ s: GrMobStyle?) -> some View {
-        animation(s?.swiftUIAnimation, value: s)
+    ///
+    /// Under Reduce Motion the Animation is nil, so every change snaps, which
+    /// is core.Transition's "Reduced motion" rule on this target. Still the
+    /// same single `.animation` modifier either way, for the reason above.
+    fileprivate func grMobTransition(_ s: GrMobStyle?, reduceMotion: Bool) -> some View {
+        animation(reduceMotion ? nil : s?.swiftUIAnimation, value: s)
     }
 
     /// Accessibility semantics from the Go style. Hidden wins and prunes the

@@ -321,8 +321,8 @@ class Document {
     constructor() {
         this.activeElement = null;
         this.body = new Element(this, "body");
-        // The runtime appends one <style> here, the first time a node declares
-        // core.Spin (ensureSpinKeyframes). Detached from body on purpose, as
+        // The runtime appends a <style> here per rule, the first time a node
+        // declares core.Spin or core.Transition (ensureRule). Detached from body on purpose, as
         // a real head is: querySelector walks body, so the stylesheet can
         // never be mistaken for a rendered node.
         this.head = new Element(this, "head");

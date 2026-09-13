@@ -218,7 +218,20 @@ data class GrMobStyle(
         fun stated(): Boolean = now != null || min != null || max != null || text.isNotEmpty()
     }
 
-    /** This node's property-change animation spec (callers gate on transitionMs > 0). */
+    /**
+     * This node's property-change animation spec (callers gate on transitionMs > 0).
+     *
+     * Reduced motion needs nothing here. Android's reduce-motion switch is
+     * "Remove animations", which sets Settings.Global.ANIMATOR_DURATION_SCALE
+     * to 0; Compose's window recomposer observes that setting and installs it
+     * as the MotionDurationScale of every animation coroutine, and a tween run
+     * under scale 0 plays straight to its end value (read in Compose 1.10's
+     * WindowRecomposer.android.kt and SuspendAnimation.kt). So the background
+     * fade, animateContentSize and item placement all snap already, live, which
+     * is core.Transition's rule. Reading the setting again here would only add
+     * a second, non-observing copy of it. SpinNode does not use a scaled
+     * animation and keeps turning, by design; see core.Spin.
+     */
     fun <T> transitionTween() = tween<T>(transitionMs, easing = transitionEasing)
 
     /**
@@ -1031,7 +1044,9 @@ fun SemanticsPropertyReceiver.grMobSelected(state: String) {
  * frame source Compose's own infinite animations use, and it tells test
  * clocks and idling machinery that this loop never finishes, so a UI test
  * waiting for idle does not hang on a visible spinner. It does not read the
- * animator duration scale; see core.Spin, "Reduced motion".
+ * animator duration scale, and that is the decision rather than a gap: a
+ * spinner keeps turning under "Remove animations", as core.Spin's "Reduced
+ * motion: it keeps turning" argues.
  */
 private data class SpinElement(val periodMs: Int) : ModifierNodeElement<SpinNode>() {
     override fun create() = SpinNode(periodMs)
