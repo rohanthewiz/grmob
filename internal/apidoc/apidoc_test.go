@@ -3,6 +3,7 @@ package apidoc
 import (
 	"bytes"
 	"go/build"
+	"go/doc"
 	"os"
 	"path"
 	"path/filepath"
@@ -287,6 +288,132 @@ func TestNavListsEveryPage(t *testing.T) {
 			t.Errorf("mkdocs.yml nav does not mention %q", name)
 		}
 	}
+}
+
+// TestTopicsPartitionTheirPackage holds a split package's topic pages to being
+// a partition of the package: every declaration on exactly one page, and each
+// of splitTopics' three refusals actually firing when its table is wrong.
+//
+// The staleness gate cannot see the first property on its own. A declaration
+// dropped by a bad split is absent from both the generated and the committed
+// pages, which then agree perfectly.
+func TestTopicsPartitionTheirPackage(t *testing.T) {
+	pkgs, err := LoadAll(root(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	split := 0
+	for _, l := range pkgs {
+		if len(l.Pkg.Topics) == 0 {
+			continue
+		}
+		split++
+
+		parts, err := splitTopics(l)
+		if err != nil {
+			t.Fatalf("%s: %v", l.Pkg.Dir, err)
+		}
+
+		// Counted by name, so a declaration on two pages and one on none
+		// cannot cancel out.
+		seen := map[string]int{}
+		for _, p := range parts {
+			for _, name := range declNames(p.Doc) {
+				seen[name]++
+			}
+		}
+		for _, name := range declNames(l.Doc) {
+			if seen[name] != 1 {
+				t.Errorf("%s: %s is on %d topic pages, want 1", l.Pkg.Dir, name, seen[name])
+			}
+			delete(seen, name)
+		}
+		for name := range seen {
+			t.Errorf("%s: topic pages document %s, which the package does not declare", l.Pkg.Dir, name)
+		}
+
+		// The refusals, each provoked on a copy of the real table.
+		retry := func(edit func(topics []Topic) []Topic) error {
+			m := *l
+			m.Pkg.Topics = edit(cloneTopics(l.Pkg.Topics))
+			_, err := splitTopics(&m)
+			return err
+		}
+		declaring := filepath.Base(l.FSet.Position(l.Doc.Types[0].Decl.Pos()).Filename)
+		for _, tc := range []struct {
+			name, want string
+			edit       func([]Topic) []Topic
+		}{
+			{"unlisted file", "no topic lists the file", func(ts []Topic) []Topic {
+				for i := range ts {
+					ts[i].Files = slicesWithout(ts[i].Files, declaring)
+				}
+				return ts
+			}},
+			{"stale file", "not a source file", func(ts []Topic) []Topic {
+				ts[0].Files = append(ts[0].Files, "no_such_file.go")
+				return ts
+			}},
+			{"file in two topics", "listed in both", func(ts []Topic) []Topic {
+				last := len(ts) - 1
+				ts[last].Files = append(ts[last].Files, ts[0].Files[0])
+				return ts
+			}},
+		} {
+			err := retry(tc.edit)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("%s, %s: splitTopics returned %v, want an error containing %q",
+					l.Pkg.Dir, tc.name, err, tc.want)
+			}
+		}
+	}
+	if split == 0 {
+		t.Fatal("no package in Packages has Topics, so nothing here was tested")
+	}
+}
+
+// declNames is every top-level declaration a documentation slice renders, with
+// a kind prefix so a function and a type of the same name stay distinct.
+// Methods and typed constants are left out: they are held to their type, and
+// the type is counted.
+func declNames(d *doc.Package) []string {
+	var out []string
+	for _, v := range d.Consts {
+		out = append(out, "const "+strings.Join(v.Names, ","))
+	}
+	for _, v := range d.Vars {
+		out = append(out, "var "+strings.Join(v.Names, ","))
+	}
+	for _, fn := range d.Funcs {
+		out = append(out, "func "+fn.Name)
+	}
+	for _, ty := range d.Types {
+		out = append(out, "type "+ty.Name)
+		for _, fn := range ty.Funcs {
+			out = append(out, "func "+fn.Name)
+		}
+	}
+	return out
+}
+
+func cloneTopics(ts []Topic) []Topic {
+	out := make([]Topic, len(ts))
+	for i, t := range ts {
+		t.Files = append([]string(nil), t.Files...)
+		out[i] = t
+	}
+	return out
+}
+
+func slicesWithout(s []string, drop string) []string {
+	out := s[:0:0]
+	for _, v := range s {
+		if v != drop {
+			out = append(out, v)
+		}
+	}
+	return out
 }
 
 // TestPackagesCoversEveryPublicPackage walks the tree and fails on an

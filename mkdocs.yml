@@ -59,7 +59,20 @@ nav:
   # missing from it.
   - API Reference:
       - Overview: api/index.md
-      - core: api/core.md
+      # core is split into topic pages (apidoc.Pkg.Topics); its package page
+      # is the topics' index.
+      - core:
+          - Overview: api/core.md
+          - Views & state: api/core-views.md
+          - Layout: api/core-layout.md
+          - Styling: api/core-style.md
+          - Theming: api/core-theme.md
+          - Controls: api/core-controls.md
+          - Editors: api/core-editors.md
+          - Events & focus: api/core-events.md
+          - Navigation & overlays: api/core-navigation.md
+          - Accessibility: api/core-accessibility.md
+          - Device services: api/core-device.md
       - hooks: api/hooks.md
       - render: api/render.md
       - reconcile: api/reconcile.md

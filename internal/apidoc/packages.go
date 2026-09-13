@@ -43,6 +43,65 @@ type Pkg struct {
 	// on what the package *is*; this says when you reach for it, which is the
 	// question an index answers and a doc comment does not.
 	Blurb string
+
+	// Topics, when set, splits the package's reference across several pages:
+	// the package page keeps the package comment and becomes an index of the
+	// topic pages, and each topic gets a sibling page of its own. Left empty,
+	// the package is one page, which is right for every package whose page a
+	// reader can still scroll. See Topic.
+	Topics []Topic
+}
+
+// Topic is one page of a split package: the declarations of a named set of
+// source files.
+//
+// # Why by source file
+//
+// A page has to be decided per declaration, and the only grouping a
+// declaration carries without anyone maintaining it is the file it lives in.
+// grmob's files are already cut along topic lines (layout.go, theme.go,
+// audio.go), so a table of files is short, reads as a table of contents, and
+// changes only when a file is added — which is exactly when someone should
+// decide where its declarations are documented. The alternatives go stale in
+// the way that matters for a generated reference: a table of symbol names
+// needs an edit for every new function, and a prefix rule ("Audio*") files
+// OnAudioStatus under O.
+//
+// Every type, function and const or var block is placed by its own file, with
+// one exception: go/doc attaches methods and typed constants to their type, and
+// they follow the type onto its page even when declared elsewhere —
+// (*Context).OnClose, written in cleanup.go, is documented beside Context. A
+// constructor is not an exception: go/doc also attaches those to the type they
+// return, and splitTopics moves each back to its own file's page, because in
+// core nearly everything returns View.
+//
+// # What keeps the table honest
+//
+// splitTopics fails the generator, and therefore `go test ./internal/apidoc`,
+// when a file declares something documented and no topic lists it (its
+// declarations would be on no page), when a listed file is not a source file of
+// the package (a rename left the table behind), and when two topics list the
+// same file. A file with nothing exported may be left out.
+type Topic struct {
+	// Slug names the page: Pkg.Page() without ".md", a dash, then Slug
+	// ("core-layout.md"). The page stays a flat sibling of every other page,
+	// so cross-references remain bare relative links.
+	Slug string
+
+	// Title is the topic page's heading suffix and its nav entry's text.
+	Title string
+
+	// Blurb is one line on what the topic covers, shown in the package page's
+	// topic table and under the topic page's title.
+	Blurb string
+
+	// Files are base names within the package directory.
+	Files []string
+}
+
+// TopicPage is a topic's generated file name under docs/api/.
+func (p Pkg) TopicPage(t Topic) string {
+	return strings.TrimSuffix(p.Page(), ".md") + "-" + t.Slug + ".md"
 }
 
 // ImportPath is the path a caller writes in an import statement.
@@ -85,6 +144,65 @@ var Packages = []Pkg{
 		Dir:   "core",
 		Group: "Core",
 		Blurb: "Views, nodes, state, styling, events — everything an app builds its UI out of.",
+		// core is the one package split into topics: as a single page it ran
+		// to ~7,800 lines, past the point where its sidebar TOC (every type
+		// and function in the package, in alphabetical order) helps anyone
+		// find anything. The order below follows the narrative docs' order of
+		// concepts, not the alphabet.
+		Topics: []Topic{{
+			Slug:  "views",
+			Title: "Views & state",
+			Blurb: "View, Node, Context and state slots; conditionals, caching, error boundaries and debug-mode concerns.",
+			Files: []string{"view.go", "node.go", "text.go", "context.go", "cleanup.go", "cached.go",
+				"conditionals.go", "error_boundary.go", "render_manager.go", "debug.go"},
+		}, {
+			Slug:  "layout",
+			Title: "Layout",
+			Blurb: "Rows, columns, stacks, scrolls and lists, and the alignment vocabulary they are placed with.",
+			Files: []string{"layout.go", "list.go", "stack_align.go", "alignment.go", "keyboard.go", "placement_audit.go"},
+		}, {
+			Slug:  "style",
+			Title: "Styling",
+			Blurb: "Style and its props: spacing, flex, typography, colour, borders and transitions.",
+			Files: []string{"style.go", "style_props.go", "margin_sides.go", "padding_sides.go", "animation.go"},
+		}, {
+			Slug:  "theme",
+			Title: "Theming",
+			Blurb: "Themes, palettes, typography and spacing scales, and per-component defaults.",
+			Files: []string{"theme.go"},
+		}, {
+			Slug:  "controls",
+			Title: "Controls",
+			Blurb: "Buttons, text inputs, switches, sliders, selects, images, tab views and text grids.",
+			Files: []string{"button.go", "input.go", "switch.go", "slider.go", "select_menu.go", "image.go",
+				"tabview.go", "textgrid.go"},
+		}, {
+			Slug:  "editors",
+			Title: "Editors",
+			Blurb: "The code editor and the rich text editor, and the refs and commands that drive them.",
+			Files: []string{"codeeditor.go", "editor.go", "richtext.go"},
+		}, {
+			Slug:  "events",
+			Title: "Events & focus",
+			Blurb: "Event props, host and system events, focus refs and focus order.",
+			Files: []string{"event.go", "behavioral_props.go", "host_events.go", "sys_events.go", "focus.go",
+				"focus_order.go"},
+		}, {
+			Slug:  "navigation",
+			Title: "Navigation & overlays",
+			Blurb: "The navigator stack, modals, toasts, deep links and opening URLs.",
+			Files: []string{"navigation.go", "modal.go", "toast.go", "deeplink.go", "openurl.go"},
+		}, {
+			Slug:  "accessibility",
+			Title: "Accessibility",
+			Blurb: "Roles, selected and expanded states, value ranges and the accessibility audit.",
+			Files: []string{"role.go", "selected.go", "expanded.go", "value.go", "a11y_audit.go"},
+		}, {
+			Slug:  "device",
+			Title: "Device services",
+			Blurb: "Audio, camera, compass heading, location, maps and the app lifecycle.",
+			Files: []string{"audio.go", "camera.go", "heading.go", "location.go", "mapview.go", "lifecycle.go"},
+		}},
 	},
 	{
 		Dir:   "hooks",
@@ -149,6 +267,16 @@ type Loaded struct {
 	Pkg  Pkg
 	Doc  *doc.Package
 	FSet *token.FileSet
+
+	// page is the generated page this documentation renders onto: Pkg.Page()
+	// for a whole package, a topic page for one of splitTopics' parts. A doc
+	// link compares it with its target's page to decide whether a bare
+	// "#anchor" is enough.
+	page string
+
+	// files are the base names of the source files Doc was built from, which
+	// splitTopics checks a Topic's file list against.
+	files []string
 }
 
 // load parses one package and builds its documentation.
@@ -196,7 +324,127 @@ func load(root string, p Pkg) (*Loaded, error) {
 		return nil, fmt.Errorf("%s: %w", p.Dir, err)
 	}
 
-	return &Loaded{Pkg: p, Doc: dp, FSet: fset}, nil
+	return &Loaded{Pkg: p, Doc: dp, FSet: fset, page: p.Page(), files: bp.GoFiles}, nil
+}
+
+// splitTopics partitions a package's documentation into one part per Topic,
+// in Topics order. A package with no Topics yields no parts.
+//
+// Each part is a shallow copy of the whole package's doc.Package with the four
+// declaration lists filtered and Doc (the package comment) cleared — the
+// comment belongs on the package page, once. Copying rather than building a
+// fresh doc.Package matters: its Parser and Printer read unexported state (the
+// package's full symbol set and import names), so a part still recognises
+// "[Node]" written in any file of the package, whichever page Node landed on.
+//
+//	core (whole)                        parts
+//	────────────                        ─────
+//	Consts  Vars  Funcs  Types   ──▶    core-views.md   decls in view.go, node.go, …
+//	  │       │     │      │            core-layout.md  decls in layout.go, list.go, …
+//	  └───────┴─────┴──────┴── placed by the file of each declaration's position
+func splitTopics(l *Loaded) ([]*Loaded, error) {
+	p := l.Pkg
+	if len(p.Topics) == 0 {
+		return nil, nil
+	}
+
+	present := map[string]bool{}
+	for _, f := range l.files {
+		present[f] = true
+	}
+	owner := map[string]int{} // base file name -> index into p.Topics
+	for i, t := range p.Topics {
+		for _, f := range t.Files {
+			if j, dup := owner[f]; dup {
+				return nil, fmt.Errorf("%s: %s is listed in both topic %q and topic %q",
+					p.Dir, f, p.Topics[j].Slug, t.Slug)
+			}
+			if !present[f] {
+				return nil, fmt.Errorf("%s: topic %q lists %s, which is not a source file of the package "+
+					"(renamed or deleted? update apidoc.Packages)", p.Dir, t.Slug, f)
+			}
+			owner[f] = i
+		}
+	}
+
+	parts := make([]*Loaded, len(p.Topics))
+	for i, t := range p.Topics {
+		d := *l.Doc
+		d.Doc = ""
+		d.Consts, d.Vars, d.Funcs, d.Types = nil, nil, nil, nil
+		parts[i] = &Loaded{Pkg: p, Doc: &d, FSet: l.FSet, page: p.TopicPage(t), files: t.Files}
+	}
+
+	// topicOf maps a declaration to its part. It is also where an unassigned
+	// file is caught: at the first declaration that would otherwise be dropped,
+	// which is what the error can then name.
+	topicOf := func(pos token.Pos, what string) (*doc.Package, error) {
+		file := filepath.Base(l.FSet.Position(pos).Filename)
+		i, ok := owner[file]
+		if !ok {
+			return nil, fmt.Errorf("%s: %s declares %s but no topic lists the file, "+
+				"so it would be on no page — add it to a Topic in apidoc.Packages", p.Dir, file, what)
+		}
+		return parts[i].Doc, nil
+	}
+
+	// go/doc has already sorted each list by name, and appending in that order
+	// keeps every part sorted too.
+	for _, v := range l.Doc.Consts {
+		d, err := topicOf(v.Decl.Pos(), "constants "+strings.Join(v.Names, ", "))
+		if err != nil {
+			return nil, err
+		}
+		d.Consts = append(d.Consts, v)
+	}
+	for _, v := range l.Doc.Vars {
+		d, err := topicOf(v.Decl.Pos(), "variables "+strings.Join(v.Names, ", "))
+		if err != nil {
+			return nil, err
+		}
+		d.Vars = append(d.Vars, v)
+	}
+	for _, fn := range l.Doc.Funcs {
+		d, err := topicOf(fn.Decl.Pos(), "func "+fn.Name)
+		if err != nil {
+			return nil, err
+		}
+		d.Funcs = append(d.Funcs, fn)
+	}
+	for _, t := range l.Doc.Types {
+		d, err := topicOf(t.Decl.Pos(), "type "+t.Name)
+		if err != nil {
+			return nil, err
+		}
+		// Constructors are placed by their own file, not their type's. go/doc
+		// calls any function returning T a constructor of T, and in core most
+		// of the package returns View or *Node: left under the type, Row,
+		// Button and Image would all be documented on the views page, and the
+		// layout page would be missing the declarations layout.go is for. A
+		// copy of the type carries the constructors that stay, so the whole
+		// package's doc.Type is not edited under the rest of the run.
+		c := *t
+		c.Funcs = nil
+		for _, fn := range t.Funcs {
+			fd, err := topicOf(fn.Decl.Pos(), "func "+fn.Name)
+			if err != nil {
+				return nil, err
+			}
+			if fd == d {
+				c.Funcs = append(c.Funcs, fn)
+			} else {
+				fd.Funcs = append(fd.Funcs, fn)
+			}
+		}
+		d.Types = append(d.Types, &c)
+	}
+
+	// A moved constructor was appended after its part's package-level
+	// functions; restore go/doc's by-name order.
+	for _, part := range parts {
+		sort.Slice(part.Doc.Funcs, func(i, j int) bool { return part.Doc.Funcs[i].Name < part.Doc.Funcs[j].Name })
+	}
+	return parts, nil
 }
 
 // LoadAll parses every documented package.
@@ -261,39 +509,57 @@ func isModuleRoot(goMod string) bool {
 // resolving a link needs to know which one the target package actually declares.
 // Building the index over every loaded package first, then rendering, is what
 // makes a link from core's doc comment into components resolvable at all.
-type symbolIndex map[string]map[string]string
+//
+// It is built from the units that render onto pages — a whole package, or each
+// topic part of a split one — so the page travels with the anchor: a link to
+// core's Row has to say core-layout.md, not core.md. Anchors are unique within
+// a package, so a split package's parts never contend for a key.
+type symbolIndex map[string]map[string]symLoc
 
-func newSymbolIndex(pkgs []*Loaded) symbolIndex {
-	idx := make(symbolIndex, len(pkgs))
-	for _, l := range pkgs {
-		syms := map[string]string{}
+// symLoc is where a symbol is documented: its page under docs/api/ and the
+// anchor on that page.
+type symLoc struct {
+	Page   string
+	Anchor string
+}
+
+func newSymbolIndex(units []*Loaded) symbolIndex {
+	idx := symbolIndex{}
+	for _, l := range units {
+		syms := idx[l.Pkg.ImportPath()]
+		if syms == nil {
+			syms = map[string]symLoc{}
+			idx[l.Pkg.ImportPath()] = syms
+		}
+		at := func(anchor string) symLoc { return symLoc{Page: l.page, Anchor: anchor} }
 		for _, f := range l.Doc.Funcs {
-			syms[f.Name] = symAnchor("func", "", f.Name)
+			syms[f.Name] = at(symAnchor("func", "", f.Name))
 		}
 		for _, t := range l.Doc.Types {
-			syms[t.Name] = symAnchor("type", "", t.Name)
+			syms[t.Name] = at(symAnchor("type", "", t.Name))
 			for _, f := range t.Funcs { // constructors: documented under the type
-				syms[f.Name] = symAnchor("func", "", f.Name)
+				syms[f.Name] = at(symAnchor("func", "", f.Name))
 			}
 			for _, m := range t.Methods {
-				syms[t.Name+"."+m.Name] = symAnchor("func", t.Name, m.Name)
+				syms[t.Name+"."+m.Name] = at(symAnchor("func", t.Name, m.Name))
 			}
 		}
+		// Constants and variables have no heading of their own; they link to
+		// the section on whichever page their block landed on.
 		for _, v := range l.Doc.Consts {
 			for _, name := range v.Names {
 				if ast.IsExported(name) {
-					syms[name] = "constants"
+					syms[name] = at("constants")
 				}
 			}
 		}
 		for _, v := range l.Doc.Vars {
 			for _, name := range v.Names {
 				if ast.IsExported(name) {
-					syms[name] = "variables"
+					syms[name] = at("variables")
 				}
 			}
 		}
-		idx[l.Pkg.ImportPath()] = syms
 	}
 	return idx
 }

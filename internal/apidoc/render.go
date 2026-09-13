@@ -1,6 +1,8 @@
 // Package apidoc renders grmob's public API as mkdocs-style markdown: one page
 // per documented package, written from the packages' own doc comments, plus an
-// overview page indexing them.
+// overview page indexing them. A package too large for one page (core) is split
+// by source file into sibling topic pages, with its package page as their
+// index; see Topic.
 //
 // # Why generate instead of write
 //
@@ -78,9 +80,28 @@ func Generate(root string) (map[string][]byte, error) {
 		return nil, err
 	}
 
+	// units are the documentation slices that render onto declaration pages:
+	// a whole package, or each topic part of a split one. The symbol index is
+	// built from them rather than from pkgs so that every symbol is indexed
+	// with the page it actually lands on.
+	var units []*Loaded
+	parts := map[string][]*Loaded{} // import path -> topic parts, split packages only
+	for _, l := range pkgs {
+		ps, err := splitTopics(l)
+		if err != nil {
+			return nil, err
+		}
+		if len(ps) == 0 {
+			units = append(units, l)
+			continue
+		}
+		parts[l.Pkg.ImportPath()] = ps
+		units = append(units, ps...)
+	}
+
 	g := &gen{
 		root:   root,
-		syms:   newSymbolIndex(pkgs),
+		syms:   newSymbolIndex(units),
 		byName: map[string]string{},
 		byPath: map[string]Pkg{},
 	}
@@ -89,15 +110,44 @@ func Generate(root string) (map[string][]byte, error) {
 		g.byPath[l.Pkg.ImportPath()] = l.Pkg
 	}
 
-	out := make(map[string][]byte, len(pkgs)+1)
+	out := make(map[string][]byte, len(units)+len(pkgs)+1)
+	// add refuses a second page under a name already written. Topic pages
+	// share the flat namespace with packages, and "core-layout.md" is also
+	// what a documented package at core/layout would flatten to; without the
+	// check, whichever was generated last would silently replace the other.
+	add := func(name string, body []byte) error {
+		key := DocsSubdir + "/" + name
+		if _, dup := out[key]; dup {
+			return fmt.Errorf("two generated pages are both named docs/%s — rename a Topic slug", key)
+		}
+		out[key] = body
+		return nil
+	}
+
 	for _, l := range pkgs {
-		page, err := g.page(l)
-		if err != nil {
+		ps := parts[l.Pkg.ImportPath()]
+		if len(ps) == 0 {
+			page, err := g.page(l)
+			if err != nil {
+				return nil, err
+			}
+			if err := add(l.Pkg.Page(), page); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		if err := add(l.Pkg.Page(), g.splitPage(l, ps)); err != nil {
 			return nil, err
 		}
-		out[DocsSubdir+"/"+l.Pkg.Page()] = page
+		for i, part := range ps {
+			if err := add(part.page, g.topicPage(part, l.Pkg.Topics[i], len(ps))); err != nil {
+				return nil, err
+			}
+		}
 	}
-	out[DocsSubdir+"/index.md"] = g.overview(pkgs)
+	if err := add("index.md", g.overview(pkgs)); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 
@@ -117,10 +167,16 @@ type gen struct {
 
 func (g *gen) page(l *Loaded) ([]byte, error) {
 	var b strings.Builder
+	g.header(&b, l)
+	g.body(&b, l)
+	return []byte(b.String()), nil
+}
 
+// header is a package page's title, import line and package comment.
+func (g *gen) header(b *strings.Builder, l *Loaded) {
 	p := l.Pkg
-	fmt.Fprintf(&b, "# Package %s\n\n", p.Name())
-	fmt.Fprintf(&b, "```go\nimport \"%s\"\n```\n\n", p.ImportPath())
+	fmt.Fprintf(b, "# Package %s\n\n", p.Name())
+	fmt.Fprintf(b, "```go\nimport \"%s\"\n```\n\n", p.ImportPath())
 
 	// Level 2, the same as the Index and Types headings below: a heading in a
 	// package comment is a section of the page, not a subsection of anything,
@@ -129,27 +185,118 @@ func (g *gen) page(l *Loaded) ([]byte, error) {
 		b.WriteString(g.comment(l, d, 2))
 		b.WriteString("\n")
 	}
+}
 
+// splitPage is the package page of a package with Topics: the package comment,
+// then a table of the topic pages, then an index of every top-level symbol
+// with the page it is on.
+//
+// The index stops at types and their constructors. Methods are on the topic
+// pages' own indexes; listing them here too would rebuild most of the length
+// the split exists to remove, and a reader looking for a method starts from
+// its type.
+func (g *gen) splitPage(l *Loaded, parts []*Loaded) []byte {
+	var b strings.Builder
+	g.header(&b, l)
+
+	p := l.Pkg
+	b.WriteString("## Topics\n\n")
+	fmt.Fprintf(&b, "Package %s's reference is split into %d topic pages by source file. "+
+		"The index below lists every top-level declaration with the page it is on.\n\n", p.Name(), len(parts))
+	b.WriteString("| Topic | What it covers | Declares |\n")
+	b.WriteString("| --- | --- | --- |\n")
+	for i, part := range parts {
+		types, funcs := declCounts(part.Doc)
+		fmt.Fprintf(&b, "| [%s](%s) | %s | %d types, %d functions and methods |\n",
+			p.Topics[i].Title, part.page, p.Topics[i].Blurb, types, funcs)
+	}
+	b.WriteString("\n")
+
+	b.WriteString("## Index\n\n")
+	for i, part := range parts {
+		page, d := part.page, part.Doc
+		fmt.Fprintf(&b, "- [%s](%s)\n", p.Topics[i].Title, page)
+		if countNames(d.Consts) > 0 {
+			fmt.Fprintf(&b, "    - [Constants](%s#constants) — %s\n", page, strings.Join(codeList(allNames(d.Consts)), ", "))
+		}
+		if countNames(d.Vars) > 0 {
+			fmt.Fprintf(&b, "    - [Variables](%s#variables) — %s\n", page, strings.Join(codeList(allNames(d.Vars)), ", "))
+		}
+		for _, fn := range d.Funcs {
+			fmt.Fprintf(&b, "    - [`func %s`](%s#%s)\n", fn.Name, page, symAnchor("func", "", fn.Name))
+		}
+		for _, t := range d.Types {
+			fmt.Fprintf(&b, "    - [`type %s`](%s#%s)\n", t.Name, page, symAnchor("type", "", t.Name))
+			for _, fn := range t.Funcs {
+				fmt.Fprintf(&b, "        - [`func %s`](%s#%s)\n", fn.Name, page, symAnchor("func", "", fn.Name))
+			}
+		}
+	}
+	b.WriteString("\n")
+
+	return []byte(b.String())
+}
+
+// topicPage is one topic of a split package: a title naming both, a pointer
+// back to the package page, and then the same sections a whole-package page
+// has, over the topic's declarations only.
+//
+// It carries no package comment — that is on the package page, once — so the
+// line under the title says where to find it and which files the page covers,
+// the latter being the rule a reader needs to predict where anything else is.
+func (g *gen) topicPage(part *Loaded, t Topic, n int) []byte {
+	var b strings.Builder
+
+	p := part.Pkg
+	fmt.Fprintf(&b, "# Package %s — %s\n\n", p.Name(), t.Title)
+	fmt.Fprintf(&b, "```go\nimport \"%s\"\n```\n\n", p.ImportPath())
+	fmt.Fprintf(&b, "%s\n\n", t.Blurb)
+
+	files := make([]string, len(t.Files))
+	for i, f := range t.Files {
+		files[i] = "`" + p.Dir + "/" + f + "`"
+	}
+	fmt.Fprintf(&b, "One of %d topic pages of [package %s](%s), which has the package overview "+
+		"and an index of every topic. This page documents the declarations in %s.\n\n",
+		n, p.Name(), p.Page(), strings.Join(files, ", "))
+
+	g.body(&b, part)
+	return []byte(b.String())
+}
+
+// body is the declaration sections every declaration page shares: the index,
+// then constants, variables, functions and types.
+func (g *gen) body(b *strings.Builder, l *Loaded) {
 	b.WriteString(g.index(l))
 
-	g.values(&b, l, "Constants", l.Doc.Consts)
-	g.values(&b, l, "Variables", l.Doc.Vars)
+	g.values(b, l, "Constants", l.Doc.Consts)
+	g.values(b, l, "Variables", l.Doc.Vars)
 
 	if len(l.Doc.Funcs) > 0 {
 		b.WriteString("## Functions\n\n")
 		for _, fn := range l.Doc.Funcs {
-			g.function(&b, l, fn, 3)
+			g.function(b, l, fn, 3)
 		}
 	}
 
 	if len(l.Doc.Types) > 0 {
 		b.WriteString("## Types\n\n")
 		for _, t := range l.Doc.Types {
-			g.typ(&b, l, t)
+			g.typ(b, l, t)
 		}
 	}
+}
 
-	return []byte(b.String()), nil
+// declCounts is the number of exported types, and of functions and methods, a
+// documentation slice declares — constructors and methods counted with the
+// functions, as the overview page's totals count them.
+func declCounts(d *doc.Package) (types, funcs int) {
+	types = len(d.Types)
+	funcs = len(d.Funcs)
+	for _, t := range d.Types {
+		funcs += len(t.Funcs) + len(t.Methods)
+	}
+	return types, funcs
 }
 
 // index is the per-page symbol list.
@@ -213,11 +360,9 @@ func (g *gen) overview(pkgs []*Loaded) []byte {
 	// the fact that makes a stale page obvious.
 	var types, funcs int
 	for _, l := range pkgs {
-		types += len(l.Doc.Types)
-		funcs += len(l.Doc.Funcs)
-		for _, t := range l.Doc.Types {
-			funcs += len(t.Funcs) + len(t.Methods)
-		}
+		t, f := declCounts(l.Doc)
+		types += t
+		funcs += f
 	}
 	b.WriteString("---\n\n")
 	fmt.Fprintf(&b, "%d packages, %d exported types, %d exported functions and methods.\n\n",
@@ -357,6 +502,10 @@ func (g *gen) comment(l *Loaded, text string, headingLevel int) string {
 // whose target exists but whose *kind* is unknown to the symbol index — an
 // unexported symbol, or one in a package deliberately left undocumented —
 // degrades to the package page rather than to a dead anchor.
+//
+// "Same page" is decided by page, not by package: in a package split into
+// topics, [Row] written in a comment on core-views.md is on core-layout.md, and
+// only a symbol on the page being rendered gets a bare "#anchor".
 func (g *gen) docLinkURL(l *Loaded, dl *comment.DocLink) string {
 	target := dl.ImportPath
 	if target == "" {
@@ -372,18 +521,22 @@ func (g *gen) docLinkURL(l *Loaded, dl *comment.DocLink) string {
 	if dl.Recv != "" {
 		key = dl.Recv + "." + dl.Name
 	}
-	anchor, known := g.syms[target][key]
+	loc, known := g.syms[target][key]
+	if !known {
+		// An empty URL for the page being rendered, as before the split: the
+		// link text stays, pointing nowhere else.
+		if pkg.Page() == l.page {
+			return ""
+		}
+		return pkg.Page()
+	}
 
 	// Same page: an anchor on its own, so the link does not depend on the
 	// page's own URL.
-	base := pkg.Page()
-	if target == l.Pkg.ImportPath() {
-		base = ""
+	if loc.Page == l.page {
+		return "#" + loc.Anchor
 	}
-	if !known {
-		return base
-	}
-	return base + "#" + anchor
+	return loc.Page + "#" + loc.Anchor
 }
 
 // ---------------------------------------------------------------------------

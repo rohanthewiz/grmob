@@ -4,7 +4,7 @@
 import "github.com/rohanthewiz/grmob/reconcile"
 ```
 
-Package reconcile is the diff: it compares two [core.Node](core.md#type-node) trees and returns the [Patch](#type-patch) list that turns the old one into the new one.
+Package reconcile is the diff: it compares two [core.Node](core-views.md#type-node) trees and returns the [Patch](#type-patch) list that turns the old one into the new one.
 
 It is the whole of grmob's cross-platform contract. Every host — the Compose renderer, the SwiftUI renderer, the JavaScript runtime, the two web exporters — implements the same handful of patch types against its own widget library, and nothing else about a host is grmob's concern.
 

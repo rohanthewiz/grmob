@@ -1,0 +1,726 @@
+# Package core — Controls
+
+```go
+import "github.com/rohanthewiz/grmob/core"
+```
+
+Buttons, text inputs, switches, sliders, selects, images, tab views and text grids.
+
+One of 10 topic pages of [package core](core.md), which has the package overview and an index of every topic. This page documents the declarations in `core/button.go`, `core/input.go`, `core/switch.go`, `core/slider.go`, `core/select_menu.go`, `core/image.go`, `core/tabview.go`, `core/textgrid.go`.
+
+## Index
+
+- [Constants](#constants) — `GridBold`, `GridDim`, `GridItalic`, `GridStrike`, `GridUnderline`
+- [`func Button`](#func-button)
+- [`func ButtonWithEvent`](#func-buttonwithevent)
+- [`func Checkbox`](#func-checkbox)
+- [`func Image`](#func-image)
+- [`func ImageWithMode`](#func-imagewithmode)
+- [`func Input`](#func-input)
+- [`func InputPassword`](#func-inputpassword)
+- [`func InputWithSubmit`](#func-inputwithsubmit)
+- [`func NumericInput`](#func-numericinput)
+- [`func OnSliderChangeEnd`](#func-onsliderchangeend)
+- [`func Select`](#func-select)
+- [`func Slider`](#func-slider)
+- [`func SliderStep`](#func-sliderstep)
+- [`func Switch`](#func-switch)
+- [`func TabView`](#func-tabview)
+- [`func TextArea`](#func-textarea)
+- [`func TextGrid`](#func-textgrid)
+- [`type ContentMode`](#type-contentmode)
+    - [`func ContentModes`](#func-contentmodes)
+- [`type GridRow`](#type-gridrow)
+- [`type GridRun`](#type-gridrun)
+- [`type SelectMenuItem`](#type-selectmenuitem)
+- [`type SelectMenuSection`](#type-selectmenusection)
+    - [`func SelectMenuSections`](#func-selectmenusections)
+    - [`func (SelectMenuSection) First`](#func-selectmenusection-first)
+- [`type SelectOption`](#type-selectoption)
+    - [`func Option`](#func-option)
+- [`type TabItem`](#type-tabitem)
+    - [`func Tab`](#func-tab)
+- [`type TabViewNode`](#type-tabviewnode)
+- [`type TabViewProp`](#type-tabviewprop)
+    - [`func Content`](#func-content)
+    - [`func OnTabChange`](#func-ontabchange)
+    - [`func SelectedIndex`](#func-selectedindex)
+    - [`func Tabs`](#func-tabs)
+
+## Constants
+
+GridRun attribute bits. A renderer without a native spelling for one may drop it (there is no dim on the web's font-weight scale, say, so the DOM targets fake it with opacity), but must never fail the row.
+
+```go
+const (
+	GridBold      = 1 << iota // heavier weight
+	GridDim                   // reduced intensity
+	GridItalic                // slanted
+	GridUnderline             // a line below
+	GridStrike                // a line through
+)
+```
+
+<small>[core/textgrid.go:67](https://github.com/rohanthewiz/grmob/blob/master/core/textgrid.go#L67)</small>
+
+## Functions
+
+### func Button
+
+```go
+func Button(label string, onClick func(), props ...PropsAndChildren) View
+```
+
+Button takes the same mixed argument list the inputs do — style props and behavior props in any order — rather than the \`...StyleProp\` it took originally:
+
+	core.Button("Delete", onDelete,
+	    core.BackgroundColor(ctx.Theme().Colors.Error),
+	    core.OnLongPress(confirmDestructive),
+	)
+
+It was the last leaf that could not carry a behavior prop, which meant OnLongPress — a gesture a button is the most natural home for — was unreachable on the one node type that exists to be pressed. Widening it through leafNode closes that and puts every leaf on one argument contract.
+
+The renderers had the matching half of that gap: both natives read the gesture off containers and leaves but not off a Button, because a Button draws its own control and does not go through the generic gesture path. Both now wire it on the button itself (a Surface + combinedClickable on Compose, a simultaneousGesture on SwiftUI), as does the DOM runtime, which synthesizes the gesture from pointer events.
+
+The widening is source-compatible for the same reason the inputs' was: a StyleProp is a PropsAndChildren, so every existing core.Button(label, fn, core.Padding(8)) call compiles untouched. The shape it does break is forwarding — a \[]StyleProp cannot be spread into a ...PropsAndChildren — so a wrapper that collected style props into a slice has to widen its own slice to \[]core.PropsAndChildren. comps.Button and comps.Chip are the two in this tree that did.
+
+See leafNode for the ordering and nil contracts, and for why a View passed here is a debug-mode concern rather than a silent no-op.
+
+Button is deliberately absent from focusableLeafTypes: a phone does not give a button keyboard focus, so it carries no focus-command stamp and a core.Focus aimed at one would do nothing. FocusTarget still applies if an app wants the stamp anyway — see core/focus.go.
+
+<small>[core/button.go:39](https://github.com/rohanthewiz/grmob/blob/master/core/button.go#L39)</small>
+
+### func ButtonWithEvent
+
+```go
+func ButtonWithEvent(label string, event string, handler func(), props ...PropsAndChildren) View
+```
+
+ButtonWithEvent is Button with the event name chosen by the caller, for the gestures that have no dedicated builder. It is largely superseded by the widening above — core.Button(label, fn, core.On("LongPress", g)) says the same thing and keeps the click — but it stays because it is the only way to build a button whose \*only\* wiring is a non-click event.
+
+<small>[core/button.go:58](https://github.com/rohanthewiz/grmob/blob/master/core/button.go#L58)</small>
+
+### func Checkbox
+
+```go
+func Checkbox(checked bool, onToggle func(bool), props ...PropsAndChildren) View
+```
+
+<small>[core/input.go:50](https://github.com/rohanthewiz/grmob/blob/master/core/input.go#L50)</small>
+
+### func Image
+
+```go
+func Image(src string, styleProps ...StyleProp) View
+```
+
+Image renders a remote or bundled image at the default content mode (ContentModeFit). Use ImageWithMode to choose another.
+
+<small>[core/image.go:92](https://github.com/rohanthewiz/grmob/blob/master/core/image.go#L92)</small>
+
+### func ImageWithMode
+
+```go
+func ImageWithMode(src string, mode ContentMode, styleProps ...StyleProp) View
+```
+
+ImageWithMode is Image plus an explicit ContentMode.
+
+A separate builder rather than a variadic change to Image, matching InputWithSubmit: every existing Image call site keeps compiling and keeps its current rendering, and the mode stays a required, visible argument at the sites that care rather than an option buried in a style list.
+
+<small>[core/image.go:102](https://github.com/rohanthewiz/grmob/blob/master/core/image.go#L102)</small>
+
+### func Input
+
+```go
+func Input(value string, placeholder string, onChange func(string), props ...PropsAndChildren) View
+```
+
+<small>[core/input.go:23](https://github.com/rohanthewiz/grmob/blob/master/core/input.go#L23)</small>
+
+### func InputPassword
+
+```go
+func InputPassword(value string, placeholder string, onChange func(string), props ...PropsAndChildren) View
+```
+
+<small>[core/input.go:59](https://github.com/rohanthewiz/grmob/blob/master/core/input.go#L59)</small>
+
+### func InputWithSubmit
+
+```go
+func InputWithSubmit(value string, placeholder string, onChange func(string), onSubmit func(), props ...PropsAndChildren) View
+```
+
+InputWithSubmit is Input plus a submit action: pressing the keyboard's return key (iOS) or IME done action (Android) dispatches onSubmit. The submit rides the existing void-callback channel — the renderers read the "onSubmit" prop and dispatch it exactly like a Button's onClick — so the bridge surface is unchanged. A separate builder rather than a variadic change to Input keeps every existing call site compiling untouched.
+
+<small>[core/input.go:39](https://github.com/rohanthewiz/grmob/blob/master/core/input.go#L39)</small>
+
+### func NumericInput
+
+```go
+func NumericInput(value int, onChange func(int), props ...PropsAndChildren) View
+```
+
+<small>[core/input.go:69](https://github.com/rohanthewiz/grmob/blob/master/core/input.go#L69)</small>
+
+### func OnSliderChangeEnd
+
+```go
+func OnSliderChangeEnd(fn func(float64)) BehaviorProp
+```
+
+OnSliderChangeEnd fires once when the drag ends, with the final value — see Slider for why a seek bar wants this rather than onChange.
+
+<small>[core/slider.go:67](https://github.com/rohanthewiz/grmob/blob/master/core/slider.go#L67)</small>
+
+### func Select
+
+```go
+func Select(value string, options []SelectOption, onChange func(string), props ...PropsAndChildren) View
+```
+
+Select is the picker: one value chosen from a fixed list.
+
+	core.Select(form.Country, []core.SelectOption{
+	    {Value: "us", Label: "United States"},
+	    {Value: "pt", Label: "Portugal"},
+	}, func(v string) { form.Country = v })
+
+Controlled, like every other input here: the value shown is always the one Go passed, and a change goes up as an event. onChange carries the option's \*Value\*, never its label or its index — the index is the one identity that changes when the list is reordered, and a label is written to be read.
+
+#### What each target draws
+
+	web       a <select>, whose options are a prop rather than child nodes
+	iOS       a Menu whose label is the chosen option's text
+	Android   a Box anchored to a DropdownMenu, same shape
+
+The natives are deliberately \*not\* built from a platform picker control (SwiftUI's .pickerStyle(.menu), Material's ExposedDropdownMenuBox). Both of those draw a frame of their own, and the whole rule this widget lands under is that the Go style owns the frame — see borderResetTypes in htmlout/tag.go, which the web half joins for the same reason. A control whose edge came from the platform on two targets and from the theme on two others is the divergence that rule exists to prevent.
+
+#### It reads the theme's Input base
+
+A picker is a field: it sits in a form beside text inputs, and a picker that did not match the fields around it would look like a mistake. Reading Components.Input is also how it inherits the frame those fields grew — the same move comps.DatePicker makes for the same reason, and the reason this widget needs no palette role of its own.
+
+#### Options are a prop, not children
+
+A \<select>'s options are elements, but they are not \*nodes\*: no patch is ever addressed to one, they carry no style, and they cannot hold a subtree. Sending them as children would put four renderers in the business of deciding which child is chrome, which is the complication core.TabView's tabs prop already avoids one node type over. The web renderer builds the \<option> elements from the prop; both natives read the same list.
+
+#### Grouped and disabled options
+
+SelectOption carries a Group, a Disabled and a GroupDisabled beside its two required fields; see the type. All three are drawn by every target — an \<optgroup>, a disabled \<option> and \<optgroup disabled> on the web; a Section and a disabled Button in the iOS menu; a heading item and a disabled item in the Android dropdown.
+
+What a heading still cannot carry is an icon, and that is a decision rather than a gap: an \<optgroup>'s label is an attribute, so the web can hold text and nothing else. A heading with an icon on two targets and without one on the other two is the divergence this widget refuses everywhere else — the same argument that keeps it off the platform picker controls, one property down.
+
+Neither reaches this function as anything but a map key, which is the point: the flattening below is the one place that knows what a SelectOption is, and the four renderers each read a list of flat string maps. A fifth field would land here and nowhere else.
+
+What the renderers do \*not\* each decide is which options form which run. SelectMenuSections (select\_menu.go) takes the flattened list and answers that once; htmlout calls it, and the two natives carry transliterations that ios/verify checks against it.
+
+<small>[core/input.go:280](https://github.com/rohanthewiz/grmob/blob/master/core/input.go#L280)</small>
+
+### func Slider
+
+```go
+func Slider(value, min, max float64, onChange func(float64), props ...PropsAndChildren) View
+```
+
+Slider is a horizontal value control: a thumb on a track, dragged to choose a number in \[min, max]. A seek bar, a volume, a brightness, a price ceiling.
+
+	core.Slider(pos, 0, duration, func(v float64) { scrub.Set(v) },
+	    core.OnSliderChangeEnd(func(v float64) { core.AudioSeek(v) }))
+
+Each platform draws its own: Compose's Material 3 Slider, SwiftUI's Slider, and \<input type="range"> in the browser and in htmlout.
+
+#### Two callbacks, and why the second is the important one
+
+onChange fires continuously while the thumb moves — the value under the finger, dozens of times a second. That is right for a label that follows the drag and wrong for anything expensive or irreversible: a seek on a network stream, a request to a server. OnSliderChangeEnd fires once, when the finger lifts, with the final value — and it is the one a seek bar acts on. onChange may be nil when only the end matters.
+
+Both cross the bridge as text callbacks carrying the number formatted with strconv (the natives' own float formatting is accepted too: "0.5", "1.0E-4" and "1e-4" all parse). A value that fails to parse is dropped, the same policy NumericInput applies.
+
+#### The control is controlled
+
+Like every leaf, the value shown is the one Go rendered — but a drag has to feel immediate, and the Go round trip is asynchronous, so the native renderers show the finger's value \*while dragging\* and Go's value otherwise (the same compromise the text fields make). A seek bar fed by a status tick therefore never snaps the thumb back under the finger.
+
+<small>[core/slider.go:38](https://github.com/rohanthewiz/grmob/blob/master/core/slider.go#L38)</small>
+
+### func SliderStep
+
+```go
+func SliderStep(step float64) BehaviorProp
+```
+
+SliderStep snaps the thumb to multiples of step from min. 0 (the default) is continuous.
+
+<small>[core/slider.go:81](https://github.com/rohanthewiz/grmob/blob/master/core/slider.go#L81)</small>
+
+### func Switch
+
+```go
+func Switch(on bool, onToggle func(bool), props ...PropsAndChildren) View
+```
+
+Switch is the instant-effect boolean: a track and a thumb, flipped to turn one thing on or off right now. Airplane mode, notifications, dark theme.
+
+	core.Switch(settings.Notify, func(on bool) { settings.SetNotify(on) })
+
+Each platform draws its own — Material 3's Switch on Android, SwiftUI's Toggle on iOS, and an \<input type="checkbox" switch role="switch"> in the browser and in htmlout.
+
+#### Why this is a node type and not a flag on Checkbox
+
+The two controls look similar in a props list and are not interchangeable on screen, and the difference is \*when the choice takes effect\*. A checkbox collects a value that something else will act on — a form's "remember me", a row's selection, a terms box above a Submit button — so a tick that sits there unacted-on is the expected state. A switch acts on the tap: there is no Submit, and a switch that needed one would be read as broken.
+
+That is a platform-idiom difference rather than a styling one, which is what makes it a type. Both natives draw \*both\* controls, and they are different controls there (Compose's Checkbox and Switch; on iOS the platform has no checkbox at all and Toggle stands in for one — see GrMobCheckbox in the SwiftUI renderer). A bool prop on Checkbox would have the reconciler swapping one platform control for another inside one node's update-props patch, which is exactly the work a node type does properly: a changed type is a replace, and a replace is how a control is exchanged.
+
+#### The state crosses the wire as "checked"
+
+Go says \`on\` because a switch is on, and the wire says \`checked\` because that is what the DOM calls it — the same split core.SelectedState makes when it spells a bool "true" in a prop map.
+
+It is not only tidiness. Both web renderers already carry a \`checked\` prop: htmlout writes the boolean attribute from it and the WASM runtime assigns el.checked from it on create \*and\* on update-props. Naming the prop \`on\` would have meant a second spelling of both halves in both renderers — four new branches whose only job is to mean what an existing branch already means — and the update half is the one that would have been forgotten, because a switch drawn correctly on the first render and frozen thereafter looks like a working widget until somebody changes its value from Go.
+
+#### What announces it, and why the role is not a core.Role
+
+HTML has no switch control. It has a \*switch attribute\* on a checkbox (WHATWG HTML; Safari draws it, most browsers do not yet), and it has role="switch", which tells a screen reader what this is in every browser regardless. Both are written, so the control announces itself correctly everywhere and is drawn correctly where the browser can — and where it cannot, it degrades to a checkbox, which is the same bool in the same state.
+
+That role is written from the \*node type\*, with no Style involved, which makes this the second such node after Modal's dialog — see htmlout.CarriesOwnRole. It is deliberately not a value in the Role vocabulary: every Role a caller can spell obliges all four renderers to grow an arm for it (core.Roles() is held against each renderer's dispatch in mobile/verify), and there is nothing for the natives to do here. A Material Switch and a SwiftUI Toggle announce themselves as switches already. \`switch\` therefore joins aria/spec.NearMisses for the reason \`dialog\` is there: a role this framework emits and does not name.
+
+#### It reads the theme's CheckBox base
+
+The same base the other boolean control reads, and not a field of its own. What that style actually contributes is geometry and display — both natives read only margin and size off a control's style (marginAndSize in the Compose renderer, marginAndSizeOnly in SwiftUI), and on the web a control drawn by the user agent ignores a fill. A Components.Switch field would therefore be a palette entry no palette could spend, measured by the contrast census as though some surface were drawn from it.
+
+Like Checkbox it carries no label: a control's label is the caller's, and comps.FormField and comps.InputRow already own that slot.
+
+#### Keyboard focus
+
+Not in focusableLeafTypes, for Checkbox's reason one file over: neither native renderer gives one keyboard focus, so the stamp would emit a patch per focus command that nothing on the far side reads. A browser focuses the \<input> for free, as it does a checkbox's.
+
+<small>[core/switch.go:84](https://github.com/rohanthewiz/grmob/blob/master/core/switch.go#L84)</small>
+
+### func TabView
+
+```go
+func TabView(props ...TabViewProp) View
+```
+
+<small>[core/tabview.go:19](https://github.com/rohanthewiz/grmob/blob/master/core/tabview.go#L19)</small>
+
+### func TextArea
+
+```go
+func TextArea(value string, onChange func(string), rows int, props ...PropsAndChildren) View
+```
+
+<small>[core/input.go:334](https://github.com/rohanthewiz/grmob/blob/master/core/input.go#L334)</small>
+
+### func TextGrid
+
+```go
+func TextGrid(rows []GridRow, props ...PropsAndChildren) View
+```
+
+TextGrid is a monospace grid of styled text: a terminal pane, a log tail, a hex dump. Rows are given in order; each row is a run of styled spans that the renderer lays out in a fixed-pitch font with no wrapping.
+
+	core.TextGrid(rows, core.FontSize(12), core.Background("#000"))
+
+#### Why a node type and not a Column of Text
+
+Nothing else in core can draw this. Style has no font family, so a Text cannot ask for a fixed pitch, and a row of Text nodes has no way to keep its glyphs on a cell grid across styled runs. Emulating a grid from Row and Text would also put every run in the node tree as its own element, which for an 80×24 pane at terminal diff rate is a patch stream measured in thousands of nodes per second.
+
+#### Rows are children, so a changed row is one patch
+
+The grid renders as a container node with one GridRow child per row, and each row's runs are one prop on that child. The reconciler pairs children by index and compares props by value, so a pass that changes three rows of twenty-four emits three update-props patches and nothing else; an unchanged row costs a DeepEqual on its runs and no traffic. A renderer therefore repaints a row, never the grid. No caching is needed to get this; it falls out of the node shape.
+
+Each platform draws its own: Compose an AnnotatedString in a monospace Text per row, SwiftUI an AttributedString with the monospaced design, the browser and htmlout a \<pre> of \<div> rows holding \<span> runs.
+
+The Style applies to the grid as a whole (FontSize, TextColor and Background are the ones that matter; a run's own colours override the grid's). Behavior props apply to the grid too, so a tap on any cell is a tap on the grid.
+
+<small>[core/textgrid.go:36](https://github.com/rohanthewiz/grmob/blob/master/core/textgrid.go#L36)</small>
+
+## Types
+
+### type ContentMode
+
+```go
+type ContentMode string
+```
+
+ContentMode says how an image's intrinsic aspect ratio is reconciled with the box the layout gave it. It is the one image property that is genuinely not styling: every renderer expresses it through the image view's own API (SwiftUI's content mode, Compose's ContentScale, CSS object-fit), not through the box modifiers, so it travels as a node prop.
+
+The four values are the intersection all three targets can express exactly:
+
+	         | fits inside | fills box | ratio kept
+	---------+-------------+-----------+-----------
+	Fit      | yes         | no        | yes
+	Fill     | no (crops)  | yes       | yes
+	Stretch  | no          | yes       | no
+	Center   | no          | no        | yes (1:1 pixels)
+
+Fit is the default — it is what core.Image has always rendered as, so an existing call site keeps its layout — and is also the safe default: it is the only mode that never crops and never distorts.
+
+<small>[core/image.go:21](https://github.com/rohanthewiz/grmob/blob/master/core/image.go#L21)</small>
+
+```go
+const (
+	// ContentModeFit scales the image down until it fits entirely inside the
+	// box, preserving the aspect ratio and leaving empty space on the axis
+	// that ran out first. CSS `object-fit: contain`.
+	ContentModeFit ContentMode = "fit"
+
+	// ContentModeFill scales the image up until it covers the box, preserving
+	// the aspect ratio and cropping the overflow on the longer axis. The mode
+	// for avatars, hero images and thumbnails — anything where empty space
+	// would be worse than losing an edge. CSS `object-fit: cover`.
+	//
+	// The crop is real on every target: CSS object-fit clips, Compose's
+	// ContentScale.Crop clips, and the SwiftUI path adds an explicit
+	// .clipped() — an unclipped image would paint over its siblings.
+	ContentModeFill ContentMode = "fill"
+
+	// ContentModeStretch distorts the image to exactly the box's dimensions,
+	// ignoring the aspect ratio. CSS `object-fit: fill`. Rarely what a design
+	// wants; included because the platforms offer it and because a Stretch
+	// spelled out beats an app pre-scaling its assets.
+	ContentModeStretch ContentMode = "stretch"
+
+	// ContentModeCenter draws the image at its intrinsic size, centered, with
+	// no scaling in either direction — larger than the box means it is
+	// cropped, smaller means it is surrounded by space. CSS `object-fit:
+	// none`. For pixel-exact assets (icons, QR codes) that scaling would blur.
+	ContentModeCenter ContentMode = "center"
+)
+```
+
+#### func ContentModes
+
+```go
+func ContentModes() []ContentMode
+```
+
+ContentModes returns every declared ContentMode, in declaration order.
+
+Go cannot enumerate the constants of a named string type at run time, so the set has to be written out a second time — and a second copy of a list is exactly the thing that goes stale. This one is pinned to the const block above by TestContentModesMatchTheDeclaredConstants, which reads them out of this file's syntax tree, so adding a constant without adding it here fails \`go test ./...\` rather than silently shrinking the set.
+
+It exists because four renderers each map these modes onto their own vocabulary — CSS object-fit in htmlout and the WASM runtime, SwiftUI scaling in Renderer.swift, Compose's ContentScale in Renderer.kt — and none of them can be asked "did you cover every mode?" without a list to check against. All four are now held to it:
+
+	htmlout.ObjectFits          htmlout/objectfit_test.go
+	the WASM runtime's copy     wasm/verify/objectfit_test.go (via htmlout)
+	Renderer.swift              mobile/verify/contentmode_test.go
+	Renderer.kt                 mobile/verify/contentmode_test.go
+
+The first two are table comparisons — both sides map a mode onto the same CSS keyword, so the values can be compared as well as the keys. The natives map onto SwiftUI and Compose vocabularies that share nothing with CSS or with each other, so only the key set is comparable; those two checks read the arms out of the native source and check coverage alone.
+
+A fresh slice per call rather than a package-level var: a var of slice type is writable by any importer, and four elements are cheaper to build than to defend.
+
+<small>[core/image.go:81](https://github.com/rohanthewiz/grmob/blob/master/core/image.go#L81)</small>
+
+### type GridRow
+
+```go
+type GridRow []GridRun
+```
+
+GridRow is one row of a TextGrid: its runs, in order, left to right.
+
+<small>[core/textgrid.go:48](https://github.com/rohanthewiz/grmob/blob/master/core/textgrid.go#L48)</small>
+
+### type GridRun
+
+```go
+type GridRun struct {
+	Text string `json:"t"`
+	Fg   string `json:"fg,omitempty"`
+	Bg   string `json:"bg,omitempty"`
+	Attr int    `json:"a,omitempty"`
+}
+```
+
+GridRun is a span of one row drawn in one style. Text is the glyphs; Fg and Bg are CSS colours ("#rrggbb"), each "" to inherit the grid's; Attr is a bitmask of the Grid\* attributes.
+
+The json tags are the wire shape the renderers read. They are short because a full pane is a few thousand runs a second at diff rate, and the key names are the part of a run that is not content.
+
+<small>[core/textgrid.go:57](https://github.com/rohanthewiz/grmob/blob/master/core/textgrid.go#L57)</small>
+
+### type SelectMenuItem
+
+```go
+type SelectMenuItem struct {
+	Index    int
+	Value    string
+	Label    string
+	Disabled bool
+}
+```
+
+SelectMenuItem is one choosable row of a picker's menu: an option, resolved out of the flat wire map into the three things every renderer asks it.
+
+Index is the option's position in the original list. It is carried because a menu row needs an identity that survives two options sharing a label — which core.Select explicitly allows, since the Value is the identity and the Label is written to be read — and because a renderer that keys its rows on the map itself cannot: a map is not hashable in Swift and not comparable in Go.
+
+<small>[core/select_menu.go:51](https://github.com/rohanthewiz/grmob/blob/master/core/select_menu.go#L51)</small>
+
+### type SelectMenuSection
+
+```go
+type SelectMenuSection struct {
+	Heading string
+
+	// Disabled marks the whole run unavailable — core.SelectOption's
+	// GroupDisabled, resolved. See that field for what states it and why any
+	// one option in the run is enough.
+	//
+	// Every Item of a disabled section is itself Disabled, which is not a
+	// convenience: it is the only mechanism two of the four targets have.
+	// SwiftUI puts `.disabled` on the Button and never on the Section (see
+	// grMobMenuItems), Material's dropdown has no section construct at all,
+	// and on the web a run with no heading has no <optgroup> to carry the
+	// attribute. So this field is what a renderer reads to grey the *heading*
+	// — and, on the web, to write <optgroup disabled> once instead of the
+	// attribute N times — while the refusal itself always rides on the items.
+	Disabled bool
+
+	Items []SelectMenuItem
+}
+```
+
+SelectMenuSection is one run of consecutive options sharing a heading.
+
+Heading is empty for the options that stand on their own at the top level, and such a run is a real section rather than an absence of one: every renderer needs somewhere to put those options, and giving them a section with no heading means the drawing code is one loop over sections rather than a loop with a special case in it.
+
+<small>[core/select_menu.go:65](https://github.com/rohanthewiz/grmob/blob/master/core/select_menu.go#L65)</small>
+
+#### func SelectMenuSections
+
+```go
+func SelectMenuSections(options []map[string]string) []SelectMenuSection
+```
+
+SelectMenuSections splits a picker's flattened options into the runs core.SelectOption.Group describes.
+
+Runs, not a gather: consecutive options sharing a heading are one section, in the order they were written, and the same heading either side of a different one is two sections. The field's own doc carries the argument — the list's order is the caller's, and no renderer could undo a reordering.
+
+The loop closes a run when the next option names a different heading, and flushes the last one after the loop, which is the only bookkeeping the rule needs. An empty list gives an empty slice rather than nil, so a renderer can range over the result without a guard.
+
+##### Why the flush is now more than an append
+
+A run's Disabled is a property of the \*whole\* run — any option carrying core.SelectOption.GroupDisabled sets it — so it is not known until the run is closed, and closing it has to walk back over the items already collected to disable them. That is the second thing the flush does, and it is why closing a run is a named step here rather than an inline append: a rule with two halves that can be half-remembered is exactly the shape this file exists to hold in one place.
+
+<small>[core/select_menu.go:122](https://github.com/rohanthewiz/grmob/blob/master/core/select_menu.go#L122)</small>
+
+#### func (SelectMenuSection) First
+
+```go
+func (s SelectMenuSection) First() int
+```
+
+First is the index of the section's first option, which is what identifies the section to a renderer that needs a key.
+
+The heading cannot be that key: core.SelectOption.Group allows the same heading either side of a different one, and that is two sections. The index can, because a section is a contiguous run and no two runs start in the same place. A section with no items cannot occur — SelectMenuSections opens one only when it has an option to put in it — so the read is total.
+
+<small>[core/select_menu.go:93](https://github.com/rohanthewiz/grmob/blob/master/core/select_menu.go#L93)</small>
+
+### type SelectOption
+
+```go
+type SelectOption struct {
+	Value string
+	Label string
+
+	// Group is the heading this option is filed under: a country's continent,
+	// a font's family, "Recently used" above the rest. Empty means the option
+	// stands on its own at the top level of the list, which is what every
+	// option did before this field existed.
+	//
+	// # Consecutive options with the same Group form one section
+	//
+	// Runs, not a gather. Two options naming "Europe" with an American one
+	// between them make *two* Europe sections, in the order they were written.
+	//
+	// That is the honest reading and the only one this widget can offer. The
+	// list's order is the caller's — it is what a person sees and what the
+	// keyboard walks — and a gather would silently reorder it to suit the
+	// headings, which is a bigger change than the one being asked for and one
+	// no renderer could undo. Sorting a list into its sections is a line of Go
+	// at the call site; un-sorting one is not.
+	//
+	// Each target draws a run as its own construct: an <optgroup> on the web,
+	// a Section in the iOS menu, a heading item in the Android dropdown. All
+	// three are labels rather than options — none of them is selectable, and
+	// none of them carries a Value.
+	//
+	// Which options form which run is decided once, by SelectMenuSections
+	// (select_menu.go), and not by each renderer — see that file for what four
+	// copies of this rule cost.
+	//
+	// # A heading with nothing under it cannot be written
+	//
+	// This field is a property of an *option*, so a section with no options
+	// has nothing to declare it: a run exists because some option named it.
+	// SelectMenuSections therefore never produces an empty section, which
+	// SelectMenuSection.First relies on and TestAnEmptySectionIsUnreachable
+	// pins.
+	//
+	// That is a limit rather than an oversight. Declaring a heading
+	// independently means a second list beside the options, and then a rule
+	// for matching the two — which headings are in use, what a heading with no
+	// matching option does, what an option naming a heading that is not in the
+	// list does. The run-based reading was chosen precisely to have no
+	// matching problem in it, and an empty section is the one thing that
+	// reading cannot express. Nothing has asked for it: every real request has
+	// been "this category is empty, say so", which is not an empty section at
+	// all.
+	//
+	// What to write instead is a placeholder option, disabled:
+	//
+	//	{Group: "Archive", Label: "Nothing archived yet", Disabled: true}
+	//
+	// It is better than an empty section on every target rather than merely
+	// possible: an <optgroup> with no <option> in it, a SwiftUI Section with
+	// no Button and a Compose heading with no rows are each a label a screen
+	// reader announces and a pointer cannot reach, and none of them says why
+	// the category is empty. A disabled row says it in the caller's own words,
+	// in the place a person is already looking. internal/menufixture carries
+	// the shape, so all four picker menus are checked against it.
+	Group string
+
+	// Disabled greys this option out: visible, announced, and not choosable.
+	// The plan a caller has outgrown, the size that is out of stock, the
+	// timezone their region does not offer.
+	//
+	// Distinct from leaving the option out, which is the alternative and is
+	// usually worse: an option that vanishes takes its explanation with it,
+	// and a list that changes length between renders is one a person has to
+	// re-read. A disabled option says *this exists and you cannot have it*.
+	//
+	// It does not stop Go from being handed the value. Every target refuses
+	// the tap or the click, so nothing reaches onChange through the control —
+	// but a Select is controlled, and an app that sets its own state to a
+	// disabled option's value will find the widget showing it, because the
+	// value shown is always the one Go passed. That is the same contract an
+	// out-of-list value lands under; see Select.
+	Disabled bool
+
+	// GroupDisabled marks this option's whole *run* unavailable: the paid
+	// plans on a free account, a shipping tier this address cannot use, a
+	// "Coming soon" family that is worth showing and not worth offering.
+	//
+	// # Any option in the run is enough
+	//
+	// The declaration is read off every option, not off the first one. A
+	// caller writing it on the second entry of a run and getting nothing would
+	// have no way to find that out — a menu is drawn behind a tap, there is no
+	// error channel here, and the option would look exactly like an option
+	// that had been read. Making any one of them decide is the reading with no
+	// silent failure in it.
+	//
+	// The cost is that a run's state is not known until the run is closed,
+	// which is real bookkeeping: SelectMenuSections walks back over the run's
+	// items when it flushes one. That is a cost paid once, in the authority,
+	// which is the reason the authority exists.
+	//
+	// # It is not the same as disabling every option by hand
+	//
+	// Marking each option Disabled refuses each tap and says nothing about the
+	// heading, which stays as legible as the ones above it. GroupDisabled
+	// carries to the section — SelectMenuSection.Disabled — so the *heading*
+	// can be greyed too, and so the web can write <optgroup disabled> once
+	// rather than an attribute per option.
+	//
+	// Every item of a disabled run is still marked Disabled on its way out, so
+	// the refusal reaches the two targets that have no section-level control
+	// at all. See SelectMenuSection.Disabled.
+	//
+	// On an ungrouped run (Group empty) there is no heading to grey and, on
+	// the web, no <optgroup> to carry the attribute — so it degrades to
+	// exactly "every option in the run is disabled", which is the honest
+	// answer rather than a special case.
+	GroupDisabled bool
+}
+```
+
+SelectOption is one choice in a Select: the value the app works in, and the label a person reads.
+
+Two fields rather than a bare string because the two are different things often enough to be worth the type — a country code and a country name, a status enum and a sentence — and a widget that took only strings would push every caller into keeping a parallel slice. An empty Label means "the value is readable enough", which is the common small case (a list of sizes, a list of years) and keeps that case a one-word literal.
+
+<small>[core/input.go:93](https://github.com/rohanthewiz/grmob/blob/master/core/input.go#L93)</small>
+
+#### func Option
+
+```go
+func Option(value, label string) SelectOption
+```
+
+Option builds a SelectOption, mirroring Tab's constructor next door.
+
+<small>[core/input.go:209](https://github.com/rohanthewiz/grmob/blob/master/core/input.go#L209)</small>
+
+### type TabItem
+
+```go
+type TabItem struct {
+	Label string
+	Icon  string
+}
+```
+
+<small>[core/tabview.go:10](https://github.com/rohanthewiz/grmob/blob/master/core/tabview.go#L10)</small>
+
+#### func Tab
+
+```go
+func Tab(label string, icon string) TabItem
+```
+
+<small>[core/tabview.go:80](https://github.com/rohanthewiz/grmob/blob/master/core/tabview.go#L80)</small>
+
+### type TabViewNode
+
+```go
+type TabViewNode struct {
+	SelectedIndex int
+	OnTabChange   func(int)
+	Tabs          []TabItem
+	Content       []View
+}
+```
+
+<small>[core/tabview.go:3](https://github.com/rohanthewiz/grmob/blob/master/core/tabview.go#L3)</small>
+
+### type TabViewProp
+
+```go
+type TabViewProp interface {
+	Apply(*TabViewNode)
+}
+```
+
+<small>[core/tabview.go:15](https://github.com/rohanthewiz/grmob/blob/master/core/tabview.go#L15)</small>
+
+#### func Content
+
+```go
+func Content(views ...View) TabViewProp
+```
+
+<small>[core/tabview.go:74](https://github.com/rohanthewiz/grmob/blob/master/core/tabview.go#L74)</small>
+
+#### func OnTabChange
+
+```go
+func OnTabChange(fn func(int)) TabViewProp
+```
+
+<small>[core/tabview.go:62](https://github.com/rohanthewiz/grmob/blob/master/core/tabview.go#L62)</small>
+
+#### func SelectedIndex
+
+```go
+func SelectedIndex(i int) TabViewProp
+```
+
+<small>[core/tabview.go:56](https://github.com/rohanthewiz/grmob/blob/master/core/tabview.go#L56)</small>
+
+#### func Tabs
+
+```go
+func Tabs(tabs ...TabItem) TabViewProp
+```
+
+<small>[core/tabview.go:68](https://github.com/rohanthewiz/grmob/blob/master/core/tabview.go#L68)</small>
+
