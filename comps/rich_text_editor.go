@@ -240,13 +240,17 @@ func (r RichTextEditor) editorProps(t *core.Theme) []core.PropsAndChildren {
 //
 // # Why the strip carries no core.RoleToolbar
 //
-// It would be the right role and this package may not declare it. RoleToolbar
-// is one of core's keyboard composites, and a widget that declares a composite
-// container role makes a *nested* composite reachable by ordinary composition —
-// two of these on a screen, or one inside a caller's own listbox — which is a
-// finding core.AuditTree exists to report and which no screen should be able to
-// produce by accident. TestNoWidgetDeclaresACompositeContainerRole in this
-// package is the rule, with the argument written out.
+// It would be the right role. RoleToolbar is one of core's keyboard
+// composites, and a widget that declares a composite container role can make a
+// *nested* composite reachable by ordinary composition, which is a finding
+// core.AuditTree exists to report. When this strip was written no widget in
+// the package declared one. The rule is now narrower: a closed widget, whose
+// members are all built from data and which holds no core.View, may declare
+// one (BottomBar and RadioGroup do). This strip is built from RichToolItem
+// data, so it qualifies; declaring the role here is a recorded follow-up
+// rather than part of the change that narrowed the rule.
+// TestOnlyClosedWidgetsDeclareACompositeContainerRole in this package is the
+// rule, with the argument written out.
 //
 // A caller who wants the landmark declares it on their own box, which is what
 // makes the pairing deliberate:

@@ -538,6 +538,12 @@ test("a member found deeper than a direct child still counts", () => {
 test("a nested composite keeps its own members", () => {
     // Two listboxes, one inside the other. Pooling both sets would let an
     // arrow key in the inner one walk out into the outer one's rows.
+    //
+    // Not contrived: comps.RadioGroup declares its own listbox, so a
+    // RadioGroup placed inside a caller's hand-roled listbox is this tree.
+    // RadioGroup and BottomBar are the only widgets that declare a container
+    // role, and both are closed (no core.View slot), so two widgets cannot
+    // nest on their own; comps/nested_composite_test.go holds that premise.
     const lb = mountTree({
         Type: "Column",
         Style: { AccessibilityRole: "listbox" },

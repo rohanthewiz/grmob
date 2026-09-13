@@ -6,7 +6,7 @@ rows". A3 `Stepper`, A4 `BottomBar` + `Screen.Footer`, A5 `Spinner` and A6
 `Rating` shipped with lesson 4.15 "Small controls". Tier B is landing one
 widget per commit: B1 `ActionSheet` shipped with lesson 6.7, and B3
 `Snackbar` (with `hooks.UseTimeoutWhile`) joined it as "Action sheets &
-snackbars".
+snackbars". B2 `RadioGroup` shipped with lesson 4.16 "Radio groups".
 Tier C is open.
 
 **Decisions that differ from the Tier A sketches below:**
@@ -46,6 +46,21 @@ Tier C is open.
   conditional rendering, because the widget holds that hook. The widget does
   not place itself: `Screen.Footer` or a bottom-aligned `ZStack` layer is the
   caller's choice.
+- B2 `RadioGroup` took option (b), `RoleListBox` + `ListRow.Selectable`, as
+  planned. The ring is a drawn Column rather than a platform control, so the
+  row is the only handler and the web double dispatch `SwitchRow` guards
+  against cannot occur. The selected row passes an empty `SelectedStyle`
+  because the ring already carries the selection and a Surface tint on top
+  reads as a second state. It is vertical only; `SegmentedControl` is the
+  horizontal form.
+- B2 tripped `comps/nested_composite_test.go`, whose premise was "no widget
+  declares a keyboard container role". That premise was already false:
+  `BottomBar` has declared `RoleToolbar` since A4, through a variable the
+  scan could not see. The guard now scans every code reference to a
+  container role and allows it only in *closed* widgets, meaning no declared
+  struct holds a `core.View`. `BottomBar` and `RadioGroup` are the two
+  listed. Two closed widgets cannot nest by composition, so a nested
+  composite still needs at least one container the caller roled by hand.
 
 **Correction found while landing A2:** rendering the row's control
 `core.Disabled(true)` (the approach sketched under A2) was rejected. Disabled

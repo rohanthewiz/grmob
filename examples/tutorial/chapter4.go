@@ -44,6 +44,7 @@ func chapter4() Chapter {
 			lessonCodeEditor(),
 			lessonRichText(),
 			lessonSmallControls(),
+			lessonChoicesAndProgress(),
 		},
 	}
 }
@@ -2910,6 +2911,71 @@ func lessonSmallControls() Lesson {
 					"Spinner owns hooks: render it every pass and flip Hidden, which also pauses its ticks.",
 					"BottomBar is navigation with Selected >= 0 and a toolbar below zero; each cell takes an equal share of the width.",
 					"Screen.Footer pins a bar outside the scroll region and grows the content to push it to the bottom edge.",
+				),
+			)
+		},
+	}
+}
+
+// lessonChoicesAndProgress is Tier B's in-page widgets. It opens with
+// RadioGroup, the vertical form of a choice, and is appended at the end of the
+// chapter for the reason 4.15 was: lesson numbers already in deep links do not
+// move.
+func lessonChoicesAndProgress() Lesson {
+	return Lesson{
+		Title:   "Radio groups",
+		Summary: "comps.RadioGroup shows every option at once, with room for a subtitle, as a listbox a keyboard can drive.",
+		Body: func(ctx *core.Context) core.View {
+			ship := core.NewState(ctx, "std")
+
+			options := []comps.RadioOption{
+				{Value: "std", Label: "Standard", Subtitle: "3–5 days · free"},
+				{Value: "exp", Label: "Express", Subtitle: "Next day · $9"},
+				{Value: "pick", Label: "Pick up in store", Subtitle: "Unavailable at this address", Disabled: true},
+			}
+			chosen := ""
+			for _, o := range options {
+				if o.Value == ship.Get() {
+					chosen = o.Label
+				}
+			}
+
+			return core.Column(
+				core.Gap(14),
+				prose("Three widgets pick one value. core.Select hides the options until it is "+
+					"opened. SegmentedControl lays two to four short labels side by side. "+
+					"RadioGroup lists every option vertically, with a subtitle each, for the "+
+					"choice a user should compare before making."),
+				codeBlock(`comps.RadioGroup{
+    Label: "Shipping",
+    Options: []comps.RadioOption{
+        {Value: "std", Label: "Standard", Subtitle: "3–5 days"},
+        {Value: "exp", Label: "Express", Subtitle: "Next day"},
+    },
+    Value:    ship.Get(),
+    OnChange: ship.Set,
+}`),
+				prose("The whole row is the target, and the ring is drawn rather than a platform "+
+					"control, so one tap reaches Go once on every target. OnChange fires only "+
+					"for a different option, so it can be a plain setter."),
+				prose("core has no radio role yet, so the group is a listbox and each row an "+
+					"option that states selected or not selected. A reader hears \"option, "+
+					"selected\" rather than \"radio button, checked\", and in the browser the "+
+					"group is one tab stop that the arrow keys move through."),
+				demoPanel("Tap a row anywhere. The store pickup option is disabled.",
+					comps.RadioGroup{
+						Label:    "Shipping",
+						Options:  options,
+						Value:    ship.Get(),
+						OnChange: ship.Set,
+					},
+					caption("Shipping: "+chosen),
+				),
+				keyPoints(
+					"RadioGroup is the vertical, every-option-visible choice; Select is compact and SegmentedControl is horizontal.",
+					"Each row is the tap target and the ring is drawn, so there is no second control to double-dispatch.",
+					"OnChange fires only for a different, enabled option.",
+					"It is a labelled listbox of options that state their selection, with the browser's listbox keyboard; a radio role is a follow-up.",
 				),
 			)
 		},

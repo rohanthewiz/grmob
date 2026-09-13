@@ -1761,3 +1761,30 @@ func TestSmallControlsDemoDrivesAllFourWidgets(t *testing.T) {
 	}
 	assertNoConcerns(t)
 }
+
+// --- 4.16 Choices and progress ------------------------------------------------
+
+func TestChoicesLessonRadioGroupPicksByRow(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Radio groups")
+
+	if !hasText(tree(t, mgr), "Shipping: Standard") {
+		t.Fatal("the group starts on Standard")
+	}
+	tapLabelled(t, mgr, "Express")
+	if !hasText(tree(t, mgr), "Shipping: Express") {
+		t.Fatal("tapping the Express row should choose it")
+	}
+	tapLabelled(t, mgr, "Pick up in store")
+	if !hasText(tree(t, mgr), "Shipping: Express") {
+		t.Fatal("a disabled option must not be chosen")
+	}
+
+	express := findNode(tree(t, mgr), func(n *node) bool {
+		return n.Style != nil && n.Style.AccessibilityLabel == "Express"
+	})
+	if express.Style.AccessibilityRole != string(core.RoleOption) {
+		t.Fatalf("option role = %q", express.Style.AccessibilityRole)
+	}
+	assertNoConcerns(t)
+}

@@ -903,6 +903,51 @@ HTML but they drive reconciler matching and native view recycling, so captions
 are assumed distinct — two identical captions collide, which debug mode reports
 rather than silently mismatching segments.
 
+## RadioGroup
+
+A vertical set of mutually exclusive options, each a row with a ring on the
+leading edge.
+
+```go
+comps.RadioGroup{
+    Label: "Shipping",
+    Options: []comps.RadioOption{
+        {Value: "std", Label: "Standard", Subtitle: "3–5 days"},
+        {Value: "exp", Label: "Express", Subtitle: "Next day"},
+    },
+    Value:    ship.Get(),
+    OnChange: ship.Set,
+}
+```
+
+**Which choice widget.**
+
+| Widget | Use it for |
+|---|---|
+| `core.Select` | a compact field whose options stay hidden until opened |
+| `SegmentedControl` | two to four short labels side by side |
+| `RadioGroup` | every option visible, stacked, each with room for a subtitle |
+
+**One target per row.** The ring is drawn, not a platform control, so the
+row's tap is the only handler. There is no second dispatch to guard against,
+unlike `SwitchRow`. `OnChange` fires only when the tapped option differs from
+`Value` and is enabled.
+
+**A listbox, for now.** `core.Role` has no radio roles. The group is a
+`RoleListBox` and each row a `ListRow` with `Selectable`, so every option
+states selected or not selected. A reader hears "option, selected" rather than
+"radio button, checked". The browser runtime supplies the listbox keyboard:
+one tab stop, Up and Down, Home and End, and Enter or Space to choose. Adding
+`RoleRadio` and `RoleRadioGroup` to core is a follow-up.
+
+Other notes:
+
+- Set `Label`. A listbox with no name is announced as a bare list of options.
+- The selected row takes no background tint, because the ring already shows
+  the selection.
+- `Disabled` on the group or on one `RadioOption` greys it and drops its taps.
+- A nil `OnChange` draws a display-only group with no handlers.
+
 ## Stepper
 
 A number with a − and a + beside it, for small ranges where two taps beat

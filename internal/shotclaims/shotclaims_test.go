@@ -201,7 +201,7 @@ func attr(tag, name string) string {
 //
 // Alt text is the caption a reader who cannot see the picture gets, and
 // this repository's alt text states screen contents: "showing Count: 3",
-// "the error 'The two passwords differ'", "0 of 54 lessons opened". Those
+// "the error 'The two passwords differ'", "0 of 55 lessons opened". Those
 // are the same kind of sentence as the six lesson counts that were wrong
 // in three directions at once — a fact about a screen, transcribed.
 //
