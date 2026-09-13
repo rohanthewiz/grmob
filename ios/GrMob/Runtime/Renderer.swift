@@ -557,14 +557,22 @@ private struct FlexChildren: View {
                              value: child.style?.shrinkFactor ?? 1)
                 .layoutValue(key: GrMobFlexHugs.self, value: hugs)
                 // The CSS `min-width: auto` floor, measured off the node
-                // because no view on this host will report it. Rows only:
-                // a text's min-content HEIGHT is a function of the width it
-                // wraps at, which a tree walk does not know. See
-                // GrMobMinContent for that and for every other case it
+                // because no view on this host will report it.
+                //
+                // A Column's `min-height: auto` floor cannot be measured off
+                // the node — a text's min-content HEIGHT is a function of the
+                // width it wraps at, which a tree walk does not know — but the
+                // layout already measures exactly that number: it is the
+                // child's base size. So a Column hands over a verdict instead
+                // of a number. `.infinity` means "floor at your base", which
+                // minMains clamps down to the base; 0 means no floor. See
+                // GrMobMinContent.floorsHeightAtContent for which children
+                // get which, and GrMobMinContent for every case either axis
                 // deliberately floors at zero.
                 .layoutValue(key: GrMobFlexMin.self,
                              value: axis == .horizontal
-                                 ? GrMobMinContent.width(of: child) : 0)
+                                 ? GrMobMinContent.width(of: child)
+                                 : (GrMobMinContent.floorsHeightAtContent(child) ? .infinity : 0))
         }
     }
 
@@ -623,6 +631,19 @@ private struct GrMobFlexHugs: LayoutValueKey {
 /// default, and deliberately: an unset shrink factor has one right answer,
 /// while an unset floor would be a guess at a measurement, and a guessed floor
 /// that is too high overflows a line a browser would have fitted.
+///
+/// Along a Column's main axis the value is a verdict rather than a
+/// measurement: `.infinity` for a child whose automatic minimum height is its
+/// content height, 0 for a child with no floor. The content height is the base
+/// size the layout measures anyway, and minMains clamps every value to the
+/// base, so infinity lands on exactly that number with no second measurement.
+///
+/// ```
+///   axis        value sent              floor the solver sees
+///   ----        ----------              ---------------------
+///   horizontal  min-content width       min(value, base)
+///   vertical    .infinity | 0           base | 0
+/// ```
 private struct GrMobFlexMin: LayoutValueKey {
     static let defaultValue: CGFloat = 0
 }
@@ -794,9 +815,11 @@ private struct GrMobFlexLayout: Layout {
     /// there is no minimum in the view layer to read. GrMobMinContent computes
     /// it from the node instead.
     ///
-    /// The clamp to `base` is belt and braces: a floor above the ideal size is
-    /// not a shape GrMobMinContent produces, and the solver clamps again for
-    /// the same reason.
+    /// The clamp to `base` is belt and braces for a Row — a floor above the
+    /// ideal size is not a shape GrMobMinContent.width produces — and the
+    /// whole mechanism for a Column, whose children send `.infinity` to mean
+    /// "floor at the base" (see GrMobFlexMin). The solver clamps again
+    /// regardless.
     private func minMains(_ subviews: Subviews, bases: [CGFloat]) -> [CGFloat] {
         subviews.enumerated().map { i, subview in min(subview[GrMobFlexMin.self], bases[i]) }
     }

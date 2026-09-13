@@ -71,13 +71,15 @@ import SwiftUI
 ///                           whose whole business is to be narrower than it
 ///                           wants to be.
 ///
-///   the cross axis          there is no min-height half of this. A text's
-///                           min-content HEIGHT is a function of the width it
-///                           is laid out at, which a tree walk does not know,
-///                           and a Column that overflows its height rather
-///                           than compressing is a bigger behavioural change
-///                           than the defect being fixed. Columns keep the
-///                           floorless behaviour they have always had.
+///   the column axis         not measured here. A text's min-content HEIGHT
+///                           is a function of the width it is laid out at,
+///                           which a tree walk does not know — but the flex
+///                           layout measures exactly that as the child's base
+///                           size. So for a Column this file only decides
+///                           WHETHER a child floors at its base
+///                           (floorsHeightAtContent) and the layout supplies
+///                           the number. The verdict keeps the same bias:
+///                           every child it is unsure of floors at zero.
 enum GrMobMinContent {
 
     /// The min-content width of a node, in points.
@@ -116,6 +118,72 @@ enum GrMobMinContent {
         // insets — which is not what a browser does with one.
         guard inner > 0 else { return 0 }
         return capped(inner, node.style) + outerInsets(node.style)
+    }
+
+    /// Whether a Column child's automatic minimum height is its content
+    /// height (CSS `min-height: auto` on a column flex item) rather than zero.
+    ///
+    /// With no floor, a Column offered less height than its children need
+    /// shrinks every one of them below its content, and SwiftUI draws a
+    /// squeezed Text at its full height anyway, so its lines overlap the next
+    /// sibling. A browser keeps each child whole and lets the column overflow,
+    /// and Compose's Column measures children in order and never squeezes a
+    /// Text below its lines either. A DatePicker's day-marker dots drawn over
+    /// their numbers in a squeezed sheet was this.
+    ///
+    /// The answer is yes only where the base size the layout measures IS the
+    /// CSS floor, and no wherever that is in doubt — the width walk's bias, for
+    /// the width walk's reason: a floor too high overflows a column a browser
+    /// would have fitted.
+    ///
+    /// ```
+    ///   rule (first match wins)        floor  why
+    ///   -----------------------        -----  ---
+    ///   Overflow other than visible    no     CSS: a scroll container's
+    ///                                         automatic minimum is zero
+    ///   a scrolling node type          no     the same rule, even with a
+    ///                                         points Height
+    ///   Height in points               yes    a rigid frame: the base is the
+    ///                                         declared size, and so is CSS's
+    ///                                         min(specified, content) whenever
+    ///                                         the content is taller
+    ///   any other Height ("50%")       no     resolves against the column
+    ///                                         being sized
+    ///   Text, Button, Spacer           yes    the base is their lines (a
+    ///                                         Spacer's is empty)
+    ///   Row/Column/Card/Box/           yes    only when every child is: one
+    ///   Fragment/Theme                        child in doubt is squeezable
+    ///                                         height inside the base
+    ///   anything else                  no     images, inputs, maps, toggles
+    /// ```
+    ///
+    /// The scroll-container rule is also what keeps a nested scroll scrolling:
+    /// a Screen's FlexGrow Scroll or List — and any container holding one —
+    /// floors at zero, so it still absorbs the squeeze instead of being held
+    /// open at its whole content height. That is the `min-height: 0` trap CSS
+    /// authors hit in nested flex columns, avoided here by the verdict.
+    static func floorsHeightAtContent(_ node: GrMobNode) -> Bool {
+        let overflow = node.style?.overflow ?? ""
+        if !overflow.isEmpty && overflow != "visible" { return false }
+        switch node.type {
+        case "Scroll", "List", "TextArea", "CodeEditor", "TextGrid", "RichTextEditor":
+            return false
+        default:
+            break
+        }
+        // "auto" is CSS's initial height, the same as saying nothing.
+        let height = node.style?.height ?? ""
+        if !height.isEmpty && height != "auto" {
+            return GrMobMaxWidth.fixedLimit(height) != nil
+        }
+        switch node.type {
+        case "Text", "Button", "Spacer":
+            return true
+        case "Row", "Column", "Card", "Box", "Fragment", "Theme":
+            return node.children.allSatisfy(floorsHeightAtContent)
+        default:
+            return false
+        }
     }
 
     /// The content minimum clamped by core.MaxWidth, in points only.

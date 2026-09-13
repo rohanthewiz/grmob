@@ -236,5 +236,73 @@ func checkMinContent() -> [String] {
         }
     }
 
+    // --- the column axis: which children floor at their base height -------
+    //
+    // No number is pinned, because the layout measures the height. The
+    // verdict is, and each case below is one where the wrong answer is
+    // visible: a wrong "no" leaves lines overlapping in a squeezed column, a
+    // wrong "yes" holds a scroller open at its whole content so it never
+    // scrolls.
+    let floors = GrMobMinContent.floorsHeightAtContent
+    if !floors(text("4.12")) {
+        problems.append("a Text should floor at its lines")
+    }
+    if !floors(node("Button")) {
+        problems.append("a Button should floor at its label")
+    }
+    if !floors(node("Column", children: [text("a"), node("Row", children: [text("b"), node("Spacer")])])) {
+        problems.append("a column of text rows should floor at its content")
+    }
+    for type in ["Scroll", "List", "TextArea", "CodeEditor", "TextGrid", "RichTextEditor"] {
+        if floors(node(type)) {
+            problems.append("\(type) is a scroll container and should floor at zero")
+        }
+    }
+    // One scroller anywhere inside puts the container in doubt, which is what
+    // keeps a Screen's nested List absorbing the squeeze.
+    if floors(node("Column", children: [text("title"), node("Box", children: [node("List")])])) {
+        problems.append("a column holding a List, however deep, should floor at zero")
+    }
+    var clipped = GrMobStyle()
+    clipped.overflow = "hidden"
+    if floors(node("Column", style: clipped, children: [text("a")])) {
+        problems.append("Overflow(hidden) makes a scroll container, which floors at zero")
+    }
+    var visible = GrMobStyle()
+    visible.overflow = "visible"
+    if !floors(node("Column", style: visible, children: [text("a")])) {
+        problems.append("Overflow(visible) is the initial value and should keep the floor")
+    }
+    var rigid = GrMobStyle()
+    rigid.height = "48px"
+    if !floors(node("Image", style: rigid)) {
+        problems.append("a points Height is a rigid frame and should floor at it")
+    }
+    var bareNumber = GrMobStyle()
+    bareNumber.height = "48"
+    if !floors(node("Image", style: bareNumber)) {
+        problems.append("a bare-number Height is points too")
+    }
+    var autoHeight = GrMobStyle()
+    autoHeight.height = "auto"
+    if !floors(text("a", style: autoHeight)) {
+        problems.append("Height(auto) is the initial value and should keep the floor")
+    }
+    var relative = GrMobStyle()
+    relative.height = "50%"
+    if floors(text("a", style: relative)) {
+        problems.append("a percentage Height resolves against the column and should floor at zero")
+    }
+    var rigidScroll = GrMobStyle()
+    rigidScroll.height = "200px"
+    if floors(node("Scroll", style: rigidScroll)) {
+        problems.append("a scroller should floor at zero even with a points Height")
+    }
+    for type in ["Image", "Input", "MapView", "Checkbox"] {
+        if floors(node(type)) {
+            problems.append("\(type) with no Height should floor at zero")
+        }
+    }
+
     return problems
 }
