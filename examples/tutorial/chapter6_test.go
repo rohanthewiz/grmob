@@ -350,3 +350,63 @@ func TestDialogLessonSwitchTapReachingGoTwiceFlipsOnce(t *testing.T) {
 		t.Fatal("the switch should be off after one tap, so delete must not open the dialog")
 	}
 }
+
+// --- 6.7 Action sheets --------------------------------------------------------
+
+// sheetFiller is the ActionSheet's growing first child: the only clickable Box
+// directly inside the Modal.
+func sheetFiller(t *testing.T, root *node) *node {
+	t.Helper()
+	m := modalNode(t, root)
+	if len(m.Children) == 0 {
+		t.Fatal("the sheet's Modal has no children")
+	}
+	return m.Children[0]
+}
+
+func TestActionSheetLessonPicksAndDismisses(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Action sheets")
+
+	open := func() {
+		t.Helper()
+		tapLabelled(t, mgr, "Open note actions")
+		if modalNode(t, tree(t, mgr)).Props["visible"] != true {
+			t.Fatal("the ⋯ button should open the sheet")
+		}
+	}
+	closed := func(why string) {
+		t.Helper()
+		if modalNode(t, tree(t, mgr)).Props["visible"] != false {
+			t.Fatal(why)
+		}
+	}
+
+	closed("the sheet must start closed")
+
+	// Picking an action runs it and closes the sheet with no extra handler.
+	open()
+	tap(t, mgr, "Duplicate")
+	cur := tree(t, mgr)
+	if !hasText(cur, "2 copies") || !hasText(cur, "✓ duplicated") {
+		t.Fatal("Duplicate should add a copy and report it")
+	}
+	closed("picking an action must close the sheet")
+
+	// Cancel dismisses.
+	open()
+	tap(t, mgr, "Cancel")
+	closed("Cancel must close the sheet")
+
+	// A tap on the filler above the panel dismisses too.
+	open()
+	mgr.DispatchCallback(sheetFiller(t, tree(t, mgr)).Props["onClick"].(string))
+	closed("a tap above the panel must close the sheet")
+
+	// And the scrim's own dismiss.
+	open()
+	mgr.DispatchCallback(modalNode(t, tree(t, mgr)).Props["onDismiss"].(string))
+	closed("the scrim must close the sheet")
+
+	assertNoConcerns(t)
+}

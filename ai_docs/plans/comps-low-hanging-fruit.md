@@ -3,7 +3,9 @@
 **Status:** Tier A landed 2026-09-12. A1 `Dialog` and A2
 `SwitchRow`/`CheckboxRow` shipped with tutorial lesson 6.6 "Dialog and settings
 rows". A3 `Stepper`, A4 `BottomBar` + `Screen.Footer`, A5 `Spinner` and A6
-`Rating` shipped with lesson 4.15 "Small controls". Tier B and C are open.
+`Rating` shipped with lesson 4.15 "Small controls". Tier B is landing one
+widget per commit: B1 `ActionSheet` shipped with lesson 6.7 "Action sheets".
+Tier C is open.
 
 **Decisions that differ from the Tier A sketches below:**
 
@@ -21,6 +23,18 @@ rows". A3 `Stepper`, A4 `BottomBar` + `Screen.Footer`, A5 `Spinner` and A6
   static when rotated.
 - A6 `Rating` fills with the warning on-light tone, not `Colors.Warning`,
   which is about 2:1 on a light surface.
+
+**Decisions that differ from the Tier B sketches below:**
+
+- B1 `ActionSheet`: the placement question is answered. Both web targets
+  centre a Modal's content in a flex column, Compose weights a `FlexGrow`
+  child inside its Dialog, and SwiftUI already presents a Modal as a bottom
+  sheet and ignores grow. The widget therefore puts a growing, invisible
+  filler above its Card, with no `ZStack`. The filler also reports taps above
+  the panel as a dismiss, since those land inside the Modal's content on the
+  web and Compose. The actions are `comps.Button`s, not
+  `RoleListBox`/`RoleOption`: an option announces "not selected", and these
+  are commands. Picking an action calls `OnTap` then `OnDismiss`.
 
 **Correction found while landing A2:** rendering the row's control
 `core.Disabled(true)` (the approach sketched under A2) was rejected. Disabled

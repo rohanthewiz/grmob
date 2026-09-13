@@ -1730,6 +1730,60 @@ Other notes:
 - iOS presents a `core.Modal` as a sheet rather than a centred card. That is
   the host's rendering of the chassis, not something the widget chooses.
 
+## ActionSheet
+
+A short list of actions on the bottom edge of the screen, such as Share, Copy
+link and Delete, with a separate Cancel. It is built on `core.Modal` and
+`comps.Card`.
+
+```go
+comps.ActionSheet{
+    Visible: open.Get(),
+    Title:   "Note",
+    Actions: []comps.SheetAction{
+        {Label: "Share", OnTap: share},
+        {Label: "Delete", Variant: comps.VariantError, OnTap: del},
+    },
+    Cancel:    "Cancel",
+    OnDismiss: func() { open.Set(false) },
+}
+```
+
+**Picking an action closes the sheet.** A tap runs the action's `OnTap` and
+then `OnDismiss`, so no handler closes the sheet itself. This is the one way it
+differs from `Dialog`, whose Confirm never closes. A sheet is a menu, and a menu
+closes on selection. An action that needs a follow-up question opens a `Dialog`
+from its `OnTap`.
+
+**How it reaches the bottom edge.** `core.Modal` has no placement prop. It
+centres its content on the web and on Android, and iOS presents it as a bottom
+sheet. The widget puts a growing, invisible filler above its card:
+
+| Target | What the filler does |
+|---|---|
+| web | grows along the overlay's column and pushes the card to the bottom |
+| Android | is weighted, so the dialog window's column fills and the card is last |
+| iOS | has no height, because the sheet is already at the bottom |
+
+The filler also reports a tap above the panel as a dismiss. On the web and
+Android that tap lands inside the Modal's content rather than on its scrim.
+
+Other notes:
+
+- Actions are full-width ghost buttons. `VariantError` gives a destructive
+  action the error ink, and `Disabled` holds one back. A disabled action does
+  not dismiss the sheet.
+- Actions are buttons, not listbox options. They are commands, and an option
+  would be announced "not selected".
+- `Cancel`, a tap above the panel and the scrim all call `OnDismiss`. With
+  `OnDismiss` nil, only `Visible` closes the sheet.
+- The card carries `AccessibilityLabel(Title)` and the title is a heading. The
+  Modal chassis supplies the dialog semantics.
+- `Style` lands on the card last. `core.MaxWidth` keeps the panel from spanning
+  a wide browser window.
+- The Android and iOS placement comes from reading the renderers. It has not
+  been checked on a device.
+
 ## EmptyState
 
 The centered placeholder for content a screen does not have — and for the

@@ -20,7 +20,7 @@ func chapter6() Chapter {
 	return Chapter{
 		Title:   "Navigation & Overlays",
 		Icon:    "🧭",
-		Summary: "Push, Pop, Replace and the two unwinds — plus Modal, Toast and Dialog, the overlays that never touch the stack.",
+		Summary: "Push, Pop, Replace and the two unwinds — plus Modal, Toast, Dialog and ActionSheet, the overlays that never touch the stack.",
 		Lessons: []Lesson{
 			lessonStack(),
 			lessonReplace(),
@@ -28,6 +28,7 @@ func chapter6() Chapter {
 			lessonModal(),
 			lessonToast(),
 			lessonDialogAndSettingsRows(),
+			lessonActionSheet(),
 		},
 	}
 }
@@ -667,4 +668,98 @@ comps.CheckboxRow{Title: "Also delete attachments",
 			)
 		},
 	}
+}
+
+// --- 6.7 -----------------------------------------------------------------
+
+// lessonActionSheet teaches the bottom-edge list of actions. The demo is one
+// note with three things to do to it, so a reader sees the two behaviours that
+// separate a sheet from a Dialog: picking an action closes the sheet without
+// the handler saying so, and every way out (Cancel, a tap above the panel, the
+// scrim) reports through the one OnDismiss.
+func lessonActionSheet() Lesson {
+	return Lesson{
+		Title:   "Action sheets",
+		Summary: "comps.ActionSheet puts a list of actions on the bottom edge; picking one runs it and closes the sheet.",
+		Body: func(ctx *core.Context) core.View {
+			// Hooks first and unconditionally; the sheet's visibility is a
+			// prop, never a branch around the widget.
+			open := core.NewState(ctx, false)
+			copies := core.NewState(ctx, 1)
+			last := core.NewState(ctx, "")
+
+			return core.Column(
+				core.Gap(14),
+				prose("A Dialog asks a question. An action sheet offers a short list of things "+
+					"to do — Share, Duplicate, Delete — on the bottom edge where a thumb already "+
+					"is. comps.ActionSheet builds it on the same core.Modal, so it is controlled "+
+					"the same way: Visible is your state and OnDismiss reports every way out."),
+				codeBlock(`comps.ActionSheet{
+    Visible: open.Get(),
+    Title:   "Note",
+    Actions: []comps.SheetAction{
+        {Label: "Share", OnTap: share},
+        {Label: "Delete", Variant: comps.VariantError, OnTap: del},
+    },
+    Cancel:    "Cancel",
+    OnDismiss: func() { open.Set(false) },
+}`),
+				prose("Picking an action runs its OnTap and then OnDismiss, so no handler has to "+
+					"close the sheet itself. That is the one place it differs from Dialog, whose "+
+					"Confirm never closes: a sheet is a menu, and a menu closes on selection."),
+				prose("core.Modal centres its content on the web and on Android. The sheet "+
+					"places a growing, invisible filler above its card, which pushes the card to "+
+					"the bottom edge there and reports a tap above the panel as a dismiss. iOS "+
+					"already presents every Modal as a bottom sheet, and the filler has no height."),
+				demoPanel("Open the actions, pick one, and try each way of closing the sheet.",
+					comps.ListRow{
+						Title:    "Groceries",
+						Subtitle: copiesLabel(copies.Get()),
+						Trailing: comps.Button{
+							Label:              "⋯",
+							AccessibilityLabel: "Open note actions",
+							Emphasis:           comps.EmphasisGhost,
+							OnTap:              func() { open.Set(true) },
+						},
+					},
+					core.If(last.Get() != "", caption("✓ "+last.Get())),
+					comps.ActionSheet{
+						Visible: open.Get(),
+						Title:   "Groceries",
+						Actions: []comps.SheetAction{
+							{Label: "Share", OnTap: func() { last.Set("shared") }},
+							{Label: "Duplicate", OnTap: func() {
+								copies.Set(copies.Get() + 1)
+								last.Set("duplicated")
+							}},
+							{Label: "Delete", Variant: comps.VariantError, Disabled: copies.Get() == 0,
+								OnTap: func() {
+									copies.Set(copies.Get() - 1)
+									last.Set("deleted a copy")
+								}},
+						},
+						Cancel:    "Cancel",
+						OnDismiss: func() { open.Set(false) },
+						Style:     []core.StyleProp{core.MaxWidth("520px")},
+					},
+				),
+				keyPoints(
+					"ActionSheet is a Modal holding a growing filler and a Card of full-width ghost buttons, so the panel sits on the bottom edge on every target.",
+					"Picking an action runs its OnTap, then OnDismiss; Dialog's Confirm is the one that does not close.",
+					"Cancel, a tap above the panel and the scrim all report through OnDismiss; leave it nil and only Visible closes the sheet.",
+					"Actions are buttons, not listbox options: they are commands, and an option would be announced \"not selected\".",
+					"VariantError tints a destructive action; Disabled holds one back, and a disabled action does not dismiss either.",
+				),
+			)
+		},
+	}
+}
+
+// copiesLabel is 6.7's row subtitle, kept out of the body so the one plural
+// branch is read once.
+func copiesLabel(n int) string {
+	if n == 1 {
+		return "1 copy"
+	}
+	return fmt.Sprintf("%d copies", n)
 }

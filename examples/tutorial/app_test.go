@@ -684,7 +684,7 @@ func TestStacksDemoSwitchesAxis(t *testing.T) {
 // widget from putting a kilobyte in Props, and the parse is still the largest
 // single stage of an Android launch — it is simply now proportional to
 // something small. The bound is a factor of ten in each direction because the
-// number is a fact about 53 lessons of prose, which is edited: a new chapter
+// number is a fact about 54 lessons of prose, which is edited: a new chapter
 // should not fail a test, and a screen that suddenly sends four megabytes
 // should.
 func TestHomeTreeSize(t *testing.T) {
