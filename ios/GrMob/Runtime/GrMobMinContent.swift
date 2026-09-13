@@ -135,7 +135,9 @@ enum GrMobMinContent {
     /// crushed-badge bug this walk exists to prevent.
     private static func capped(_ inner: CGFloat, _ s: GrMobStyle?) -> CGFloat {
         guard let s, let cap = GrMobMaxWidth.fixedLimit(s.maxWidth) else { return inner }
-        let padding = CGFloat(s.padding.left + s.padding.right)
+        // The border inset counts with the padding: both are inside the
+        // border box the cap limits (GrMobStyle.contentInsets).
+        let padding = CGFloat(s.padding.left + s.padding.right) + 2 * s.borderInset
         return min(inner + padding, cap) - padding
     }
 
@@ -150,7 +152,10 @@ enum GrMobMinContent {
     /// content box, and the item's outer size carries its padding as well.
     private static func outerInsets(_ s: GrMobStyle?) -> CGFloat {
         guard let s else { return 0 }
+        // A drawn border insets the content too (GrMobStyle.contentInsets), so
+        // it is part of what the box adds around its content.
         return CGFloat(s.padding.left + s.padding.right + s.margin.left + s.margin.right)
+            + 2 * s.borderInset
     }
 
     /// The widest unbreakable run of a string, at a node's own text style.

@@ -150,6 +150,20 @@ func checkMinContent() -> [String] {
     if abs(GrMobMinContent.width(of: text("TRY IT", style: margined)) - (bare + 10)) > 0.01 {
         problems.append("horizontal margin should be added to the floor")
     }
+    // A drawn border insets the content as well (GrMobStyle.contentInsets,
+    // CSS's border-box), so it is added on both sides; a width with no colour
+    // draws nothing and adds nothing.
+    var bordered = GrMobStyle()
+    bordered.borderWidth = 2
+    bordered.borderColor = .gray
+    if abs(GrMobMinContent.width(of: text("TRY IT", style: bordered)) - (bare + 4)) > 0.01 {
+        problems.append("a drawn border's width should be added to the floor on both sides")
+    }
+    var uncoloured = GrMobStyle()
+    uncoloured.borderWidth = 2
+    if abs(GrMobMinContent.width(of: text("TRY IT", style: uncoloured)) - bare) > 0.01 {
+        problems.append("a border width with no colour draws nothing and should add nothing")
+    }
     // The vertical insets are not: this is one axis.
     var tall = GrMobStyle()
     tall.padding = GrMobStyle.Edges(top: 40, right: 0, bottom: 40, left: 0)

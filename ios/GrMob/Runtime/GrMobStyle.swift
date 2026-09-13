@@ -42,6 +42,30 @@ struct GrMobStyle: Equatable {
     var textColor: Color?
     var background: Color?
     var padding: Edges = .zero
+
+    /// How far a box's content starts inside its painted edge: the padding,
+    /// plus the border's width on every side when a border is drawn.
+    ///
+    /// CSS's border-box. On the web a 2px border pushes a box's children 2px
+    /// in; grMobBorder is an overlay that only paints, so without the extra
+    /// inset a child at the top edge was drawn under the stroke. comps.Spinner
+    /// showed it: the orbiting dot overlapped the ring's rim instead of
+    /// sitting just inside it (and on Compose, whose Modifier.border also
+    /// reserves nothing, a round clip cut it in half — the same fix is in
+    /// GrMobStyle.kt's boxModifier).
+    ///
+    /// The same two-part guard grMobBorder uses, so a width with no colour,
+    /// which paints nothing, moves nothing either.
+    var contentInsets: EdgeInsets {
+        let b = borderInset
+        return EdgeInsets(top: CGFloat(padding.top) + b, leading: CGFloat(padding.left) + b,
+                          bottom: CGFloat(padding.bottom) + b, trailing: CGFloat(padding.right) + b)
+    }
+
+    /// The border's width when one is drawn, else zero. See contentInsets.
+    var borderInset: CGFloat {
+        borderColor != nil && borderWidth > 0 ? borderWidth : 0
+    }
     var margin: Edges = .zero
     var borderRadius: CGFloat = 0
     var shadow: CGFloat = 0
@@ -503,13 +527,26 @@ struct GrMobBoxModifier: ViewModifier {
         let shape = RoundedCornerShapeIfAny(radius: s?.borderRadius ?? 0)
         let alignment = grMobFrameAlignment(s, axis: axis)
         return content
-            .padding((s?.padding ?? .zero).insets)
-            .background(s?.background ?? .clear)
-            .modifier(GrMobGestures(onTap: onTap, onLongPress: onLongPress,
-                                    disabled: s?.disabled ?? false))
-            .grMobClip(shape)
-            .grMobBorder(shape, color: s?.borderColor, width: s?.borderWidth ?? 0)
-            .grMobShadow(s?.shadow ?? 0)
+            // Padding plus the border's width: see GrMobStyle.contentInsets.
+            .padding(s?.contentInsets ?? EdgeInsets())
+            // The explicit Width and Height sit directly outside the padding
+            // and INSIDE the background, clip, border, shadow and gestures —
+            // CSS's border-box, and the order Compose's boxModifier already
+            // has (dimension, then clip/background/border, then padding).
+            //
+            // They used to come after the shadow, and that was invisible for
+            // any box whose content filled its frame. It was not for a box
+            // that hugs smaller content: GrMobFlexLayout reports the size of
+            // its children (zero for none), so the fill and the stroke were
+            // drawn around that and the fixed frame around them held nothing
+            // visible. comps.Spinner was the case that showed it — a 24pt
+            // ring drawn as a hollow speck, and its childless 6pt dot drawn
+            // not at all.
+            //
+            // The same move puts the touch target and the shadow on the
+            // declared box rather than on its content, which is again what
+            // the DOM and Compose do.
+            //
             // The cap is passed in as well as applied outside (below): a Width
             // in points or a percentage is a rigid frame, which reports its
             // own size whatever it is proposed, so only folding the cap into
@@ -517,8 +554,14 @@ struct GrMobBoxModifier: ViewModifier {
             .grMobDimension(s?.width ?? "", axis: .horizontal, alignment: alignment,
                             cap: GrMobMaxWidth.fixedLimit(s?.maxWidth ?? ""))
             .grMobDimension(s?.height ?? "", axis: .vertical, alignment: alignment)
-            // Rotation wraps the whole painted box — padding, background,
-            // gestures, corner clip, border, shadow and the explicit frame —
+            .background(s?.background ?? .clear)
+            .modifier(GrMobGestures(onTap: onTap, onLongPress: onLongPress,
+                                    disabled: s?.disabled ?? false))
+            .grMobClip(shape)
+            .grMobBorder(shape, color: s?.borderColor, width: s?.borderWidth ?? 0)
+            .grMobShadow(s?.shadow ?? 0)
+            // Rotation wraps the whole painted box — padding, the explicit
+            // frame, background, gestures, corner clip, border and shadow —
             // and is applied before the margin, which is the CSS rule: a
             // transform turns the border box about its own centre and leaves
             // the space reserved around it axis-aligned. Rotating after the
@@ -791,14 +834,23 @@ extension View {
             case .vertical: frame(maxHeight: .infinity, alignment: alignment)
             }
         } else if value.hasSuffix("%"), let pct = Double(value.dropLast()) {
-            containerRelativeFrame(axis == .horizontal ? .horizontal : .vertical) { length, _ in
+            containerRelativeFrame(axis == .horizontal ? .horizontal : .vertical,
+                                   alignment: alignment) { length, _ in
                 GrMobMaxWidth.clamp(length * min(max(pct / 100, 0), 1),
                                     to: axis == .horizontal ? cap : nil)
             }
         } else if let number = Double(value.hasSuffix("px") ? String(value.dropLast(2)) : value) {
+            // `alignment` on the fixed and percentage frames as well as the
+            // fill one. Left off, SwiftUI centres content smaller than the
+            // frame on both axes, where a CSS box and a Compose Column put it
+            // at the top-start: a hugging Column (GrMobFlexLayout reports its
+            // children's size) of fixed Height drew its first child in the
+            // middle. comps.Spinner showed it — the dot that orbits the rim
+            // sat at the ring's centre, where turning it moves nothing.
             switch axis {
-            case .horizontal: frame(width: GrMobMaxWidth.clamp(CGFloat(number), to: cap))
-            case .vertical: frame(height: CGFloat(number))
+            case .horizontal: frame(width: GrMobMaxWidth.clamp(CGFloat(number), to: cap),
+                                    alignment: alignment)
+            case .vertical: frame(height: CGFloat(number), alignment: alignment)
             }
         } else {
             self

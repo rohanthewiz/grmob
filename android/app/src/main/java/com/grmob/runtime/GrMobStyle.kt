@@ -570,10 +570,20 @@ fun GrMobStyle?.boxModifier(extra: Modifier = Modifier, gestures: Modifier = Mod
         m = m.border(borderWidth.dp, borderColor, shape ?: RoundedCornerShape(0.dp))
     }
     m = m.then(gestures)
-    if (padding != Edges0) {
+    // The content starts inside the border as well as the padding: CSS's
+    // border-box, where a 2px border pushes a box's children 2px in. Compose's
+    // Modifier.border only paints — it reserves nothing — so without this a
+    // child at the top edge was drawn under the stroke, and inside a round
+    // clip it was cut by the rim: comps.Spinner's orbiting dot was clipped in
+    // half on Android where the web draws it whole, inset from the ring.
+    //
+    // The same guard as the border itself (both halves), so a width with no
+    // colour, which paints nothing on any target, moves nothing either.
+    val borderInset = if (borderWidth > 0f && borderColor != null) borderWidth else 0f
+    if (padding != Edges0 || borderInset > 0f) {
         m = m.padding(
-            start = padding.left.dp, top = padding.top.dp,
-            end = padding.right.dp, bottom = padding.bottom.dp,
+            start = (padding.left + borderInset).dp, top = (padding.top + borderInset).dp,
+            end = (padding.right + borderInset).dp, bottom = (padding.bottom + borderInset).dp,
         )
     }
     // "hidden" keeps the node's space but not its pixels ("none" is handled
