@@ -71,7 +71,7 @@ func claimFor(t *testing.T, file string) shotclaims.Claim {
 //
 // The app is not driven at all: the picture is of the screen as it opens,
 // with chapter 1 already expanded and nothing yet visited. That is also
-// what makes its progress caption — "0 of 55 lessons opened" — the most
+// what makes its progress caption — "0 of 56 lessons opened" — the most
 // fragile claim in the manifest, and the reason it is there. The count is
 // computed from the curriculum on every render and transcribed into the
 // README's alt text, the site page and this picture; a lesson added

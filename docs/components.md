@@ -1899,6 +1899,8 @@ Other notes:
 - Actions are full-width ghost buttons. `VariantError` gives a destructive
   action the error ink, and `Disabled` holds one back. A disabled action does
   not dismiss the sheet.
+- `Checked` marks the current choice with a leading ✓ and an accessible name
+  ending ", selected". It is how a `Menu` becomes a picker.
 - Actions are buttons, not listbox options. They are commands, and an option
   would be announced "not selected".
 - `Cancel`, a tap above the panel and the scrim all call `OnDismiss`. With
@@ -1909,6 +1911,65 @@ Other notes:
   a wide browser window.
 - The Android and iOS placement comes from reading the renderers. It has not
   been checked on a device.
+
+## Menu
+
+A button that opens a short list, such as the "⋯" on a row or a "Sort by"
+picker. It is an `ActionSheet` with a trigger.
+
+```go
+open := core.NewState(ctx, "") // which row's menu is open
+
+comps.Menu{
+    Trigger: comps.Button{Label: "⋯", AccessibilityLabel: "Actions for " + note.Title,
+        Emphasis: comps.EmphasisGhost},
+    Open:      open.Get() == note.ID,
+    OnOpen:    func() { open.Set(note.ID) },
+    OnDismiss: func() { open.Set("") },
+    Title:     note.Title,
+    Items: []comps.SheetAction{
+        {Label: "Pin to top", OnTap: pin},
+        {Label: "Delete", Variant: comps.VariantError, OnTap: del},
+    },
+    Cancel: "Cancel",
+}
+```
+
+**There is no popover.** A list anchored under its button needs the button's
+position, and no host sends that to Go. Every target can present a Modal, so the
+list is the bottom-edge sheet from `ActionSheet`, with its rules. Picking an
+item runs its `OnTap` and then `OnDismiss`, and Cancel, the scrim and a tap above
+the panel all dismiss.
+
+**Open is the caller's state.** A menu on every row of a list is the common
+case. A widget that kept its open flag in a hook would take one slot per row,
+and those slots drift when the row count changes. With `Open` controlled, one
+state names the open menu and each row compares against it.
+
+**A picker is a menu with a checked item.** `SheetAction.Checked` puts a ✓
+before the label and names the item "Newest, selected". Each item sets the
+value in its own `OnTap`. Put the current value in the trigger's label.
+
+```go
+comps.SheetAction{
+    Label:   "Newest",
+    Checked: order.Get() == "newest",
+    OnTap:   func() { order.Set("newest") },
+}
+```
+
+Other notes:
+
+- `Trigger` is a `comps.Button` template. Its label, variant, emphasis,
+  `Disabled`, `Style` and names apply, and `OnOpen` replaces its `OnTap`. A
+  widget cannot attach a tap to a View it did not build, so the slot is a
+  Button. An icon trigger needs `AccessibilityLabel`.
+- The trigger has no expanded state. A control that opens a dialog is not a
+  disclosure, and ARIA's word for it, `aria-haspopup`, is not in core's
+  vocabulary.
+- `Checked` is a name suffix, not a selected state. On a button that state
+  becomes `aria-pressed`, which announces a toggle.
+- `Style` lands on the sheet's card, as `ActionSheet.Style` does.
 
 ## Snackbar
 

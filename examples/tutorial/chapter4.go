@@ -3,6 +3,7 @@ package tutorial
 import (
 	"fmt"
 	"maps"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -45,6 +46,7 @@ func chapter4() Chapter {
 			lessonRichText(),
 			lessonSmallControls(),
 			lessonChoicesAndProgress(),
+			lessonMenus(),
 		},
 	}
 }
@@ -3049,4 +3051,211 @@ func lessonChoicesAndProgress() Lesson {
 			)
 		},
 	}
+}
+
+// --- 4.17 -----------------------------------------------------------------
+
+// menuNote is one row of 4.17's list. Age is days since the note was edited,
+// which is what the Newest and Oldest orders sort on.
+type menuNote struct {
+	ID, Title string
+	Age       int
+}
+
+// menuSorts are 4.17's picker entries in menu order: the value the order
+// state holds, and the label the item and the trigger show.
+var menuSorts = []struct{ Value, Label string }{
+	{"newest", "Newest"},
+	{"oldest", "Oldest"},
+	{"title", "Title"},
+}
+
+// lessonMenus teaches the button that opens a list. The demo puts the two
+// menus an app reaches for first on one screen: a "⋯" on every row of a list,
+// and a Sort picker above it. One state names which menu is open, so deleting
+// a row takes nothing with it but its own entry. That is the argument for
+// Menu being controlled, made where a reader can watch it hold.
+func lessonMenus() Lesson {
+	return Lesson{
+		Title:   "Menus",
+		Summary: "comps.Menu is a button that opens an action sheet: the ⋯ on every row, and a Sort picker whose current choice is checked.",
+		Body: func(ctx *core.Context) core.View {
+			// Which menu is open: a note's ID, "sort", or "" for none. One
+			// state serves every menu on the screen.
+			open := core.NewState(ctx, "")
+			order := core.NewState(ctx, "newest")
+			pinned := core.NewState(ctx, "")
+			deleted := core.NewState(ctx, []string{})
+			last := core.NewState(ctx, "")
+
+			all := []menuNote{
+				{ID: "groceries", Title: "Groceries", Age: 3},
+				{ID: "trip", Title: "Trip ideas", Age: 1},
+				{ID: "books", Title: "Books to read", Age: 7},
+			}
+			notes := make([]menuNote, 0, len(all))
+			for _, n := range all {
+				if !slices.Contains(deleted.Get(), n.ID) {
+					notes = append(notes, n)
+				}
+			}
+			slices.SortFunc(notes, func(a, b menuNote) int {
+				// The pinned note leads whatever the order; the chosen
+				// order sorts the rest.
+				if ap, bp := a.ID == pinned.Get(), b.ID == pinned.Get(); ap != bp {
+					if ap {
+						return -1
+					}
+					return 1
+				}
+				switch order.Get() {
+				case "oldest":
+					return b.Age - a.Age
+				case "title":
+					return strings.Compare(a.Title, b.Title)
+				}
+				return a.Age - b.Age
+			})
+
+			closeMenu := func() { open.Set("") }
+
+			sortLabel := ""
+			sortItems := make([]comps.SheetAction, 0, len(menuSorts))
+			for _, s := range menuSorts {
+				if s.Value == order.Get() {
+					sortLabel = s.Label
+				}
+				sortItems = append(sortItems, comps.SheetAction{
+					Label:   s.Label,
+					Checked: s.Value == order.Get(),
+					OnTap: func() {
+						order.Set(s.Value)
+						last.Set("sorted by " + strings.ToLower(s.Label))
+					},
+				})
+			}
+
+			rows := make([]core.PropsAndChildren, 0, len(notes)+2)
+			// No inset and no gap: each ListRow carries the theme's row
+			// padding already.
+			rows = append(rows, core.Padding(0), core.Gap(0))
+			for _, n := range notes {
+				pinLabel, pinTo, subtitle := "Pin to top", n.ID, menuAge(n.Age)
+				if n.ID == pinned.Get() {
+					pinLabel, pinTo, subtitle = "Unpin", "", "Pinned · "+subtitle
+				}
+				rows = append(rows, comps.ListRow{
+					Title:    n.Title,
+					Subtitle: subtitle,
+					Trailing: comps.Menu{
+						Trigger: comps.Button{
+							Label:              "⋯",
+							AccessibilityLabel: "Actions for " + n.Title,
+							Emphasis:           comps.EmphasisGhost,
+						},
+						Open:      open.Get() == n.ID,
+						OnOpen:    func() { open.Set(n.ID) },
+						OnDismiss: closeMenu,
+						Title:     n.Title,
+						Items: []comps.SheetAction{
+							{Label: pinLabel, OnTap: func() {
+								pinned.Set(pinTo)
+								last.Set(strings.ToLower(pinLabel) + " " + n.Title)
+							}},
+							{Label: "Delete", Variant: comps.VariantError, OnTap: func() {
+								// A fresh slice: the state's value is shared
+								// with the render that read it.
+								deleted.Set(append(slices.Clone(deleted.Get()), n.ID))
+								if pinned.Get() == n.ID {
+									pinned.Set("")
+								}
+								last.Set("deleted " + n.Title)
+							}},
+						},
+						Cancel: "Cancel",
+						Style:  []core.StyleProp{core.MaxWidth("520px")},
+					},
+				})
+			}
+
+			return core.Column(
+				core.Gap(14),
+				prose("A menu is a button that opens a short list, and the tap that picks is the "+
+					"tap that closes it. No host can place a popover under its button from Go, "+
+					"because none sends Go the button's position, so comps.Menu opens the action "+
+					"sheet from lesson 6.7: the same bottom-edge panel, with a trigger attached."),
+				codeBlock(`comps.Menu{
+    Trigger:   comps.Button{Label: "⋯", AccessibilityLabel: "Note actions"},
+    Open:      open.Get() == note.ID,
+    OnOpen:    func() { open.Set(note.ID) },
+    OnDismiss: func() { open.Set("") },
+    Title:     note.Title,
+    Items: []comps.SheetAction{
+        {Label: "Pin to top", OnTap: pin},
+        {Label: "Delete", Variant: comps.VariantError, OnTap: del},
+    },
+    Cancel: "Cancel",
+}`),
+				prose("Trigger is a comps.Button template: its label, emphasis and names are used, "+
+					"and its OnTap is replaced by OnOpen. A widget cannot attach a tap to a View "+
+					"you built, which is why the slot is a Button and not any View."),
+				prose("Open is your state, not the widget's. Every ⋯ below reads one state holding "+
+					"which note's menu is open, so deleting a row moves nothing. A menu that kept "+
+					"its own flag in a hook would take a slot per row, and those slots drift as "+
+					"soon as the row count changes."),
+				prose("A picker is the same widget with a checked item. Checked leads the label "+
+					"with ✓ and names the item \"Newest, selected\". Each item sets the value in "+
+					"its own OnTap, and the trigger's label shows the current choice."),
+				codeBlock(`comps.SheetAction{
+    Label:   "Newest",
+    Checked: order.Get() == "newest",
+    OnTap:   func() { order.Set("newest") },
+}`),
+				demoPanel("Open a note's ⋯ to pin or delete it, and change the order with Sort.",
+					comps.Menu{
+						Trigger: comps.Button{
+							Label:              "Sort: " + sortLabel + " ▾",
+							AccessibilityLabel: "Sort: " + sortLabel,
+							Emphasis:           comps.EmphasisOutlined,
+						},
+						Open:      open.Get() == "sort",
+						OnOpen:    func() { open.Set("sort") },
+						OnDismiss: closeMenu,
+						Title:     "Sort by",
+						Items:     sortItems,
+						Cancel:    "Cancel",
+						Style:     []core.StyleProp{core.MaxWidth("520px")},
+					},
+					core.Column(rows...),
+					core.If(len(notes) == 0, caption("Every note is deleted.")),
+					core.If(len(deleted.Get()) > 0, comps.Button{
+						Label:    "Restore deleted notes",
+						Emphasis: comps.EmphasisOutlined,
+						OnTap: func() {
+							deleted.Set([]string{})
+							last.Set("restored the notes")
+						},
+					}),
+					core.If(last.Get() != "", caption("✓ "+last.Get())),
+				),
+				keyPoints(
+					"Menu is a Button that opens an ActionSheet; picking an item runs its OnTap, then OnDismiss.",
+					"No popover is anchored to the trigger: no host sends Go its position, so the list is the bottom-edge sheet on every target.",
+					"Trigger is a Button template: its label, emphasis and names apply, and OnOpen replaces its OnTap.",
+					"Open is controlled, so one state can say which row's menu is open, and a list of menus holds no hook slots.",
+					"A picker is a menu whose current item is Checked: a leading ✓ and a \", selected\" name.",
+					"The trigger states no expanded state: a control that opens a dialog is not a disclosure.",
+				),
+			)
+		},
+	}
+}
+
+// menuAge is 4.17's row subtitle, kept out of the body so the one plural
+// branch is read once.
+func menuAge(days int) string {
+	if days == 1 {
+		return "Edited 1 day ago"
+	}
+	return fmt.Sprintf("Edited %d days ago", days)
 }

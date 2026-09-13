@@ -1,6 +1,7 @@
 package tutorial
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -1851,6 +1852,137 @@ func TestChoicesLessonTimelineGrowsWithTheOrder(t *testing.T) {
 	tap(t, mgr, "Advance the order")
 	if events() != 4 {
 		t.Fatal("the order cannot advance past Delivered")
+	}
+	assertNoConcerns(t)
+}
+
+// --- 4.17 Menus ---------------------------------------------------------------
+
+// openSheets returns every visible Modal. Each menu in 4.17 carries its own,
+// closed ones included, so "the" sheet is the one that is showing.
+func openSheets(root *node) []*node {
+	return findNodes(root, func(n *node) bool {
+		return n.Type == "Modal" && n.Props["visible"] == true
+	})
+}
+
+// tapInSheet taps the button with this label inside the one open sheet. The
+// labels repeat across the rows' closed menus, so a search of the whole tree
+// could land on a button nobody can see.
+func tapInSheet(t *testing.T, mgr *render.Manager, label string) {
+	t.Helper()
+	open := openSheets(tree(t, mgr))
+	if len(open) != 1 {
+		t.Fatalf("%d sheets open, want exactly 1", len(open))
+	}
+	n := findNode(open[0], func(n *node) bool {
+		return n.Type == "Button" && n.Props["label"] == label
+	})
+	if n == nil {
+		t.Fatalf("no Button labeled %q in the open sheet", label)
+	}
+	mgr.DispatchCallback(n.Props["onClick"].(string))
+}
+
+// menuNoteTitles returns the note titles in row order, skipping the Modals:
+// each row's sheet repeats the note's title as its heading.
+func menuNoteTitles(root *node) []string {
+	var out []string
+	var walk func(*node)
+	walk = func(n *node) {
+		if n.Type == "Modal" {
+			return
+		}
+		if n.Type == "Text" {
+			switch n.Props["content"] {
+			case "Groceries", "Trip ideas", "Books to read":
+				out = append(out, n.Props["content"].(string))
+			}
+		}
+		for _, c := range n.Children {
+			walk(c)
+		}
+	}
+	walk(root)
+	return out
+}
+
+func TestMenusLessonRowMenusPinDeleteAndRestore(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Menus")
+
+	want := func(why string, titles ...string) {
+		t.Helper()
+		if got := menuNoteTitles(tree(t, mgr)); !slices.Equal(got, titles) {
+			t.Fatalf("%s: rows = %v, want %v", why, got, titles)
+		}
+	}
+	if n := len(openSheets(tree(t, mgr))); n != 0 {
+		t.Fatalf("%d sheets open at start, want none", n)
+	}
+	want("newest first", "Trip ideas", "Groceries", "Books to read")
+
+	tapLabelled(t, mgr, "Actions for Books to read")
+	tapInSheet(t, mgr, "Pin to top")
+	if n := len(openSheets(tree(t, mgr))); n != 0 {
+		t.Fatal("picking an item must close the menu")
+	}
+	want("a pinned note leads", "Books to read", "Trip ideas", "Groceries")
+
+	// Cancel closes without acting.
+	tapLabelled(t, mgr, "Actions for Trip ideas")
+	tapInSheet(t, mgr, "Cancel")
+	if n := len(openSheets(tree(t, mgr))); n != 0 {
+		t.Fatal("Cancel must close the menu")
+	}
+
+	// Deleting a row changes the row count under one open-state; the next
+	// row's menu still opens and is still the only one showing.
+	tapLabelled(t, mgr, "Actions for Trip ideas")
+	tapInSheet(t, mgr, "Delete")
+	want("Trip ideas deleted", "Books to read", "Groceries")
+	if !hasText(tree(t, mgr), "✓ deleted Trip ideas") {
+		t.Fatal("Delete should report itself")
+	}
+	tapLabelled(t, mgr, "Actions for Groceries")
+	if n := len(openSheets(tree(t, mgr))); n != 1 {
+		t.Fatalf("%d sheets open after a delete, want the one just opened", n)
+	}
+	tapInSheet(t, mgr, "Cancel")
+
+	tap(t, mgr, "Restore deleted notes")
+	want("restored", "Books to read", "Trip ideas", "Groceries")
+	assertNoConcerns(t)
+}
+
+func TestMenusLessonSortPickerChecksTheCurrentOrder(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Menus")
+
+	tapLabelled(t, mgr, "Sort: Newest")
+	sheet := openSheets(tree(t, mgr))
+	if len(sheet) != 1 {
+		t.Fatalf("%d sheets open, want the sort menu", len(sheet))
+	}
+	if findNode(sheet[0], func(n *node) bool {
+		return n.Type == "Button" && n.Props["label"] == "✓ Newest" &&
+			n.Style != nil && n.Style.AccessibilityLabel == "Newest, selected"
+	}) == nil {
+		t.Fatal("the current order is checked and named as selected")
+	}
+
+	tapInSheet(t, mgr, "Title")
+	if got := menuNoteTitles(tree(t, mgr)); !slices.Equal(got, []string{"Books to read", "Groceries", "Trip ideas"}) {
+		t.Fatalf("sorted by title: rows = %v", got)
+	}
+	if !hasText(tree(t, mgr), "✓ sorted by title") {
+		t.Fatal("the pick should report itself")
+	}
+
+	tapLabelled(t, mgr, "Sort: Title")
+	tapInSheet(t, mgr, "✓ Title")
+	if n := len(openSheets(tree(t, mgr))); n != 0 {
+		t.Fatal("picking the checked item still closes the menu")
 	}
 	assertNoConcerns(t)
 }

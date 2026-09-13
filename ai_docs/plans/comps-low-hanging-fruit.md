@@ -7,7 +7,10 @@ rows". A3 `Stepper`, A4 `BottomBar` + `Screen.Footer`, A5 `Spinner` and A6
 2026-09-12**, one widget per commit. B1 `ActionSheet` and B3 `Snackbar` (with
 `hooks.UseTimeoutWhile`) shipped with lesson 6.7 "Action sheets & snackbars".
 B2 `RadioGroup`, B4 `StepIndicator` and B5 `Timeline` shipped with lesson 4.16
-"Radio groups, steps & timelines". Tier C is open.
+"Radio groups, steps & timelines". **Tier C landed 2026-09-12** as far as it
+can without a renderer: C1 `Menu` shipped with lesson 4.17 "Menus". C2
+`Drawer` stays skipped (a recorded non-goal) and C4 `Carousel` stays blocked on
+a scroll-offset signal.
 
 **Decisions that differ from the Tier A sketches below:**
 
@@ -84,6 +87,21 @@ B2 `RadioGroup`, B4 `StepIndicator` and B5 `Timeline` shipped with lesson 4.16
   bottom segment that grows. The space below an event is padding inside the
   body, so the line runs through it. The first top and last bottom segments
   keep their size and paint nothing.
+
+**Decisions that differ from the Tier C sketches below:**
+
+- C1 `Menu` is an `ActionSheet` with a trigger, as sketched, but the trigger
+  is a `comps.Button` template rather than a `core.View` slot. A widget cannot
+  attach a tap to a View it did not build, so a View slot could not open
+  anything. `Menu.Open` is controlled rather than hook-held, unlike
+  `DatePicker`'s open flag. The common menu is a "⋯" on every row, and a
+  hook per row drifts when the row count changes, while one caller state
+  naming the open row does not. The "Sort by" form needed one addition to
+  B1: `SheetAction.Checked`, a leading ✓ and a ", selected" name suffix. The
+  suffix is used because a selected state on a button is `aria-pressed`, and
+  the radio pair would make the runtime run the action on the first arrow
+  key. The trigger states no expanded state: core's disclosure table already
+  names a control that opens a dialog as the near miss.
 
 **Correction found while landing A2:** rendering the row's control
 `core.Disabled(true)` (the approach sketched under A2) was rejected. Disabled

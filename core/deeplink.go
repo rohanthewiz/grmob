@@ -44,7 +44,7 @@ package core
 // # The cost that was worth paying it off
 //
 // Before this, reaching a particular screen on a device meant scrolling to it.
-// The tutorial is 55 lessons and its map lesson is 4.12, so every device or
+// The tutorial is 56 lessons and its map lesson is 4.12, so every device or
 // simulator run of that lesson began with a bounded scroll loop — and both
 // device harnesses in this repository still contain one, because the scroll is
 // also how a reader gets there. What changes is that a *run* no longer has to:

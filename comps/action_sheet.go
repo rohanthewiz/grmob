@@ -145,6 +145,20 @@ type SheetAction struct {
 	// Disabled greys the action and drops its taps. A disabled action does
 	// not dismiss the sheet either, because it does not dispatch at all.
 	Disabled bool
+
+	// Checked marks the action as the current choice, for the "Sort by"
+	// shape where each action sets one value (see Menu). The label gains a
+	// leading ✓ and the accessible name a ", selected" suffix.
+	//
+	// The suffix rather than core.AccessibilitySelected, because the action
+	// is a button and ARIA defines aria-pressed there, which would announce a
+	// toggle ("Newest, pressed") that a second tap does not turn off. The
+	// radio pair was the other candidate and is rejected for the reason the
+	// type doc gives for the listbox one: inside a radiogroup the WASM
+	// runtime checks the radio an arrow lands on, which here would run the
+	// action and close the sheet on the first ArrowDown. It is the same
+	// English fallback BottomBar uses for its current item.
+	Checked bool
 }
 
 // Render builds Modal > (filler, Card) as drawn in the type doc.
@@ -210,13 +224,21 @@ func (s ActionSheet) actions(t *core.Theme) core.View {
 	// separate groups.
 	items = append(items, core.Padding(0), core.Gap(float64(t.Spacing.XS)))
 	for _, a := range s.Actions {
+		label, name := a.Label, ""
+		if a.Checked {
+			// The mark leads so it lines up down the list whatever the label
+			// lengths; the name drops it, since "check mark" read aloud
+			// before every chosen label is noise the suffix already carries.
+			label, name = "✓ "+a.Label, a.Label+", selected"
+		}
 		items = append(items, Button{
-			Label:     a.Label,
-			OnTap:     s.pick(a),
-			Variant:   a.Variant,
-			Emphasis:  EmphasisGhost,
-			FullWidth: true,
-			Disabled:  a.Disabled,
+			Label:              label,
+			AccessibilityLabel: name,
+			OnTap:              s.pick(a),
+			Variant:            a.Variant,
+			Emphasis:           EmphasisGhost,
+			FullWidth:          true,
+			Disabled:           a.Disabled,
 		})
 	}
 	return core.Column(items...)
