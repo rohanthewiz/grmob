@@ -1272,11 +1272,24 @@ comps.EmptyState{Glyph: "🔎", Title: "Nothing matches that",
 					"reads as a failure of the app rather than of one fetch, and the palette "+
 					"carries no muted container tone to fill with instead. It also means the "+
 					"banner's contrast does not depend on which variant it is."),
-				demoPanel("Type to search — the list moves a moment after you stop. Toggle the two simulations; tap ‹ to see OnBack replace Pop.",
+				demoPanel("Type to search — the list moves a moment after you stop. Toggle the two simulations; tap ‹ once to see OnBack replace Pop, twice to leave.",
 					comps.AppBar{
 						Title:    "Archive",
 						Subtitle: fmt.Sprintf("%d of %d sermons", len(matches), len(archive)),
-						OnBack:   func() { backNote.Set(true) },
+						// The first back shows the note; a second one pops. OnBack
+						// is also what Android's system back runs while this bar is
+						// on screen (see AppBar.OnBack), so a handler that only ever
+						// set the note left the lesson with no way out but
+						// "‹ Contents". Popping on the second press keeps the point
+						// of the demo — the first press visibly did not pop — and
+						// gives system back its exit.
+						OnBack: func() {
+							if backNote.Get() {
+								core.Pop(ctx)
+								return
+							}
+							backNote.Set(true)
+						},
 						Actions: []core.View{comps.Button{
 							Label:              "↻",
 							Emphasis:           comps.EmphasisGhost,
@@ -1284,7 +1297,7 @@ comps.EmptyState{Glyph: "🔎", Title: "Nothing matches that",
 							OnTap:              func() { loading.Set(!loading.Get()) },
 						}},
 					},
-					core.If(backNote.Get(), caption("Back tapped — OnBack ran instead of core.Pop, so you are still here.")),
+					core.If(backNote.Get(), caption("Back tapped — OnBack ran instead of core.Pop, so you are still here. Back again leaves the lesson.")),
 					core.If(offline.Get(), comps.Banner{
 						Text:        "Offline. Showing a saved copy.",
 						Variant:     comps.VariantWarning,

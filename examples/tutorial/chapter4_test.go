@@ -762,6 +762,32 @@ func TestScreenFurnitureDemoSearchesFiltersAndSwitchesStates(t *testing.T) {
 	assertNoConcerns(t)
 }
 
+// The demo's OnBack is also what Android's system back runs while the bar is
+// on screen, so a handler that never popped trapped the reader in the lesson.
+// The first press shows the note and stays; the second leaves.
+func TestScreenFurnitureSecondBackLeavesTheLesson(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Screen furniture: bars, banners & placeholders")
+
+	pressBack := func() {
+		back := findNode(tree(t, mgr), func(n *node) bool { return n.Type == "Button" && n.Props["label"] == "‹" })
+		if back == nil {
+			t.Fatal("the demo AppBar should draw its automatic back control")
+		}
+		mgr.DispatchCallback(back.Props["onClick"].(string))
+	}
+
+	pressBack()
+	if cur := tree(t, mgr); !hasTextContaining(cur, "Back again leaves") || !hasTextContaining(cur, "9 of 9 sermons") {
+		t.Fatal("the first back should show the note and keep the lesson on screen")
+	}
+	pressBack()
+	if cur := tree(t, mgr); hasTextContaining(cur, "9 of 9 sermons") || !hasTextContaining(cur, "lessons opened") {
+		t.Fatal("the second back should pop to the contents screen")
+	}
+	assertNoConcerns(t)
+}
+
 func TestScreenFurnitureDemoBannerAndSkeleton(t *testing.T) {
 	mgr := newApp(t)
 	openLesson(t, mgr, "Screen furniture: bars, banners & placeholders")
