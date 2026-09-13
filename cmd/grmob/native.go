@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -365,6 +366,19 @@ func cmdIOS(args []string) error {
 		return fmt.Errorf("the iOS target is not ready on this machine:\n%v\n\n(`grmob doctor` shows every target)", err)
 	}
 
+	// -run needs a booted simulator, and without one the failure used to come
+	// at `simctl install`, after the bind and the build: minutes in, for a
+	// fact that was knowable before the first step. So ask first. A listing
+	// that itself fails (an older simctl, an odd Xcode state) does not block:
+	// the install step still reports the same hint, just later.
+	if *launch {
+		if n, err := bootedSimulators(); err == nil && n == 0 {
+			return errors.New("-run needs a booted iOS Simulator and none is booted.\n" +
+				"Boot one with `open -a Simulator` (or `xcrun simctl boot <device>`) and run this again,\n" +
+				"or drop -run to build without installing.")
+		}
+	}
+
 	shell := filepath.Join(root, iosShell.dir)
 	if err := vendorShell(root, iosShell, iosPatches(cfg), *refresh); err != nil {
 		return err
@@ -405,8 +419,9 @@ func cmdIOS(args []string) error {
 	// whichever simulator is booted. "booted" rather than a device name,
 	// because picking one would mean choosing a model and runtime the user may
 	// not have installed, and booting one is slow enough that doing it
-	// silently looks like a hang. With none booted, simctl fails at install
-	// and the error says what to do.
+	// silently looks like a hang. With none booted the preflight above has
+	// already stopped the command; the hint on the install error covers a
+	// simulator shut down during the build, or a listing that could not be read.
 	if *launch {
 		if err := run(root, nil, "xcrun", "simctl", "install", "booted", app); err != nil {
 			return fmt.Errorf("%w\n(is a simulator booted? `xcrun simctl list devices booted` lists them; `open -a Simulator` boots one)", err)
@@ -423,6 +438,45 @@ func cmdIOS(args []string) error {
 	}
 	fmt.Println("Or open ios/GrMobApp.xcodeproj in Xcode (-open) to run on a device.")
 	return nil
+}
+
+// bootedSimulators counts the simulators simctl reports as booted.
+func bootedSimulators() (int, error) {
+	out, err := output("", "xcrun", "simctl", "list", "devices", "booted", "-j")
+	if err != nil {
+		return 0, err
+	}
+	return countBooted([]byte(out))
+}
+
+// countBooted reads `simctl list devices booted -j`, which groups devices by
+// runtime:
+//
+//	{"devices": {"com.apple.CoreSimulator.SimRuntime.iOS-26-5": [ {…}, … ]}}
+//
+// The JSON form rather than the text table because the table's layout ("-- iOS
+// 26.5 --" headings, "(Booted)" suffixes) is presentation, and an empty runtime
+// group still prints its heading. Each device's state is checked as well as
+// counted: the "booted" filter is simctl's, and trusting it alone would make an
+// unfiltered listing passed here by mistake read as every device booted.
+func countBooted(listing []byte) (int, error) {
+	var parsed struct {
+		Devices map[string][]struct {
+			State string `json:"state"`
+		} `json:"devices"`
+	}
+	if err := json.Unmarshal(listing, &parsed); err != nil {
+		return 0, fmt.Errorf("reading simctl's device list: %w", err)
+	}
+	n := 0
+	for _, devices := range parsed.Devices {
+		for _, d := range devices {
+			if d.State == "Booted" {
+				n++
+			}
+		}
+	}
+	return n, nil
 }
 
 // --- shared steps ----------------------------------------------------------

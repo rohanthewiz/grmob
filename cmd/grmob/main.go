@@ -3,7 +3,7 @@
 //	grmob new <dir>          scaffold an app: Go app package, browser host, build script
 //	grmob doctor             which targets this machine can build, and what is missing
 //	grmob android [-install] bind the app into the Android shell and assemble an APK
-//	grmob ios [-open]        bind the app into the iOS shell and build it for the simulator
+//	grmob ios [-open] [-run] bind the app into the iOS shell and build it for the simulator
 //
 // Install or run it at the same version as the framework the app uses:
 //
