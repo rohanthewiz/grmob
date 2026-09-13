@@ -19,7 +19,7 @@ simulators.
 
 **Live: <https://rohanthewiz.github.io/grmob/>** — the tutorial is published
 to GitHub Pages on every push to `master`, built by
-[`.github/workflows/site.yml`](../.github/workflows/site.yml). The page
+[`.github/workflows/site.yml`](https://github.com/rohanthewiz/grmob/blob/master/.github/workflows/site.yml). The page
 shows the app in a phone-sized frame on a wide screen and full-bleed on an
 actual phone; nothing is installed and nothing leaves your browser.
 

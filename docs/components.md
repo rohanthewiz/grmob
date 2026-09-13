@@ -2523,7 +2523,7 @@ hand-off at all, and the widget renders a picture with no link role and no
 callback.
 
 **Tappable is a link; untappable is an image.** A tap leaves the app entirely,
-which is what [`core.RoleLink`](concepts/styling-and-theming.md#accessibility)
+which is what [`core.RoleLink`](concepts/styling-and-theming.md#accessibility-props)
 says and `RoleButton` does not — a button does something *here*. With no
 hand-off the widget is a `core.RoleImg`, a picture standing in for one fact,
 the same argument `Compass` makes. Either way the image inside is hidden, so
