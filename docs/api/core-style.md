@@ -10,7 +10,7 @@ One of 10 topic pages of [package core](core.md), which has the package overview
 
 ## Index
 
-- [Constants](#constants) — `AlignItemsCenter`, `AlignItemsEnd`, `AlignItemsStart`, `AlignItemsStretch`, `DisplayFlex`, `FlexColumn`, `FlexRow`, `JustifyAround`, `JustifyBetween`, `JustifyCenter`, `JustifyEnd`, `JustifyEvenly`, and 4 more
+- [Constants](#constants) — `AlignItemsCenter`, `AlignItemsEnd`, `AlignItemsStart`, `AlignItemsStretch`, `DisplayFlex`, `FlexColumn`, `FlexRow`, `JustifyAround`, `JustifyBetween`, `JustifyCenter`, `JustifyEnd`, `JustifyEvenly`, and 5 more
 - [Variables](#variables) — `TextInputStyle`
 - [`func DangerColor`](#func-dangercolor)
 - [`func LinearGradient`](#func-lineargradient)
@@ -94,6 +94,7 @@ One of 10 topic pages of [package core](core.md), which has the package overview
     - [`func Spin`](#func-spin)
     - [`func TextColor`](#func-textcolor)
     - [`func Transition`](#func-transition)
+    - [`func Translate`](#func-translate)
     - [`func UseStyle`](#func-usestyle)
     - [`func WhiteSpace`](#func-whitespace)
     - [`func Width`](#func-width)
@@ -122,7 +123,7 @@ const (
 )
 ```
 
-<small>[core/style.go:1236](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1236)</small>
+<small>[core/style.go:1255](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1255)</small>
 
 ReducedMotionCSS is the stylesheet rule both web targets pair with Style.Transition: under the reduce-motion media query, every transition a node declares inline is switched off. See Transition, "Reduced motion".
 
@@ -172,7 +173,7 @@ The Compose arm is the one that needed an argument, and it is worth having here 
 const ShrinkNone = -1
 ```
 
-<small>[core/style.go:1335](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1335)</small>
+<small>[core/style.go:1354](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1354)</small>
 
 SpinKeyframes is the stylesheet rule both web targets pair with Style.Spin. It animates the individual \`rotate\` property rather than \`transform\`, so the spin composes with Style.Rotate's \`transform: rotate()\` instead of replacing it (see Spin). One constant, read by htmlout and restated in the WASM runtime, because the two web targets must name and shape it identically for an export and a live page to turn the same way.
 
@@ -181,6 +182,14 @@ const SpinKeyframes = "@keyframes grmob-spin{from{rotate:0deg}to{rotate:360deg}}
 ```
 
 <small>[core/animation.go:75](https://github.com/rohanthewiz/grmob/blob/master/core/animation.go#L75)</small>
+
+TranslateDirectionCSS is the stylesheet rule both web targets pair with a non-zero Style.TranslateX: it sets --grmob-inline to -1 under dir="rtl" and back to 1 under dir="ltr", so the web's physical translate becomes Translate's leading-relative one. Custom properties inherit, so matching the dir attribute where it is written covers every element beneath it, and a nested dir="ltr" inside an RTL page switches back. The attribute rather than :dir(), which also reads only the attribute, because the plain selector is supported everywhere and matches far fewer elements.
+
+```go
+const TranslateDirectionCSS = "[dir=rtl]{--grmob-inline:-1}[dir=ltr]{--grmob-inline:1}"
+```
+
+<small>[core/style_props.go:235](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L235)</small>
 
 ## Variables
 
@@ -195,7 +204,7 @@ var TextInputStyle = UseStyle(Style{
 })
 ```
 
-<small>[core/style.go:1181](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1181)</small>
+<small>[core/style.go:1200](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1200)</small>
 
 ## Functions
 
@@ -205,7 +214,7 @@ var TextInputStyle = UseStyle(Style{
 func DangerColor() string
 ```
 
-<small>[core/style.go:1172](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1172)</small>
+<small>[core/style.go:1191](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1191)</small>
 
 ### func LinearGradient
 
@@ -213,7 +222,7 @@ func DangerColor() string
 func LinearGradient(x, y, z string) string
 ```
 
-<small>[core/style_props.go:224](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L224)</small>
+<small>[core/style_props.go:285](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L285)</small>
 
 ### func PrimaryColor
 
@@ -225,7 +234,7 @@ PrimaryColor and DangerColor are the theme-blind convenience accessors that pred
 
 They read DefaultTheme rather than repeating its literals. Both used to be hard-coded, and the copy was not free: when Colors.Primary moved to Apple's accessible blue (white over systemBlue was 4.02:1, under WCAG AA, and the theme's own Button base declares white), this function kept the old hex — so examples/chat, its one caller, went on painting white on a fill nobody could read it on, in the one place the fix could not reach.
 
-<small>[core/style.go:1171](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1171)</small>
+<small>[core/style.go:1190](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1190)</small>
 
 ## Types
 
@@ -235,7 +244,7 @@ They read DefaultTheme rather than repeating its literals. Both used to be hard-
 type AlignItems string
 ```
 
-<small>[core/style.go:1234](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1234)</small>
+<small>[core/style.go:1253](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1253)</small>
 
 #### func (AlignItems) Apply
 
@@ -249,7 +258,7 @@ The three named flex-container types are StyleProps in their own right, so the s
 
 Without these methods that expression is a type conversion producing a bare string value, which containerNode's PropsAndChildren dispatch cannot recognize and drops — silently outside debug mode. It was the most natural thing to write and it compiled, so an app shipped with every one of its AlignItems lost and its columns left-packed on both natives. Making the value itself apply removes the trap rather than documenting it.
 
-<small>[core/style_props.go:265](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L265)</small>
+<small>[core/style_props.go:326](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L326)</small>
 
 ### type Alignment
 
@@ -257,7 +266,7 @@ Without these methods that expression is a type conversion producing a bare stri
 type Alignment string
 ```
 
-<small>[core/style.go:1211](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1211)</small>
+<small>[core/style.go:1230](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1230)</small>
 
 ```go
 const (
@@ -276,7 +285,7 @@ const (
 type DisplayMode string
 ```
 
-<small>[core/style.go:1222](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1222)</small>
+<small>[core/style.go:1241](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1241)</small>
 
 ```go
 const (
@@ -354,7 +363,7 @@ Six untagged ints wrote all six every time. On the tutorial's contents screen, 7
 
 Small next to the 370KB the Style-level tags took off, and free in a way that one was not: no renderer changed, because none of them could tell the difference.
 
-<small>[core/style.go:814](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L814)</small>
+<small>[core/style.go:824](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L824)</small>
 
 ### type FlexDirection
 
@@ -362,7 +371,7 @@ Small next to the 370KB the Style-level tags took off, and free in a way that on
 type FlexDirection string
 ```
 
-<small>[core/style.go:1233](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1233)</small>
+<small>[core/style.go:1252](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1252)</small>
 
 #### func (FlexDirection) Apply
 
@@ -370,7 +379,7 @@ type FlexDirection string
 func (d FlexDirection) Apply(s *Style)
 ```
 
-<small>[core/style_props.go:267](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L267)</small>
+<small>[core/style_props.go:328](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L328)</small>
 
 ### type JustifyContent
 
@@ -378,7 +387,7 @@ func (d FlexDirection) Apply(s *Style)
 type JustifyContent string
 ```
 
-<small>[core/style.go:1232](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1232)</small>
+<small>[core/style.go:1251](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1251)</small>
 
 #### func (JustifyContent) Apply
 
@@ -386,7 +395,7 @@ type JustifyContent string
 func (j JustifyContent) Apply(s *Style)
 ```
 
-<small>[core/style_props.go:266](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L266)</small>
+<small>[core/style_props.go:327](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L327)</small>
 
 ### type Position
 
@@ -394,7 +403,7 @@ func (j JustifyContent) Apply(s *Style)
 type Position string
 ```
 
-<small>[core/style.go:1254](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1254)</small>
+<small>[core/style.go:1273](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1273)</small>
 
 ```go
 const (
@@ -411,7 +420,7 @@ const (
 type ResponsiveStyle map[string]Style
 ```
 
-<small>[core/style.go:1209](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1209)</small>
+<small>[core/style.go:1228](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1228)</small>
 
 ### type Style
 
@@ -460,8 +469,11 @@ type Style struct {
 	// All four agree on the two things that would otherwise need a mapping
 	// table: degrees (not radians or turns), and positive meaning clockwise
 	// on screen. That agreement is why this is one float and not a Transform
-	// type — the moment translate and scale join it, the three platforms stop
-	// agreeing on composition order and the type has to say what it means.
+	// type — a single matrix field would have to say what order its parts
+	// compose in, and the three platforms do not agree on one. TranslateX/Y
+	// are separate fields for that reason, and every target applies them
+	// outside the rotation (CSS's individual-property order: translate, then
+	// rotate), so a turned box slides along the screen's axes, not its own.
 	//
 	// # Centre only
 	//
@@ -493,6 +505,13 @@ type Style struct {
 	// added to Rotate. Zero holds still. See core.Spin for what each renderer
 	// maps it onto and why it is a rotation rather than a general loop.
 	Spin int `json:",omitzero"`
+
+	// TranslateX and TranslateY shift the node's painted box, and its touch
+	// target with it, without moving anything around it. See core.Translate
+	// for the forms, the leading-relative direction rule and each renderer's
+	// mapping.
+	TranslateX string `json:",omitzero"`
+	TranslateY string `json:",omitzero"`
 
 	HoverStyle   *Style           `json:",omitzero"`
 	FocusStyle   *Style           `json:",omitzero"`
@@ -1147,7 +1166,7 @@ The two returns are the two questions a renderer has, and they are separate beca
 
 It exists so the ShrinkNone rule is stated once rather than in each renderer. The two DOM renderers spell their guards independently — that is deliberate elsewhere in this framework — but the mapping from a stored number to a meaning is not a spelling, it is the contract, and three copies of it is how this field got into trouble in the first place.
 
-<small>[core/style.go:1352](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1352)</small>
+<small>[core/style.go:1371](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1371)</small>
 
 #### func (Style) With
 
@@ -1155,7 +1174,7 @@ It exists so the ShrinkNone rule is stated once rather than in each renderer. Th
 func (s Style) With(other Style) Style
 ```
 
-<small>[core/style_props.go:607](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L607)</small>
+<small>[core/style_props.go:668](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L668)</small>
 
 ### type StyleProp
 
@@ -1165,7 +1184,7 @@ type StyleProp interface {
 }
 ```
 
-<small>[core/style.go:829](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L829)</small>
+<small>[core/style.go:839](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L839)</small>
 
 #### func AccessibilityControls
 
@@ -1185,7 +1204,7 @@ AccessibilityControls says which element this control switches, by the Accessibi
 
 It is written verbatim and nothing checks that the target exists: an export is one document at a time and a runtime patch is one element at a time, so neither target can see the whole page at the moment the attribute is written. A reference to an id nothing answers to is inert rather than harmful, which is the same trade aria-description makes. See Style.AccessibilityID for why this is the one relationship the vocabulary carries.
 
-<small>[core/style_props.go:546](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L546)</small>
+<small>[core/style_props.go:607](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L607)</small>
 
 #### func AccessibilityExpanded
 
@@ -1203,7 +1222,7 @@ Use core.ExpandedWhen to convert the bool the widget already holds. Setting only
 
 Paired with a role that can carry it, as a level and a selection both are — and \*not\* the same list a selection takes. aria-expanded is defined for button, link, listbox, row, columnheader and combobox among the roles this framework carries, which drops option and adds link and listbox. A core.Button needs no role of its own, the node type being one; anything else is dropped by both web targets. See Style.AccessibilityExpanded for the full table, for the dialog-shaped near miss it deliberately does not cover, and for why one native maps this and the other cannot.
 
-<small>[core/style_props.go:456](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L456)</small>
+<small>[core/style_props.go:517](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L517)</small>
 
 #### func AccessibilityHasPopup
 
@@ -1218,7 +1237,7 @@ AccessibilityHasPopup says what activating this control opens.
 
 It is the relationship AccessibilityExpanded deliberately does not cover: a trigger that presents a core.Modal is not a disclosure, and says so with this instead. Paired with a role ARIA 1.2 defines the attribute on — button, link, tab, columnheader and combobox among core's — or with a core.Button, whose node type is one; anything else is dropped by both web targets. Neither native reads it. See PopupKind and Style.AccessibilityHasPopup.
 
-<small>[core/style_props.go:473](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L473)</small>
+<small>[core/style_props.go:534](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L534)</small>
 
 #### func AccessibilityHeadingLevel
 
@@ -1240,7 +1259,7 @@ What a level buys is the outline. Without one, a screen with a bar title over a 
 
 See Style.AccessibilityHeadingLevel for the range rule (out-of-range is dropped, not clamped) and for which of the four renderers can express a level — Compose cannot, and that is stated rather than faked.
 
-<small>[core/style_props.go:367](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L367)</small>
+<small>[core/style_props.go:428](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L428)</small>
 
 #### func AccessibilityHidden
 
@@ -1250,7 +1269,7 @@ func AccessibilityHidden() StyleProp
 
 AccessibilityHidden removes the element (and its subtree) from the accessibility tree — for decorative content a screen reader should skip.
 
-<small>[core/style_props.go:554](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L554)</small>
+<small>[core/style_props.go:615](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L615)</small>
 
 #### func AccessibilityHint
 
@@ -1260,7 +1279,7 @@ func AccessibilityHint(hint string) StyleProp
 
 AccessibilityHint describes the \*result\* of activating the element ("Opens the article"). VoiceOver reads it natively; TalkBack has no hint slot, so the Android renderer appends it to the content description.
 
-<small>[core/style_props.go:315](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L315)</small>
+<small>[core/style_props.go:376](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L376)</small>
 
 #### func AccessibilityID
 
@@ -1274,7 +1293,7 @@ AccessibilityID gives this element a document-global name that another element c
 
 Uniqueness is the caller's, as it is in hand-written HTML, and the "grmob-" prefix is reserved for core.TabView's own wiring. See Style.AccessibilityID for the whole argument — including why this and AccessibilityControls are the only two IDREF props in the vocabulary.
 
-<small>[core/style_props.go:521](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L521)</small>
+<small>[core/style_props.go:582](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L582)</small>
 
 #### func AccessibilityLabel
 
@@ -1284,7 +1303,7 @@ func AccessibilityLabel(label string) StyleProp
 
 AccessibilityLabel gives screen readers a name for the element (TalkBack contentDescription, VoiceOver label). Set it on anything non-textual a user can perceive or activate — images, icon buttons, tappable rows.
 
-<small>[core/style_props.go:306](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L306)</small>
+<small>[core/style_props.go:367](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L367)</small>
 
 #### func AccessibilityNestingLevel
 
@@ -1308,7 +1327,7 @@ Nothing in the framework sets one. Neither DataTable's rows (a flat table) nor a
 
 See Style.AccessibilityNestingLevel for why this is a second field rather than a widened first one, and for the two natives that cannot express a depth at all.
 
-<small>[core/style_props.go:404](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L404)</small>
+<small>[core/style_props.go:465](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L465)</small>
 
 #### func AccessibilityRole
 
@@ -1324,7 +1343,7 @@ It is the third question a screen reader asks, after the name (AccessibilityLabe
 
 Roles are not synthesized from node type or from props: a Box with an OnTap is a button only if it says so. Guessing would mean a widget that wraps a tappable row in a tappable card announcing two nested buttons, and the widget is the only layer that knows which one is the control.
 
-<small>[core/style_props.go:336](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L336)</small>
+<small>[core/style_props.go:397](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L397)</small>
 
 #### func AccessibilitySelected
 
@@ -1344,7 +1363,7 @@ Use core.SelectedWhen to convert the bool a widget already holds. Passing core.S
 
 Paired with a role that can carry a state, exactly as a level is: tab, row and columnheader take aria-selected, a button takes aria-pressed, and a state on anything else is dropped by both web targets because ARIA does not define either attribute there. A core.Button needs no role of its own; the node type is one. See Style.AccessibilitySelected for the two-attribute mapping and for why the natives do not scope it the same way.
 
-<small>[core/style_props.go:429](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L429)</small>
+<small>[core/style_props.go:490](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L490)</small>
 
 #### func AccessibilitySelectionFollowsFocus
 
@@ -1358,7 +1377,7 @@ Set on the container — the listbox or the tablist — not on the members. See 
 
 A no-arg flag rather than a bool, like AccessibilityHidden and unlike Disabled: a caller does not have this in a variable, and there is no case for forcing it back off — a widget that does not want it writes no prop.
 
-<small>[core/style_props.go:570](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L570)</small>
+<small>[core/style_props.go:631](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L631)</small>
 
 #### func AccessibilityValue
 
@@ -1381,7 +1400,7 @@ Paired with a role that can carry it, as the level, the selection and the disclo
 
 ValueRange.Text is the half that is not web-only: it reaches Compose's stateDescription and SwiftUI's accessibilityValue, neither of which asks what the node is. See Style.AccessibilityValue for the guard table and core.ValueRange for why the numbers are strings.
 
-<small>[core/style_props.go:505](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L505)</small>
+<small>[core/style_props.go:566](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L566)</small>
 
 #### func Align
 
@@ -1397,7 +1416,7 @@ func Align(a Alignment) StyleProp
 func AlignItemsProp(a AlignItems) StyleProp
 ```
 
-<small>[core/style_props.go:248](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L248)</small>
+<small>[core/style_props.go:309](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L309)</small>
 
 #### func AlignSelf
 
@@ -1413,7 +1432,7 @@ func AlignSelf(value AlignItems) StyleProp
 func Background(w string) StyleProp
 ```
 
-<small>[core/style_props.go:218](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L218)</small>
+<small>[core/style_props.go:279](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L279)</small>
 
 #### func BackgroundColor
 
@@ -1437,7 +1456,7 @@ func BorderRadius(px float64) StyleProp
 func Bottom(v string) StyleProp
 ```
 
-<small>[core/style_props.go:269](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L269)</small>
+<small>[core/style_props.go:330](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L330)</small>
 
 #### func ColumnGap
 
@@ -1457,7 +1476,7 @@ Disabled hands the node to the platform's own disabled state: it stops accepting
 
 It takes the value rather than being a no-arg flag (unlike AccessibilityHidden) because the caller almost always has a bool in hand — \`core.Disabled(sending.Get())\` — and because passing false is the only way to force a node back to enabled: UseStyle's "a zero value means unset" rule means a Style{Disabled: false} cannot clear a flag already on the target.
 
-<small>[core/style_props.go:586](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L586)</small>
+<small>[core/style_props.go:647](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L647)</small>
 
 #### func Display
 
@@ -1481,7 +1500,7 @@ func FlexBasis(value string) StyleProp
 func FlexDir(dir FlexDirection) StyleProp
 ```
 
-<small>[core/style_props.go:236](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L236)</small>
+<small>[core/style_props.go:297](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L297)</small>
 
 #### func FlexGrow
 
@@ -1525,7 +1544,7 @@ func FontSize(size float64) StyleProp
 func FontWeight(weight Weight) StyleProp
 ```
 
-<small>[core/style_props.go:176](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L176)</small>
+<small>[core/style_props.go:237](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L237)</small>
 
 #### func Gap
 
@@ -1541,7 +1560,7 @@ func Gap(px float64) StyleProp
 func Height(w string) StyleProp
 ```
 
-<small>[core/style_props.go:208](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L208)</small>
+<small>[core/style_props.go:269](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L269)</small>
 
 #### func Inert
 
@@ -1555,7 +1574,7 @@ Inert takes the node and everything inside it out of reach on the web: out of th
 
 A bool for Disabled's reason: passing false is the only way to clear a flag UseStyle has already put on the target.
 
-<small>[core/style_props.go:601](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L601)</small>
+<small>[core/style_props.go:662](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L662)</small>
 
 #### func Justify
 
@@ -1563,7 +1582,7 @@ A bool for Disabled's reason: passing false is the only way to clear a flag UseS
 func Justify(j JustifyContent) StyleProp
 ```
 
-<small>[core/style_props.go:242](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L242)</small>
+<small>[core/style_props.go:303](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L303)</small>
 
 #### func Left
 
@@ -1571,7 +1590,7 @@ func Justify(j JustifyContent) StyleProp
 func Left(v string) StyleProp
 ```
 
-<small>[core/style_props.go:275](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L275)</small>
+<small>[core/style_props.go:336](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L336)</small>
 
 #### func Margin
 
@@ -1579,7 +1598,7 @@ func Left(v string) StyleProp
 func Margin(all int) StyleProp
 ```
 
-<small>[core/style_props.go:228](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L228)</small>
+<small>[core/style_props.go:289](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L289)</small>
 
 #### func MarginBottom
 
@@ -1657,7 +1676,7 @@ MarginVertical sets the top and bottom margins. Writes the explicit sides as wel
 func MaxHeight(w string) StyleProp
 ```
 
-<small>[core/style_props.go:213](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L213)</small>
+<small>[core/style_props.go:274](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L274)</small>
 
 #### func MaxWidth
 
@@ -1671,7 +1690,7 @@ The value is a dimension string: "320px" (or a bare number, in points on the nat
 
 A stretched child of a Column (the default for most children) fills the column up to the cap and sits at the start of the line, as in a browser; centre it with the parent's AlignItems. The web targets pass the string through verbatim, so units the natives do not read ("vw", "em") cap only there. One case differs on the natives: a FlexGrow child of a Row whose cap binds keeps its share of the row and leaves the rest empty, where CSS hands the remainder to the other growers.
 
-<small>[core/style_props.go:203](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L203)</small>
+<small>[core/style_props.go:264](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L264)</small>
 
 #### func MinHeight
 
@@ -1725,7 +1744,7 @@ PaddingHorizontal sets the left and right insets.
 
 It writes the explicit Left/Right sides as well as the Horizontal shorthand. The renderers resolve a side as "the explicit value if non-zero, otherwise the axis shorthand" (see htmlout.EdgeCSS), so a prop that wrote only the shorthand could never override a side that was already set: a theme Column carries Left/Right 16, and PaddingHorizontal(0) after it used to leave the 16 in place — and PaddingHorizontal(24) used to render as 16. Writing the sides too gives this prop the same last-one-wins ordering every other StyleProp has, and a zero clears the theme value in all four renderers without any of them changing their resolution rule.
 
-<small>[core/style.go:1201](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1201)</small>
+<small>[core/style.go:1220](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1220)</small>
 
 #### func PaddingLeft
 
@@ -1769,7 +1788,7 @@ func PaddingVertical(px int) StyleProp
 
 PaddingVertical sets the top and bottom insets. Writes the explicit sides as well as the shorthand, for the reason given on PaddingHorizontal.
 
-<small>[core/style_props.go:295](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L295)</small>
+<small>[core/style_props.go:356](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L356)</small>
 
 #### func Responsive
 
@@ -1789,7 +1808,7 @@ The entry is written into a fresh map rather than into whatever map the target a
 func Right(v string) StyleProp
 ```
 
-<small>[core/style_props.go:281](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L281)</small>
+<small>[core/style_props.go:342](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L342)</small>
 
 #### func Rotate
 
@@ -1809,7 +1828,7 @@ Unlike UseStyle, this setter can force zero: Rotate(0) writes the field, which i
 func RoundedShadowBox() StyleProp
 ```
 
-<small>[core/style.go:1173](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1173)</small>
+<small>[core/style.go:1192](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1192)</small>
 
 #### func RowGap
 
@@ -1909,6 +1928,37 @@ All properties snap, colour included, rather than only the ones that move (size,
 
 <small>[core/animation.go:56](https://github.com/rohanthewiz/grmob/blob/master/core/animation.go#L56)</small>
 
+#### func Translate
+
+```go
+func Translate(x, y string) StyleProp
+```
+
+Translate shifts the node's painted box by x along the inline axis and y down the block axis, without disturbing the layout around it. Its purpose is motion: paired with core.Transition, changing it slides a node, which is how comps.Drawer brings its panel in from the edge.
+
+	core.Box(core.Transition(250, core.EaseOut), core.Translate("-100%", ""))
+
+Each axis takes "Npx", a bare number (the same px), or "N%" of the node's own box on that axis, so "-100%" moves a panel exactly its own width whatever that width is. "" or any zero leaves the axis where it is; any other form is ignored on all four targets alike.
+
+##### Paint, not layout
+
+Like Rotate, the box keeps the size and place it laid out with and its siblings never reflow; only the pixels, and the touch target with them, move. A node translated out of its parent overflows it and is clipped by the parent's Overflow("hidden"), which both natives read for exactly this.
+
+	CSS       translate: calc(var(--grmob-inline, 1) * x) y
+	Compose   a layout modifier placing the box at placeRelative(x, y)
+	SwiftUI   a GeometryEffect whose translation is resolved against the
+	          view's own size
+
+All three hit-test the moved box where it is drawn. The CSS property is the individual \`translate\`, not \`transform\`, so it composes with Rotate's transform and Spin's \`rotate\` in CSS's fixed order: translate outermost. The natives apply it outside both rotations for the same result.
+
+##### Leading, not left
+
+A positive x moves toward the trailing edge: right in a left-to-right layout, left in a right-to-left one. That is the natives' own rule (Compose's placeRelative mirrors, and SwiftUI mirrors a GeometryEffect's translation under RTL, measured with ImageRenderer), and it is what a widget wants: a drawer on the leading edge hides at "-100%" in both directions. CSS translate is physical, so both web targets multiply x by --grmob-inline, a custom property TranslateDirectionCSS sets to -1 under dir="rtl". Without the rule on the page the multiplier falls back to 1, which is right for every left-to-right document. y has no such question.
+
+Zero on both axes writes no declaration on the web, so an untranslated node never becomes a containing block for its fixed-position descendants, and a transition to zero still animates, because CSS interpolates to none.
+
+<small>[core/style_props.go:220](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L220)</small>
+
 #### func UseStyle
 
 ```go
@@ -1923,7 +1973,7 @@ The rule's one unavoidable edge is that a zero value is indistinguishable from "
 
 This merges every field of Style. It previously covered only fourteen of them, which meant Width, Height, the whole flex group, and the accessibility fields were silently dropped — a style value carrying them applied cleanly and did nothing. Any field added to Style must be added here too; TestUseStyleMergesEveryField walks the struct reflectively and fails if one is missed.
 
-<small>[core/style.go:861](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L861)</small>
+<small>[core/style.go:871](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L871)</small>
 
 #### func WhiteSpace
 
@@ -1945,7 +1995,7 @@ It is a no-op on the natives, which have no equivalent knob: SwiftUI and Compose
 func Width(w string) StyleProp
 ```
 
-<small>[core/style_props.go:182](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L182)</small>
+<small>[core/style_props.go:243](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L243)</small>
 
 #### func ZIndex
 
@@ -1953,7 +2003,7 @@ func Width(w string) StyleProp
 func ZIndex(v int) StyleProp
 ```
 
-<small>[core/style_props.go:287](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L287)</small>
+<small>[core/style_props.go:348](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L348)</small>
 
 ### type Weight
 
@@ -1961,7 +2011,7 @@ func ZIndex(v int) StyleProp
 type Weight int
 ```
 
-<small>[core/style.go:761](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L761)</small>
+<small>[core/style.go:771](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L771)</small>
 
 ```go
 const (

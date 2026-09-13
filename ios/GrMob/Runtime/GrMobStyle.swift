@@ -54,6 +54,14 @@ struct GrMobStyle: Equatable {
     /// core.Spin: milliseconds per revolution, negative for anticlockwise, 0
     /// for still. Applied by GrMobSpin beside `rotate`.
     var spin: Int = 0
+    /// core.Translate, one axis each, as GrMobShift.parse resolves it. Applied
+    /// by GrMobTranslate just outside the two rotations.
+    var translateX: GrMobShift = .zero
+    var translateY: GrMobShift = .zero
+    /// core.Overflow. Only "hidden" is read, as a clip to the box (see
+    /// RoundedCornerShapeIfAny): it keeps a child translated out of its parent
+    /// (a Drawer's shut panel) from drawing over what sits beside the parent.
+    var overflow: String = ""
     var align: String = ""
     var display: String = ""
     var width: String = ""
@@ -204,6 +212,9 @@ struct GrMobStyle: Equatable {
         s.shadow = num("Shadow")
         s.rotate = num("Rotate")
         s.spin = int("Spin")
+        s.translateX = GrMobShift.parse(str("TranslateX"))
+        s.translateY = GrMobShift.parse(str("TranslateY"))
+        s.overflow = str("Overflow")
         s.align = str("Align")
         s.display = str("Display")
         s.width = str("Width")
@@ -508,7 +519,8 @@ struct GrMobBoxModifier: ViewModifier {
         // Bound once so the chain below reads exactly as it did when it was
         // a chain of extensions on `self`.
         let s = style
-        let shape = RoundedCornerShapeIfAny(radius: s?.borderRadius ?? 0)
+        let shape = RoundedCornerShapeIfAny(radius: s?.borderRadius ?? 0,
+                                            clips: s?.overflow == "hidden")
         let alignment = grMobFrameAlignment(s, axis: axis)
         return content
             .padding((s?.padding ?? .zero).insets)
@@ -540,7 +552,11 @@ struct GrMobBoxModifier: ViewModifier {
             // core.Spin, just outside the fixed angle and inside the margin,
             // for the same reasons. Rotations about one centre commute, so
             // the order against grMobRotate does not change the pixels.
-            .modifier(GrMobSpin(periodMs: s?.spin ?? 0))
+            // core.Spin and then core.Translate, as one modifier (see
+            // GrMobMotion for why one and not two).
+            .modifier(GrMobMotion(spinMs: s?.spin ?? 0,
+                                  translateX: s?.translateX ?? .zero,
+                                  translateY: s?.translateY ?? .zero))
             .padding((s?.margin ?? .zero).insets)
             .grMobGrow(grow, alignment: alignment)
             // core.MaxWidth, outermost of the sizing layers and after
@@ -899,8 +915,109 @@ func grMobFrameAlignment(_ s: GrMobStyle?, axis: Axis? = nil) -> Alignment {
     return Alignment(horizontal: h, vertical: v)
 }
 
-private func RoundedCornerShapeIfAny(radius: CGFloat) -> RoundedRectangle? {
-    radius > 0 ? RoundedRectangle(cornerRadius: radius) : nil
+/// The box's clip and border shape: rounded when there is a radius, square
+/// when the style asks for Overflow("hidden"), and nil otherwise, because
+/// grMobClip clips to any shape it is given and an unasked clip would cut off
+/// overflow (shadows, a translated child) that CSS's default visible allows.
+/// A square shape changes nothing about the border, which strokes a
+/// zero-radius rectangle when given nil anyway.
+private func RoundedCornerShapeIfAny(radius: CGFloat, clips: Bool = false) -> RoundedRectangle? {
+    if radius > 0 { return RoundedRectangle(cornerRadius: radius) }
+    return clips ? RoundedRectangle(cornerRadius: 0) : nil
+}
+
+/// One axis of core.Translate: an amount in points and a fraction of the
+/// view's own extent on that axis. Two numbers because the fraction resolves
+/// only against a size, which GrMobTranslate is handed at draw time, and
+/// because animating the pair linearly is how CSS interpolates "-100%" to none.
+struct GrMobShift: Hashable {
+    var points: CGFloat
+    var fraction: CGFloat
+
+    static let zero = GrMobShift(points: 0, fraction: 0)
+
+    /// "Npx", a bare number (points) or "N%". Anything else is zero, as it is
+    /// on the web targets and Compose.
+    static func parse(_ value: String) -> GrMobShift {
+        let v = value.trimmingCharacters(in: .whitespaces)
+        if v.hasSuffix("%") {
+            guard let pct = Double(v.dropLast().trimmingCharacters(in: .whitespaces)),
+                  pct.isFinite else { return .zero }
+            return GrMobShift(points: 0, fraction: CGFloat(pct / 100))
+        }
+        let number = v.hasSuffix("px") ? String(v.dropLast(2)) : v
+        guard let n = Double(number.trimmingCharacters(in: .whitespaces)),
+              n.isFinite else { return .zero }
+        return GrMobShift(points: CGFloat(n), fraction: 0)
+    }
+}
+
+/// core.Spin and core.Translate, applied as a single step of grMobBox's chain.
+///
+/// # Why one modifier
+///
+/// Written as two `.modifier(...)` calls, the chain gained one ModifiedContent
+/// layer over what it had with Spin alone, and that one layer was enough to
+/// abort the Swift compiler building ios/verify's harness ("Possible
+/// non-terminating conformance substitution detected" in
+/// substOpaqueTypesWithUnderlyingTypes), the same limit GrMobBoxModifier and
+/// GrMobMaxWidthModifier exist to stay under. A ViewModifier struct is not
+/// generic over its content, so the two effects compose inside this body over
+/// one fixed type, and the box chain sees the single layer Spin used to be.
+///
+/// # Order
+///
+/// Translate outside Spin: CSS applies the individual `translate` before
+/// `rotate` and `transform`, so a turned box slides along the screen's axes
+/// rather than its own. Both sit outside grMobRotate and inside the margin.
+/// Always applied, like GrMobSpin: zero is the identity transform, and a
+/// conditional would add a _ConditionalContent layer to the chain.
+struct GrMobMotion: ViewModifier {
+    let spinMs: Int
+    let translateX: GrMobShift
+    let translateY: GrMobShift
+
+    func body(content: Content) -> some View {
+        content
+            .modifier(GrMobSpin(periodMs: spinMs))
+            .modifier(GrMobTranslate(x: translateX, y: translateY))
+    }
+}
+
+/// core.Translate as a GeometryEffect rather than `.offset`.
+///
+/// `.offset` takes points, and a percentage has to resolve against the view's
+/// own size ("-100%" is a panel's whole width, whatever it is). A
+/// GeometryEffect is handed that size in effectValue(size:), with no
+/// GeometryReader and no extra layout pass. Its animatableData is the four
+/// numbers, so the box chain's `.animation(value:)` (grMobTransition)
+/// interpolates a change the way it does any other style change.
+///
+/// x is not negated for RTL. SwiftUI already mirrors a GeometryEffect's
+/// horizontal translation under a right-to-left layoutDirection (measured with
+/// ImageRenderer: a 30pt shift moved a leading square right in LTR and left in
+/// RTL, the same as `.offset`), which is exactly core.Translate's
+/// leading-relative rule. Like `.offset`, the effect moves hit-testing with
+/// the pixels and leaves the frame reported to the parent alone.
+struct GrMobTranslate: GeometryEffect {
+    var x: GrMobShift
+    var y: GrMobShift
+
+    var animatableData: AnimatablePair<AnimatablePair<CGFloat, CGFloat>, AnimatablePair<CGFloat, CGFloat>> {
+        get {
+            AnimatablePair(AnimatablePair(x.points, x.fraction), AnimatablePair(y.points, y.fraction))
+        }
+        set {
+            x = GrMobShift(points: newValue.first.first, fraction: newValue.first.second)
+            y = GrMobShift(points: newValue.second.first, fraction: newValue.second.second)
+        }
+    }
+
+    func effectValue(size: CGSize) -> ProjectionTransform {
+        ProjectionTransform(CGAffineTransform(
+            translationX: x.points + x.fraction * size.width,
+            y: y.points + y.fraction * size.height))
+    }
 }
 
 /// Maps one core.Role onto SwiftUI accessibility traits.

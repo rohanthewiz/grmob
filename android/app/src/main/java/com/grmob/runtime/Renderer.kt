@@ -58,6 +58,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+// The Float Animatable, aliased because androidx.compose.animation.Animatable
+// (the Color one, above) has the same simple name.
+import androidx.compose.animation.core.Animatable as FloatAnimatable
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -534,7 +538,29 @@ private fun animatedStyle(s: GrMobStyle?): GrMobStyle? {
             bg.animateTo(bg.value.copy(alpha = 0f), s.transitionTween())
         }
     }
-    return s.copy(background = bg.value)
+    // core.Translate under the same Transition: the four numbers of the two
+    // axes, each animated toward its target. By hand for the same reason as
+    // the colour (the value is remembered at this composition position), and
+    // as four Floats rather than one vector because GrMobShift's amount and
+    // fraction interpolate independently, which is what CSS does between a
+    // percentage and none. The spec comes from the style being moved to, so a
+    // shut style's own Transition times the close. Snaps under "Remove
+    // animations" with everything else here (see transitionTween).
+    val tx = remember { FloatAnimatable(s.translateX.amount) }
+    val txf = remember { FloatAnimatable(s.translateX.fraction) }
+    val ty = remember { FloatAnimatable(s.translateY.amount) }
+    val tyf = remember { FloatAnimatable(s.translateY.fraction) }
+    LaunchedEffect(s.translateX, s.translateY, s.transitionMs) {
+        launch { tx.animateTo(s.translateX.amount, s.transitionTween()) }
+        launch { txf.animateTo(s.translateX.fraction, s.transitionTween()) }
+        launch { ty.animateTo(s.translateY.amount, s.transitionTween()) }
+        launch { tyf.animateTo(s.translateY.fraction, s.transitionTween()) }
+    }
+    return s.copy(
+        background = bg.value,
+        translateX = GrMobShift(tx.value, txf.value),
+        translateY = GrMobShift(ty.value, tyf.value),
+    )
 }
 
 /**

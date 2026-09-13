@@ -46,7 +46,8 @@ func ExportHTML(node *core.Node) string {
 
 // motionStylesheet writes a <head> holding the rules the tree's motion needs:
 // core.SpinKeyframes when any node spins, core.ReducedMotionCSS when any node
-// declares a Transition. A tree with neither gets no head at all.
+// declares a Transition, core.TranslateDirectionCSS when any node translates
+// along x. A tree with none of them gets no head at all.
 //
 // Conditional rather than always present so that every export without motion
 // is byte-for-byte what it was before these rules existed: the head is the one
@@ -58,16 +59,17 @@ func ExportHTML(node *core.Node) string {
 // WASM runtime's restatements are held to them by wasm/verify. Returns any for
 // the same reason renderNode does.
 func motionStylesheet(b *element.Builder, node *core.Node) (x any) {
-	spins, transitions := treeMotion(node)
-	if !spins && !transitions {
+	m := treeMotion(node)
+	if !m.spins && !m.transitions && !m.translatesX {
 		return
 	}
 	// The rules are built as arguments of Head().R, not collected beforehand:
 	// element's builder writes each tag the moment it is called, so a <style>
 	// built before b.Head() would land in front of the <head> it belongs in.
 	b.Head().R(
-		motionRule(b, spins, core.SpinKeyframes),
-		motionRule(b, transitions, core.ReducedMotionCSS),
+		motionRule(b, m.spins, core.SpinKeyframes),
+		motionRule(b, m.transitions, core.ReducedMotionCSS),
+		motionRule(b, m.translatesX, core.TranslateDirectionCSS),
 	)
 	return
 }
@@ -82,26 +84,76 @@ func motionRule(b *element.Builder, wanted bool, rule string) (x any) {
 	return
 }
 
-// treeMotion reports whether any node in the tree declares core.Spin, and
-// whether any declares core.Transition. A full walk, transparent grouping
-// nodes included: a Fragment's children still render, so motion under one
-// still needs its rule.
-func treeMotion(n *core.Node) (spins, transitions bool) {
+// motion is what treeMotion found: which of the head's rules the tree needs.
+type motion struct {
+	spins, transitions, translatesX bool
+}
+
+// treeMotion reports which motion rules any node in the tree needs. A full
+// walk, transparent grouping nodes included: a Fragment's children still
+// render, so motion under one still needs its rule. Only a translate along x
+// needs the direction rule, and only one that translateDecl would write.
+func treeMotion(n *core.Node) (m motion) {
 	if n == nil {
-		return false, false
+		return m
 	}
 	if n.Style != nil {
-		spins = n.Style.Spin != 0
-		transitions = n.Style.Transition != ""
+		m.spins = n.Style.Spin != 0
+		m.transitions = n.Style.Transition != ""
+		m.translatesX = translateLength(n.Style.TranslateX) != ""
 	}
 	for _, c := range n.Children {
-		if spins && transitions {
+		if m.spins && m.transitions && m.translatesX {
 			break
 		}
-		s, t := treeMotion(c)
-		spins, transitions = spins || s, transitions || t
+		cm := treeMotion(c)
+		m = motion{
+			spins:       m.spins || cm.spins,
+			transitions: m.transitions || cm.transitions,
+			translatesX: m.translatesX || cm.translatesX,
+		}
 	}
-	return spins, transitions
+	return m
+}
+
+// translateDecl is the value of the CSS `translate` property for a style, or ""
+// when neither axis moves. Nothing at all rather than an identity translate,
+// because any translate declaration makes the element a containing block for
+// its fixed-position descendants, and because a transition to "no
+// declaration" still animates: CSS interpolates a translate to none.
+func translateDecl(s *core.Style) string {
+	x, y := translateLength(s.TranslateX), translateLength(s.TranslateY)
+	if x == "" && y == "" {
+		return ""
+	}
+	if x == "" {
+		x = "0px"
+	}
+	if y == "" {
+		y = "0px"
+	}
+	return "calc(var(--grmob-inline, 1) * " + x + ") " + y
+}
+
+// translateLength normalises one axis of core.Translate: "Npx" or a bare
+// number to "Npx", "N%" to "N%", and zero or any other form to "". The natives
+// parse exactly those three forms and treat the rest as zero, so an "em"
+// passed through verbatim would move the web where the phones stand still. It
+// mirrors translateLength in the WASM runtime.
+func translateLength(v string) string {
+	v = strings.TrimSpace(v)
+	unit := "px"
+	switch {
+	case strings.HasSuffix(v, "%"):
+		unit, v = "%", strings.TrimSpace(strings.TrimSuffix(v, "%"))
+	case strings.HasSuffix(strings.ToLower(v), "px"):
+		v = strings.TrimSpace(v[:len(v)-2])
+	}
+	n, err := strconv.ParseFloat(v, 64)
+	if err != nil || n == 0 || math.IsInf(n, 0) || math.IsNaN(n) {
+		return ""
+	}
+	return strconv.FormatFloat(n, 'f', -1, 64) + unit
 }
 
 // animationDecl is the value of the CSS `animation` property for a style: the
@@ -1745,6 +1797,15 @@ func styleValue(s *core.Style, nodeType string) string {
 	// is meaningful under a transition (see core.Style.Rotate).
 	if s.Rotate != 0 {
 		styles = append(styles, fmt.Sprintf("transform:rotate(%gdeg)", s.Rotate))
+	}
+	// core.Translate, on the individual `translate` property so it composes
+	// with Rotate's transform above and Spin's `rotate` (CSS applies translate
+	// outermost). x is multiplied by --grmob-inline, which
+	// core.TranslateDirectionCSS in the head flips under dir="rtl", because
+	// Translate is leading-relative and CSS translate is physical. The string
+	// is the WASM runtime's, character for character.
+	if decl := translateDecl(s); decl != "" {
+		styles = append(styles, "translate:"+decl)
 	}
 	// Shadow is a single elevation number on every target — Compose's
 	// Modifier.shadow(elevation) and SwiftUI's .shadow(radius:y:) both take

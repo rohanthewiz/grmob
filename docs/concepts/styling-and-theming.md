@@ -46,8 +46,9 @@ difference is structural rather than an oversight:
 
 | group | Android | iOS | WASM DOM | `htmlout` |
 |---|---|---|---|---|
-| typography, color, box model, borders, `Shadow`, `Gap`, `RowGap`/`ColumnGap`, `Justify`, `AlignItems`, `FlexWrap`, `StackAlign`, `Transition`, `Rotate`, `Spin`, accessibility, `Disabled` | yes | yes | yes | yes |
-| `Position` + `Top`/`Right`/`Bottom`/`Left`/`ZIndex`, `MinWidth`/`MinHeight`/`MaxHeight`, `Overflow`, `WhiteSpace`, `AlignSelf`, `FlexBasis`, `FlexDirection`, `Inert` | — | — | yes | yes |
+| typography, color, box model, borders, `Shadow`, `Gap`, `RowGap`/`ColumnGap`, `Justify`, `AlignItems`, `FlexWrap`, `StackAlign`, `Transition`, `Rotate`, `Spin`, `Translate`, accessibility, `Disabled` | yes | yes | yes | yes |
+| `Position` + `Top`/`Right`/`Bottom`/`Left`/`ZIndex`, `MinWidth`/`MinHeight`/`MaxHeight`, `WhiteSpace`, `AlignSelf`, `FlexBasis`, `FlexDirection`, `Inert` | — | — | yes | yes |
+| `Overflow` | `hidden` only | `hidden` only | yes | yes |
 | `FlexShrink` | `0` only | yes | yes | yes |
 | `MaxWidth` | px, % | px, % | yes | yes |
 | `HoverStyle`, `FocusStyle`, `PseudoStates` | — | — | — | — |
@@ -1527,6 +1528,39 @@ forwards and the second unwinds 340 the other way. Folding the value into
 [0, 360) would take that choice away and pick the wrong one for a compass,
 which would unwind the whole rose every time the bearing passed north.
 `core.AngleDelta` is the arithmetic for accumulating an unwrapped angle.
+
+## Translate
+
+`Translate(x, y)` shifts a node's painted box, and its touch target, without
+moving anything around it. Paired with `Transition`, changing it slides the node;
+`comps.Drawer` brings its panel in this way.
+
+```go
+core.Box(core.Transition(250, core.EaseOut), core.Translate("-100%", ""))
+```
+
+Each axis takes `"Npx"`, a bare number (the same px), or `"N%"` of the node's own
+box on that axis. `""`, zero and any other unit leave the axis alone, on every
+target.
+
+| target | mapping |
+|---|---|
+| htmlout / WASM | the individual `translate` property, `calc(var(--grmob-inline, 1) * x) y` |
+| Compose | a layout modifier that places the box at `placeRelative(x, y)` |
+| SwiftUI | a `GeometryEffect` resolving percentages against the view's own size |
+
+**Leading, not left.** A positive x moves toward the trailing edge: right in a
+left-to-right layout, left in a right-to-left one, so a leading drawer hides at
+`"-100%"` in both. The natives mirror by themselves; CSS translate is physical, so
+the web multiplies x by `--grmob-inline`, which `core.TranslateDirectionCSS` sets to
+-1 under `dir="rtl"`.
+
+**Outside the rotations.** A node with `Rotate` or `Spin` as well slides along the
+screen's axes, which is CSS's fixed order (translate, then rotate).
+
+**Clip what leaves its parent.** A translated node overflows its parent like any
+paint. `Overflow("hidden")` on the parent clips it, and it is the one `Overflow`
+value both natives read.
 
 ## Transitions
 

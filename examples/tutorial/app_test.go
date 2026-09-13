@@ -116,6 +116,12 @@ type nodeStyle struct {
 	// visible about that layer, so the flag is the only evidence it happened.
 	AccessibilityHidden bool
 
+	// The drawer's panel layer is always displayed now, so that it can slide;
+	// shut, it is inert and its panel translated off the leading edge. Those
+	// two are how the lesson's test tells shut from open.
+	Inert      bool
+	TranslateX string
+
 	// The inset set, for 7.2's box-model half. The lesson there is entirely
 	// about which of the four sides a layer leaves behind, so the sides have
 	// to be readable individually — a rendered box does not say in its props

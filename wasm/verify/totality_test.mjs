@@ -106,6 +106,7 @@ const FULL_STYLE = {
     FlexShrink: 2, RowGap: 2, ColumnGap: 3,
     Display: "hidden", FlexDirection: "row",
     Transition: "200ms ease", Animation: "pulse 2s infinite", Spin: 1000,
+    TranslateX: "-100%", TranslateY: "3px",
     MinWidth: "1px", MinHeight: "2px", MaxWidth: "300px", MaxHeight: "400px", WhiteSpace: "nowrap",
 };
 

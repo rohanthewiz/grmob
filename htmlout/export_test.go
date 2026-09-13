@@ -1843,6 +1843,36 @@ func TestTransitionExportsTheReducedMotionRule(t *testing.T) {
 	}
 }
 
+// Translate is the runtime's declaration, character for character, beside
+// Rotate's transform rather than in it, and only an x that moves brings the
+// direction rule. Zero and an unread unit write nothing, as on the natives.
+func TestTranslateExportsLeadingRelativeWithItsDirectionRule(t *testing.T) {
+	out := ExportHTML(&core.Node{
+		Type: "Column",
+		Children: []*core.Node{
+			{Type: "Box", Props: map[string]any{}, Style: &core.Style{TranslateX: "-100%", Rotate: 30}},
+			{Type: "Box", Props: map[string]any{}, Style: &core.Style{TranslateX: "0", TranslateY: "2em"}},
+		},
+	})
+	if !strings.Contains(out, "translate:calc(var(--grmob-inline, 1) * -100%) 0px") {
+		t.Errorf("no leading-relative translate on the first box:\n%s", out)
+	}
+	if !strings.Contains(out, "transform:rotate(30deg)") {
+		t.Errorf("Translate displaced Rotate's transform:\n%s", out)
+	}
+	if n := strings.Count(out, "translate:"); n != 1 {
+		t.Errorf("%d translate declarations, want 1 (zero and 2em write none):\n%s", n, out)
+	}
+	if !strings.Contains(out, core.TranslateDirectionCSS) {
+		t.Errorf("an x translate without the direction rule is physical, not leading:\n%s", out)
+	}
+
+	vertical := ExportHTML(&core.Node{Type: "Box", Props: map[string]any{}, Style: &core.Style{TranslateY: "8px"}})
+	if strings.Contains(vertical, core.TranslateDirectionCSS) {
+		t.Errorf("a y-only translate has no direction to flip, yet carries the rule:\n%s", vertical)
+	}
+}
+
 // A tree with no motion writes no head, so every such export is byte-for-byte
 // what it was before the motion rules existed.
 func TestStillExportWritesNoHead(t *testing.T) {

@@ -5350,6 +5350,25 @@ const GrMob = (() => {
     // wasm/verify holds this string to the Go constant.
     const REDUCED_MOTION_CSS = `@media (prefers-reduced-motion:reduce){[style*="transition"]{transition:none!important}}`;
 
+    // core.TranslateDirectionCSS, restated: --grmob-inline is -1 under
+    // dir="rtl" and 1 under dir="ltr", and a translate's x is multiplied by it,
+    // so core.Translate is leading-relative here as it is on both natives.
+    // Custom properties inherit, so the attribute's own element is the only
+    // one that has to match. wasm/verify holds this string to the Go constant.
+    const TRANSLATE_DIRECTION_CSS = "[dir=rtl]{--grmob-inline:-1}[dir=ltr]{--grmob-inline:1}";
+
+    // translateLength normalises one axis of core.Translate to a CSS length:
+    // "Npx" or a bare number to "Npx", "N%" to "N%", and zero or any other
+    // form to "", which is "this axis does not move". The natives parse the
+    // same three forms and treat the rest as zero, so the web must not pass an
+    // "em" through verbatim and move where the phones do not. htmlout's
+    // translateLength is the same function.
+    function translateLength(value) {
+        const m = /^\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?)\s*(px|%)?\s*$/i.exec(value || "");
+        if (!m || Number(m[1]) === 0) return "";
+        return `${Number(m[1])}${m[2] === "%" ? "%" : "px"}`;
+    }
+
     // ensureRule adds one of the constant rules above to the document once,
     // the first time any node needs it. Lazily rather than at load, so a page
     // that never spins or transitions carries no stylesheet it did not ask
@@ -5420,6 +5439,19 @@ const GrMob = (() => {
         // return. htmlout can omit the declaration instead because it builds a
         // fresh string per export and has no element to leave stale.
         out.transform = style.Rotate ? `rotate(${style.Rotate}deg)` : "";
+        // core.Translate, on the individual `translate` property so it composes
+        // with Rotate's transform and Spin's rotate (translate is applied
+        // outermost). Total like transform: a drawer that opens sends no
+        // TranslateX, and the declaration has to go, which is also what lets a
+        // transition interpolate the panel to `none`. Zero on both axes writes
+        // nothing, so an untranslated element is never made a containing block
+        // for its fixed-position descendants.
+        const tx = translateLength(style.TranslateX);
+        const ty = translateLength(style.TranslateY);
+        out.translate = (tx || ty)
+            ? `calc(var(--grmob-inline, 1) * ${tx || "0px"}) ${ty || "0px"}`
+            : "";
+        if (tx) ensureRule(TRANSLATE_DIRECTION_CSS);
         // A single elevation number on every target (Compose's
         // Modifier.shadow(elevation), SwiftUI's .shadow(radius:y:)) against a
         // CSS property that wants offsets, a blur and a color. The arithmetic

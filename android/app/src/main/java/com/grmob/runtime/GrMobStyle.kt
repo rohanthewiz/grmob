@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
@@ -97,6 +98,20 @@ data class GrMobStyle(
      * why it is a rotation loop and not a general repeating transition.
      */
     val spinMs: Int,
+    /**
+     * core.Translate, one axis each: a dp amount plus a fraction of the box's
+     * own extent, resolved at placement by [TranslateElement]. Leading-relative
+     * in x, because placeRelative mirrors under RTL; see core.Translate.
+     */
+    val translateX: GrMobShift = GrMobShift.Zero,
+    val translateY: GrMobShift = GrMobShift.Zero,
+    /**
+     * core.Overflow. Only "hidden" is read, as a clip to the box in
+     * boxModifier: it is what keeps a child translated out of its parent (a
+     * Drawer's shut panel) from drawing over whatever sits beside the parent.
+     * "scroll"/"auto" stay the web's, as before.
+     */
+    val overflow: String = "",
     val align: String,
     val display: String,
     val width: String,
@@ -300,6 +315,9 @@ data class GrMobStyle(
                 shadow = obj.optDouble("Shadow", 0.0).toFloat(),
                 rotate = obj.optDouble("Rotate", 0.0).toFloat(),
                 spinMs = obj.optInt("Spin", 0),
+                translateX = GrMobShift.parse(obj.optString("TranslateX")),
+                translateY = GrMobShift.parse(obj.optString("TranslateY")),
+                overflow = obj.optString("Overflow"),
                 align = obj.optString("Align"),
                 display = obj.optString("Display"),
                 width = obj.optString("Width"),
@@ -565,6 +583,17 @@ fun GrMobStyle?.boxModifier(extra: Modifier = Modifier, gestures: Modifier = Mod
     // which reuses a live DOM element and must clear a stale declaration, this
     // builds a fresh chain every recomposition, so a zero angle omits a layer
     // instead of adding an identity one.
+    // core.Translate, outside both rotations: CSS applies the individual
+    // `translate` before `rotate` and `transform`, so a turned box slides
+    // along the screen's axes. A placement offset rather than a graphics
+    // layer, because placeRelative mirrors x under RTL (Translate is leading-
+    // relative) and needs no layer; the size reported to the parent is
+    // untouched, so nothing around the node reflows, and Compose hit-tests
+    // the box where it is placed. Guarded like rotate: an untranslated node
+    // gains no layout node.
+    if (!translateX.isZero || !translateY.isZero) {
+        m = m.then(TranslateElement(translateX, translateY))
+    }
     if (rotate != 0f) m = m.rotate(rotate)
     // core.Spin, at the same layer position as the fixed angle and for the
     // same reasons: it must turn the whole painted box and the touch target
@@ -577,7 +606,14 @@ fun GrMobStyle?.boxModifier(extra: Modifier = Modifier, gestures: Modifier = Mod
     if (shadow > 0f) {
         m = m.shadow(elevation = shadow.dp, shape = shape ?: RoundedCornerShape(0.dp))
     }
-    if (shape != null) m = m.clip(shape)
+    if (shape != null) {
+        m = m.clip(shape)
+    } else if (overflow == "hidden") {
+        // A rounded box already clips to its shape above; a square one clips
+        // only when asked, since clipping every box would cut off overflow
+        // (shadows, a translated child) that CSS's default visible allows.
+        m = m.clipToBounds()
+    }
     background?.let { m = m.background(it) }
     if (borderWidth > 0f && borderColor != null) {
         m = m.border(borderWidth.dp, borderColor, shape ?: RoundedCornerShape(0.dp))
@@ -1082,6 +1118,73 @@ private class SpinNode(var periodMs: Int) : Modifier.Node(), LayoutModifierNode 
         val placeable = measurable.measure(constraints)
         return layout(placeable.width, placeable.height) {
             placeable.placeWithLayer(0, 0) { rotationZ = angle }
+        }
+    }
+}
+
+/**
+ * One axis of core.Translate, resolved from its wire string: an amount in dp
+ * and a fraction of the node's own extent on that axis.
+ *
+ * Two numbers rather than one because the fraction cannot become pixels until
+ * the box is measured, which happens after composition, where a Transition
+ * animates the values (Renderer.kt's animatedStyle). Animating the pair
+ * linearly is also how CSS interpolates "-100%" to none. One core value is
+ * either a length or a percentage, so one of the two is always 0 unless a
+ * transition is between the two kinds.
+ */
+data class GrMobShift(val amount: Float, val fraction: Float) {
+    val isZero: Boolean get() = amount == 0f && fraction == 0f
+
+    companion object {
+        val Zero = GrMobShift(0f, 0f)
+
+        /**
+         * "Npx", a bare number (dp) or "N%". Anything else is zero, which is
+         * what the web targets and SwiftUI make of it too.
+         */
+        fun parse(value: String): GrMobShift {
+            val v = value.trim()
+            if (v.endsWith("%")) {
+                val pct = v.dropLast(1).trim().toFloatOrNull()
+                return if (pct == null || !pct.isFinite()) Zero else GrMobShift(0f, pct / 100f)
+            }
+            val n = v.removeSuffix("px").trim().toFloatOrNull()
+            return if (n == null || !n.isFinite()) Zero else GrMobShift(n, 0f)
+        }
+    }
+}
+
+/**
+ * core.Translate as a layout modifier: the box is measured and sized exactly
+ * as without it and placed at the resolved offset. placeRelative, not place,
+ * so x is mirrored under RTL; for a child the same size as this layout,
+ * mirroring x gives -x, which is Translate's leading-relative rule.
+ *
+ * A data class so an unchanged offset compares equal and Compose skips the
+ * update; a changed one (each frame of a transition) updates the node, and a
+ * node's default auto-invalidation re-runs measure, which re-places the box
+ * without remeasuring its content under unchanged constraints.
+ */
+private data class TranslateElement(val x: GrMobShift, val y: GrMobShift) :
+    ModifierNodeElement<TranslateNode>() {
+    override fun create() = TranslateNode(x, y)
+
+    override fun update(node: TranslateNode) {
+        node.x = x
+        node.y = y
+    }
+}
+
+private class TranslateNode(var x: GrMobShift, var y: GrMobShift) : Modifier.Node(), LayoutModifierNode {
+    override fun MeasureScope.measure(measurable: Measurable, constraints: Constraints): MeasureResult {
+        val placeable = measurable.measure(constraints)
+        // Percentages resolve against this box's own size, as CSS translate's
+        // do, so "-100%" moves a panel exactly its own width.
+        val dx = x.amount.dp.roundToPx() + (x.fraction * placeable.width).roundToInt()
+        val dy = y.amount.dp.roundToPx() + (y.fraction * placeable.height).roundToInt()
+        return layout(placeable.width, placeable.height) {
+            placeable.placeRelative(dx, dy)
         }
     }
 }

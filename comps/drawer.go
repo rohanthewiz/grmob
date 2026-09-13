@@ -32,7 +32,7 @@ import "github.com/rohanthewiz/grmob/core"
 //	│ ┌ Box 100% × 100%   AccessibilityHidden while Open ────────┐ │ layer 1:
 //	│ │ Content                                                  │ │ the screen
 //	│ └──────────────────────────────────────────────────────────┘ │
-//	│ ┌ Row 100% × 100%   Display none while shut ───────────────┐ │ layer 2:
+//	│ ┌ Row 100% × 100%, clipped; inert + hidden while shut ─────┐ │ layer 2:
 //	│ │ ┌ Column  Width 280px ──┐ ┌ Box FlexGrow(1) ───────────┐ │ │ drawn over
 //	│ │ │ navigation, "Notebook"│ │ scrim: Backdrop fill,      │ │ │ layer 1
 //	│ │ │ Notebook          [✕] │ │ tap = OnDismiss,           │ │ │
@@ -97,38 +97,56 @@ import "github.com/rohanthewiz/grmob/core"
 // panel would sit centred at its own height. Pin a height through Style there,
 // as the tutorial's demo does with core.Height.
 //
-// # The panel is hidden when shut, not removed
+// # The panel is off-screen when shut, not removed
 //
-// The panel layer renders on every pass and takes Display none while shut,
-// which both natives read as "do not compose" and the web as display:none. The
+// The panel layer renders on every pass and stays displayed while shut. The
 // tree is then the same shape open or shut, so opening is a style patch, and
 // any hooks inside Body keep their slots: Body left out of a pass would shift
 // every hook rendered after it, which is Accordion's rule. The content layer is
 // always wrapped in its Box for the same reason. Toggling a prop is a patch;
 // adding a wrapper around the screen would replace the screen.
 //
-// # It appears; it does not slide
+// # It slides
 //
-// A Material drawer slides in from the edge. This one is drawn at its place on
-// the first frame it is shown, and core.Spin (the looping motion core gained
-// for Spinner) does not change that, because a slide is neither a loop nor
-// something core.Transition can express today. Two pieces are missing:
+// The panel comes in from the leading edge and goes back out, and the scrim
+// fades with it. Both are core.Transition on a style change, and a transition
+// animates a change to a node that is displayed on both sides of it, so the
+// shut panel is displayed and moved away rather than hidden with Display none
+// (which both natives read as "not composed", and which CSS does not
+// transition out of either):
 //
-//   - A translation. core.Style has Rotate and no offset or translate, so
-//     there is no animatable property whose change would carry the panel from
-//     off-screen to its place. Left/Right are positioning, read by the web
-//     targets only (see core.Style.Position).
-//   - An entry. Transition animates a change on a node that is already
-//     displayed. A shut panel is Display none, which both natives read as "not
-//     composed", so opening creates the panel rather than changing it, and a
-//     created node has no previous value to animate from on any target (CSS
-//     does not transition out of display:none either). Keeping the panel
-//     composed off-screen instead would keep a hidden, focusable subtree in
-//     the tree on every target.
+//   - The move is core.Translate("-100%", "") on the shut panel, and none on
+//     the open one. The percentage is of the panel's own width, so a
+//     percentage Width or a PanelStyle MaxWidth still hides it exactly, and
+//     Translate is leading-relative, so a right-to-left layout hides it off
+//     the right edge with no branch here.
+//   - The layer clips (Overflow "hidden", which both natives read as a clip
+//     for this), so the shut panel does not draw over whatever sits beside
+//     the drawer's box: the page around the tutorial's pinned demo, say.
+//   - Opening decelerates over 250ms (EaseOut) and closing accelerates over
+//     200ms (EaseIn), the shape Material gives a panel that arrives and
+//     leaves. Every target times a change by the Transition of the style
+//     being moved to, so the shut style's own Transition times the close.
+//   - Under the platform's reduce-motion setting both snap, which is
+//     core.Transition's rule; the drawer then appears and disappears as it
+//     used to.
 //
-// So a slide needs a translate style plus either an appear transition in core
-// or a panel that stays displayed and off-screen while shut, with the
-// accessibility and focus containment that would then require.
+// What a displayed shut panel would otherwise cost, and what buys it back:
+//
+//   - Touch and pointer. The shut scrim has no fill and no tap handler, and
+//     the panel sits clipped away, so nothing on the layer takes a touch on
+//     the phones and taps reach the screen beneath. On the web the layer is
+//     Inert, which drops its pointer events, so clicks fall through too.
+//   - Readers and Tab. The whole layer is AccessibilityHidden and Inert while
+//     shut, so no reader finds the panel and, on the web, Tab skips it.
+//   - A hardware keyboard on the phones. The natives do not read Inert (see
+//     core.Style.Inert), so a shut panel's rows are composed and reachable by
+//     a keyboard's focus traversal on an iPad or a Chromebook, where a Display
+//     none panel was not composed at all. Disabled would stop that and is not
+//     used: it dims the ✕, a native Button, for the length of the slide out.
+//     Recorded rather than approximated, as Inert's own gap is.
+//   - Composition. The panel's subtree is composed while shut. A handful of
+//     rows is cheap; a Body holding a long list would pay for it.
 //
 // # Picking a destination closes the drawer
 //
@@ -231,6 +249,16 @@ type DrawerItem struct {
 // drawer's scrim and a dialog's should dim the screen by the same amount.
 const drawerDefaultBackdrop = "#00000088"
 
+// drawerMotion is the Transition the panel and the scrim carry: the enter
+// curve on the open style and the exit curve on the shut one, since each
+// target times a change by the style it moves to. See "It slides".
+func drawerMotion(open bool) core.StyleProp {
+	if open {
+		return core.Transition(250, core.EaseOut)
+	}
+	return core.Transition(200, core.EaseIn)
+}
+
 // Render builds ZStack(content layer, panel layer) as drawn in the type doc.
 func (d Drawer) Render(ctx *core.Context) *core.Node {
 	stack := make([]core.PropsAndChildren, 0, len(d.Style)+3)
@@ -259,7 +287,8 @@ func (d Drawer) contentLayer() core.View {
 	return core.Box(items...)
 }
 
-// panelLayer builds Row(panel, scrim), shut with Display none.
+// panelLayer builds Row(panel, scrim): clipped always, inert and hidden while
+// shut. See "It slides".
 func (d Drawer) panelLayer(t *core.Theme) core.View {
 	items := []core.PropsAndChildren{
 		// Padding and gap zeroed because a theme Row carries the screen
@@ -270,19 +299,19 @@ func (d Drawer) panelLayer(t *core.Theme) core.View {
 		core.AlignItemsProp(core.AlignItemsStretch),
 		core.Width("100%"),
 		core.Height("100%"),
+		// The shut panel is translated out of this box; the clip keeps it
+		// from drawing beside the drawer.
+		core.Overflow("hidden"),
 	}
 	if !d.Open {
-		// Only the shut state writes a Display. Open writes none, so the
-		// Row's own flex display comes back on the web's total style pass
-		// rather than being overwritten by a block or inline keyword.
-		items = append(items, core.Display(core.DisplayNone))
+		// Out of reach while shut: no reader finds the panel, and on the web
+		// Tab skips it and the pointer passes through the layer to the screen.
+		items = append(items, core.AccessibilityHidden(), core.Inert(true))
 	} else if d.OnDismiss != nil {
 		// System back, on the layer rather than the ✕ because comps.Button
-		// takes style props only, and the layer is the node Display toggles.
-		// Open only: a shut panel is not composed on Android anyway, but the
-		// prop left on would register a callback every pass for a drawer
-		// nobody can see, and any other reader of the tree would see back
-		// claimed by a closed drawer.
+		// takes style props only. Open only: a shut drawer claiming back would
+		// swallow the press meant for a Navigator or an AppBar, and any other
+		// reader of the tree would see back claimed by a closed drawer.
 		items = append(items, core.OnBack(d.OnDismiss))
 	}
 	items = append(items, d.panel(t), d.scrim())
@@ -302,7 +331,13 @@ func (d Drawer) panel(t *core.Theme) core.View {
 		core.Padding(t.Spacing.SM),
 		core.Gap(float64(t.Spacing.XS)),
 		core.AccessibilityRole(core.RoleNavigation),
+		drawerMotion(d.Open),
 	)
+	if !d.Open {
+		// Its own width toward the leading edge, whatever that width is.
+		// Before PanelStyle, so a caller can change how it hides.
+		items = append(items, core.Translate("-100%", ""))
+	}
 	if d.Title != "" {
 		items = append(items, core.AccessibilityLabel(d.Title))
 	}
@@ -401,18 +436,26 @@ func (d Drawer) pick(it DrawerItem) func() {
 
 // scrim is the growing, dimmed area beside the panel. A tap on it dismisses;
 // it is hidden from assistive technology because the ✕ is the accessible way
-// out, as it is for ActionSheet's filler.
+// out, as it is for ActionSheet's filler. While shut it has neither fill nor
+// tap, and fades its fill in and out under the drawer's Transition.
 func (d Drawer) scrim() core.View {
 	items := []core.PropsAndChildren{
 		core.FlexGrow(1),
 		core.Height("100%"),
-		core.BackgroundColor(orDefault(d.Backdrop, drawerDefaultBackdrop)),
 		core.AccessibilityHidden(),
+		drawerMotion(d.Open),
 	}
-	// Guarded like ActionSheet's filler: a registered no-op would make an
-	// inert scrim look tappable to a host.
-	if d.OnDismiss != nil {
-		items = append(items, core.OnClick(d.OnDismiss))
+	if d.Open {
+		items = append(items, core.BackgroundColor(orDefault(d.Backdrop, drawerDefaultBackdrop)))
+		// Guarded like ActionSheet's filler: a registered no-op would make an
+		// inert scrim look tappable to a host.
+		if d.OnDismiss != nil {
+			items = append(items, core.OnClick(d.OnDismiss))
+		}
 	}
+	// Open only, and this is load-bearing on the phones: the shut layer is
+	// still displayed over the screen, and neither native reads Inert, so a
+	// tappable full-size scrim left there would swallow every touch meant for
+	// the screen beneath.
 	return core.Box(items...)
 }

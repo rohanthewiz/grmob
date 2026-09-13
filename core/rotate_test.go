@@ -31,6 +31,30 @@ func TestUseStyleMergesRotateButCannotClearIt(t *testing.T) {
 	}
 }
 
+// Translate sets both axes, including back to "", which is how a drawer that
+// opens clears the offset its shut style gave the panel.
+func TestTranslateSetsBothAxesAndClears(t *testing.T) {
+	var s Style
+	Translate("-100%", "8px").Apply(&s)
+	if s.TranslateX != "-100%" || s.TranslateY != "8px" {
+		t.Fatalf("Translate = (%q, %q), want (-100%%, 8px)", s.TranslateX, s.TranslateY)
+	}
+	Translate("", "").Apply(&s)
+	if s.TranslateX != "" || s.TranslateY != "" {
+		t.Errorf("Translate(\"\", \"\") left (%q, %q)", s.TranslateX, s.TranslateY)
+	}
+}
+
+// A merge layers each axis on its own, so a role style can shift one axis and
+// leave the node's other one standing.
+func TestUseStyleMergesTranslatePerAxis(t *testing.T) {
+	base := Style{TranslateX: "12px", TranslateY: "4px"}
+	UseStyle(Style{TranslateY: "-50%"}).Apply(&base)
+	if base.TranslateX != "12px" || base.TranslateY != "-50%" {
+		t.Errorf("merge = (%q, %q), want (12px, -50%%)", base.TranslateX, base.TranslateY)
+	}
+}
+
 // The angle is deliberately not folded onto the circle; see Style.Rotate.
 func TestRotateKeepsTheWindingItWasGiven(t *testing.T) {
 	for _, deg := range []float64{-90, 370, 720} {

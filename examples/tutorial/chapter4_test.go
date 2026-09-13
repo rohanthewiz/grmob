@@ -2123,14 +2123,18 @@ func drawerLayers(t *testing.T, mgr *render.Manager) (screen, layer *node) {
 	return stack.Children[0], stack.Children[1]
 }
 
-// drawerIsOpen reads the open state the way a user sees it, from the panel
-// layer's Display, and checks the screen layer's hidden flag agrees with it.
+// drawerIsOpen reads the open state from the panel layer, which is displayed
+// either way so that it can slide and is inert while shut, and checks the
+// panel's offset and the screen layer's hidden flag agree with it.
 func drawerIsOpen(t *testing.T, mgr *render.Manager) bool {
 	t.Helper()
 	screen, layer := drawerLayers(t, mgr)
-	open := layer.Style.Display != core.DisplayNone
+	open := !layer.Style.Inert
 	if screen.Style.AccessibilityHidden != open {
 		t.Fatalf("panel open=%v but screen hidden=%v; they must agree", open, screen.Style.AccessibilityHidden)
+	}
+	if offscreen := layer.Children[0].Style.TranslateX != ""; offscreen == open {
+		t.Fatalf("panel open=%v but translated=%v; an open panel sits at its place", open, offscreen)
 	}
 	return open
 }
