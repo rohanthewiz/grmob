@@ -112,6 +112,13 @@ type Claim struct {
 	// pictures: it shows nothing the images under it do not, so holding it
 	// to text of its own would be asserting the same strings twice with
 	// one copy free to drift.
+	//
+	// That argument holds only while the composite really is its parts,
+	// whole: a crop, or a hero shot before its parts were re-taken, shows
+	// less than (or other than) the parts still claim. So the pixels are
+	// what is held instead of the strings — the test re-derives the
+	// composite's size from the parts' own and compares every region of it
+	// with the part drawn there (checkCompositesAreTheirParts).
 	MadeOf []string
 }
 

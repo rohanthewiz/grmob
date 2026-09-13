@@ -2,10 +2,15 @@ package shotclaims
 
 import (
 	"encoding/json"
+	"fmt"
+	"image"
+	_ "image/png"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -39,6 +44,327 @@ func TestEveryScreenshotIsClaimedAndEveryClaimIsShown(t *testing.T) {
 	t.Run("the harness that takes them", func(t *testing.T) {
 		checkEveryClaimIsTakeable(t, root)
 	})
+	t.Run("each composite against its parts", func(t *testing.T) {
+		checkCompositesAreTheirParts(t, root)
+	})
+}
+
+// --------------------------------------------------------------------------
+// Composites
+// --------------------------------------------------------------------------
+
+// compositeBlock is the side, in CSS pixels, of the squares a composite and
+// its parts are compared over; compositeInset is how far inside each part's
+// slot the first square starts.
+//
+// # Why squares, and not pixels
+//
+// The composite is the browser's resampling of each part — an 828×1200 shot
+// drawn 420 CSS px tall at the capture's dpr — and nothing here reproduces
+// Chrome's filter. An area average is what every reasonable filter preserves:
+// the mean colour over a square of drawn pixels is the mean of the source area
+// under it. So the comparison survives the resampling and still sees content:
+// a line of different text, a different row ticked, or a part shifted by a
+// crop changes the mean of the squares it crosses by far more than resampling
+// does.
+//
+// The inset keeps squares off a slot's edge. Slot widths are fractional
+// (289.8 CSS px for todo.png) and the two sides snap them to device pixels
+// differently, so the outermost column of a slot is partly ground on one side
+// and partly shot on the other.
+const (
+	compositeBlock = 12.0
+	compositeInset = 2.0
+)
+
+// compositeTolerance is the most any square's mean may differ between the
+// composite and the part drawn there, per channel, out of 255.
+//
+// # Where 13 comes from
+//
+// Measured on the committed images, and on copies of the parts with a white
+// box painted over their densest text (the composite left as it was, which is
+// a part re-taken without re-shooting the composite):
+//
+//	the composite as committed      5.2 todo · 9.3 signup · 7.9 tabs-list
+//	one glyph (8×12 CSS px) gone    17.2 in todo · 24.2 in tabs-list
+//	a text row (240×24 CSS px) gone 35.7 in todo
+//
+// 13 is between the worst resampling reading and the smallest content one,
+// with about a third of a glyph's reading as room on each side. That is the
+// limit of the claim: a change smaller than a glyph (a single anti-aliased
+// pixel, a colour shift of a few levels) is below it, and a re-shoot on a
+// machine whose Chrome resamples noticeably differently could need the
+// table re-taken. A crop or a re-proportioned part never reaches this reading
+// at all — the size check stops it first.
+const compositeTolerance = 13.0
+
+// compositeLayout is what a composite page says about where its parts go.
+// Read from the page itself, so a change to the page and a change to this
+// test cannot drift apart: the page is the only copy of the numbers.
+type compositeLayout struct {
+	parts   []string // image files, in page order
+	height  float64  // every part's drawn height, CSS px
+	gap     float64  // between neighbouring parts, CSS px
+	padding float64  // around the row, all four sides, CSS px
+}
+
+var (
+	compositeImg = regexp.MustCompile(`<img\s+[^>]*src="images/([^"]+)"`)
+	cssLength    = func(prop string) *regexp.Regexp {
+		return regexp.MustCompile(`(?:^|[;{\s])` + prop + `:\s*(\d+(?:\.\d+)?)px\s*;`)
+	}
+)
+
+// checkCompositesAreTheirParts holds each composite to being its parts, whole
+// and current.
+//
+// # What it catches, and why the manifest needs it
+//
+// A composite carries no strings on the argument that its parts' claims
+// already hold them. That is true of a composite that shows every part
+// entire, drawn from the parts as they are now. Two ordinary edits break it
+// silently: a crop in the page (a max-height, an object-fit) removes text the
+// parts still claim, and re-taking a part without re-shooting the composite
+// leaves the README's first picture showing a screen that no longer exists.
+// Neither changes a claim, so without this both pass.
+//
+// Two readings, for those two failures:
+//
+//	size     the composite's pixel size is the one the page's layout gives the
+//	         parts' own aspect ratios — a crop or a re-proportioned part moves it
+//	content  every square inside each slot has the mean colour of the part's
+//	         area under it — a stale or swapped part moves it
+func checkCompositesAreTheirParts(t *testing.T, root string) {
+	t.Helper()
+
+	checked := 0
+	for _, c := range Claims {
+		if !c.Composite() {
+			continue
+		}
+		checked++
+		checkComposite(t, root, c)
+	}
+	// The reaching arm: the manifest has a composite today, and a check that
+	// found none would pass by having looked at nothing.
+	if checked == 0 {
+		t.Fatalf("no claim in the manifest is a composite, and %s holds "+
+			"hero.png. Either the row changed shape or the reading is wrong.",
+			imageDir)
+	}
+}
+
+// checkComposite is one composite's two readings.
+func checkComposite(t *testing.T, root string, c Claim) {
+	t.Helper()
+
+	layout, ok := readCompositeLayout(t, root, c)
+	if !ok {
+		return
+	}
+	if strings.Join(layout.parts, ",") != strings.Join(c.MadeOf, ",") {
+		t.Errorf("%s is made of %v by its claim, and its page draws %v.\n\n"+
+			"The claim's order is the page's order, so a reader comparing the "+
+			"picture with the row finds the parts where the row says.",
+			c.File, c.MadeOf, layout.parts)
+		return
+	}
+
+	composite, ok := decodePNG(t, root, c.File)
+	if !ok {
+		return
+	}
+	parts := make([]image.Image, len(c.MadeOf))
+	for i, name := range c.MadeOf {
+		if parts[i], ok = decodePNG(t, root, name); !ok {
+			return
+		}
+	}
+
+	// Size. The dpr is not recorded anywhere, so it is read off the height,
+	// which is the one dimension with no fractional term in it: every part is
+	// drawn exactly layout.height tall, so the capture is (height + 2·padding)
+	// CSS px tall and its pixel height must be a whole multiple of that.
+	cb := composite.Bounds()
+	cssHeight := layout.height + 2*layout.padding
+	dpr := float64(cb.Dy()) / cssHeight
+	if dpr < 1 || dpr != math.Trunc(dpr) {
+		t.Errorf("%s is %d px tall, and its page draws its parts %.0f CSS px "+
+			"tall inside %.0f px of padding: %.0f CSS px, which that height is "+
+			"not a whole multiple of (%.3f).\n\n"+
+			"A composite shot from its page is the page's height at a whole "+
+			"dpr. This one was cropped, or taken from a different page.",
+			c.File, cb.Dy(), layout.height, layout.padding, cssHeight, dpr)
+		return
+	}
+	widths := make([]float64, len(parts))
+	cssWidth := 2*layout.padding + layout.gap*float64(len(parts)-1)
+	for i, p := range parts {
+		pb := p.Bounds()
+		widths[i] = layout.height * float64(pb.Dx()) / float64(pb.Dy())
+		cssWidth += widths[i]
+	}
+	// One CSS pixel of slack: the row's width is a sum of fractional widths,
+	// and the capture's clip rounds it once.
+	if got := float64(cb.Dx()) / dpr; math.Abs(got-cssWidth) > 1 {
+		t.Errorf("%s is %d px wide at dpr %.0f — %.1f CSS px — and its parts, "+
+			"drawn whole at %.0f px tall with the page's gap and padding, come "+
+			"to %.1f.\n\n"+
+			"A composite narrower than its parts has lost some of one; wider, "+
+			"it was taken from parts of different proportions than the ones "+
+			"in %s now. Either way the picture is not the parts the manifest "+
+			"says it is — re-shoot it after its parts (wasm/shots/shoot.sh).",
+			c.File, cb.Dx(), dpr, got, layout.height, cssWidth, imageDir)
+		return
+	}
+
+	// Content, one slot at a time.
+	x := layout.padding
+	for i, p := range parts {
+		pb := p.Bounds()
+		scale := float64(pb.Dy()) / layout.height // part pixels per CSS px
+		worst, worstAt, squares := 0.0, "", 0
+		for by := compositeInset; by+compositeBlock <= layout.height-compositeInset; by += compositeBlock {
+			for bx := compositeInset; bx+compositeBlock <= widths[i]-compositeInset; bx += compositeBlock {
+				// Inward rounding on both sides, so neither mean includes a
+				// pixel from outside the square it stands for.
+				got := meanRGB(composite,
+					int(math.Ceil((x+bx)*dpr)), int(math.Ceil((layout.padding+by)*dpr)),
+					int(math.Floor((x+bx+compositeBlock)*dpr)), int(math.Floor((layout.padding+by+compositeBlock)*dpr)))
+				want := meanRGB(p,
+					pb.Min.X+int(math.Ceil(bx*scale)), pb.Min.Y+int(math.Ceil(by*scale)),
+					pb.Min.X+int(math.Floor((bx+compositeBlock)*scale)), pb.Min.Y+int(math.Floor((by+compositeBlock)*scale)))
+				squares++
+				for ch := range 3 {
+					if d := math.Abs(got[ch] - want[ch]); d > worst {
+						worst = d
+						worstAt = fmt.Sprintf("the square %.0f,%.0f CSS px into the slot "+
+							"(composite %s, part %s)", bx, by, rgbString(got), rgbString(want))
+					}
+				}
+			}
+		}
+		if squares == 0 {
+			t.Errorf("%s: no %.0f px square fits inside %s's slot, so nothing "+
+				"about its content was compared.", c.File, compositeBlock, c.MadeOf[i])
+		}
+		t.Logf("%s: %s over %d squares, worst channel difference %.1f/255 at %s",
+			c.File, c.MadeOf[i], squares, worst, worstAt)
+		if worst > compositeTolerance {
+			t.Errorf("%s does not show %s as it is now: %s differs by %.1f/255 "+
+				"in one channel, against a tolerance of %.0f.\n\n"+
+				"The composite carries no strings of its own because its parts' "+
+				"claims hold them, which is only true while it is a picture of "+
+				"those parts. A difference this size is content, not resampling: "+
+				"a part re-taken without re-shooting the composite, or parts in a "+
+				"different order. Re-shoot it after its parts (wasm/shots/shoot.sh).",
+				c.File, c.MadeOf[i], worstAt, worst, compositeTolerance)
+		}
+		x += widths[i] + layout.gap
+	}
+}
+
+// readCompositeLayout reads a composite's page, found through its action
+// script's header, into the numbers checkComposite lays the parts out with.
+func readCompositeLayout(t *testing.T, root string, c Claim) (compositeLayout, bool) {
+	t.Helper()
+
+	script := filepath.Join(scriptDir, strings.TrimSuffix(c.File, filepath.Ext(c.File))+".js")
+	raw, err := os.ReadFile(filepath.Join(root, script))
+	if err != nil {
+		t.Errorf("reading %s: %v", script, err)
+		return compositeLayout{}, false
+	}
+	m := shotHeader.FindSubmatch(raw)
+	var head struct {
+		Page string `json:"page"`
+		Clip string `json:"clip"`
+	}
+	if m == nil || json.Unmarshal(m[1], &head) != nil || head.Page == "" || head.Clip == "" {
+		t.Errorf("%s: the grmob-shot header names no page and clip, so there "+
+			"is no layout to hold %s to.", script, c.File)
+		return compositeLayout{}, false
+	}
+	page := filepath.Join(filepath.Dir(scriptDir), head.Page)
+	html, err := os.ReadFile(filepath.Join(root, page))
+	if err != nil {
+		t.Errorf("reading %s: %v", page, err)
+		return compositeLayout{}, false
+	}
+
+	// The two rules the layout lives in: the clipped container's and its
+	// images'. Selected by the clip the header names, so a page with other
+	// rules in it is read for the ones that shape the capture.
+	sel := regexp.QuoteMeta(head.Clip)
+	row := regexp.MustCompile(sel + `\s*\{([^}]*)\}`).FindSubmatch(html)
+	img := regexp.MustCompile(sel + `\s+img\s*\{([^}]*)\}`).FindSubmatch(html)
+	if row == nil || img == nil {
+		t.Errorf("%s has no `%s { … }` and `%s img { … }` rules, which is where "+
+			"the composite's gap, padding and part height are read from.", page, head.Clip, head.Clip)
+		return compositeLayout{}, false
+	}
+	length := func(block []byte, prop string) (float64, bool) {
+		v := cssLength(prop).FindSubmatch(block)
+		if v == nil {
+			t.Errorf("%s: no single `%s: <n>px;` in the %s rule. The check lays "+
+				"the parts out from it and will not guess.", page, prop, head.Clip)
+			return 0, false
+		}
+		f, err := strconv.ParseFloat(string(v[1]), 64)
+		return f, err == nil
+	}
+	var l compositeLayout
+	var okH, okG, okP bool
+	l.height, okH = length(img[1], "height")
+	l.gap, okG = length(row[1], "gap")
+	l.padding, okP = length(row[1], "padding")
+	for _, src := range compositeImg.FindAllSubmatch(html, -1) {
+		l.parts = append(l.parts, string(src[1]))
+	}
+	return l, okH && okG && okP
+}
+
+// decodePNG reads one image from the image directory.
+func decodePNG(t *testing.T, root, name string) (image.Image, bool) {
+	t.Helper()
+	f, err := os.Open(filepath.Join(root, imageDir, name))
+	if err != nil {
+		t.Errorf("opening %s/%s: %v", imageDir, name, err)
+		return nil, false
+	}
+	defer f.Close()
+	img, _, err := image.Decode(f)
+	if err != nil {
+		t.Errorf("decoding %s/%s: %v", imageDir, name, err)
+		return nil, false
+	}
+	return img, true
+}
+
+// meanRGB is the mean 8-bit colour over [x0,x1)×[y0,y1). An empty rectangle
+// reads as black, which checkComposite never asks for: its squares are 12 CSS
+// px at a dpr of at least one, and inward rounding takes at most two pixels.
+func meanRGB(img image.Image, x0, y0, x1, y1 int) [3]float64 {
+	var sum [3]float64
+	n := 0
+	for y := y0; y < y1; y++ {
+		for x := x0; x < x1; x++ {
+			r, g, b, _ := img.At(x, y).RGBA()
+			sum[0] += float64(r >> 8)
+			sum[1] += float64(g >> 8)
+			sum[2] += float64(b >> 8)
+			n++
+		}
+	}
+	if n == 0 {
+		return sum
+	}
+	return [3]float64{sum[0] / float64(n), sum[1] / float64(n), sum[2] / float64(n)}
+}
+
+func rgbString(c [3]float64) string {
+	return fmt.Sprintf("rgb(%.0f, %.0f, %.0f)", c[0], c[1], c[2])
 }
 
 // imageDir is where the shots live, relative to the repository root. One
