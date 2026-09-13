@@ -102,6 +102,12 @@ type SearchField struct {
 	// need the name.
 	AccessibilityLabel string
 
+	// FocusRef names the input, so core.Focus can put the cursor in it and
+	// core.UseFocusOrder can place it in a form's return-key order. It goes
+	// on the input rather than the row because the row is not focusable on
+	// any target. Nil leaves the field unnamed.
+	FocusRef *core.FocusRef
+
 	// Style is applied to the row after the widget's own frame, so the fill,
 	// the radius and the padding are all overridable.
 	Style []core.StyleProp
@@ -199,6 +205,9 @@ func (s SearchField) input(placeholder, label string) core.View {
 		// padding would inset the text from a frame that is no longer there.
 		core.Padding(0),
 		core.AccessibilityLabel(label),
+		// Nil-safe: FocusTarget(nil) is a nil prop, which the node builders
+		// skip.
+		core.FocusTarget(s.FocusRef),
 	}
 
 	if s.OnSubmit == nil {

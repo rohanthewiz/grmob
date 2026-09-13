@@ -94,10 +94,11 @@ func TestOnlyClosedWidgetsDeclareACompositeContainerRole(t *testing.T) {
 
 	// The closed widgets allowed to declare a container role, by file.
 	closedComposites := map[string]string{
-		"bottom_bar.go":       "toolbar when Selected < 0; cells are built from BarItem data",
-		"code_editor.go":      "toolbar; its three buttons are built by the widget",
-		"radio_group.go":      "radiogroup; rows are built from RadioOption data",
-		"rich_text_editor.go": "toolbar; buttons are built from RichToolItem data",
+		"bottom_bar.go":        "toolbar when Selected < 0; cells are built from BarItem data",
+		"code_editor.go":       "toolbar; its three buttons are built by the widget",
+		"radio_group.go":       "radiogroup; rows are built from RadioOption data",
+		"rich_text_editor.go":  "toolbar; buttons are built from RichToolItem data",
+		"searchable_select.go": "listbox; rows are built from core.SelectOption data",
 	}
 
 	files, err := filepath.Glob("*.go")

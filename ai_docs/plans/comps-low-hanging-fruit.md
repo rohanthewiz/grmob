@@ -8,7 +8,8 @@ rows". A3 `Stepper`, A4 `BottomBar` + `Screen.Footer`, A5 `Spinner` and A6
 `hooks.UseTimeoutWhile`) shipped with lesson 6.7 "Action sheets & snackbars".
 B2 `RadioGroup`, B4 `StepIndicator` and B5 `Timeline` shipped with lesson 4.16
 "Radio groups, steps & timelines". **Tier C landed 2026-09-12** as far as it
-can without a renderer: C1 `Menu` shipped with lesson 4.17 "Menus". C2
+can without a renderer: C1 `Menu` and C3 `SearchableSelect` shipped with
+lesson 4.17 "Menus & searchable selects". C2
 `Drawer` stays skipped (a recorded non-goal) and C4 `Carousel` stays blocked on
 a scroll-offset signal.
 
@@ -102,6 +103,21 @@ a scroll-offset signal.
   the radio pair would make the runtime run the action on the first arrow
   key. The trigger states no expanded state: core's disclosure table already
   names a control that opens a dialog as the near miss.
+- C3 `SearchableSelect` is controlled on both halves, `Value`/`OnChange` and
+  `Query`/`OnQueryChange`, and holds no hook. The list shows while the query
+  is not the chosen label, so a pick closes it by writing the label. The
+  focus questions the sketch raised are answered in the type doc. The list
+  never takes focus. The field has no submit, so the return key follows a
+  `core.UseFocusOrder` (via the new, additive `SearchField.FocusRef`) and
+  Next skips the list, which holds no field. A pick dismisses the keyboard.
+  On the web the matches are a listbox the runtime already makes one tab
+  stop with arrow keys, and a keyboard pick drops focus to the page, which
+  is documented rather than fixed because `core.Focus` would raise the
+  phone keyboard. It is not an ARIA combobox: that role and its
+  `aria-expanded`/`aria-controls`/`aria-activedescendant` are renderer
+  work. A `RoleStatus` count line stands in for what the combobox
+  announces. Options are `core.SelectOption`, with `Group` as the row's
+  subtitle.
 
 **Correction found while landing A2:** rendering the row's control
 `core.Disabled(true)` (the approach sketched under A2) was rejected. Disabled

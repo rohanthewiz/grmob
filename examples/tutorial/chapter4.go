@@ -3070,15 +3070,40 @@ var menuSorts = []struct{ Value, Label string }{
 	{"title", "Title"},
 }
 
-// lessonMenus teaches the button that opens a list. The demo puts the two
-// menus an app reaches for first on one screen: a "⋯" on every row of a list,
-// and a Sort picker above it. One state names which menu is open, so deleting
-// a row takes nothing with it but its own entry. That is the argument for
-// Menu being controlled, made where a reader can watch it hold.
+// searchCountries is 4.17's SearchableSelect list: long enough that typing
+// beats scrolling, grouped by continent so the Group subtitle shows, and one
+// disabled entry at the end.
+var searchCountries = []core.SelectOption{
+	{Value: "ar", Label: "Argentina", Group: "South America"},
+	{Value: "au", Label: "Australia", Group: "Oceania"},
+	{Value: "br", Label: "Brazil", Group: "South America"},
+	{Value: "ca", Label: "Canada", Group: "North America"},
+	{Value: "eg", Label: "Egypt", Group: "Africa"},
+	{Value: "fr", Label: "France", Group: "Europe"},
+	{Value: "de", Label: "Germany", Group: "Europe"},
+	{Value: "gh", Label: "Ghana", Group: "Africa"},
+	{Value: "in", Label: "India", Group: "Asia"},
+	{Value: "jp", Label: "Japan", Group: "Asia"},
+	{Value: "ke", Label: "Kenya", Group: "Africa"},
+	{Value: "mx", Label: "Mexico", Group: "North America"},
+	{Value: "no", Label: "Norway", Group: "Europe"},
+	{Value: "pt", Label: "Portugal", Group: "Europe"},
+	{Value: "es", Label: "Spain", Group: "Europe"},
+	{Value: "aq", Label: "Antarctica", Group: "No deliveries", Disabled: true},
+}
+
+// lessonMenus teaches the two ways to pick from a list that is not all on
+// screen. The first demo puts the two menus an app reaches for first on one
+// screen: a "⋯" on every row of a list, and a Sort picker above it. One state
+// names which menu is open, so deleting a row takes nothing with it but its
+// own entry. That is the argument for Menu being controlled, made where a
+// reader can watch it hold. The second demo is a SearchableSelect followed by
+// a City field in one focus order, so the return key's Next and the list's
+// place outside that order can both be tried.
 func lessonMenus() Lesson {
 	return Lesson{
-		Title:   "Menus",
-		Summary: "comps.Menu is a button that opens an action sheet: the ⋯ on every row, and a Sort picker whose current choice is checked.",
+		Title:   "Menus & searchable selects",
+		Summary: "comps.Menu opens an action sheet from a button; comps.SearchableSelect filters a long list under a search field.",
 		Body: func(ctx *core.Context) core.View {
 			// Which menu is open: a note's ID, "sort", or "" for none. One
 			// state serves every menu on the screen.
@@ -3087,6 +3112,21 @@ func lessonMenus() Lesson {
 			pinned := core.NewState(ctx, "")
 			deleted := core.NewState(ctx, []string{})
 			last := core.NewState(ctx, "")
+
+			// The SearchableSelect demo: the chosen value, the field's text,
+			// and a City field after it in one return-key order.
+			country := core.NewState(ctx, "")
+			countryQuery := core.NewState(ctx, "")
+			city := core.NewState(ctx, "")
+			countryRef := core.UseFocusRef(ctx)
+			cityRef := core.UseFocusRef(ctx)
+			core.UseFocusOrder(ctx, countryRef, cityRef)
+			shipsTo := "nothing chosen yet"
+			for _, o := range searchCountries {
+				if o.Value == country.Get() && o.Value != "" {
+					shipsTo = o.Label
+				}
+			}
 
 			all := []menuNote{
 				{ID: "groceries", Title: "Groceries", Age: 3},
@@ -3238,6 +3278,46 @@ func lessonMenus() Lesson {
 					}),
 					core.If(last.Get() != "", caption("✓ "+last.Get())),
 				),
+				prose("A menu suits a handful of choices. For a list too long to scroll, such as "+
+					"countries, comps.SearchableSelect filters as you type: a SearchField with "+
+					"the matching options listed under it. Query is the field's text and Value "+
+					"is the choice, and both are your state."),
+				codeBlock(`comps.SearchableSelect{
+    Label:         "Country",
+    Options:       countries,   // []core.SelectOption
+    Value:         country.Get(),
+    OnChange:      country.Set,
+    Query:         query.Get(),
+    OnQueryChange: query.Set,
+    FocusRef:      countryRef,
+}`),
+				prose("Picking an option reports its Value, writes its label into the field and "+
+					"puts the keyboard away. The list shows while the text is not the chosen "+
+					"label, so the pick closes it and editing the text opens it again. Clear "+
+					"empties the text and the choice together."),
+				prose("The list never takes focus, so typing carries on while it changes. The "+
+					"return key belongs to the form: with FocusRef in core.UseFocusOrder the "+
+					"keyboard shows Next and moves to the City field, past the list. In a "+
+					"browser the list is a listbox. Tab reaches it as one stop, the arrows move, "+
+					"and Enter picks."),
+				demoPanel("Type \"an\" and pick a country, then try Clear. Antarctica is disabled.",
+					comps.SearchableSelect{
+						Label:         "Country",
+						Placeholder:   "Search countries",
+						Options:       searchCountries,
+						Value:         country.Get(),
+						OnChange:      country.Set,
+						Query:         countryQuery.Get(),
+						OnQueryChange: countryQuery.Set,
+						MaxResults:    5,
+						FocusRef:      countryRef,
+					},
+					core.Input(city.Get(), "City", city.Set,
+						core.FocusTarget(cityRef),
+						core.AccessibilityLabel("City"),
+					),
+					caption("Ships to: "+shipsTo),
+				),
 				keyPoints(
 					"Menu is a Button that opens an ActionSheet; picking an item runs its OnTap, then OnDismiss.",
 					"No popover is anchored to the trigger: no host sends Go its position, so the list is the bottom-edge sheet on every target.",
@@ -3245,6 +3325,9 @@ func lessonMenus() Lesson {
 					"Open is controlled, so one state can say which row's menu is open, and a list of menus holds no hook slots.",
 					"A picker is a menu whose current item is Checked: a leading ✓ and a \", selected\" name.",
 					"The trigger states no expanded state: a control that opens a dialog is not a disclosure.",
+					"SearchableSelect lists matches while the field's text is not the chosen label; a pick reports Value, writes the label and closes the list.",
+					"The list never takes focus and has no field of its own, so the return key's Next skips it and moves on through the form.",
+					"The matches are a labelled listbox, and a status line says how many matched, since the list appears silently under the field.",
 				),
 			)
 		},

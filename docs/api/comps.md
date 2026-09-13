@@ -122,6 +122,8 @@ Two widgets do: Accordion (expanded or collapsed) and DatePicker (is the sheet o
     - [`func (Screen) Render`](#func-screen-render)
 - [`type SearchField`](#type-searchfield)
     - [`func (SearchField) Render`](#func-searchfield-render)
+- [`type SearchableSelect`](#type-searchableselect)
+    - [`func (SearchableSelect) Render`](#func-searchableselect-render)
 - [`type SegmentedControl`](#type-segmentedcontrol)
     - [`func (SegmentedControl) Render`](#func-segmentedcontrol-render)
 - [`type Separator`](#type-separator)
@@ -4268,6 +4270,12 @@ type SearchField struct {
 	// need the name.
 	AccessibilityLabel string
 
+	// FocusRef names the input, so core.Focus can put the cursor in it and
+	// core.UseFocusOrder can place it in a form's return-key order. It goes
+	// on the input rather than the row because the row is not focusable on
+	// any target. Nil leaves the field unnamed.
+	FocusRef *core.FocusRef
+
 	// Style is applied to the row after the widget's own frame, so the fill,
 	// the radius and the padding are all overridable.
 	Style []core.StyleProp
@@ -4321,7 +4329,126 @@ The border half of that is newer than the rest and the reason is worth keeping: 
 func (s SearchField) Render(ctx *core.Context) *core.Node
 ```
 
-<small>[comps/search_field.go:110](https://github.com/rohanthewiz/grmob/blob/master/comps/search_field.go#L110)</small>
+<small>[comps/search_field.go:116](https://github.com/rohanthewiz/grmob/blob/master/comps/search_field.go#L116)</small>
+
+### type SearchableSelect
+
+```go
+type SearchableSelect struct {
+	// Options are the choices, in the order matches are listed.
+	Options []core.SelectOption
+
+	// Value is the chosen option's Value; empty means nothing is chosen.
+	Value string
+
+	// OnChange receives the Value of a picked option, and "" when the clear
+	// button empties the field. It is not called when the user picks the
+	// option already chosen.
+	OnChange func(string)
+
+	// Query is the field's text. It is the caller's, as SearchField.Value is.
+	Query string
+
+	// OnQueryChange receives every edit, the chosen label after a pick, and
+	// "" on clear. Nil leaves a field that drops keystrokes.
+	OnQueryChange func(string)
+
+	// Label names the field and, with " suggestions", the list. Empty falls
+	// back to the placeholder, as SearchField does.
+	Label string
+
+	// Placeholder is the empty field's prompt. Empty is "Search".
+	Placeholder string
+
+	// MaxResults caps the rows shown; the status line says how many more
+	// matched. Zero is 6, which fits under a field above a phone keyboard.
+	MaxResults int
+
+	// Filter decides whether an option matches the query. The query is
+	// trimmed first, and an option is only offered when Filter is true. Nil
+	// matches a case-insensitive substring of Label.
+	Filter func(opt core.SelectOption, query string) bool
+
+	// Count writes the status line from the rows shown and the total that
+	// matched. Nil writes "No matches", "1 match", "3 matches" or
+	// "6 of 14 matches". Supply it to say it in another language.
+	Count func(shown, total int) string
+
+	// FocusRef names the field, so the field can join a core.UseFocusOrder
+	// and be the target of core.Focus. See "Focus and the keyboard".
+	FocusRef *core.FocusRef
+
+	// Style is applied to the outer column after the widget's own props.
+	Style []core.StyleProp
+}
+```
+
+SearchableSelect is a choice from a list too long to scroll: a search field whose typing filters the options into a short list under it, where a tap picks one.
+
+	comps.SearchableSelect{
+	    Label:         "Country",
+	    Options:       countries,          // []core.SelectOption
+	    Value:         country.Get(),
+	    OnChange:      country.Set,
+	    Query:         query.Get(),
+	    OnQueryChange: query.Set,
+	}
+
+	┌ Column ────────────────────────────────────────────┐
+	│ ┌ SearchField (RoleSearch) ──────────────────────┐ │
+	│ │ 🔍  an                                     ✕   │ │
+	│ └────────────────────────────────────────────────┘ │
+	│ ┌ Column RoleListBox "Country suggestions" ──────┐ │  only while the
+	│ │ Argentina        South America     (option)    │ │  query is not the
+	│ │ Canada           North America     (option)    │ │  chosen label
+	│ └────────────────────────────────────────────────┘ │
+	│ Text RoleStatus  "2 of 6 matches"                  │  hidden while shut
+	└────────────────────────────────────────────────────┘
+
+#### When the list shows
+
+While Query is not empty and is not exactly the chosen option's label. Picking an option sets the query to its label, so the list closes, and the field now reads as the choice. Editing that text opens the list again. The widget keeps no open flag: both halves of the condition are the caller's state already, which keeps the widget free of hooks and so safe to render conditionally, as SearchField is.
+
+Nothing shows for an empty query. Listing every option on focus would need a focus flag, held either in a hook or in more caller state, and a list short enough to show in full is one a Select or a RadioGroup already serves better.
+
+#### Focus and the keyboard, which are the design
+
+The shape is a field and a list. What had to be decided is how the two share the keyboard. There are five parts:
+
+ 1. The list never takes focus. It appears under a field the user is typing in, and nothing issues a focus command, so typing carries on.
+ 2. The return key belongs to the form, not to the list. The field has no OnSubmit, so with FocusRef in a core.UseFocusOrder the keyboard shows Next and moves on to the following field. The list is not in the order: core.FocusNext walks declared refs only, and no option is one. "Enter picks the top match" was the alternative. It was rejected because an explicit submit suppresses the Next action (see stampTraversal in core/focus\_order.go), and a field in the middle of a form cannot do both with one action key.
+ 3. On the web, the list is a composite. Tab from the field lands on the listbox as one stop, the arrows move among the options, and Enter or Space picks. The WASM runtime supplies all of it from RoleListBox. The highlight does not pick: selection does not follow focus, because an arrow key that changed the value would close the list under the user.
+ 4. Picking dismisses the keyboard. On a phone the choice is made, so the keyboard is in the way of the form. core.DismissKeyboard blurs only a field that has focus, so a web user who picked with the arrow keys keeps focus wherever it was.
+ 5. On the web a keyboard pick removes the list, and the focused option with it, so focus falls back to the page. Returning it to the field would need core.Focus, which on a phone would raise the keyboard that part 4 just put away. The widget cannot tell the two apart. A caller that wants focus back can call core.Focus from OnChange.
+
+#### It is not an ARIA combobox
+
+ARIA's pattern for this is role="combobox" on the field, with aria-expanded, aria-controls and aria-activedescendant naming the list and its active option. core.Role carries none of them, and adding the pattern means changes in both web exporters, the ARIA fixture and the runtime's keyboard. That is renderer work, which this plan excludes. What ships instead is a labelled search region, a labelled listbox, and a polite status line that says how many options match. The status is the part a screen reader user most needs, because the list appears silently under the field.
+
+The status line is hidden while the list is shut, and a live region that becomes visible is not announced reliably. Later keystrokes change its text while it is showing, and those are announced.
+
+#### Options
+
+Options are core.SelectOption, the type core.Select takes, so a list can move from one to the other unchanged. Group becomes the row's subtitle rather than a heading: a listbox owns its options, and a heading among them would be a foreign child. Disabled and GroupDisabled rows are shown and announced, and a tap on one does nothing.
+
+#### Theme roles read
+
+	Field       as SearchField (Surface, Components.Input.BorderRadius)
+	List frame  Colors.Background, Colors.Border, the input radius
+	Rows        as ListRow, with SelectedStyle for the current value
+	Status      Typography.Caption, Colors.TextSecondary
+
+<small>[comps/searchable_select.go:109](https://github.com/rohanthewiz/grmob/blob/master/comps/searchable_select.go#L109)</small>
+
+#### func (SearchableSelect) Render
+
+```go
+func (s SearchableSelect) Render(ctx *core.Context) *core.Node
+```
+
+Render builds Column(SearchField, listbox?, status) as drawn in the type doc.
+
+<small>[comps/searchable_select.go:164](https://github.com/rohanthewiz/grmob/blob/master/comps/searchable_select.go#L164)</small>
 
 ### type SegmentedControl
 

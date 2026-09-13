@@ -2101,6 +2101,59 @@ jumping to it arrives before the clear button rather than past it. The input
 keeps its own name; a role says what a region is and a label says what a
 control is called.
 
+`FocusRef` names the input, so `core.Focus` can target it and
+`core.UseFocusOrder` can include it in a form's return-key order.
+
+## SearchableSelect
+
+A choice from a list too long to scroll, such as countries. Typing into a search
+field filters the options into a short list under it, and a tap picks one.
+
+```go
+comps.SearchableSelect{
+    Label:         "Country",
+    Options:       countries, // []core.SelectOption
+    Value:         country.Get(),
+    OnChange:      country.Set,
+    Query:         query.Get(),
+    OnQueryChange: query.Set,
+    FocusRef:      countryRef,
+}
+```
+
+**When the list shows.** The list shows while `Query` is not empty and is not
+the chosen option's label. A pick reports the option's `Value` through
+`OnChange`, writes its label through `OnQueryChange` (which closes the list),
+and dismisses the keyboard. Editing the text opens the list again. Clear
+empties both the text and the choice. The widget holds no hook, so it can be
+rendered conditionally.
+
+**Focus and the keyboard.**
+
+| Question | Answer |
+|---|---|
+| Does the list take focus when it appears? | No. Typing carries on in the field. |
+| What does the return key do? | It belongs to the form. The field has no submit, so with `FocusRef` in `core.UseFocusOrder` it shows Next and moves to the next field. |
+| Does Next stop on the list? | No. The order walks declared refs, and no option is a field. |
+| Does Enter pick the top match? | No. An explicit submit would suppress Next, and one key cannot do both. |
+| Keyboard on the web? | The list is a listbox: one tab stop after the field, arrows move, Enter or Space picks. Focus does not select. |
+| Where does focus go after a pick? | On a phone the keyboard is dismissed. On the web a keyboard pick removes the focused option, so focus falls back to the page. Call `core.Focus` from `OnChange` to return it to the field. |
+
+Other notes:
+
+- The matches are a `RoleListBox` named "<Label> suggestions", and each row is a
+  selectable `ListRow`. A status line (`RoleStatus`) says "3 matches",
+  "5 of 6 matches" or "No matches". It is hidden while the list is shut.
+- It is not an ARIA combobox. `core.Role` has no `combobox`, and the pattern's
+  `aria-expanded`, `aria-controls` and `aria-activedescendant` would mean
+  renderer changes.
+- `Options` are `core.SelectOption`, the type `core.Select` takes. `Group`
+  becomes the row's subtitle, because a heading inside a listbox would be a
+  foreign child. `Disabled` and `GroupDisabled` rows are listed but cannot be
+  picked.
+- `MaxResults` caps the rows (default 6). `Filter` replaces the
+  case-insensitive label match, and `Count` replaces the English status text.
+
 ## ChipStrip
 
 A run of `Chip`s that wraps onto as many lines as it needs — a filter bar,

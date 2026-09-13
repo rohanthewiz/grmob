@@ -1856,7 +1856,7 @@ func TestChoicesLessonTimelineGrowsWithTheOrder(t *testing.T) {
 	assertNoConcerns(t)
 }
 
-// --- 4.17 Menus ---------------------------------------------------------------
+// --- 4.17 Menus & searchable selects ----------------------------------------
 
 // openSheets returns every visible Modal. Each menu in 4.17 carries its own,
 // closed ones included, so "the" sheet is the one that is showing.
@@ -1909,7 +1909,7 @@ func menuNoteTitles(root *node) []string {
 
 func TestMenusLessonRowMenusPinDeleteAndRestore(t *testing.T) {
 	mgr := newApp(t)
-	openLesson(t, mgr, "Menus")
+	openLesson(t, mgr, "Menus & searchable selects")
 
 	want := func(why string, titles ...string) {
 		t.Helper()
@@ -1957,7 +1957,7 @@ func TestMenusLessonRowMenusPinDeleteAndRestore(t *testing.T) {
 
 func TestMenusLessonSortPickerChecksTheCurrentOrder(t *testing.T) {
 	mgr := newApp(t)
-	openLesson(t, mgr, "Menus")
+	openLesson(t, mgr, "Menus & searchable selects")
 
 	tapLabelled(t, mgr, "Sort: Newest")
 	sheet := openSheets(tree(t, mgr))
@@ -1983,6 +1983,113 @@ func TestMenusLessonSortPickerChecksTheCurrentOrder(t *testing.T) {
 	tapInSheet(t, mgr, "✓ Title")
 	if n := len(openSheets(tree(t, mgr))); n != 0 {
 		t.Fatal("picking the checked item still closes the menu")
+	}
+	assertNoConcerns(t)
+}
+
+// countryField is 4.17's SearchableSelect input, found by its name.
+func countryField(t *testing.T, root *node) *node {
+	t.Helper()
+	n := findNode(root, func(n *node) bool {
+		return n.Type == "Input" && n.Style != nil && n.Style.AccessibilityLabel == "Country"
+	})
+	if n == nil {
+		t.Fatal("no Country field in the lesson")
+	}
+	return n
+}
+
+// countryOptions returns the labels of the rows in the Country listbox, or nil
+// when the list is shut.
+func countryOptions(root *node) []string {
+	lb := findNode(root, func(n *node) bool {
+		return n.Style != nil && n.Style.AccessibilityRole == string(core.RoleListBox) &&
+			n.Style.AccessibilityLabel == "Country suggestions"
+	})
+	if lb == nil {
+		return nil
+	}
+	var out []string
+	for _, c := range lb.Children {
+		if c.Style != nil && c.Style.AccessibilityRole == string(core.RoleOption) {
+			out = append(out, c.Style.AccessibilityLabel)
+		}
+	}
+	return out
+}
+
+func TestSearchableSelectLessonFiltersPicksAndClears(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Menus & searchable selects")
+
+	typeCountry := func(text string) {
+		t.Helper()
+		mgr.DispatchTextCallback(countryField(t, tree(t, mgr)).Props["onChange"].(string), text)
+	}
+
+	if countryOptions(tree(t, mgr)) != nil || !hasText(tree(t, mgr), "Ships to: nothing chosen yet") {
+		t.Fatal("the select starts shut with nothing chosen")
+	}
+
+	// "an" matches six; MaxResults 5 shows five and the status says so.
+	typeCountry("an")
+	want := []string{"Canada", "France", "Germany", "Ghana", "Japan"}
+	if got := countryOptions(tree(t, mgr)); !slices.Equal(got, want) {
+		t.Fatalf("\"an\" lists %v, want %v", got, want)
+	}
+	if !hasText(tree(t, mgr), "5 of 6 matches") {
+		t.Fatal("the status line should say five of six matched")
+	}
+
+	tapLabelled(t, mgr, "Japan")
+	cur := tree(t, mgr)
+	if !hasText(cur, "Ships to: Japan") || countryField(t, cur).Props["value"] != "Japan" {
+		t.Fatal("a pick sets the value and writes the label into the field")
+	}
+	if countryOptions(cur) != nil {
+		t.Fatal("the pick closes the list")
+	}
+
+	// A disabled option is listed and refuses the pick.
+	typeCountry("antar")
+	if got := countryOptions(tree(t, mgr)); !slices.Equal(got, []string{"Antarctica"}) {
+		t.Fatalf("\"antar\" lists %v", got)
+	}
+	tapLabelled(t, mgr, "Antarctica")
+	if !hasText(tree(t, mgr), "Ships to: Japan") {
+		t.Fatal("a disabled option must not be chosen")
+	}
+
+	typeCountry("zz")
+	if countryOptions(tree(t, mgr)) != nil || !hasText(tree(t, mgr), "No matches") {
+		t.Fatal("no matches shows no list and says so")
+	}
+
+	tapLabelled(t, mgr, "Clear Country")
+	cur = tree(t, mgr)
+	if !hasText(cur, "Ships to: nothing chosen yet") || countryField(t, cur).Props["value"] != "" {
+		t.Fatal("Clear empties the field and the choice")
+	}
+	assertNoConcerns(t)
+}
+
+// The Country field is first in a two-field order, so its return key is Next;
+// the list is not a field and is not in the order.
+func TestSearchableSelectLessonReturnKeyMovesToCity(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Menus & searchable selects")
+
+	mgr.DispatchTextCallback(countryField(t, tree(t, mgr)).Props["onChange"].(string), "an")
+	field := countryField(t, tree(t, mgr))
+	if field.Props["imeAction"] != "next" {
+		t.Fatalf("Country's return key = %v, want next", field.Props["imeAction"])
+	}
+	mgr.DispatchCallback(field.Props["onSubmit"].(string))
+	city := findNode(tree(t, mgr), func(n *node) bool {
+		return n.Type == "Input" && n.Style != nil && n.Style.AccessibilityLabel == "City"
+	})
+	if city == nil || city.Props["focusAction"] != "focus" {
+		t.Fatal("Next on Country should put focus on City")
 	}
 	assertNoConcerns(t)
 }

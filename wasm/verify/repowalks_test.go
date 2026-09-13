@@ -27,7 +27,7 @@ import (
 // # About the file counts quoted below, which are readings and ARE held
 //
 // Several sentences here and in timings_test.go price a walk against how many
-// files it touches. That number is a reading of a repository on a day — 493
+// files it touches. That number is a reading of a repository on a day — 495
 // tracked Go files where verifyTimingsTakenOn was taken — and it goes up with
 // every file anybody adds, silently, exactly like the wall clocks beside it.
 //
@@ -529,7 +529,7 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 			"This is the number that decides, not the total. Each parse is "+
 			"%s where verifyTimingsTakenOn was taken and none of it is "+
 			"shared: every Go file in the tree goes through go/parser once "+
-			"per arm — 493 tracked Go files where that record was taken — "+
+			"per arm — 495 tracked Go files where that record was taken — "+
 			"and every one of them throws the syntax trees away.\n\n"+
 			"A shared parse is a fixture with a lifetime — built once, "+
 			"invalidated never, read by tests that no longer say what they "+
@@ -727,7 +727,7 @@ const timingsRecordName = "verifyTimingsTakenOn"
 // How many of them may parse every Go file in the tree.
 //
 // Four, and this is the half that costs. The other two walks read bytes and
-// stop; these four hand every Go file in the tree — 493 tracked Go files
+// stop; these four hand every Go file in the tree — 495 tracked Go files
 // where verifyTimingsTakenOn was taken — to go/parser, build the syntax
 // trees, ask one question each and drop them.
 //
