@@ -204,3 +204,60 @@ func TestNewScaffoldsAnAppThatBuildsAndPasses(t *testing.T) {
 		t.Error("a rebuild with no runtime change rewrote wasm/grmob-runtime.js")
 	}
 }
+
+// TestWebHostPageSync walks cmdWeb's table against a scaffold of this
+// checkout: a page new just wrote is current; an older page is left alone
+// without -refresh and replaced with it; a missing one is written.
+//
+// "Replaced" is held to new's own output byte for byte. syncHostPage renders
+// from the module directory and new from the embed; with -replace pointing
+// here those are the same file, so any difference is a difference in how the
+// two render — which would make every freshly scaffolded app warn.
+func TestWebHostPageSync(t *testing.T) {
+	abs, err := filepath.Abs(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(t.TempDir(), "web-app")
+	if err := cmdNew([]string{dir, "-replace", abs, "-name", "Web App", "-no-build"}); err != nil {
+		t.Fatalf("grmob new: %v", err)
+	}
+	cfg, err := readConfig(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := filepath.Join(dir, filepath.FromSlash(hostPagePath))
+	fresh, err := os.ReadFile(page)
+	if err != nil {
+		t.Fatalf("the scaffold has no %s: %v", hostPagePath, err)
+	}
+
+	step := func(what string, refresh bool, want hostPageState, content []byte) {
+		t.Helper()
+		got, err := syncHostPage(dir, cfg, refresh)
+		if err != nil {
+			t.Fatalf("%s: %v", what, err)
+		}
+		if got != want {
+			t.Errorf("%s: state %d, want %d", what, got, want)
+		}
+		on, _ := os.ReadFile(page)
+		if string(on) != string(content) {
+			t.Errorf("%s: %s is not what it should be now:\n%.200s", what, hostPagePath, on)
+		}
+	}
+
+	step("a page new just rendered", false, hostPageCurrent, fresh)
+
+	older := []byte("<!DOCTYPE html>\n<!-- the page an older grmob scaffolded -->\n")
+	if err := os.WriteFile(page, older, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	step("an older page, no -refresh", false, hostPageDiffers, older)
+	step("an older page, -refresh", true, hostPageRefreshed, fresh)
+
+	if err := os.Remove(page); err != nil {
+		t.Fatal(err)
+	}
+	step("no page at all", false, hostPageWritten, fresh)
+}

@@ -21,6 +21,7 @@ cd myapp
 go run github.com/rohanthewiz/grmob/cmd/grmob doctor    # which targets this machine can build
 go run github.com/rohanthewiz/grmob/cmd/grmob android   # APK: Android SDK + NDK, JDK 17+
 go run github.com/rohanthewiz/grmob/cmd/grmob ios       # simulator build: Xcode + xcodegen
+go run github.com/rohanthewiz/grmob/cmd/grmob web       # browser build, checking wasm/index.html first
 ```
 
 The rule the scaffold keeps is that anything grmob owns comes from the grmob
@@ -28,9 +29,11 @@ version in the app's `go.mod`, at build time: the browser host is the
 `webhost` package, `build.sh` copies `grmob-runtime.js` from the module on
 every build, and the dev server is `go run` of grmob's own. So a runtime can
 never be older than the Go side it renders, and upgrading grmob upgrades all
-of it. The native shells are the exception — they are copied into the app
-once, because an app edits them — and a native build warns when `go.mod` has
-moved past the version they came from. `app/` holds a counter like the one
+of it. The native shells and the host page are the exceptions — they are
+copied into the app once, because an app edits them. A native build warns when
+`go.mod` has moved past the version the shells came from, and `grmob web` warns
+when `wasm/index.html` differs from the page that version scaffolds; `-refresh`
+on either re-copies (and overwrites edits). `app/` holds a counter like the one
 below.
 
 ## A first app
