@@ -36,6 +36,18 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import org.json.JSONObject
+import androidx.compose.animation.core.withInfiniteAnimationFrameMillis
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.layout.Measurable
+import androidx.compose.ui.layout.MeasureResult
+import androidx.compose.ui.layout.MeasureScope
+import androidx.compose.ui.node.LayoutModifierNode
+import androidx.compose.ui.node.ModifierNodeElement
+import androidx.compose.ui.unit.Constraints
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 /**
  * Kotlin mirror of Go's core.Style, decoded from the tree/patch JSON.
@@ -77,6 +89,12 @@ data class GrMobStyle(
      * why the winding is the caller's to choose.
      */
     val rotate: Float,
+    /**
+     * core.Spin: milliseconds per revolution, negative for anticlockwise, 0
+     * for still. Applied by [SpinElement] beside [rotate]; see core.Spin for
+     * why it is a rotation loop and not a general repeating transition.
+     */
+    val spinMs: Int,
     val align: String,
     val display: String,
     val width: String,
@@ -264,6 +282,7 @@ data class GrMobStyle(
                 borderRadius = obj.optDouble("BorderRadius", 0.0).toFloat(),
                 shadow = obj.optDouble("Shadow", 0.0).toFloat(),
                 rotate = obj.optDouble("Rotate", 0.0).toFloat(),
+                spinMs = obj.optInt("Spin", 0),
                 align = obj.optString("Align"),
                 display = obj.optString("Display"),
                 width = obj.optString("Width"),
@@ -525,6 +544,12 @@ fun GrMobStyle?.boxModifier(extra: Modifier = Modifier, gestures: Modifier = Mod
     // builds a fresh chain every recomposition, so a zero angle omits a layer
     // instead of adding an identity one.
     if (rotate != 0f) m = m.rotate(rotate)
+    // core.Spin, at the same layer position as the fixed angle and for the
+    // same reasons: it must turn the whole painted box and the touch target
+    // with it. Directly inside the fixed rotation; both turn about the layout
+    // bounds' centre, so the order between the two draws the same pixels.
+    // Guarded like rotate, so a still node gains no layout node.
+    if (spinMs != 0) m = m.then(SpinElement(spinMs))
 
     val shape = if (borderRadius > 0f) RoundedCornerShape(borderRadius.dp) else null
     if (shadow > 0f) {
@@ -832,5 +857,78 @@ fun SemanticsPropertyReceiver.grMobSelected(state: String) {
         "true" -> selected = true
         "false" -> selected = false
         else -> {}
+    }
+}
+
+/**
+ * core.Spin on Compose: the box turns one revolution every [periodMs],
+ * clockwise for a positive period, for as long as it is composed.
+ *
+ * # Why a modifier node and not rememberInfiniteTransition
+ *
+ * [boxModifier] is a plain function that builds a fresh chain on every
+ * recomposition; it has no composition of its own to `remember` an infinite
+ * transition in. The alternatives were `Modifier.composed` (discouraged: it
+ * re-materialises on every chain rebuild) or threading a @Composable through
+ * every caller. A [ModifierNodeElement] carries its own lifecycle instead:
+ * the node survives chain rebuilds as long as the element compares equal (a
+ * data class on the period), its coroutine starts on attach and is cancelled
+ * on detach, so a node that leaves composition — Display none included —
+ * stops drawing frames with nothing to clean up.
+ *
+ * # Why the angle is read in the layer block
+ *
+ * The angle is snapshot state read only inside `placeWithLayer`'s block.
+ * Compose observes reads there per layer, so each frame invalidates the
+ * graphics layer's parameters alone: no recomposition, no remeasure, no
+ * relayout of anything around the spinner. That is the whole cost of a spin.
+ *
+ * # Elapsed time, not increments
+ *
+ * The angle is computed from the frame time since the loop started, modulo
+ * the period, as the web's keyframes and SwiftUI's TimelineView are. A
+ * dropped frame skips an angle instead of slowing the spin.
+ *
+ * [withInfiniteAnimationFrameMillis] rather than withFrameMillis: it is the
+ * frame source Compose's own infinite animations use, and it tells test
+ * clocks and idling machinery that this loop never finishes, so a UI test
+ * waiting for idle does not hang on a visible spinner. It does not read the
+ * animator duration scale; see core.Spin, "Reduced motion".
+ */
+private data class SpinElement(val periodMs: Int) : ModifierNodeElement<SpinNode>() {
+    override fun create() = SpinNode(periodMs)
+
+    override fun update(node: SpinNode) {
+        // Read by the running loop on its next frame, so a changed period
+        // takes effect without restarting the coroutine.
+        node.periodMs = periodMs
+    }
+}
+
+private class SpinNode(var periodMs: Int) : Modifier.Node(), LayoutModifierNode {
+    private var angle by mutableFloatStateOf(0f)
+
+    override fun onAttach() {
+        coroutineScope.launch {
+            var start = -1L
+            while (isActive) {
+                withInfiniteAnimationFrameMillis { now ->
+                    if (start < 0) start = now
+                    val period = kotlin.math.abs(periodMs).coerceAtLeast(1)
+                    val fraction = ((now - start) % period).toFloat() / period
+                    angle = if (periodMs < 0) -360f * fraction else 360f * fraction
+                }
+            }
+        }
+    }
+
+    override fun MeasureScope.measure(measurable: Measurable, constraints: Constraints): MeasureResult {
+        // Layout-transparent: measured and sized exactly as without the spin,
+        // matching core.Rotate's "paint transform, not a layout one". The
+        // layer's default transform origin is the centre.
+        val placeable = measurable.measure(constraints)
+        return layout(placeable.width, placeable.height) {
+            placeable.placeWithLayer(0, 0) { rotationZ = angle }
+        }
     }
 }

@@ -5,7 +5,8 @@
 // textContent, value, placeholder, src, disabled, checked, rows, children,
 // parentNode, setAttribute, removeAttribute, appendChild, insertBefore,
 // replaceWith, remove, addEventListener, focus, blur, tagName, innerHTML,
-// getElementById). That is small enough to
+// getElementById), plus document.head for core.Spin's one stylesheet. That is
+// small enough to
 // implement rather than approximate, which is why this file exists instead of
 // a jsdom dependency — the same trade ios/verify makes with its hand-written
 // Swift harness.
@@ -320,6 +321,11 @@ class Document {
     constructor() {
         this.activeElement = null;
         this.body = new Element(this, "body");
+        // The runtime appends one <style> here, the first time a node declares
+        // core.Spin (ensureSpinKeyframes). Detached from body on purpose, as
+        // a real head is: querySelector walks body, so the stylesheet can
+        // never be mistaken for a rendered node.
+        this.head = new Element(this, "head");
         this.byId = new Map();
     }
 

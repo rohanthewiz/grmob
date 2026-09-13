@@ -46,7 +46,7 @@ difference is structural rather than an oversight:
 
 | group | Android | iOS | WASM DOM | `htmlout` |
 |---|---|---|---|---|
-| typography, color, box model, borders, `Shadow`, `Gap`, `RowGap`/`ColumnGap`, `Justify`, `AlignItems`, `FlexWrap`, `StackAlign`, `Transition`, accessibility, `Disabled` | yes | yes | yes | yes |
+| typography, color, box model, borders, `Shadow`, `Gap`, `RowGap`/`ColumnGap`, `Justify`, `AlignItems`, `FlexWrap`, `StackAlign`, `Transition`, `Rotate`, `Spin`, accessibility, `Disabled` | yes | yes | yes | yes |
 | `Position` + `Top`/`Right`/`Bottom`/`Left`/`ZIndex`, `MinWidth`/`MaxWidth`/`MinHeight`/`MaxHeight`, `Overflow`, `WhiteSpace`, `AlignSelf`, `FlexBasis`, `FlexDirection` | — | — | yes | yes |
 | `FlexShrink` | `0` only | yes | yes | yes |
 | `HoverStyle`, `FocusStyle`, `PseudoStates` | — | — | — | — |
@@ -1507,3 +1507,33 @@ core.Button(label, onTap,
     core.BackgroundColor(bg), // animates when bg changes between renders
 )
 ```
+
+## Spin
+
+`Spin(periodMs)` turns a node one revolution every `periodMs` milliseconds,
+continuously, for as long as it is displayed. A negative period turns it
+anticlockwise and zero holds it still. It is the looping counterpart of
+`Transition`: Go declares it once and the platform's frame clock draws every
+frame, so a spinning node costs no patches and no render passes. `comps.Spinner`
+is built on it.
+
+| target | mapping |
+|---|---|
+| htmlout / WASM | `animation: grmob-spin <ms>ms linear infinite`, with a `@keyframes` rule on the `rotate` property added to the document |
+| Compose | a layout modifier node that places the box in a graphics layer and advances its `rotationZ` each frame |
+| SwiftUI | `TimelineView(.animation)` around `.rotationEffect`, the angle computed from the timeline's date |
+
+**A rotation, not a general loop.** A transition gets both of its endpoints
+from patches; a loop has no second patch to supply the far end. Rotation is the
+one property whose cycle closes by itself (360 degrees draws what 0 does), so it
+needs no endpoints, no repeat count and no direction mode. There is no easing
+parameter either: an eased revolution stutters at the same angle every turn.
+
+**It adds to `Rotate`.** Both turn the box about its centre, so a node can carry a
+fixed angle and a spin together.
+
+**Hidden stops it.** A node with `Display` none is not composed on the natives
+and runs no CSS animation, so it draws no frames.
+
+**Reduced motion is not read.** No target consults the platform's reduce-motion
+setting, for `Transition` or for `Spin`.

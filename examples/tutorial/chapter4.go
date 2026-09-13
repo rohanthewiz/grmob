@@ -2822,9 +2822,10 @@ func markdownToggleLabel(showing bool) string {
 // appended at the end of the chapter rather than beside ListRow so the numbers
 // deep links already use (grmob://lesson/4.12 is the live map) do not move.
 //
-// The Spinner is the lesson's hook lesson in miniature: it is rendered on every
-// pass and toggled with Hidden, never with core.If, because it owns two hook
-// slots and leaving it out would shift every hook rendered after it.
+// The Spinner shows the other half of the declare-in-Go model: its ring
+// carries core.Spin, so the platform turns it and Go sends nothing per frame.
+// It holds no hooks, so core.If would be correct too; the demo still flips
+// Hidden because the spinner has a fixed place in the row.
 func lessonSmallControls() Lesson {
 	return Lesson{
 		Title:   "Small controls: Stepper, Rating, Spinner & BottomBar",
@@ -2868,10 +2869,11 @@ func lessonSmallControls() Lesson {
 					"(\"3 of 5\"); ReadOnly, the stars are decoration and the group's value is "+
 					"the one announcement. Value is a float, so half-stars can arrive later "+
 					"without changing your type."),
-				prose("A Spinner steps its rotation from Go, so it owns hook slots. Render it "+
-					"every pass and flip Hidden: a hidden spinner pauses its interval and asks "+
-					"for no render passes at all."),
-				codeBlock(`comps.Spinner{Hidden: !loading.Get()}   // never core.If(loading, …)`),
+				prose("A Spinner's ring carries core.Spin, so each platform turns it on its own "+
+					"frame clock and Go sends nothing while it spins: no patches, no render "+
+					"passes. It holds no hooks, so leaving it out is safe; flipping Hidden keeps "+
+					"its place in a layout, and a hidden spinner draws no frames."),
+				codeBlock(`comps.Spinner{Hidden: !loading.Get()}`),
 				prose("A BottomBar is navigation when Selected >= 0 and a toolbar when it is "+
 					"negative. Put it in Screen.Footer, which pins it outside the scroll "+
 					"region; among Children it would scroll away."),
@@ -2911,7 +2913,7 @@ func lessonSmallControls() Lesson {
 				keyPoints(
 					"Stepper clamps and reports only real changes; the button at a bound is disabled, and Label names the group.",
 					"Rating's interactive stars are named buttons; read-only stars are hidden and the group states the score.",
-					"Spinner owns hooks: render it every pass and flip Hidden, which also pauses its ticks.",
+					"Spinner is turned by the platform through core.Spin; it holds no hooks, and Hidden keeps its place while stopping its frames.",
 					"BottomBar is navigation with Selected >= 0 and a toolbar below zero; each cell takes an equal share of the width.",
 					"Screen.Footer pins a bar outside the scroll region and grows the content to push it to the bottom edge.",
 				),

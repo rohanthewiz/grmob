@@ -1792,6 +1792,61 @@ func TestNegativeAndUnwrappedRotateSurviveTheExport(t *testing.T) {
 	}
 }
 
+// --- Spin -------------------------------------------------------------------
+
+// A spin is an animation list entry plus the keyframes it names. The rule is
+// the half that is easy to lose: without it the declaration is valid CSS that
+// never moves, which no assertion on the style attribute alone would notice.
+func TestSpinExportsAnAnimationAndItsKeyframes(t *testing.T) {
+	out := ExportHTML(&core.Node{
+		Type: "Column",
+		Children: []*core.Node{{
+			Type:  "Box",
+			Props: map[string]any{},
+			Style: &core.Style{Spin: 800, Rotate: 45},
+		}},
+	})
+	if !strings.Contains(out, "animation:grmob-spin 800ms linear infinite") {
+		t.Errorf("no spin animation on the node:\n%s", out)
+	}
+	if !strings.Contains(out, core.SpinKeyframes) {
+		t.Errorf("the export names grmob-spin without defining it:\n%s", out)
+	}
+	// Composition, not replacement: the fixed angle stays on transform while
+	// the keyframes turn the separate rotate property.
+	if !strings.Contains(out, "transform:rotate(45deg)") {
+		t.Errorf("Spin displaced Rotate's transform:\n%s", out)
+	}
+}
+
+// Anticlockwise is the same rule reversed, and an author's Animation rides in
+// the same list after the spin rather than in a second declaration that would
+// replace it.
+func TestNegativeSpinReversesAndSharesTheListWithAnimation(t *testing.T) {
+	out := ExportHTML(&core.Node{
+		Type:  "Box",
+		Props: map[string]any{},
+		Style: &core.Style{Spin: -500, Animation: "pulse 2s infinite"},
+	})
+	want := "animation:grmob-spin 500ms linear infinite reverse, pulse 2s infinite"
+	if !strings.Contains(out, want) {
+		t.Errorf("want %q in:\n%s", want, out)
+	}
+}
+
+// A document with no spinning node is what it was before Spin existed: no
+// head, no stylesheet.
+func TestStillTreeExportsNoStylesheet(t *testing.T) {
+	out := ExportHTML(&core.Node{
+		Type:  "Box",
+		Props: map[string]any{},
+		Style: &core.Style{Rotate: 10, Animation: "pulse 2s infinite"},
+	})
+	if strings.Contains(out, "<head") || strings.Contains(out, "grmob-spin") {
+		t.Errorf("a still tree gained the spin stylesheet:\n%s", out)
+	}
+}
+
 // aria-orientation on the static export.
 //
 // The attribute is pure semantics, which is why it is one of the places the

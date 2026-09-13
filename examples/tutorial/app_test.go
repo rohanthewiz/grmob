@@ -65,7 +65,7 @@ type nodeStyle struct {
 	Rotate float64
 
 	// Chapter 4's small-controls lesson asserts on this one. A hidden
-	// comps.Spinner stays in the tree (it owns hook slots) and is hidden by
+	// comps.Spinner stays in the tree (the demo flips Hidden) and is hidden by
 	// Display, so this is the only field that says whether it is showing.
 	Display core.DisplayMode
 

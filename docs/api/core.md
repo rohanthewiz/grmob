@@ -41,7 +41,7 @@ The narrative documentation covers the parts a reference cannot: the architectur
 
 ## Index
 
-- [Constants](#constants) — `AlignItemsCenter`, `AlignItemsEnd`, `AlignItemsStart`, `AlignItemsStretch`, `ConcernCachedCallbacks`, `ConcernCachedHooks`, `ConcernCursorDrift`, `ConcernDanglingReference`, `ConcernDuplicateAccessibilityID`, `ConcernDuplicateKey`, `ConcernHandlerPanic`, `ConcernInertDisclosure`, and 39 more
+- [Constants](#constants) — `AlignItemsCenter`, `AlignItemsEnd`, `AlignItemsStart`, `AlignItemsStretch`, `ConcernCachedCallbacks`, `ConcernCachedHooks`, `ConcernCursorDrift`, `ConcernDanglingReference`, `ConcernDuplicateAccessibilityID`, `ConcernDuplicateKey`, `ConcernHandlerPanic`, `ConcernInertDisclosure`, and 40 more
 - [Variables](#variables) — `AmberTheme`, `DefaultTheme`, `MaterialTheme`, `TextInputStyle`
 - [`func AngleDelta`](#func-angledelta)
 - [`func AudioLoad`](#func-audioload)
@@ -346,6 +346,7 @@ The narrative documentation covers the parts a reference cannot: the architectur
     - [`func RoundedShadowBox`](#func-roundedshadowbox)
     - [`func RowGap`](#func-rowgap)
     - [`func Shadow`](#func-shadow)
+    - [`func Spin`](#func-spin)
     - [`func StackAlign`](#func-stackalign)
     - [`func StickyHeader`](#func-stickyheader)
     - [`func TextColor`](#func-textcolor)
@@ -610,7 +611,7 @@ const (
 )
 ```
 
-<small>[core/style.go:1132](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1132)</small>
+<small>[core/style.go:1143](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1143)</small>
 
 GridRun attribute bits. A renderer without a native spelling for one may drop it (there is no dim on the web's font-weight scale, say, so the DOM targets fake it with opacity), but must never fail the row.
 
@@ -703,7 +704,15 @@ The Compose arm is the one that needed an argument, and it is worth having here 
 const ShrinkNone = -1
 ```
 
-<small>[core/style.go:1231](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1231)</small>
+<small>[core/style.go:1242](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1242)</small>
+
+SpinKeyframes is the stylesheet rule both web targets pair with Style.Spin. It animates the individual \`rotate\` property rather than \`transform\`, so the spin composes with Style.Rotate's \`transform: rotate()\` instead of replacing it (see Spin). One constant, read by htmlout and restated in the WASM runtime, because the two web targets must name and shape it identically for an export and a live page to turn the same way.
+
+```go
+const SpinKeyframes = "@keyframes grmob-spin{from{rotate:0deg}to{rotate:360deg}}"
+```
+
+<small>[core/animation.go:51](https://github.com/rohanthewiz/grmob/blob/master/core/animation.go#L51)</small>
 
 ## Variables
 
@@ -1061,7 +1070,7 @@ var TextInputStyle = UseStyle(Style{
 })
 ```
 
-<small>[core/style.go:1077](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1077)</small>
+<small>[core/style.go:1088](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1088)</small>
 
 ## Functions
 
@@ -1243,7 +1252,7 @@ It answers true for both non-descending values, which is exactly the conflation 
 func DangerColor() string
 ```
 
-<small>[core/style.go:1068](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1068)</small>
+<small>[core/style.go:1079](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1079)</small>
 
 ### func DismissKeyboard
 
@@ -1653,7 +1662,7 @@ PrimaryColor and DangerColor are the theme-blind convenience accessors that pred
 
 They read DefaultTheme rather than repeating its literals. Both used to be hard-coded, and the copy was not free: when Colors.Primary moved to Apple's accessible blue (white over systemBlue was 4.02:1, under WCAG AA, and the theme's own Button base declares white), this function kept the old hex — so examples/chat, its one caller, went on painting white on a fill nobody could read it on, in the one place the fix could not reach.
 
-<small>[core/style.go:1067](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1067)</small>
+<small>[core/style.go:1078](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1078)</small>
 
 ### func Push
 
@@ -1947,7 +1956,7 @@ math.Mod keeps the sign of its first argument, so a negative input stays west, a
 type AlignItems string
 ```
 
-<small>[core/style.go:1130](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1130)</small>
+<small>[core/style.go:1141](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1141)</small>
 
 #### func AlignItemsValues
 
@@ -1983,7 +1992,7 @@ Without these methods that expression is a type conversion producing a bare stri
 type Alignment string
 ```
 
-<small>[core/style.go:1107](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1107)</small>
+<small>[core/style.go:1118](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1118)</small>
 
 ```go
 const (
@@ -3517,7 +3526,7 @@ func (ctx *Context) WithTheme(theme *Theme) *Context
 type DisplayMode string
 ```
 
-<small>[core/style.go:1118](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1118)</small>
+<small>[core/style.go:1129](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1129)</small>
 
 ```go
 const (
@@ -3595,7 +3604,7 @@ Six untagged ints wrote all six every time. On the tutorial's contents screen, 7
 
 Small next to the 370KB the Style-level tags took off, and free in a way that one was not: no renderer changed, because none of them could tell the difference.
 
-<small>[core/style.go:723](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L723)</small>
+<small>[core/style.go:729](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L729)</small>
 
 ### type EditorRef
 
@@ -3716,7 +3725,7 @@ The twin of SelectedWhen, and it earns its place the same way: the widget owns a
 type FlexDirection string
 ```
 
-<small>[core/style.go:1129](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1129)</small>
+<small>[core/style.go:1140](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1140)</small>
 
 #### func (FlexDirection) Apply
 
@@ -3869,7 +3878,7 @@ Sixteen points rather than eight or thirty-two: eight is coarse enough that a be
 type JustifyContent string
 ```
 
-<small>[core/style.go:1128](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1128)</small>
+<small>[core/style.go:1139](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1139)</small>
 
 #### func JustifyContents
 
@@ -4128,7 +4137,7 @@ Render renders view into ctx after restarting ctx's hook cursors. It is the entr
 type Position string
 ```
 
-<small>[core/style.go:1150](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1150)</small>
+<small>[core/style.go:1161](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1161)</small>
 
 ```go
 const (
@@ -4384,7 +4393,7 @@ TriggerRender invokes the handler registered under id, if any.
 type ResponsiveStyle map[string]Style
 ```
 
-<small>[core/style.go:1105](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1105)</small>
+<small>[core/style.go:1116](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1116)</small>
 
 ### type RichSelection
 
@@ -5352,6 +5361,12 @@ type Style struct {
 	// for accumulating an unwrapped angle when a caller wants one.
 	Rotate float64 `json:",omitzero"`
 
+	// Spin is a continuous rotation: one revolution every Spin milliseconds,
+	// clockwise for a positive period and anticlockwise for a negative one,
+	// added to Rotate. Zero holds still. See core.Spin for what each renderer
+	// maps it onto and why it is a rotation rather than a general loop.
+	Spin int `json:",omitzero"`
+
 	HoverStyle   *Style           `json:",omitzero"`
 	FocusStyle   *Style           `json:",omitzero"`
 	PseudoStates map[string]Style `json:",omitzero"` // ":hover", ":focus"
@@ -5920,7 +5935,7 @@ The two returns are the two questions a renderer has, and they are separate beca
 
 It exists so the ShrinkNone rule is stated once rather than in each renderer. The two DOM renderers spell their guards independently — that is deliberate elsewhere in this framework — but the mapping from a stored number to a meaning is not a spelling, it is the contract, and three copies of it is how this field got into trouble in the first place.
 
-<small>[core/style.go:1248](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1248)</small>
+<small>[core/style.go:1259](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1259)</small>
 
 #### func (Style) With
 
@@ -5938,7 +5953,7 @@ type StyleProp interface {
 }
 ```
 
-<small>[core/style.go:738](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L738)</small>
+<small>[core/style.go:744](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L744)</small>
 
 #### func AccessibilityControls
 
@@ -6518,7 +6533,7 @@ PaddingHorizontal sets the left and right insets.
 
 It writes the explicit Left/Right sides as well as the Horizontal shorthand. The renderers resolve a side as "the explicit value if non-zero, otherwise the axis shorthand" (see htmlout.EdgeCSS), so a prop that wrote only the shorthand could never override a side that was already set: a theme Column carries Left/Right 16, and PaddingHorizontal(0) after it used to leave the 16 in place — and PaddingHorizontal(24) used to render as 16. Writing the sides too gives this prop the same last-one-wins ordering every other StyleProp has, and a zero clears the theme value in all four renderers without any of them changing their resolution rule.
 
-<small>[core/style.go:1097](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1097)</small>
+<small>[core/style.go:1108](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1108)</small>
 
 #### func PaddingLeft
 
@@ -6602,7 +6617,7 @@ Unlike UseStyle, this setter can force zero: Rotate(0) writes the field, which i
 func RoundedShadowBox() StyleProp
 ```
 
-<small>[core/style.go:1069](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1069)</small>
+<small>[core/style.go:1080](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1080)</small>
 
 #### func RowGap
 
@@ -6619,6 +6634,45 @@ func Shadow(elevation float64) StyleProp
 ```
 
 <small>[core/style_props.go:158](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L158)</small>
+
+#### func Spin
+
+```go
+func Spin(periodMs int) StyleProp
+```
+
+Spin turns the node one full revolution every periodMs milliseconds, round and round, for as long as it is displayed. A negative period turns it anticlockwise; zero (the default) holds it still. It is the looping counterpart of Transition, and it exists so that a continuously moving widget — the comps.Spinner ring — is driven by the platform's frame clock rather than by state changes stepped from Go.
+
+	CSS       animation: grmob-spin <ms>ms linear infinite [reverse], with
+	          SpinKeyframes on the individual `rotate` property
+	Compose   a layout modifier node placing the box in a graphics layer whose
+	          rotationZ follows withInfiniteAnimationFrameMillis
+	SwiftUI   TimelineView(.animation) turning the box with .rotationEffect,
+	          the angle computed from the timeline's date
+
+All three compute the angle from elapsed time modulo the period rather than accumulating per-frame increments, so a dropped frame costs a skipped angle, never a spinner that drifts slower than declared.
+
+##### Why a spin and not a general looping transition
+
+Transition animates \*between\* two values, and the patch supplies both ends: the old style and the new one. A loop has no second patch to supply the other end, so a general loop would need vocabulary of its own — a from-style, a to-style, a repeat count, a direction — mapped onto three animation systems that do not agree on what repeating an arbitrary property means (Compose's infiniteRepeatable is per animated value, SwiftUI's repeatForever rides a transaction, CSS keyframes are a named rule). Rotation is the one property whose cycle closes on its own: 360 degrees draws exactly what 0 does, so the restart is invisible and the loop needs no second endpoint and no alternate-direction mode. It is also the only paint transform core has (see Style.Rotate). A pulse or a shimmer would be the second consumer that justifies the general form; until one exists, the narrow prop is the one all three targets implement identically.
+
+##### Linear, always
+
+There is no easing parameter. An eased revolution slows to a stop at the same angle every turn, which reads as a stutter rather than a spin, and the restart seam that is invisible under linear motion becomes a visible jolt. The period is the only knob.
+
+##### Composition with Rotate
+
+Spin is added to Rotate, not substituted for it. Both turn the box about its own centre, and rotations about one point commute, so each target applies them as two layers and draws the same pixels whichever is outermost.
+
+##### What it costs
+
+Nothing crosses the bridge after the style that declares it: no patches and no render passes. A node with Display none is not composed on either native and runs no CSS animation on the web, so a hidden spinning node draws no frames either.
+
+##### Reduced motion
+
+No target reads the platform's reduce-motion setting today, for Transition or for Spin. Android's "Remove animations" (animator duration scale 0) is not consulted either, because the frame loop is not a scaled Compose animation spec. core has no signal for the setting yet; that is recorded here rather than faked on one target.
+
+<small>[core/animation.go:114](https://github.com/rohanthewiz/grmob/blob/master/core/animation.go#L114)</small>
 
 #### func StackAlign
 
@@ -6707,7 +6761,7 @@ The rule's one unavoidable edge is that a zero value is indistinguishable from "
 
 This merges every field of Style. It previously covered only fourteen of them, which meant Width, Height, the whole flex group, and the accessibility fields were silently dropped — a style value carrying them applied cleanly and did nothing. Any field added to Style must be added here too; TestUseStyleMergesEveryField walks the struct reflectively and fails if one is missed.
 
-<small>[core/style.go:770](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L770)</small>
+<small>[core/style.go:776](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L776)</small>
 
 #### func WhiteSpace
 
@@ -7786,7 +7840,7 @@ Like Box and Scroll it carries no theme base — a theme Column's screen inset a
 type Weight int
 ```
 
-<small>[core/style.go:670](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L670)</small>
+<small>[core/style.go:676](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L676)</small>
 
 ```go
 const (

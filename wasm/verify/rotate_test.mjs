@@ -57,3 +57,41 @@ test("returning to zero clears the transform on the live element", () => {
     assert.equal(at(0).style.transform, "",
         "the dial stuck at its last angle instead of returning to north");
 });
+
+// core.Spin: an animation list entry, the keyframes it names, and the same
+// totality rule as Rotate when it stops.
+
+test("a spinning node names grmob-spin and the document gains its keyframes once", () => {
+    const { rt, at } = mount([box({ Spin: 1000, Rotate: 30 }), box({ Spin: -400 })]);
+    assert.equal(at(0).style.animation, "grmob-spin 1000ms linear infinite");
+    assert.equal(at(1).style.animation, "grmob-spin 400ms linear infinite reverse");
+    // Composition: the fixed angle stays on transform under the spin.
+    assert.equal(at(0).style.transform, "rotate(30deg)");
+
+    const sheets = rt.document.head.children;
+    assert.equal(sheets.length, 1, "two spinning nodes should share one stylesheet");
+    assert.equal(sheets[0].tagName.toLowerCase(), "style");
+    assert.equal(sheets[0].textContent,
+        "@keyframes grmob-spin{from{rotate:0deg}to{rotate:360deg}}");
+});
+
+test("a still page adds no stylesheet", () => {
+    const { rt } = mount([box({ Rotate: 10 })]);
+    assert.equal(rt.document.head.children.length, 0);
+});
+
+test("an author Animation shares the list after the spin", () => {
+    const { at } = mount([box({ Spin: 900, Animation: "pulse 2s infinite" })]);
+    assert.equal(at(0).style.animation, "grmob-spin 900ms linear infinite, pulse 2s infinite");
+});
+
+test("stopping a spin clears the animation on the live element", () => {
+    // A Spinner that is re-styled still, or a node whose role style stops
+    // spinning, arrives as an update-style patch with no Spin key.
+    const { rt, at } = mount([box({ Spin: 1000 })]);
+    rt.GrMob.patch(JSON.stringify([
+        { Type: "update-style", TargetID: "root/0", Changes: {} },
+    ]));
+    rt.drainFrames();
+    assert.equal(at(0).style.animation, "", "the node kept spinning after its Spin was removed");
+});

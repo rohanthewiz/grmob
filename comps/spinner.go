@@ -2,10 +2,8 @@ package comps
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/rohanthewiz/grmob/core"
-	"github.com/rohanthewiz/grmob/hooks"
 )
 
 // Spinner is the "something is happening, shape unknown" indicator: a ring
@@ -18,36 +16,34 @@ import (
 // and whose data is not; ProgressBar is for work that knows how far it has
 // got; Spinner is for everything else.
 //
-// # It holds hooks, so render it unconditionally
+// # The platform turns it
 //
-// There is no looping animation any renderer draws on its own: core.Transition
-// animates one change and stops, Style.Rotate is applied without interpolation
-// on both natives, and Style.Animation is honoured only by the two web targets.
-// So the spin is stepped from Go: one core.NewState for the angle and one
-// hooks.UseIntervalWhile advancing it by stepDegrees every stepEvery.
+// The ring carries core.Spin(spinPeriodMs), so each renderer's own frame clock
+// drives the rotation: CSS keyframes on the web, a graphics layer on Compose, a
+// TimelineView on SwiftUI. Go declares the spin once, in the style of the first
+// pass, and sends nothing afterwards.
 //
-// That makes this the third widget in the package with hook obligations,
-// after Accordion and DatePicker, and the rules are theirs: render a Spinner in
-// a stable position on every pass. To stop showing it, set Hidden rather than
-// leaving it out of the tree; leaving it out moves the two hook slots and every
-// hook after them.
+// It used to be stepped from Go instead — a state slot holding the angle and
+// hooks.UseIntervalWhile adding 30 degrees every 80ms — because no renderer
+// could draw a loop on its own. That cost a render pass of the whole app per
+// step (twelve a second) while visible, drew twelve discrete positions rather
+// than a turn, and gave the widget two hook slots with the ordering rule that
+// comes with them. core.Spin removed all three.
 //
-// # What it costs, and why Hidden is the switch
+// # No hooks, so it is conditional-safe
 //
-// Each step is a state change, so a visible spinner costs a render pass per
-// step (about twelve a second). Hidden both hides the node and pauses the
-// interval; UseIntervalWhile drops a paused tick before it can request a
-// render, so a hidden spinner costs nothing but a goroutine wake. That is the
-// reason the hook exists: with plain UseInterval, a spinner that had ever been
-// mounted would re-render the whole app on every tick for the life of the
-// process. A looping transition prop on all four renderers would remove the
-// stepping altogether and is recorded as a follow-up.
+// Spinner takes no hook slot, so core.If(loading, comps.Spinner{}) is as
+// correct as Hidden. Hidden remains the switch to prefer where the spinner has
+// a fixed place in a layout: a hidden spinner is Display none, which keeps the
+// tree the same shape both ways, so showing it is a style patch rather than an
+// inserted subtree. Either way a hidden or absent spinner draws no frames on
+// any target (see core.Spin, "What it costs").
 //
 //	┌ Box  role=status  label="Loading" ┐
-//	│  ┌ Column  ring, Rotate(angle) ┐  │
-//	│  │            ●                │  │
-//	│  │                             │  │
-//	│  └─────────────────────────────┘  │
+//	│  ┌ Column  ring, Spin(1000) ────┐ │
+//	│  │            ●                 │ │
+//	│  │                              │ │
+//	│  └──────────────────────────────┘ │
 //	└───────────────────────────────────┘
 //
 // The dot is what makes the rotation visible. A ring of uniform colour turned
@@ -57,9 +53,12 @@ import (
 // # Accessibility
 //
 // The outer Box is RoleStatus with Label (default "Loading"), a polite live
-// region announced when it appears. The ring beneath it changes style every
-// step and is hidden from assistive technology, so the steps are never read.
-// A hidden spinner is display:none and so is not announced at all.
+// region announced when it appears. The ring beneath it is decoration and is
+// hidden from assistive technology. A hidden spinner is display:none and so is
+// not announced at all.
+//
+// No target slows or stops the spin for a reduce-motion setting, because core
+// has no signal for it yet; see core.Spin, "Reduced motion".
 //
 // # Theme roles read
 //
@@ -67,8 +66,9 @@ import (
 //	Dot        Colors.Primary
 //	Diameter   Spacing.MD / LG / XL for Small / Medium / Large
 type Spinner struct {
-	// Hidden removes the spinner from display and pauses its ticks. Use it
-	// instead of conditionally rendering the widget; see the type doc.
+	// Hidden removes the spinner from display, which also stops its frames.
+	// Prefer it to leaving the widget out where the spinner has a fixed place
+	// in the layout; see the type doc.
 	Hidden bool
 
 	// Size picks the diameter. The zero value is SpinnerMedium.
@@ -94,13 +94,12 @@ const (
 	SpinnerLarge SpinnerSize = "large"
 )
 
-// The step is 30 degrees every 80ms: one revolution a second in twelve visible
-// positions. Fewer, larger steps would look like ticking; more, smaller ones
-// would cost more render passes for motion the eye does not resolve better.
-const (
-	stepDegrees = 30
-	stepEvery   = 80 * time.Millisecond
-)
+// spinPeriodMs is one revolution a second, the rate the stepped spinner had
+// (30 degrees every 80ms is 360 degrees in 960ms), so the change of mechanism
+// did not also change how busy the widget looks. Every size shares it: a larger
+// ring at the same period moves its dot faster, which is how a platform
+// spinner behaves too.
+const spinPeriodMs = 1000
 
 // diameter returns the ring's size in points for the theme.
 func (s Spinner) diameter(t *core.Theme) float64 {
@@ -114,18 +113,8 @@ func (s Spinner) diameter(t *core.Theme) float64 {
 	}
 }
 
-// Render builds the status box and the rotating ring.
+// Render builds the status box and the spinning ring.
 func (s Spinner) Render(ctx *core.Context) *core.Node {
-	// Both hooks run first and on every pass, Hidden or not: their slot
-	// positions must not depend on a field the caller flips.
-	angle := core.NewState(ctx, 0)
-	hooks.UseIntervalWhile(ctx, !s.Hidden, func() {
-		// Wrapped to [0, 360): with no Transition on the ring the two
-		// spellings draw identically, and a bounded value keeps the wire
-		// number short however long the spinner runs.
-		angle.Set((angle.Get() + stepDegrees) % 360)
-	}, stepEvery)
-
 	t := ctx.Theme()
 	d := s.diameter(t)
 	dot := d / 4
@@ -142,7 +131,10 @@ func (s Spinner) Render(ctx *core.Context) *core.Node {
 		core.BorderWidth(2),
 		core.BorderColor(t.Colors.BorderColor()),
 		core.AlignItemsProp(core.AlignItemsCenter),
-		core.Rotate(float64(angle.Get())),
+		// On the ring, not the status Box: the spin turns the box it is
+		// declared on, and the outer Box also holds a caller's Style, which
+		// could give it a size or a padding the dot would then orbit.
+		core.Spin(spinPeriodMs),
 		core.AccessibilityHidden(),
 		core.Box(
 			core.Width(px(dot)),

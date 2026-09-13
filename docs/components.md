@@ -2078,7 +2078,7 @@ the action is tapped. Neither hides the strip. The timer is
 - hiding the snackbar cancels a pending timeout
 - a new `Message` while it is up restarts the timer
 
-Like `Spinner`, render it on every pass and drive `Visible`. Leaving it out of
+Like `Accordion`, render it on every pass and drive `Visible`. Leaving it out of
 the tree moves its hook slot.
 
 **Where it goes.** It is a strip, not an overlay, so the caller places it.
@@ -2330,26 +2330,28 @@ comps.Spinner{Hidden: !loading.Get()}
 comps.Spinner{Size: comps.SpinnerLarge, Label: "Uploading"}
 ```
 
-**It holds hooks, so render it unconditionally.** No renderer draws a looping
-animation on its own, so the spin is stepped from Go: 30 degrees every 80
-milliseconds, through a state slot and `hooks.UseIntervalWhile`. Like
-`Accordion` and `DatePicker`, it must be rendered in a stable position on every
-pass. Set `Hidden` to stop showing it; leaving it out of the tree moves its
-hook slots.
+**The platform turns it.** The ring carries `core.Spin(1000)`, one revolution
+a second, so each renderer's own frame clock drives it: CSS keyframes on the
+web, a graphics layer on Compose, a `TimelineView` on SwiftUI. Go sends nothing
+while it spins, so a visible spinner costs no patches and no render passes.
 
-**`Hidden` is also what makes it free.** A visible spinner costs a render pass
-per step. `Hidden` hides the node and pauses the interval, and a paused
-`UseIntervalWhile` tick requests no render. A spinner built on plain
-`UseInterval` would re-render the whole app on every tick for the life of the
-process.
+**It holds no hooks.** Leaving it out of the tree is safe. `Hidden` is still
+the better switch where the spinner has a fixed place in a layout: it keeps
+the tree the same shape, so showing it is a style patch. A hidden spinner is
+`Display` none and draws no frames on any target.
+
+It used to be stepped from Go, 30 degrees every 80 milliseconds through a state
+slot and `hooks.UseIntervalWhile`. That cost a render pass per step and gave it
+two hook slots, which is why older code renders it unconditionally.
 
 Other notes:
 
 - The ring carries an orbiting dot, because a uniform ring turned about its
   centre draws the same pixels at every angle.
 - The outer box is a `RoleStatus` live region named by `Label`, which defaults
-  to "Loading". The ring is hidden from assistive technology so its steps are
-  never read.
+  to "Loading". The ring is hidden from assistive technology.
+- No target slows the spin for a reduce-motion setting yet; core has no signal
+  for it.
 - `SpinnerSmall`, the default medium and `SpinnerLarge` read the theme's
   `Spacing.MD`, `LG` and `XL`.
 

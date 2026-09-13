@@ -105,7 +105,7 @@ const FULL_STYLE = {
     ZIndex: 3, FlexWrap: "wrap", AlignSelf: "center", FlexBasis: "5px",
     FlexShrink: 2, RowGap: 2, ColumnGap: 3,
     Display: "hidden", FlexDirection: "row",
-    Transition: "200ms ease", Animation: "pulse 2s infinite",
+    Transition: "200ms ease", Animation: "pulse 2s infinite", Spin: 1000,
     MinWidth: "1px", MinHeight: "2px", MaxWidth: "300px", MaxHeight: "400px", WhiteSpace: "nowrap",
 };
 
