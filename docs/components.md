@@ -1190,8 +1190,10 @@ Other notes:
 - The strip is `RoleNavigation` when `OnTap` is set and `RoleGroup` when it is
   not. Its name states the position, "Step 2 of 4: Address", and `Label`
   prefixes it ("Checkout, step 2 of 4: Address").
-- Each step is named "Step 1: Account, done", "Step 2: Address, current" or
-  "Step 3: Payment". A tappable step is a button. The circles and rules are
+- Each step is named "Step 1: Account, done", "Step 2: Address" or
+  "Step 3: Payment", and the current step states `core.CurrentStep`
+  (`aria-current="step"`, selected on the natives). ", done" stays a suffix
+  because no platform has a completed state. A tappable step is a button. The circles and rules are
   hidden from assistive technology.
 - `Current` is clamped into the steps, so an index past the end shows every
   step before the last as done.
@@ -1773,9 +1775,10 @@ bar with no dead gaps between them.
 
 Other notes:
 
-- The current item is drawn bold in the primary on-light tone, and its
-  accessible name gains ", selected". Core has no current-page state, and a tab
-  role would claim a panel the bar does not control.
+- The current item is drawn bold in the primary on-light tone and states
+  `core.CurrentPage`: `aria-current="page"` on the web, selected on Compose and
+  SwiftUI. Its name stays the label. A tab role would claim a panel the bar does
+  not control.
 - The icon is decoration and hidden from assistive technology.
 - `BarItem.AccessibilityLabel` replaces an abbreviated label as the spoken name.
 
@@ -1839,7 +1842,8 @@ Other notes:
 
 - Picking a destination runs its `OnTap` and then `OnDismiss`.
 - `Selected` follows `BottomBar`: the zero value selects the first item and a
-  negative value selects none. The current row's name gains ", selected".
+  negative value selects none. The current row states `core.CurrentPage`
+  through `ListRow.Current`.
 - The panel is a `RoleNavigation` landmark named by `Title`.
 - `Body` replaces the rows with any content. Its handlers close nothing unless
   they call `OnDismiss`.
@@ -1987,8 +1991,9 @@ Other notes:
 - Actions are full-width ghost buttons. `VariantError` gives a destructive
   action the error ink, and `Disabled` holds one back. A disabled action does
   not dismiss the sheet.
-- `Checked` marks the current choice with a leading ✓ and an accessible name
-  ending ", selected". It is how a `Menu` becomes a picker.
+- `Checked` marks the current choice with a leading ✓ and states
+  `core.CurrentTrue` (`aria-current="true"`, selected on the natives). It is how
+  a `Menu` becomes a picker.
 - Actions are buttons, not listbox options. They are commands, and an option
   would be announced "not selected".
 - `Cancel`, a tap above the panel and the scrim all call `OnDismiss`. With
@@ -2035,7 +2040,7 @@ and those slots drift when the row count changes. With `Open` controlled, one
 state names the open menu and each row compares against it.
 
 **A picker is a menu with a checked item.** `SheetAction.Checked` puts a ✓
-before the label and names the item "Newest, selected". Each item sets the
+before the label and marks the item as the current one (`core.CurrentTrue`). Each item sets the
 value in its own `OnTap`. Put the current value in the trigger's label.
 
 ```go

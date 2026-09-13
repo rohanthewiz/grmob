@@ -993,6 +993,13 @@ func (w CompositeWalk) String() string {
 // of constants hand-written in a test — three copies of one fact, none of
 // which was the fact itself.
 //
+// The same two roles decide the other half of the web keyboard: a container
+// carrying one with an OnTap and standing *outside* any toolbar gets a tab
+// stop of its own and Enter/Space activation from the runtime, which is what a
+// <button> gets from the browser (docs/platforms/wasm.md, "A container control
+// outside any toolbar"). comps.DatePicker's trigger was unreachable by Tab
+// until that rule existed.
+//
 // The fact is here now, and role_control_test.go is what makes it a property
 // rather than a fourth copy: every role core declares is either in this list
 // or in a table saying why it is not one, so a new role cannot be added

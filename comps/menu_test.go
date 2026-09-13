@@ -135,8 +135,8 @@ func TestMenuStylesReachTheirOwnNodes(t *testing.T) {
 	}
 }
 
-// A checked item leads with ✓ and is named with a ", selected" suffix; an
-// unchecked one keeps its plain label as its name.
+// A checked item leads with ✓, is named by its plain label, and states
+// core.CurrentTrue; an unchecked one states nothing and takes no name.
 func TestSheetActionCheckedMarksTheCurrentChoice(t *testing.T) {
 	_, n := renderDebug(t, Menu{
 		Trigger:   Button{Label: "Sort: Newest"},
@@ -154,11 +154,17 @@ func TestSheetActionCheckedMarksTheCurrentChoice(t *testing.T) {
 	if len(btns) != 2 {
 		t.Fatalf("want two items, got %d", len(btns))
 	}
-	if btns[0].Props["label"] != "✓ Newest" || btns[0].Style.AccessibilityLabel != "Newest, selected" {
+	if btns[0].Props["label"] != "✓ Newest" || btns[0].Style.AccessibilityLabel != "Newest" {
 		t.Errorf("checked item = %v named %q", btns[0].Props["label"], btns[0].Style.AccessibilityLabel)
+	}
+	if btns[0].Style.AccessibilityCurrent != core.CurrentTrue {
+		t.Errorf("checked item AccessibilityCurrent = %q, want true", btns[0].Style.AccessibilityCurrent)
 	}
 	if btns[1].Props["label"] != "Oldest" || btns[1].Style.AccessibilityLabel != "" {
 		t.Errorf("unchecked item = %v named %q", btns[1].Props["label"], btns[1].Style.AccessibilityLabel)
+	}
+	if btns[1].Style.AccessibilityCurrent != core.CurrentNone {
+		t.Errorf("unchecked item AccessibilityCurrent = %q, want none", btns[1].Style.AccessibilityCurrent)
 	}
 	if btns[0].Style.AccessibilitySelected != core.SelectedUnset {
 		t.Error("a checked action is a button: no selected state, which would read as pressed")

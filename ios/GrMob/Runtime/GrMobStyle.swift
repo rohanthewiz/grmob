@@ -157,6 +157,10 @@ struct GrMobStyle: Equatable {
     /// Go's core.SelectedState, verbatim: "true", "false", or "" for a node
     /// that makes no claim. Mapped to a trait by grMobSelectedTrait below.
     var accessibilitySelected: String = ""
+    /// Go's core.CurrentKind, verbatim: "page", "step", "true", or "" for a
+    /// node that is not the current item of a set. Folded into .isSelected by
+    /// grMobCurrentTrait below.
+    var accessibilityCurrent: String = ""
     /// Go's core.ValueRange, verbatim: where a valued control sits inside its
     /// range. Only `text` is read — see grMobValueText below and the note on
     /// the three numbers this platform cannot say.
@@ -253,6 +257,7 @@ struct GrMobStyle: Equatable {
         s.accessibilityRole = str("AccessibilityRole")
         s.accessibilityHeadingLevel = int("AccessibilityHeadingLevel")
         s.accessibilitySelected = str("AccessibilitySelected")
+        s.accessibilityCurrent = str("AccessibilityCurrent")
         s.accessibilityValue = parseValueRange(obj["AccessibilityValue"] as? [String: Any])
         s.disabled = obj["Disabled"] as? Bool ?? false
         s.transition = str("Transition")
@@ -709,6 +714,7 @@ extension View {
         }
         let traits = grMobTraitsFor(s.accessibilityRole)
             .union(grMobSelectedTrait(s.accessibilitySelected))
+            .union(grMobCurrentTrait(s.accessibilityCurrent, selected: s.accessibilitySelected))
         return accessibilityAddTraits(traits)
             .accessibilityHeading(grMobHeadingLevel(s))
     }
@@ -1162,6 +1168,19 @@ private func grMobTraitsFor(_ role: String) -> AccessibilityTraits {
 /// ARIA scopes its attributes, not because the framework does.
 private func grMobSelectedTrait(_ state: String) -> AccessibilityTraits {
     state == "true" ? .isSelected : []
+}
+
+/// Go's core.CurrentKind as a trait.
+///
+/// SwiftUI has no current trait. .isSelected is what a UITabBar's current item
+/// carries, so VoiceOver announces a current bottom-bar cell here as it
+/// announces the platform's. The kind (page, step, true) is not distinguished.
+///
+/// A stated core.SelectedState wins, including "false": grMobSelectedTrait has
+/// already answered for it, and a node that says both is making the more
+/// specific claim with that field.
+private func grMobCurrentTrait(_ kind: String, selected: String) -> AccessibilityTraits {
+    !kind.isEmpty && selected.isEmpty ? .isSelected : []
 }
 
 

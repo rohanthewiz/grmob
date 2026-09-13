@@ -166,6 +166,13 @@ data class GrMobStyle(
      */
     val accessibilitySelected: String,
     /**
+     * Go's core.CurrentKind, verbatim: "page", "step", "true", or "" for a node
+     * that is not the current item of a set. Folded into `selected` by
+     * grMobCurrent below. Defaulted so a GrMobStyle built by hand elsewhere
+     * needs no new argument.
+     */
+    val accessibilityCurrent: String = "",
+    /**
      * Go's core.ExpandedState, verbatim: "true", "false", or "" for a node
      * that is not a disclosure. Unlike every other accessibility field here it
      * is *not* spent in boxModifier's semantics block — Compose says this with
@@ -311,6 +318,7 @@ data class GrMobStyle(
                 accessibilityHidden = obj.optBoolean("AccessibilityHidden", false),
                 accessibilityRole = obj.optString("AccessibilityRole"),
                 accessibilitySelected = obj.optString("AccessibilitySelected"),
+                accessibilityCurrent = obj.optString("AccessibilityCurrent"),
                 accessibilityExpanded = obj.optString("AccessibilityExpanded"),
                 accessibilityValue = parseValueRange(obj.optJSONObject("AccessibilityValue")),
                 disabled = obj.optBoolean("Disabled", false),
@@ -483,6 +491,8 @@ fun GrMobStyle?.boxModifier(extra: Modifier = Modifier, gestures: Modifier = Mod
     // `selected` is the SemanticsPropertyReceiver's own property being
     // assigned rather than this style's field.
     val selectedState = accessibilitySelected
+    // Bound out here beside selectedState, which grMobCurrent reads with it.
+    val currentKind = accessibilityCurrent
     // And again: inside the lambda `value` would be nothing in particular, but
     // the range has to be read off `this` before the receiver changes.
     val valueRange = accessibilityValue
@@ -490,7 +500,7 @@ fun GrMobStyle?.boxModifier(extra: Modifier = Modifier, gestures: Modifier = Mod
         m = m.clearAndSetSemantics { }
     } else if (accessibilityLabel.isNotEmpty() || accessibilityHint.isNotEmpty() ||
         isDisabled || kind.isNotEmpty() || selectedState.isNotEmpty() ||
-        valueRange.stated()
+        currentKind.isNotEmpty() || valueRange.stated()
     ) {
         val description = listOf(accessibilityLabel, accessibilityHint)
             .filter { it.isNotEmpty() }.joinToString(". ")
@@ -505,6 +515,7 @@ fun GrMobStyle?.boxModifier(extra: Modifier = Modifier, gestures: Modifier = Mod
             if (isDisabled) disabled()
             grMobRole(kind)
             grMobSelected(selectedState)
+            grMobCurrent(currentKind, selectedState)
             grMobValue(valueRange)
         }
     }
@@ -1006,6 +1017,21 @@ fun SemanticsPropertyReceiver.grMobSelected(state: String) {
         "false" -> selected = false
         else -> {}
     }
+}
+
+/**
+ * Folds one core.CurrentKind into Compose's `selected` semantics.
+ *
+ * Compose has no current property. `selected` is what Material's own
+ * NavigationBar sets on the destination it is showing, so TalkBack announces a
+ * current bottom-bar cell here as it announces the platform's. The kind itself
+ * (page, step, true) has nowhere to go and is not distinguished.
+ *
+ * A stated core.SelectedState wins: grMobSelected has already written it, and
+ * a node that says both is making the more specific claim with that field.
+ */
+fun SemanticsPropertyReceiver.grMobCurrent(kind: String, state: String) {
+    if (kind.isNotEmpty() && state.isEmpty()) selected = true
 }
 
 /**

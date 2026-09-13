@@ -78,6 +78,45 @@ func TestBothNativesApplyTheSelectedStateThroughTheirSemanticsPrimitive(t *testi
 	}
 }
 
+// core.Style.AccessibilityCurrent has no property on either native and is
+// folded into the selected state on both (see core.CurrentKind). Pinned as the
+// selected chain is: the parse, the fold, the call that reaches the platform
+// primitive, and on Compose the lambda opening for a current node alone. Each
+// link breaks silently — an unread key and an uncalled mapping both compile.
+func TestBothNativesFoldTheCurrentItemIntoSelected(t *testing.T) {
+	for _, pin := range []struct{ file, key string }{
+		{swiftStyle, `str("AccessibilityCurrent")`},
+		{kotlinStyle, `optString("AccessibilityCurrent")`},
+	} {
+		if src := valuesIn(t, pin.file); !strings.Contains(src, pin.key) {
+			t.Errorf("%s: never parses %s — BottomBar's current cell and StepIndicator's "+
+				"current step would announce nothing on this platform", pin.file, pin.key)
+		}
+	}
+	swift := codeIn(t, swiftStyle)
+	for _, expr := range []string{
+		"private func grMobCurrentTrait(",
+		"!kind.isEmpty && selected.isEmpty ? .isSelected : []",
+		"grMobCurrentTrait(s.accessibilityCurrent, selected: s.accessibilitySelected)",
+	} {
+		if !strings.Contains(swift, expr) {
+			t.Errorf("%s: %q not found — the fold of a current item into .isSelected", swiftStyle, expr)
+		}
+	}
+	kotlin := codeIn(t, kotlinStyle)
+	for _, expr := range []string{
+		"fun SemanticsPropertyReceiver.grMobCurrent(",
+		"if (kind.isNotEmpty() && state.isEmpty()) selected = true",
+		"grMobCurrent(currentKind, selectedState)",
+		"currentKind.isNotEmpty()",
+	} {
+		if !strings.Contains(kotlin, expr) {
+			t.Errorf("%s: %q not found — the fold of a current item into selected, or the "+
+				"semantics lambda opening for one", kotlinStyle, expr)
+		}
+	}
+}
+
 // The semantics lambda is entered only when there is something to say, and the
 // state has to be one of the things that opens it.
 //

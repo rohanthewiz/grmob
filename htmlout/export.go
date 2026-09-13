@@ -1056,6 +1056,12 @@ func accessibilityAttrs(s *core.Style, nodeType string, roleImposed bool) []stri
 	if popup := ariaHasPopup(s, nodeType); popup != "" {
 		attrs = append(attrs, "aria-haspopup", popup)
 	}
+	// The one state with no guard. aria-current is an ARIA global, defined on
+	// every role, so there is no switch to run; hidden nodes returned above.
+	// See core.Style.AccessibilityCurrent.
+	if s.AccessibilityCurrent != core.CurrentNone {
+		attrs = append(attrs, "aria-current", string(s.AccessibilityCurrent))
+	}
 	attrs = append(attrs, ariaValue(s)...)
 	if s.AccessibilityID != "" {
 		attrs = append(attrs, "id", s.AccessibilityID)

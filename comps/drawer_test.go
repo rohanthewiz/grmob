@@ -1,6 +1,7 @@
 package comps
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/rohanthewiz/grmob/core"
@@ -101,10 +102,11 @@ func TestDrawerRowPicksThenDismisses(t *testing.T) {
 		func() { order = append(order, "dismiss") }))
 
 	row := findFirst(n, func(c *core.Node) bool {
-		return c.Style != nil && c.Style.AccessibilityLabel == "Inbox, selected"
+		return c.Style != nil && c.Style.AccessibilityLabel == "Inbox" &&
+			c.Style.AccessibilityCurrent == core.CurrentPage
 	})
 	if row == nil {
-		t.Fatal("the first item is Selected by default and must be named \"Inbox, selected\"")
+		t.Fatal("the first item is Selected by default and must be named \"Inbox\" and state CurrentPage")
 	}
 	ctx.TriggerCallback(row.Props["onClick"].(string))
 	if len(order) != 2 || order[0] != "pick" || order[1] != "dismiss" {
@@ -117,8 +119,8 @@ func TestDrawerNegativeSelectedMarksNone(t *testing.T) {
 	d.Selected = -1
 	_, n := renderDebug(t, d)
 	if findFirst(n, func(c *core.Node) bool {
-		return c.Style != nil && len(c.Style.AccessibilityLabel) > 10 &&
-			c.Style.AccessibilityLabel[len(c.Style.AccessibilityLabel)-10:] == ", selected"
+		return c.Style != nil && (c.Style.AccessibilityCurrent != core.CurrentNone ||
+			strings.HasSuffix(c.Style.AccessibilityLabel, ", selected"))
 	}) != nil {
 		t.Error("Selected -1 must mark no row as selected")
 	}

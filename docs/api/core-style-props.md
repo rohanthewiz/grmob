@@ -12,6 +12,7 @@ One of 11 topic pages of [package core](core.md), which has the package overview
 
 - [Constants](#constants) — `SpinKeyframes`
 - [`func AccessibilityControls`](#func-accessibilitycontrols)
+- [`func AccessibilityCurrent`](#func-accessibilitycurrent)
 - [`func AccessibilityExpanded`](#func-accessibilityexpanded)
 - [`func AccessibilityHasPopup`](#func-accessibilityhaspopup)
 - [`func AccessibilityHeadingLevel`](#func-accessibilityheadinglevel)
@@ -108,7 +109,22 @@ AccessibilityControls says which element this control switches, by the Accessibi
 
 It is written verbatim and nothing checks that the target exists: an export is one document at a time and a runtime patch is one element at a time, so neither target can see the whole page at the moment the attribute is written. A reference to an id nothing answers to is inert rather than harmful, which is the same trade aria-description makes. See Style.AccessibilityID for why this is the one relationship the vocabulary carries.
 
-<small>[core/style_props.go:546](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L546)</small>
+<small>[core/style_props.go:560](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L560)</small>
+
+### func AccessibilityCurrent
+
+```go
+func AccessibilityCurrent(kind CurrentKind) StyleProp
+```
+
+AccessibilityCurrent says this item is the current one of its set.
+
+	core.Column(core.AccessibilityRole(core.RoleButton),
+		core.AccessibilityCurrent(core.CurrentPage), …)
+
+aria-current on both web targets, on any role. Both natives announce it as selected unless AccessibilitySelected is stated. See CurrentKind and Style.AccessibilityCurrent.
+
+<small>[core/style_props.go:487](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L487)</small>
 
 ### func AccessibilityExpanded
 
@@ -173,7 +189,7 @@ func AccessibilityHidden() StyleProp
 
 AccessibilityHidden removes the element (and its subtree) from the accessibility tree — for decorative content a screen reader should skip.
 
-<small>[core/style_props.go:554](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L554)</small>
+<small>[core/style_props.go:568](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L568)</small>
 
 ### func AccessibilityHint
 
@@ -197,7 +213,7 @@ AccessibilityID gives this element a document-global name that another element c
 
 Uniqueness is the caller's, as it is in hand-written HTML, and the "grmob-" prefix is reserved for core.TabView's own wiring. See Style.AccessibilityID for the whole argument — including why this and AccessibilityControls are the only two IDREF props in the vocabulary.
 
-<small>[core/style_props.go:521](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L521)</small>
+<small>[core/style_props.go:535](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L535)</small>
 
 ### func AccessibilityLabel
 
@@ -281,7 +297,7 @@ Set on the container — the listbox or the tablist — not on the members. See 
 
 A no-arg flag rather than a bool, like AccessibilityHidden and unlike Disabled: a caller does not have this in a variable, and there is no case for forcing it back off — a widget that does not want it writes no prop.
 
-<small>[core/style_props.go:570](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L570)</small>
+<small>[core/style_props.go:584](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L584)</small>
 
 ### func AccessibilityValue
 
@@ -304,7 +320,7 @@ Paired with a role that can carry it, as the level, the selection and the disclo
 
 ValueRange.Text is the half that is not web-only: it reaches Compose's stateDescription and SwiftUI's accessibilityValue, neither of which asks what the node is. See Style.AccessibilityValue for the guard table and core.ValueRange for why the numbers are strings.
 
-<small>[core/style_props.go:505](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L505)</small>
+<small>[core/style_props.go:519](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L519)</small>
 
 ### func Align
 
@@ -380,7 +396,7 @@ Disabled hands the node to the platform's own disabled state: it stops accepting
 
 It takes the value rather than being a no-arg flag (unlike AccessibilityHidden) because the caller almost always has a bool in hand — \`core.Disabled(sending.Get())\` — and because passing false is the only way to force a node back to enabled: UseStyle's "a zero value means unset" rule means a Style{Disabled: false} cannot clear a flag already on the target.
 
-<small>[core/style_props.go:586](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L586)</small>
+<small>[core/style_props.go:600](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L600)</small>
 
 ### func Display
 
@@ -478,7 +494,7 @@ Inert takes the node and everything inside it out of reach on the web: out of th
 
 A bool for Disabled's reason: passing false is the only way to clear a flag UseStyle has already put on the target.
 
-<small>[core/style_props.go:601](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L601)</small>
+<small>[core/style_props.go:615](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L615)</small>
 
 ### func Justify
 

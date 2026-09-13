@@ -585,3 +585,47 @@ func TestTheComboboxKeyboardIsWiredWhereItClaims(t *testing.T) {
 			"behaviour, and a static page has no keystrokes\n%s", out)
 	}
 }
+
+// A container control outside any toolbar: the runtime gives it tabindex="0"
+// and Enter/Space (keynav_test.mjs, "A container control outside any
+// toolbar"), and the static export writes neither half.
+//
+// The argument is the file comment's, one widget over. A tab stop on a <div>
+// that Enter cannot activate sends a keyboard user to something that does
+// nothing, and htmlout has no key handler to make Enter do anything.
+func TestTheStaticExportWritesNoControlTabStop(t *testing.T) {
+	for _, role := range controlRoles() {
+		out := htmlout.ExportHTML(&core.Node{
+			Type:  "Row",
+			Style: &core.Style{AccessibilityRole: role, AccessibilityLabel: "Choose a date"},
+			Props: map[string]any{"onClick": "cb_0"},
+		})
+		if strings.Contains(out, "tabindex") {
+			t.Errorf("htmlout wrote a tabindex for a standalone %s:\n%s", role, out)
+		}
+		if !strings.Contains(out, `role="`+string(role)+`"`) {
+			t.Errorf("htmlout dropped role=%q:\n%s", role, out)
+		}
+	}
+}
+
+// The runtime's standalone-control rule, pinned where a rename would silently
+// drop it: the sync rides syncCompositesIn, and the key handler reads its stamp
+// at fire time so a control that joined a toolbar is not activated twice.
+func TestTheRuntimeGivesAStandaloneControlItsOwnStop(t *testing.T) {
+	src := runtimeSource(t)
+	for _, want := range []struct{ expr, why string }{
+		{`syncControlStop(el);`,
+			"the walk that gives a Box control outside a toolbar its tab stop. Without " +
+				"it comps.DatePicker's trigger, comps.Disclosure's header and every other " +
+				"RoleButton container outside a toolbar is unreachable by Tab"},
+		{`if (el.dataset.grmobControlStop !== "true") return;`,
+			"the key handler's fire-time check. A toolbar member already answers Enter " +
+				"through handleCompositeKey, and a listener attached before it joined " +
+				"would otherwise run its handler a second time"},
+	} {
+		if !strings.Contains(src, want.expr) {
+			t.Errorf("grmob-runtime.js: %q not found — %s", want.expr, want.why)
+		}
+	}
+}

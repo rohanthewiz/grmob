@@ -823,6 +823,33 @@ What the runtime does with that:
 | `Enter` / `Space` | runs the member's own `onClick` — but only for a member that is not already a control the browser activates for itself, since a `<button>` fires a real click on both keys and a synthesized one would run the handler twice |
 | anything else, `Tab` included | untouched. A listbox that swallowed `Tab` would trap a keyboard user inside it. |
 
+#### A container control outside any toolbar
+
+The second row of the member table below — a `Box` or `Row` carrying
+`role="button"` or `role="link"` with an `onClick` — has no tab stop of its own.
+Inside a toolbar the roving tabindex supplies one. Outside a toolbar nothing did,
+so `comps.DatePicker`'s trigger, `comps.Disclosure`'s header, `comps.Rating`'s
+stars, `comps.StepIndicator`'s done steps, `comps.Calendar`'s days and a tappable
+`comps.StaticMap` could not be reached by `Tab` at all.
+
+The runtime now gives such a control what a `<button>` gets from the browser:
+
+| a `<button>` | a container control outside a toolbar |
+|---|---|
+| in the tab order | `tabindex="0"` |
+| `Enter` clicks | `Enter` runs the author's `onClick` |
+| `Space` clicks | `Space` runs it for `role="button"`; a link answers `Enter` alone, as `<a href>` does |
+| disabled: no tab stop | `aria-disabled="true"`: no tab stop |
+
+It writes nothing for an element inside an `aria-hidden` subtree, and refuses a
+modified key, an auto-repeat, and a key aimed at a descendant. The `"0"` is
+stamped as the runtime's own (`data-grmob-control-stop`), so a control that
+joins a toolbar keeps the toolbar's roving value and is not activated twice.
+
+`htmlout` writes no `tabindex` here, for the reason it writes no roving one: a
+static export has no key handler, and a tab stop `Enter` cannot activate leads
+nowhere.
+
 #### A toolbar, whose members no role names
 
 `toolbar` was in the orientation table and out of the keyboard for two releases:

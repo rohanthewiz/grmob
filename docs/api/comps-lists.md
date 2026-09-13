@@ -1014,6 +1014,14 @@ type ListRow struct {
 	// state is announced" in the type comment for why there are two answers.
 	Selected bool
 
+	// Current says this row is the current item of its set — the destination
+	// a navigation list is showing. It is written as core.AccessibilityCurrent,
+	// which ARIA defines on every role, so it needs none of the role
+	// negotiation Selected goes through, and a row stating it takes no
+	// ", selected" suffix. comps.Drawer sets it on its current destination.
+	// It changes nothing a sighted user sees; Selected still draws the tint.
+	Current core.CurrentKind
+
 	// Selectable says this row is one choice in a listbox: it takes
 	// core.RoleOption and states core.AccessibilitySelected for *both* values
 	// of Selected, so a reader announces "selected" and "not selected" rather
@@ -1212,7 +1220,7 @@ Both are opt-in, and that is the ownership rule rather than caution: a \`listite
 func (r ListRow) Render(ctx *core.Context) *core.Node
 ```
 
-<small>[comps/list_row.go:291](https://github.com/rohanthewiz/grmob/blob/master/comps/list_row.go#L291)</small>
+<small>[comps/list_row.go:309](https://github.com/rohanthewiz/grmob/blob/master/comps/list_row.go#L309)</small>
 
 ### type LoadMore
 

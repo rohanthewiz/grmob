@@ -1749,14 +1749,15 @@ func TestSmallControlsDemoDrivesAllFourWidgets(t *testing.T) {
 		t.Fatal("stopping should hide the spinner again")
 	}
 
-	// BottomBar: the current cell's name carries the selection.
+	// BottomBar: the current cell states the current page; its name stays.
 	tapLabelled(t, mgr, "Search")
 	cur := tree(t, mgr)
 	if !hasText(cur, "Showing: Search") {
 		t.Fatal("tapping Search should switch the tab")
 	}
 	if findNode(cur, func(n *node) bool {
-		return n.Style != nil && n.Style.AccessibilityLabel == "Search, selected"
+		return n.Style != nil && n.Style.AccessibilityLabel == "Search" &&
+			n.Style.AccessibilityCurrent == string(core.CurrentPage)
 	}) == nil {
 		t.Fatal("the current cell should announce itself as selected")
 	}
@@ -1971,9 +1972,10 @@ func TestMenusLessonSortPickerChecksTheCurrentOrder(t *testing.T) {
 	}
 	if findNode(sheet[0], func(n *node) bool {
 		return n.Type == "Button" && n.Props["label"] == "✓ Newest" &&
-			n.Style != nil && n.Style.AccessibilityLabel == "Newest, selected"
+			n.Style != nil && n.Style.AccessibilityLabel == "Newest" &&
+			n.Style.AccessibilityCurrent == string(core.CurrentTrue)
 	}) == nil {
-		t.Fatal("the current order is checked and named as selected")
+		t.Fatal("the current order is checked and states itself as the current one")
 	}
 
 	tapInSheet(t, mgr, "Title")
@@ -2166,8 +2168,14 @@ func TestDrawersLessonPicksASectionAndCloses(t *testing.T) {
 	if got := focusActionOf(t, mgr, "Close Notebook"); got != "focus" {
 		t.Errorf("opening must focus the ✕, its focusAction = %q", got)
 	}
-	// The current section carries the name suffix; picking another moves it.
-	tapLabelled(t, mgr, "Inbox, selected")
+	// The current section states CurrentPage; picking another moves it.
+	if findNode(tree(t, mgr), func(n *node) bool {
+		return n.Style != nil && n.Style.AccessibilityLabel == "Inbox" &&
+			n.Style.AccessibilityCurrent == string(core.CurrentPage)
+	}) == nil {
+		t.Fatal("the drawer's current section must state CurrentPage")
+	}
+	tapLabelled(t, mgr, "Inbox")
 	if drawerIsOpen(t, mgr) {
 		t.Fatal("picking a destination must close the drawer")
 	}
@@ -2181,9 +2189,10 @@ func TestDrawersLessonPicksASectionAndCloses(t *testing.T) {
 		t.Fatal("picking Starred must show it and close the drawer")
 	}
 	if findNode(tree(t, mgr), func(n *node) bool {
-		return n.Style != nil && n.Style.AccessibilityLabel == "Starred, selected"
+		return n.Style != nil && n.Style.AccessibilityLabel == "Starred" &&
+			n.Style.AccessibilityCurrent == string(core.CurrentPage)
 	}) == nil {
-		t.Error("Starred must now be the selected row")
+		t.Error("Starred must now be the current row")
 	}
 	assertNoConcerns(t)
 }

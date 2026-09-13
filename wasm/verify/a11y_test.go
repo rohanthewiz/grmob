@@ -257,6 +257,40 @@ func TestRuntimeGuardsThePopupTheSameWay(t *testing.T) {
 	}
 }
 
+// aria-current, the state with no role guard. Both web targets write it on
+// every role, every kind verbatim, and neither on a hidden node.
+//
+// The runtime half is pinned by quotation because it is one line: an unread key
+// is not an error in JavaScript, and a guarded write would leave a stale
+// "page" standing on a bar cell that stopped being current.
+func TestBothWebTargetsWriteTheCurrentItemOnEveryRole(t *testing.T) {
+	src := runtimeSource(t)
+	if !strings.Contains(src, `setOrRemove(el, "aria-current", hidden ? "" : (style.AccessibilityCurrent || ""));`) {
+		t.Error("grmob-runtime.js: applyAccessibility does not write aria-current " +
+			"unconditionally from Style.AccessibilityCurrent")
+	}
+	roles := append([]core.Role{core.RoleNone}, core.Roles()...)
+	for _, role := range roles {
+		for _, kind := range core.CurrentKinds() {
+			out := htmlout.ExportHTML(&core.Node{Type: "Box", Style: &core.Style{
+				AccessibilityRole:    role,
+				AccessibilityCurrent: kind,
+			}})
+			if want := `aria-current="` + string(kind) + `"`; !strings.Contains(out, want) {
+				t.Errorf("role %q: htmlout does not write %s — aria-current is an ARIA "+
+					"global and takes no guard\n%s", role, want, out)
+			}
+		}
+	}
+	hidden := htmlout.ExportHTML(&core.Node{Type: "Box", Style: &core.Style{
+		AccessibilityHidden:  true,
+		AccessibilityCurrent: core.CurrentPage,
+	}})
+	if strings.Contains(hidden, "aria-current") {
+		t.Errorf("htmlout wrote aria-current on a hidden node:\n%s", hidden)
+	}
+}
+
 // A Modal core built carries no Style at all, and applyAccessibility rides on
 // the applyStyle path — so whether a modal announces as a dialog comes down to
 // whether that path runs for a node with nothing to style.

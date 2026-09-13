@@ -43,11 +43,14 @@ import "github.com/rohanthewiz/grmob/core"
 //
 // # How the current item is announced
 //
-// There is no aria-current in core's vocabulary and RoleTab would claim a tab
-// panel this bar does not control (examples/social builds that relationship
-// explicitly when it wants it). So the current item takes ListRow's fallback:
-// its accessible name gains ", selected". The Icon is decoration and is hidden
-// from assistive technology, so the Label is what is read.
+// The current cell states core.CurrentPage: aria-current="page" on the web,
+// and the selected state on Compose and SwiftUI, which is how both platforms'
+// own navigation bars announce the destination they show. It used to append
+// ", selected" to its name, because core had no current state and RoleTab
+// would claim a tab panel this bar does not control (examples/social builds
+// that relationship explicitly when it wants it). The name is now the label
+// alone, and stays the same as the selection moves. The Icon is decoration and
+// is hidden from assistive technology, so the Label is what is read.
 //
 // # Theme roles read
 //
@@ -119,10 +122,9 @@ func (b BottomBar) item(t *core.Theme, it BarItem, current bool) core.View {
 		weight = core.Bold
 	}
 
+	// The name no longer changes with the selection: the current state is
+	// said below, as a state.
 	name := orDefault(it.AccessibilityLabel, it.Label)
-	if current && name != "" {
-		name += ", selected"
-	}
 
 	cell := []core.PropsAndChildren{
 		core.FlexGrow(1),
@@ -130,6 +132,11 @@ func (b BottomBar) item(t *core.Theme, it BarItem, current bool) core.View {
 		core.Gap(2),
 		core.Padding(t.Spacing.XS),
 		core.AccessibilityRole(core.RoleButton),
+	}
+	// Only the current cell states it. CurrentNone is ARIA's "false", and a
+	// bar that wrote it on every other cell would add nothing a reader says.
+	if current {
+		cell = append(cell, core.AccessibilityCurrent(core.CurrentPage))
 	}
 	if name != "" {
 		cell = append(cell, core.AccessibilityLabel(name))

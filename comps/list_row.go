@@ -150,6 +150,14 @@ type ListRow struct {
 	// state is announced" in the type comment for why there are two answers.
 	Selected bool
 
+	// Current says this row is the current item of its set — the destination
+	// a navigation list is showing. It is written as core.AccessibilityCurrent,
+	// which ARIA defines on every role, so it needs none of the role
+	// negotiation Selected goes through, and a row stating it takes no
+	// ", selected" suffix. comps.Drawer sets it on its current destination.
+	// It changes nothing a sighted user sees; Selected still draws the tint.
+	Current core.CurrentKind
+
 	// Selectable says this row is one choice in a listbox: it takes
 	// core.RoleOption and states core.AccessibilitySelected for *both* values
 	// of Selected, so a reader announces "selected" and "not selected" rather
@@ -288,6 +296,16 @@ type ListRow struct {
 	AccessibilityHint  string
 }
 
+// currentKind returns kind for the current item of a set and CurrentNone for
+// every other item, so a widget building a row per item writes one field
+// rather than a branch around the literal.
+func currentKind(current bool, kind core.CurrentKind) core.CurrentKind {
+	if current {
+		return kind
+	}
+	return core.CurrentNone
+}
+
 func (r ListRow) Render(ctx *core.Context) *core.Node {
 	t := ctx.Theme()
 
@@ -353,10 +371,16 @@ func (r ListRow) Render(ctx *core.Context) *core.Node {
 		// state on it, so appending here would announce the selection twice —
 		// once as part of the row's name and once as the control state — and
 		// would put a changing word inside a name that is meant to be stable.
-		if r.Selected && !r.Selectable {
+		//
+		// A row stating Current has a real state too, one ARIA allows on any
+		// role, so it takes no suffix either.
+		if r.Selected && !r.Selectable && r.Current == core.CurrentNone {
 			label += ", selected"
 		}
 		items = append(items, core.AccessibilityLabel(label))
+	}
+	if r.Current != core.CurrentNone {
+		items = append(items, core.AccessibilityCurrent(r.Current))
 	}
 	if r.AccessibilityHint != "" {
 		items = append(items, core.AccessibilityHint(r.AccessibilityHint))

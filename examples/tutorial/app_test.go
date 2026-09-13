@@ -111,6 +111,11 @@ type nodeStyle struct {
 	// warning a reader hears before the press exists.
 	AccessibilityHasPopup string
 
+	// Which item of a set is the current one, for 4.4's bottom bar, 4.17's
+	// sort picker and 4.18's drawer. The current item's name no longer changes
+	// with the selection, so this is the only place the state is visible.
+	AccessibilityCurrent string
+
 	// Chapter 4's drawer lesson asserts on this one. An open drawer hides the
 	// screen layer beneath it from assistive technology and changes nothing
 	// visible about that layer, so the flag is the only evidence it happened.

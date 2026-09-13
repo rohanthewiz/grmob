@@ -1168,6 +1168,137 @@ const GrMob = (() => {
             !!el.dataset.listener_onClick;
     }
 
+    // --------------------------------------------------------------------
+    // A container control outside any toolbar
+    // --------------------------------------------------------------------
+    //
+    // The second member rule above says a Box or a Row carrying RoleButton or
+    // RoleLink with an OnTap "has no tab stop of its own until this section
+    // gives it one". For two releases that sentence was true everywhere, not
+    // only in a toolbar. So a control built that way was a tab stop inside a
+    // comps.BottomBar and unreachable anywhere else. comps.DatePicker's trigger
+    // was the one somebody noticed. comps.Disclosure's header, comps.Rating's
+    // stars, comps.StepIndicator's done steps, comps.Calendar's days and a
+    // tappable comps.StaticMap had the same shape and the same hole.
+    //
+    // What a <button> gets from the browser, and what this supplies:
+    //
+    //	a <button>                      a Box control outside a toolbar
+    //	------------------------------  --------------------------------------
+    //	in the tab order                tabindex="0"
+    //	Enter clicks                    Enter runs the author's onClick
+    //	Space clicks                    Space runs it, for a button only. A
+    //	                                link answers Enter alone, as <a href>
+    //	                                does, and Space scrolls the page.
+    //	disabled: no tab stop           aria-disabled="true": no tab stop.
+    //	                                applyStyle already sets pointer-events
+    //	                                none there, so this matches the tap.
+    //
+    // # Why a stamp, rather than "remove tabindex when it stops qualifying"
+    //
+    // Three other writers own tabindex on some element: the roving tabindex
+    // above, the combobox popup's stand-down, and CodeEditor's buffer. A
+    // control that becomes a toolbar member must lose *this* claim and keep
+    // the roving one the toolbar pass just wrote. So the element records that
+    // the "0" is ours (data-grmob-control-stop), and only an element holding
+    // the stamp ever has its tabindex removed here.
+    //
+    // # Why the key handler checks the stamp at fire time
+    //
+    // A toolbar member already answers Enter and Space through
+    // handleCompositeKey. The listener here is attached once and never taken
+    // off (a patch has no unmount hook to take it off from), so an element
+    // that joined a toolbar after it was stamped still carries it. Reading
+    // the stamp at the keystroke is what keeps that element from running its
+    // handler twice.
+    //
+    // # Ordering with the toolbar pass
+    //
+    // Both passes (syncCompositesIn and syncTouchedComposites) reach a
+    // container before its descendants. So a toolbar's roving tabindex is
+    // written before its members are asked this question, and compositeOf
+    // then says they are members.
+    //
+    // # Why htmlout writes none of this
+    //
+    // A static export has no key handler. A tab stop on a div that Enter
+    // cannot activate sends a keyboard user to something that does nothing,
+    // which is the argument wasm/verify/keynav_test.go makes against a roving
+    // tabindex in the export.
+
+    // Whether this element is a container control that owns its own tab stop:
+    // a control by the second rule of isFocusableControl, enabled, not inside
+    // a toolbar (whose roving tabindex owns it), and not inside an aria-hidden
+    // subtree (pruned from the accessibility tree, so a keyboard must not land
+    // there either).
+    function isStandaloneControl(el) {
+        if (!el || !el.getAttribute || FOCUSABLE_TAGS.has(el.tagName)) return false;
+        if (!CONTROL_ROLES.has(el.getAttribute("role"))) return false;
+        if (!el.dataset.listener_onClick) return false;
+        if (el.getAttribute("aria-disabled") === "true") return false;
+        if (compositeOf(el)) return false;
+        for (let up = el.parentNode; up && up.getAttribute; up = up.parentNode) {
+            if (up.getAttribute("aria-hidden") === "true") return false;
+        }
+        return true;
+    }
+
+    // Writes or withdraws one element's own tab stop. Total, like every sync
+    // in this section: called for every element the pass reaches, so a
+    // control that loses its role, its handler or its enabled state loses the
+    // stop on the same pass.
+    function syncControlStop(el) {
+        if (!el || !el.dataset) return;
+        if (isStandaloneControl(el)) {
+            el.setAttribute("tabindex", "0");
+            el.dataset.grmobControlStop = "true";
+            if (!el.dataset.grmobControlKeys) {
+                el.dataset.grmobControlKeys = "true";
+                el.addEventListener("keydown", handleControlKey);
+            }
+            return;
+        }
+        if (el.dataset.grmobControlStop) {
+            delete el.dataset.grmobControlStop;
+            // Only when the "0" is still ours. A toolbar pass that ran first
+            // has already rewritten it to its own roving value.
+            if (!compositeOf(el)) el.removeAttribute("tabindex");
+        }
+    }
+
+    // Enter, and Space on a button, on a container control holding its own
+    // tab stop. See the table above.
+    //
+    // The author's onClick is invoked directly, as activateCompositeMember
+    // does, rather than through a synthesized click: the callback ID is read
+    // off the dataset at fire time, so a handler a later pass replaced is the
+    // one that runs.
+    //
+    // Three keystrokes are refused on purpose:
+    //
+    //	one aimed at a descendant   a field inside the control owns its own
+    //	                            Enter and Space.
+    //	a modified key              Ctrl+Enter and friends belong to the
+    //	                            browser and the page, not the control.
+    //	an auto-repeat              holding Enter on a DatePicker would open
+    //	                            the sheet and then act on whatever it put
+    //	                            focus on next.
+    function handleControlKey(e) {
+        const el = e.currentTarget;
+        if (e.target !== el) return;
+        if (el.dataset.grmobControlStop !== "true") return;
+        if (e.altKey || e.ctrlKey || e.metaKey || e.repeat) return;
+        const space = e.key === " " || e.key === "Spacebar";
+        if (e.key !== "Enter" && !(space && el.getAttribute("role") === "button")) return;
+        if (el.getAttribute("aria-disabled") === "true") return;
+        const cbId = el.dataset.listener_onClick;
+        if (!cbId) return;
+        // Space would scroll the page and Enter would submit a surrounding
+        // form; a control that is about to act on the key owns it.
+        e.preventDefault();
+        window.GoInvokeCallback(cbId, {});
+    }
+
     // The members of one composite, in document order.
     //
     // A subtree walk rather than a children scan, because nothing says a
@@ -1897,13 +2028,19 @@ const GrMob = (() => {
         }
     }
 
-    // Syncs every composite in a subtree, skipping anything already visited in
-    // this pass.
+    // Syncs every composite in a subtree, and every container control's own
+    // tab stop, skipping anything already visited in this pass.
     //
     // The `seen` set is what bounds the cost: syncTouchedComposites walks down
     // from every touched element, and a batch that touched a container and
     // four of its children would otherwise walk the container's subtree five
     // times.
+    //
+    // The control stop rides the same walk rather than a second one, and after
+    // the element's own composite sync: a toolbar writes its members' roving
+    // tabindex when the toolbar is visited, which is before any member is, so
+    // syncControlStop finds them already claimed. See "A container control
+    // outside any toolbar".
     function syncCompositesIn(el, done, seen) {
         if (!el || !el.getAttribute || seen.has(el)) return;
         seen.add(el);
@@ -1911,6 +2048,7 @@ const GrMob = (() => {
             done.add(el);
             syncComposite(el);
         }
+        syncControlStop(el);
         for (const child of el.children) syncCompositesIn(child, done, seen);
     }
 
@@ -2234,6 +2372,11 @@ const GrMob = (() => {
         setOrRemove(el, "aria-checked", selected[2]);
         setOrRemove(el, "aria-expanded", hidden ? "" : ariaExpanded(style, nodeType));
         setOrRemove(el, "aria-haspopup", hidden ? "" : ariaHasPopup(style, nodeType));
+        // The one state with no role guard: aria-current is an ARIA global.
+        // Written on every call for the totality rule, so a bar cell that stops
+        // being the current destination stops saying so. htmlout writes the
+        // same; see core.Style.AccessibilityCurrent.
+        setOrRemove(el, "aria-current", hidden ? "" : (style.AccessibilityCurrent || ""));
         // The combobox keyboard's listeners, stamped once, and the one
         // attribute this pass takes back from them when the popup closes. See
         // "The combobox pattern".

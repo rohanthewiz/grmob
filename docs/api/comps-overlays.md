@@ -158,7 +158,7 @@ func (s ActionSheet) Render(ctx *core.Context) *core.Node
 
 Render builds Modal > (filler, Card) as drawn in the type doc.
 
-<small>[comps/action_sheet.go:165](https://github.com/rohanthewiz/grmob/blob/master/comps/action_sheet.go#L165)</small>
+<small>[comps/action_sheet.go:168](https://github.com/rohanthewiz/grmob/blob/master/comps/action_sheet.go#L168)</small>
 
 ### type Banner
 
@@ -703,16 +703,19 @@ type SheetAction struct {
 
 	// Checked marks the action as the current choice, for the "Sort by"
 	// shape where each action sets one value (see Menu). The label gains a
-	// leading ✓ and the accessible name a ", selected" suffix.
+	// leading ✓ and the button states core.CurrentTrue: aria-current="true"
+	// on the web, the selected state on both natives.
 	//
-	// The suffix rather than core.AccessibilitySelected, because the action
-	// is a button and ARIA defines aria-pressed there, which would announce a
-	// toggle ("Newest, pressed") that a second tap does not turn off. The
-	// radio pair was the other candidate and is rejected for the reason the
-	// type doc gives for the listbox one: inside a radiogroup the WASM
-	// runtime checks the radio an arrow lands on, which here would run the
-	// action and close the sheet on the first ArrowDown. It is the same
-	// English fallback BottomBar uses for its current item.
+	// A current item rather than core.AccessibilitySelected, because the
+	// action is a button and ARIA defines aria-pressed there, which would
+	// announce a toggle ("Newest, pressed") that a second tap does not turn
+	// off. The radio pair was the other candidate and is rejected for the
+	// reason the type doc gives for the listbox one: inside a radiogroup the
+	// WASM runtime checks the radio an arrow lands on, which here would run
+	// the action and close the sheet on the first ArrowDown. The action used
+	// to say this with a ", selected" name suffix, before core had
+	// CurrentKind; true rather than page or step, since a sort order is
+	// neither.
 	Checked bool
 }
 ```

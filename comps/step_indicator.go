@@ -50,13 +50,16 @@ import (
 // destinations, and RoleGroup when it is not, because a picture of progress
 // is not navigation. Either way its name states the position: "Step 2 of 4:
 // Address", prefixed by Label when one is given. Each step is named
-// ("Step 1: Account, done", "Step 2: Address, current", "Step 3: Payment") and
-// a tappable one is RoleButton. The circle, its glyph and the rules are drawn
+// ("Step 1: Account, done", "Step 2: Address", "Step 3: Payment") and a
+// tappable one is RoleButton. The circle, its glyph and the rules are drawn
 // for sighted users and hidden from assistive technology, so a step is read
 // once.
 //
-// The ", done" and ", current" suffixes are English, the fallback ListRow and
-// BottomBar already take; there is no aria-current in core's vocabulary.
+// The current step states core.CurrentStep: aria-current="step" on the web and
+// the selected state on both natives. It used to be a ", current" name suffix.
+// ", done" stays an English suffix, because no platform has a completed state:
+// ARIA has no attribute for it, and Compose's and SwiftUI's semantics have no
+// property either.
 //
 // # Theme roles read
 //
@@ -162,7 +165,6 @@ func (s StepIndicator) step(t *core.Theme, i int, label string, state stepState)
 	case stepDone:
 		name += ", done"
 	case stepCurrent:
-		name += ", current"
 		weight = core.Bold
 	case stepUpcoming:
 		labelColor = t.Colors.TextSecondary
@@ -176,6 +178,12 @@ func (s StepIndicator) step(t *core.Theme, i int, label string, state stepState)
 		// instead, and a squeezed label would wrap mid-word.
 		core.FlexShrink(0),
 		core.AccessibilityLabel(name),
+	}
+	// The current step as a state rather than a word in its name. Stated on
+	// the cell, which is what carries the name, so the reader hears the two
+	// together; see the type doc for why ", done" stays a suffix.
+	if state == stepCurrent {
+		cell = append(cell, core.AccessibilityCurrent(core.CurrentStep))
 	}
 	if state == stepDone && s.OnTap != nil {
 		idx := i // captured per step: the handler outlives this call

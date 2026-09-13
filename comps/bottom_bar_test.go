@@ -33,8 +33,17 @@ func TestBottomBarIsANavigationOfEqualCells(t *testing.T) {
 			t.Errorf("cell %d: grow=%v role=%q, want equal-width buttons", i, c.Style.FlexGrow, c.Style.AccessibilityRole)
 		}
 	}
-	if got := n.Children[1].Style.AccessibilityLabel; got != "Search, selected" {
-		t.Errorf("current label = %q", got)
+	// The current cell says so as a state, and its name is the label alone.
+	if got := n.Children[1].Style.AccessibilityLabel; got != "Search" {
+		t.Errorf("current label = %q, want the label with no suffix", got)
+	}
+	if got := n.Children[1].Style.AccessibilityCurrent; got != core.CurrentPage {
+		t.Errorf("current cell AccessibilityCurrent = %q, want page", got)
+	}
+	for _, i := range []int{0, 2} {
+		if got := n.Children[i].Style.AccessibilityCurrent; got != core.CurrentNone {
+			t.Errorf("cell %d AccessibilityCurrent = %q, want none", i, got)
+		}
 	}
 	if got := n.Children[0].Style.AccessibilityLabel; got != "Home" {
 		t.Errorf("other label = %q", got)
@@ -66,7 +75,7 @@ func TestBottomBarWithNoSelectionIsAToolbar(t *testing.T) {
 		t.Errorf("role = %q, want toolbar", n.Style.AccessibilityRole)
 	}
 	for _, c := range n.Children {
-		if c.Style.AccessibilityLabel == "Search, selected" || c.Style.AccessibilityLabel == "Home, selected" {
+		if c.Style.AccessibilityCurrent != core.CurrentNone {
 			t.Error("an action strip has no current item")
 		}
 	}
