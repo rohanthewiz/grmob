@@ -60,6 +60,10 @@ else # Go <= 1.23
 fi
 chmod u+w "$www/wasm_exec.js"
 
+# What each picture claims to show, from internal/shotclaims, so shot.mjs can
+# refuse a PNG in which a claimed string is clipped (see claims/main.go).
+go run ./claims >"$www/claims.json"
+
 # The finished PNGs, for the composite page to arrange. Copied rather than
 # served from docs/images directly so that the server has one root and the
 # page has one kind of URL.
@@ -76,7 +80,7 @@ for name in "$@"; do
 		node shot.mjs --dir "$www" --out - "$script"
 		continue
 	fi
-	node shot.mjs --dir "$www" --out "$out/$name.png" "$script"
+	node shot.mjs --dir "$www" --claims "$www/claims.json" --out "$out/$name.png" "$script"
 	# Back into the served copy, so a composite taken later in this same
 	# run arranges what was just taken rather than what was there before.
 	cp "$out/$name.png" "$www/images/"
