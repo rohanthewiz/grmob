@@ -1,0 +1,172 @@
+#!/bin/sh
+# Refuse a push whose tip is not gofmt-clean, the check CI starts with.
+#
+# # What this is for
+#
+# The Go job in .github/workflows/ci.yml opens with `gofmt -l .` and fails on
+# any output. A failing first step skips every step after it: vet, the -race
+# tests, the docs server build, the WASM build and wasm/verify. From 987e755
+# to 7655b91 that happened on seven master pushes in a row, and nobody noticed
+# because the Android, iOS and docs jobs are separate workflows' jobs and stayed
+# green. The cause was one missing blank line in core/style_props.go. So a red
+# gofmt step does more than mark a style problem. It stops the tests from
+# running on master at all.
+#
+# This runs the same command locally, before the push leaves the machine.
+#
+# # Why it blocks, where .claude/hooks/session-doc-check.sh only warns
+#
+# That hook warns because it often misjudges: a typo fix or a rebase owes no
+# session doc. This check can't be wrong that way, because it is the same
+# command CI runs, on the same files. A push it refuses is a push CI would fail.
+# `git push --no-verify` still skips it for the rare push that is meant to be
+# red.
+#
+# # What it checks: the pushed commits, not the working tree
+#
+# `gofmt -l .` in the checkout would look at the wrong files in two directions:
+#
+#   - Uncommitted edits. A file fixed on disk but not committed passes here
+#     and still fails CI. A half-edited file that is not being pushed fails
+#     here and blocks an unrelated push.
+#   - Untracked files. CI's checkout has only tracked files. A local checkout
+#     also has .claude/worktrees/ (whole checkouts of other branches, ignored
+#     through .git/info/exclude) and any scratch file, and gofmt walks
+#     directories without reading ignore rules.
+#
+# So each pushed tip's tracked Go files are exported with `git archive` into a
+# temporary directory, and `gofmt -l .` runs there. That tree matches what
+# actions/checkout gives CI, minus the non-Go files, which gofmt skips anyway.
+# The export and the check take about 0.2s for this repository's ~500 Go files.
+#
+#   stdin (one line per ref)          per distinct tip
+#   ─────────────────────────         ──────────────────────────────────────
+#   <local ref> <local sha>    ──►    git archive <sha> -- '*.go' | tar -x
+#   <remote ref> <remote sha>         cd tmp && gofmt -l .   ──► any output?
+#                                                                 │
+#                                              yes: list, exit 1 ◄┘ no: next
+#
+# Only the tip of each ref is checked, not every commit in the range, because
+# CI checks only the tip too. An intermediate commit that is not gofmt-clean
+# but is fixed by a later commit in the same push never turns CI red, so
+# blocking it here would add friction without preventing a failure.
+#
+# # Enabling it
+#
+# Git runs hooks from .git/hooks/, which is not tracked, so a clone does not
+# pick this file up by itself. Point this checkout at the tracked directory
+# once:
+#
+#     git config core.hooksPath .githooks
+#
+# # Failure modes that let the push through
+#
+# If gofmt is missing, or a tip cannot be exported (for example, it has no Go
+# files, or it is a tag that does not point at a tree), this prints why and
+# skips it. Such a push never runs the Go job's gofmt step on a Go tree, so
+# there is nothing here to stop, and a hook that errors on setups it cannot
+# handle is a hook that gets deleted.
+
+set -u
+
+# The all-zero object name git sends for a ref being deleted. Its length
+# follows the repository's hash (40 hex digits for SHA-1, 64 for SHA-256), so
+# the check below matches any run of zeros rather than a fixed-length string.
+is_zero_sha() {
+    case "$1" in
+    *[!0]*) return 1 ;;
+    *) return 0 ;;
+    esac
+}
+
+if ! command -v gofmt >/dev/null 2>&1; then
+    echo "pre-push: gofmt not on PATH; skipping the gofmt check." >&2
+    exit 0
+fi
+
+tmp_root=$(mktemp -d "${TMPDIR:-/tmp}/grmob-prepush.XXXXXX") || {
+    echo "pre-push: could not create a temporary directory; skipping the gofmt check." >&2
+    exit 0
+}
+trap 'rm -rf "$tmp_root"' EXIT INT TERM
+
+# Read all of stdin before doing any work. Git writes the ref list into a pipe,
+# and a hook that exits early without draining it can make git report a
+# broken pipe instead of the hook's own message.
+refs=$(cat)
+
+checked=""
+failed=0
+
+# `read` splits on IFS whitespace. The four fields git sends never contain
+# spaces (ref names cannot), so a plain read is enough.
+while read -r local_ref local_sha remote_ref remote_sha; do
+    [ -n "${local_sha:-}" ] || continue
+    is_zero_sha "$local_sha" && continue
+
+    # A branch and a tag pushed together often name the same commit (a release
+    # push). Check each object once.
+    case " $checked " in
+    *" $local_sha "*) continue ;;
+    esac
+    checked="$checked $local_sha"
+
+    tree_dir="$tmp_root/$local_sha"
+    mkdir -p "$tree_dir"
+
+    # The archive goes to a file, not straight into `tar -x` through a pipe.
+    # A pipeline's status is its last command's, and tar given empty input
+    # exits 0, so `git archive … | tar -x` would read a failed export as a tree
+    # with nothing unformatted in it: a pass that checked nothing.
+    #
+    # `git archive` exits 128 both when the pathspec matches nothing (a tip
+    # with no Go files) and when the object is not a tree-ish. Either way there
+    # is no Go tree for CI's gofmt step to fail on, so git's own reason is
+    # printed and the ref is skipped.
+    archive="$tmp_root/$local_sha.tar"
+    if ! git archive -o "$archive" "$local_sha" -- '*.go' 2>"$tmp_root/archive.err"; then
+        echo "pre-push: nothing to check for $local_ref ($local_sha): $(cat "$tmp_root/archive.err")" >&2
+        continue
+    fi
+    if ! tar -xf "$archive" -C "$tree_dir"; then
+        echo "pre-push: could not unpack $local_ref ($local_sha); skipping it." >&2
+        continue
+    fi
+
+    # `gofmt -l` exits 0 whether or not it lists anything, the same thing the
+    # CI step's comment notes, so an unformatted file is detected from the
+    # output. A file gofmt cannot parse is different: gofmt prints the error
+    # to stderr and exits 2, and GitHub runs `run:` blocks under `bash -e`,
+    # where `unformatted=$(gofmt -l .)` takes that status and fails the step.
+    # stderr is captured separately so that case also blocks here.
+    unformatted=$(cd "$tree_dir" && gofmt -l . 2>"$tmp_root/gofmt.err")
+    if [ -s "$tmp_root/gofmt.err" ]; then
+        echo "pre-push: gofmt reported errors for $local_ref:" >&2
+        sed 's/^/    /' "$tmp_root/gofmt.err" >&2
+        failed=1
+    fi
+    if [ -n "$unformatted" ]; then
+        echo "pre-push: $local_ref ($local_sha) is not gofmt-clean:" >&2
+        echo "$unformatted" | sed 's|^\./||; s/^/    /' >&2
+        failed=1
+    fi
+done <<REFS
+$refs
+REFS
+
+if [ "$failed" -ne 0 ]; then
+    cat >&2 <<'MSG'
+
+CI's Go job fails at gofmt on this, and every step after it (vet, -race tests,
+the WASM build, wasm/verify) is skipped. To fix:
+
+    gofmt -w <files above>
+    go run ./internal/apidoc/gen   # docs/api cites source lines; a reformat can move them
+    git commit, then push again
+
+To push anyway: git push --no-verify
+MSG
+    exit 1
+fi
+
+exit 0

@@ -438,6 +438,15 @@ android/verify/run.sh    # the Kotlin decomposition, on a plain JVM
 None of them needs a simulator, a device, npm or the network; each skips
 rather than fails when the toolchain it wants is not installed.
 
+CI's Go job starts with `gofmt -l .`, and when that step fails, nothing after
+it runs, the tests included. A tracked pre-push hook runs the same check on the
+commits you push. Git does not enable hooks from a clone automatically, so turn
+it on once per checkout:
+
+```bash
+git config core.hooksPath .githooks   # .githooks/pre-push: refuse a push CI would fail at gofmt
+```
+
 One optional step does use the network, and nothing above depends on it. The
 ARIA facts every accessibility guard is held to live in one generated fixture,
 `aria/verify/testdata/aria.json`, produced from the W3C specification's own

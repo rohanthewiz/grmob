@@ -240,10 +240,19 @@ var commandPrefixes = map[string]bool{
 	"time":    true,
 	"nohup":   true,
 	"builtin": true,
-	"then":    true,
-	"do":      true,
-	"else":    true,
-	"!":       true,
+	// The keywords that open a condition. Their command is the condition
+	// itself, so `if git ls-files` runs git exactly as `then git ls-files`
+	// does. Missing these hid .githooks/pre-push's `if ! git archive` from
+	// this check: the file was enumerated and read, and its one call was
+	// taken as an argument to `if`.
+	"if":    true,
+	"elif":  true,
+	"while": true,
+	"until": true,
+	"then":  true,
+	"do":    true,
+	"else":  true,
+	"!":     true,
 }
 
 // lexShell is every git invocation in a fragment of shell.
@@ -674,6 +683,19 @@ func TestTheScriptLexerFindsAGitCallInTheShapesThatHideIt(t *testing.T) {
 		kind: shellScript,
 		src:  "cd x && git status -z\n(git ls-files -z)\n",
 		want: []string{"status -z", "ls-files -z"},
+	}, {
+		// A call used as a condition. The keyword that opens the condition
+		// sits in command position ahead of git, so without it in
+		// commandPrefixes the call reads as an argument to `if`. The
+		// .githooks/pre-push hook's one git call has this shape.
+		name: "a call as a condition",
+		kind: shellScript,
+		src: "if ! git ls-files -z; then :; fi\n" +
+			"while git status --porcelain; do :; done\n" +
+			"until git diff --name-only; do :; done\n" +
+			"if false; then :; elif git ls-tree -z HEAD; then :; fi\n",
+		want: []string{"ls-files -z", "status --porcelain", "diff --name-only",
+			"ls-tree -z HEAD"},
 	}, {
 		// `#` is only a comment where a word can begin.
 		name: "a hash mid-word is not a comment",
