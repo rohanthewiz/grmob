@@ -398,7 +398,7 @@ func (c Calendar) monthHeader(ctx *core.Context, first time.Time, loc *time.Loca
 	)
 
 	if c.OnMonthChange != nil {
-		items = append(items, c.monthArrow(t, first, loc, -1, "‹", "Previous month"))
+		items = append(items, c.monthArrow(t, first, loc, -1, "‹", "Previous month", "PageUp"))
 	}
 	// The label grows so the two arrows sit hard against the edges — the
 	// FlexGrow-not-JustifyBetween pinning GroupHeader and ListRow settled on,
@@ -412,14 +412,28 @@ func (c Calendar) monthHeader(ctx *core.Context, first time.Time, loc *time.Loca
 		),
 	))
 	if c.OnMonthChange != nil {
-		items = append(items, c.monthArrow(t, first, loc, +1, "›", "Next month"))
+		items = append(items, c.monthArrow(t, first, loc, +1, "›", "Next month", "PageDown"))
 	}
 
 	return core.Row(items...)
 }
 
-// monthArrow builds one navigation button. delta is in months.
-func (c Calendar) monthArrow(t *core.Theme, first time.Time, loc *time.Location, delta int, glyph, name string) core.View {
+// monthArrow builds one navigation button. delta is in months; shortcut is
+// the page key that presses it from inside the grid.
+//
+// # PageUp and PageDown
+//
+// ARIA's date-picker grid pages a month with PageUp and PageDown while focus
+// stays on a day. The month is Go state, so the WASM runtime cannot change it
+// alone; what it can do is press the arrow that already changes it. Each
+// arrow declares its key with core.AccessibilityKeyShortcuts, and the
+// runtime's grid keyboard activates the nearest control declaring the key
+// that was pressed, then puts focus back on the same day number in the new
+// month (the last day, when the new month is shorter). A disabled arrow, at
+// Min or Max, takes the key and does nothing, as an arrow key at a grid's
+// edge does. A custom Header draws no arrows and so declares no keys; the
+// keys are then the page's.
+func (c Calendar) monthArrow(t *core.Theme, first time.Time, loc *time.Location, delta int, glyph, name, shortcut string) core.View {
 	year, month, _ := first.Date()
 	// Midday again, and on the 1st: the target is a month, and AddDate on a
 	// 31st would skid into the following month for the short ones.
@@ -451,6 +465,7 @@ func (c Calendar) monthArrow(t *core.Theme, first time.Time, loc *time.Location,
 		Style: []core.StyleProp{
 			core.PaddingHorizontal(t.Spacing.SM),
 			core.Shadow(0),
+			core.AccessibilityKeyShortcuts(shortcut),
 		},
 	}
 }

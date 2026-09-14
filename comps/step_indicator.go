@@ -57,9 +57,10 @@ import (
 //
 // The current step states core.CurrentStep: aria-current="step" on the web and
 // the selected state on both natives. It used to be a ", current" name suffix.
-// ", done" stays an English suffix, because no platform has a completed state:
-// ARIA has no attribute for it, and Compose's and SwiftUI's semantics have no
-// property either. The three ARIA near misses each say something false:
+// "done" stays a word in the step's name, because no platform has a completed
+// state: ARIA has no attribute for it, and Compose's and SwiftUI's semantics
+// have no property either. The three ARIA near misses each say something
+// false:
 //
 //	aria-current    names the one step the flow is on. A done step is exactly
 //	                the one it is not on, and core.CurrentStep already marks
@@ -72,6 +73,14 @@ import (
 //
 // comps.Calendar's ", today" left its name when core.CurrentDate gave the web
 // targets a word for it; ", done" has no such word to move to.
+//
+// # Names in the app's language
+//
+// Since the word has to be in the name, the names are the caller's to write.
+// StepLabel builds each step's name and PositionLabel the strip's; nil gives
+// the English defaults above. This is the seam Calendar's DayLabel and
+// MonthLabel are: the widget knows the facts (index, total, done), and the
+// app knows the language.
 //
 // # Theme roles read
 //
@@ -101,6 +110,19 @@ type StepIndicator struct {
 	// Label prefixes the strip's accessible name, for a screen with more than
 	// one flow ("Checkout, step 2 of 4: Address").
 	Label string
+
+	// StepLabel builds one step's accessible name from its zero-based index,
+	// its entry in Steps and whether it is done. Nil gives "Step 2: Address",
+	// with ", done" after a done step's. The current step's state is not a
+	// parameter: it is announced as core.CurrentStep, in the platform's words.
+	StepLabel func(index int, label string, done bool) string
+
+	// PositionLabel builds the strip's accessible name from the zero-based
+	// current index, the number of steps and the current step's entry in
+	// Steps. Nil gives "Step 2 of 4: Address", prefixed by Label when set.
+	// Label is not applied to a caller's PositionLabel, which can include it
+	// itself.
+	PositionLabel func(current, total int, label string) string
 
 	// Style is applied to the strip after the widget's own props.
 	Style []core.StyleProp
@@ -142,9 +164,14 @@ func (s StepIndicator) Render(ctx *core.Context) *core.Node {
 		core.AccessibilityRole(role),
 	)
 	if n > 0 {
-		name := fmt.Sprintf("Step %d of %d: %s", cur+1, n, s.Steps[cur])
-		if s.Label != "" {
+		var name string
+		switch {
+		case s.PositionLabel != nil:
+			name = s.PositionLabel(cur, n, s.Steps[cur])
+		case s.Label != "":
 			name = fmt.Sprintf("%s, step %d of %d: %s", s.Label, cur+1, n, s.Steps[cur])
+		default:
+			name = fmt.Sprintf("Step %d of %d: %s", cur+1, n, s.Steps[cur])
 		}
 		items = append(items, core.AccessibilityLabel(name))
 	}
@@ -171,11 +198,17 @@ func (s StepIndicator) Render(ctx *core.Context) *core.Node {
 // step builds one circle-and-label cell. The cell, not the circle, is the
 // target and carries the name, so the whole step is one tab stop.
 func (s StepIndicator) step(t *core.Theme, i int, label string, state stepState) core.View {
-	name := fmt.Sprintf("Step %d: %s", i+1, label)
+	var name string
+	if s.StepLabel != nil {
+		name = s.StepLabel(i, label, state == stepDone)
+	} else {
+		name = fmt.Sprintf("Step %d: %s", i+1, label)
+		if state == stepDone {
+			name += ", done"
+		}
+	}
 	labelColor, weight := t.Colors.TextPrimary, core.Normal
 	switch state {
-	case stepDone:
-		name += ", done"
 	case stepCurrent:
 		weight = core.Bold
 	case stepUpcoming:

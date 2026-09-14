@@ -902,19 +902,34 @@ axis in the arrows.
 
 | key | effect |
 |---|---|
-| `ArrowRight` / `ArrowLeft` | next or previous cell in the same row; no wrap |
+| `ArrowRight` / `ArrowLeft` | next or previous cell in the same row (mirrored in right-to-left layouts); no wrap |
 | `ArrowDown` / `ArrowUp` | same column one row over, clamped to a shorter row; no wrap |
 | `Home` / `End` | first or last cell of the row |
 | `Ctrl+Home` / `Ctrl+End` | first or last cell of the grid |
 | `Enter` / `Space` | the cell's own `onClick` |
-| `PageUp` / `PageDown` | left to the page: the visible month is Go state, and `Calendar`'s month arrows are a `Shift+Tab` away |
+| `PageUp` / `PageDown` | presses the nearest control declaring the key in `aria-keyshortcuts`, then focuses the same day number in the new page; left to the page when none declares it, or with `Shift`/`Ctrl` |
 | a printable key | left to the page; a grid has no typeahead |
 
 An arrow at an edge is taken from the page and moves nothing — all four arrows
 belong to a grid, where a one-axis composite leaves the other pair to scroll.
 Rows are read off the DOM (the nearest `role="row"`) on every keystroke, so a
-month swapped in under the same six rows needs nothing invalidated. Left and
-Right are not mirrored in right-to-left text, as for every composite here.
+month swapped in under the same six rows needs nothing invalidated.
+
+Left and Right are mirrored in a right-to-left layout, for the grid and every
+horizontal composite: the arrow moves focus the way it points, so `ArrowLeft`
+is the next member when the first is drawn at the right. The direction is the
+element's computed CSS `direction`, so an inner `dir="ltr"` wins. `Home` and
+`End` stay the start and end in reading order.
+
+A grid pages by pressing a control. The visible month is Go state that the
+runtime cannot change without a render, so `comps.Calendar`'s month arrows
+declare `core.AccessibilityKeyShortcuts("PageUp")` and `("PageDown")`, and
+`PageUp`/`PageDown` inside the grid invoke the nearest declaring control's
+`onClick`, searching outward from the grid. When the month's patch lands, focus
+moves to the enabled cell with the same text (the last enabled cell if the new
+month is shorter). A disabled arrow takes the key and does nothing, like an
+arrow key at the grid's edge. Only this runtime writes `aria-keyshortcuts`;
+htmlout leaves it out, since a static page cannot honour the shortcut.
 
 ARIA defines no `aria-orientation` on a grid, and neither web target writes one.
 

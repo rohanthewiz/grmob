@@ -1159,9 +1159,9 @@ test("Enter and Space choose a cell; letters and PageDown are the page's", () =>
         assert.equal(e.defaultPrevented, true, key);
     }
 
-    // A grid has no typeahead, and PageUp/PageDown page a month in ARIA's date
-    // picker — which is Go state the runtime cannot change, so the keys are
-    // left alone rather than half-implemented.
+    // A grid has no typeahead. PageUp/PageDown page a month in ARIA's date
+    // picker, but only by pressing a control that declares the key (see the
+    // paging tests below); a grid with none leaves them to the page.
     const g = monthGrid();
     const cells = g.cells();
     cells[4].focus();
@@ -1171,6 +1171,186 @@ test("Enter and Space choose a cell; letters and PageDown are the page's", () =>
         assert.equal(g.focused(), cells[4], key);
     }
     assert.deepEqual(g.rt.dispatched, []);
+});
+
+// --------------------------------------------------------------------------
+// Paging a grid, and arrows in a right-to-left layout
+// --------------------------------------------------------------------------
+//
+// comps.Calendar's header arrows declare PageUp and PageDown with
+// aria-keyshortcuts. The key inside the grid presses the nearest declaring
+// control, and when Go's month arrives as a patch focus lands on the same day
+// number. The patch is written by hand here, as the reconciler would write
+// the numerals changing in place under a fixed six-row shape.
+
+// A header of two arrows over a grid of day cells, each cell a Box holding its
+// numeral as Text. `days` gives each cell's numeral; `disabled` lists cells
+// that are aria-disabled, as an adjacent month's days are.
+function pagedMonth({ days, cols = 3, disabled = [], prevDisabled = false } = {}) {
+    const arrow = (label, key, cb, off) => ({
+        Type: "Button",
+        Props: { label, onClick: cb },
+        Style: { AccessibilityKeyShortcuts: key, ...(off ? { Disabled: true } : {}) },
+    });
+    const rows = [];
+    for (let i = 0; i < days.length; i += cols) {
+        rows.push({
+            Type: "Row",
+            Style: { AccessibilityRole: "row" },
+            Children: days.slice(i, i + cols).map((d, j) => {
+                const cell = member("gridcell", { onClick: `day_${i + j}`, disabled: disabled.includes(i + j) });
+                cell.Children = [{ Type: "Text", Props: { content: d } }];
+                return cell;
+            }),
+        });
+    }
+    const t = mountTree({
+        Type: "Column",
+        Children: [
+            { Type: "Row", Children: [arrow("‹", "PageUp", "prev", prevDisabled), arrow("›", "PageDown", "next")] },
+            { Type: "Column", Style: { AccessibilityRole: "grid" }, Children: rows },
+        ],
+    });
+    const grid = () => t.root.children[1];
+    return {
+        ...t,
+        grid,
+        cells: () => grid().children.flatMap((row) => row.children),
+        // The new month's numerals, patched onto the cells in place, and a new
+        // disabled set, as the reconciler would send them.
+        turnTo(newDays, newDisabled = []) {
+            const patches = [];
+            newDays.forEach((d, i) => {
+                const r = Math.floor(i / cols);
+                const c = i % cols;
+                patches.push({ Type: "update-props", TargetID: `root/1/${r}/${c}/0`, Changes: { content: d } });
+                patches.push({
+                    Type: "update-style",
+                    TargetID: `root/1/${r}/${c}`,
+                    Changes: { AccessibilityRole: "gridcell", ...(newDisabled.includes(i) ? { Disabled: true } : { Disabled: false }) },
+                });
+            });
+            t.rt.GrMob.patch(JSON.stringify(patches));
+            t.rt.drainFrames();
+        },
+    };
+}
+
+test("PageDown in a grid presses the control that declares it, and keeps the key", () => {
+    const m = pagedMonth({ days: ["1", "2", "3", "4", "5", "6"] });
+    const cells = m.cells();
+    cells[4].focus();
+    const e = cells[4].dispatch("keydown", { key: "PageDown" });
+    assert.equal(e.defaultPrevented, true, "the page scrolled under a grid that paged");
+    assert.deepEqual(m.rt.dispatched, [{ id: "next", payload: {} }]);
+
+    const up = cells[4].dispatch("keydown", { key: "PageUp" });
+    assert.equal(up.defaultPrevented, true);
+    assert.deepEqual(m.rt.dispatched.map((d) => d.id), ["next", "prev"]);
+    assert.equal(m.root.children[0].children[1].getAttribute("aria-keyshortcuts"), "PageDown",
+        "the arrow does not announce the key it answers to");
+});
+
+test("focus lands on the same day in the page the key opened", () => {
+    // Day "5" sits at index 4 this month and index 1 in the next: the landing
+    // follows the numeral, not the column.
+    const m = pagedMonth({ days: ["30", "31", "1", "2", "3", "4"], disabled: [0, 1] });
+    // Reset to a month where 5 is at index 4.
+    m.turnTo(["1", "2", "3", "4", "5", "6"]);
+    const cells = m.cells();
+    cells[4].focus();
+    cells[4].dispatch("keydown", { key: "PageDown" });
+    m.turnTo(["29", "30", "1", "2", "3", "5"], [0, 1]);
+    assert.equal(m.focused(), cells[5], "focus stayed on the column instead of the day");
+    assert.equal(cells[5].getAttribute("tabindex"), "0");
+    assert.equal(cells[4].getAttribute("tabindex"), "-1");
+});
+
+test("a shorter page lands on its last day, and never on a greyed one", () => {
+    // 31 has no counterpart; the last enabled cell is the nearest day there is.
+    const m = pagedMonth({ days: ["29", "30", "31", "1", "2", "3"], disabled: [3, 4, 5] });
+    const cells = m.cells();
+    cells[2].focus();
+    cells[2].dispatch("keydown", { key: "PageDown" });
+    m.turnTo(["28", "29", "30", "1", "2", "3"], [3, 4, 5]);
+    assert.equal(m.focused(), cells[2]);
+
+    // "1" exists in the new month only as a greyed day of the next one.
+    const n = pagedMonth({ days: ["31", "1", "2", "3", "4", "5"], disabled: [0] });
+    const ncells = n.cells();
+    ncells[1].focus();
+    ncells[1].dispatch("keydown", { key: "PageDown" });
+    n.turnTo(["3", "4", "5", "6", "1", "2"], [4, 5]);
+    assert.equal(n.focused(), ncells[3], "focus landed on an adjacent month's day");
+});
+
+test("a later patch does not move focus once the landing is spent or stale", () => {
+    const m = pagedMonth({ days: ["1", "2", "3", "4", "5", "6"] });
+    const cells = m.cells();
+    cells[1].focus();
+    cells[1].dispatch("keydown", { key: "PageDown" });
+    m.turnTo(["4", "5", "6", "1", "2", "3"]);
+    assert.equal(m.focused(), cells[4]);
+    // The reader arrows away; an unrelated patch must not pull focus back.
+    cells[4].dispatch("keydown", { key: "ArrowLeft" });
+    m.turnTo(["4", "5", "6", "1", "2", "3"]);
+    assert.equal(m.focused(), cells[3]);
+});
+
+test("a disabled arrow takes the page key and does nothing; Shift and Ctrl are the page's", () => {
+    const m = pagedMonth({ days: ["1", "2", "3"], prevDisabled: true });
+    const cells = m.cells();
+    cells[0].focus();
+    const e = cells[0].dispatch("keydown", { key: "PageUp" });
+    assert.equal(e.defaultPrevented, true, "an edge month let the page scroll");
+    assert.deepEqual(m.rt.dispatched, []);
+
+    for (const mod of [{ shiftKey: true }, { ctrlKey: true }]) {
+        const k = cells[0].dispatch("keydown", { key: "PageDown", ...mod });
+        assert.equal(k.defaultPrevented, false, JSON.stringify(mod));
+    }
+    assert.deepEqual(m.rt.dispatched, []);
+});
+
+test("in a right-to-left layout the arrows move the way they point", () => {
+    // A row's first member is drawn at the right edge, so Left is next.
+    const g = monthGrid();
+    g.root.setAttribute("dir", "rtl");
+    const cells = g.cells();
+    cells[1].focus();
+    cells[1].dispatch("keydown", { key: "ArrowLeft" });
+    assert.equal(g.focused(), cells[2], "grid: Left did not move to the next cell");
+    cells[2].dispatch("keydown", { key: "ArrowRight" });
+    assert.equal(g.focused(), cells[1]);
+    // Home stays the start of the row in reading order.
+    cells[1].dispatch("keydown", { key: "Home" });
+    assert.equal(g.focused(), cells[0]);
+
+    // The one-axis composites follow the same rule; a vertical one is untouched.
+    const tl = tablist();
+    tl.rt.mountPoint.setAttribute("dir", "rtl");
+    const tabs = tl.root.children;
+    tabs[0].focus();
+    tabs[0].dispatch("keydown", { key: "ArrowLeft" });
+    assert.equal(tl.focused(), tabs[1], "tablist: Left did not move to the next tab");
+    tabs[1].dispatch("keydown", { key: "ArrowRight" });
+    assert.equal(tl.focused(), tabs[0]);
+
+    const lb = listbox();
+    lb.rt.mountPoint.setAttribute("dir", "rtl");
+    const items = lb.root.children;
+    items[0].focus();
+    items[0].dispatch("keydown", { key: "ArrowDown" });
+    assert.equal(lb.focused(), items[1]);
+
+    // An inner dir="ltr" wins over an outer rtl, as the browser resolves it.
+    const inner = monthGrid();
+    inner.rt.mountPoint.setAttribute("dir", "rtl");
+    inner.root.setAttribute("dir", "ltr");
+    const ic = inner.cells();
+    ic[0].focus();
+    ic[0].dispatch("keydown", { key: "ArrowRight" });
+    assert.equal(inner.focused(), ic[1]);
 });
 
 // --------------------------------------------------------------------------

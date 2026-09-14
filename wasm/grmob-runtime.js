@@ -1519,6 +1519,11 @@ const GrMob = (() => {
                 member.addEventListener("keydown", handleCompositeKey);
             }
         });
+        // A page key's patch has landed: put focus back on the same day. See
+        // "PageUp and PageDown".
+        if (pendingGridPage && pendingGridPage.container === container) {
+            landGridPage(container, members);
+        }
     }
 
     // Whether this container's arrows run down the page.
@@ -1734,11 +1739,11 @@ const GrMob = (() => {
     //	Home / End               the first or last cell of the current row.
     //	Ctrl+Home / Ctrl+End     the first or last cell of the whole grid.
     //	Enter / Space            the cell's own onClick, as for every composite.
-    //	PageUp / PageDown        left to the page. The date-picker pattern pages
-    //	                         months with them, and the month is Go state
-    //	                         this runtime cannot change without a render —
-    //	                         comps.Calendar's month arrows are ordinary
-    //	                         buttons a Shift+Tab away.
+    //	PageUp / PageDown        the previous or next page, by pressing the
+    //	                         control that declares the key; see below. Left
+    //	                         to the page when no control declares it, and
+    //	                         with Shift or Ctrl held (ARIA's Shift+PageUp is
+    //	                         a year, which no widget here offers).
     //
     // An arrow at an edge is still taken from the page (preventDefault) and
     // moves nothing. The four arrows all belong to a grid, unlike a one-axis
@@ -1755,12 +1760,53 @@ const GrMob = (() => {
     // level, which core/role.go's structural rule calls a mistake — is
     // treated as one row, so the widget still moves instead of trapping focus.
     //
-    // # Not mirrored for right-to-left
+    // # Mirrored for right-to-left
     //
-    // ArrowRight is "next" whatever the writing direction, as it is for the
-    // one-axis composites above. A grid that mirrored while the tab strip
-    // beside it did not would be the inconsistency; mirroring is a question for
-    // every composite at once.
+    // In a right-to-left layout a row's first cell is drawn at the right
+    // edge, so ArrowLeft is the next cell and ArrowRight the previous one:
+    // the arrow moves focus the way it points. Every horizontal composite
+    // follows the same rule (see handleCompositeKey), because a grid that
+    // mirrored while the tab strip beside it did not would be the
+    // inconsistency. Home and End stay logical, the start and end of the row
+    // in reading order, as ARIA's grid pattern defines them. The direction is
+    // read by isRightToLeft on every keystroke, like the rows.
+    //
+    // # PageUp and PageDown
+    //
+    // ARIA's date-picker grid pages a month with them while focus stays on a
+    // day. What a page IS belongs to Go: comps.Calendar's visible month is
+    // the caller's state, and this runtime cannot change it without a render.
+    // So the key presses the control that already changes it. A control
+    // declares the key with core.AccessibilityKeyShortcuts (aria-keyshortcuts,
+    // written in applyAccessibility), and the grid looks for the nearest one,
+    // searching outward from itself:
+    //
+    //	keydown PageDown on a cell
+    //	  │ keyShortcutNear(grid, "PageDown")
+    //	  ├─ none ─────────► left to the page (it scrolls, as before)
+    //	  ├─ disabled ─────► taken (preventDefault), nothing happens: the
+    //	  │                  same answer as an arrow at the grid's edge
+    //	  └─ found ────────► pendingGridPage = {grid, the cell's text}
+    //	                     invoke the control's onClick, as Enter would
+    //	                        │ Go renders the new month; the patch lands
+    //	                        ▼
+    //	                     syncComposite(grid) → landGridPage: focus the
+    //	                     enabled cell showing the same text ("18"), or
+    //	                     the last enabled one when the month is shorter
+    //
+    // The landing is keyed to the next sync of THAT grid, not to a timer or
+    // to the callback's return: GoInvokeCallback renders synchronously under
+    // WASM and asynchronously over a dev-server socket, and both end in a
+    // patch that syncs the grid's composite. The pending record expires after
+    // GRID_PAGE_LANDING_MS, so a callback Go ignored cannot move focus on
+    // some later, unrelated patch; and it is dropped if focus has left the
+    // grid meanwhile, because the reader has moved on.
+    //
+    // Matched by the cell's leaf text, not its index. A month's first day
+    // sits in a different column every month, so the same index would be a
+    // different day; the numeral is what the reader was on. Text includes
+    // aria-hidden leaves, unlike memberText, because a cell that names itself
+    // with aria-label may hide its visible numeral from the reader.
     function gridRowOf(cell, container) {
         for (let el = cell.parentNode; el && el !== container; el = el.parentNode) {
             if (el.getAttribute && el.getAttribute("role") === "row") return el;
@@ -1783,6 +1829,116 @@ const GrMob = (() => {
         return rows;
     }
 
+    // Whether an element is laid out right to left.
+    //
+    // The computed CSS direction where there is one, since that is what the
+    // browser drew with: a page's dir="rtl", a stylesheet's `direction`, and
+    // an inner dir="ltr" (the code editor's) all resolve into it. wasm/verify's
+    // shim has no getComputedStyle, so there the nearest dir attribute
+    // answers, which is the same fact for every tree that states direction by
+    // attribute. "auto" and absent keep walking; nothing stated is
+    // left to right.
+    function isRightToLeft(el) {
+        if (typeof getComputedStyle === "function") {
+            const direction = getComputedStyle(el).direction;
+            if (direction) return direction === "rtl";
+        }
+        for (let n = el; n && n.getAttribute; n = n.parentNode) {
+            const dir = n.getAttribute("dir");
+            if (dir === "rtl") return true;
+            if (dir === "ltr") return false;
+        }
+        return false;
+    }
+
+    // How long a page key's landing waits for the grid's next sync; see
+    // "PageUp and PageDown". Long enough for a render over the dev server's
+    // socket, short enough that a key Go ignored is forgotten before the
+    // reader's next deliberate change.
+    const GRID_PAGE_LANDING_MS = 2000;
+
+    // The page key waiting for its patch: {container, text, at}, or null.
+    let pendingGridPage = null;
+
+    // PageUp or PageDown on a grid cell. See "PageUp and PageDown".
+    function pageGrid(e, container, cell) {
+        if (e.ctrlKey || e.shiftKey) return;
+        const control = keyShortcutNear(container, e.key);
+        if (!control) return;
+        e.preventDefault();
+        if (control.disabled || control.getAttribute("aria-disabled") === "true") return;
+        const cbId = control.dataset.listener_onClick;
+        if (!cbId) return;
+        // Recorded BEFORE the invoke: under WASM the render, the patch and the
+        // grid's sync all happen inside GoInvokeCallback.
+        pendingGridPage = { container, text: leafText(cell), at: Date.now() };
+        window.GoInvokeCallback(cbId, {});
+    }
+
+    // The nearest element declaring this key in aria-keyshortcuts, searching
+    // the grid's parent's subtree, then its grandparent's, and so on up.
+    //
+    // Nearest, because a screen can hold two calendars and each one's arrows
+    // sit beside its own grid; aria-keyshortcuts is page-global in ARIA, but
+    // the key was pressed inside one widget. The grid itself is skipped: its
+    // cells declare nothing, and a cell that did would not be "elsewhere".
+    // Each level re-walks the level below it, which is quadratic in depth on
+    // paper and is paid once per page key, on a tree the size of a screen.
+    function keyShortcutNear(grid, key) {
+        for (let scope = grid.parentNode; scope && scope.getAttribute; scope = scope.parentNode) {
+            const found = findKeyShortcut(scope, key, grid);
+            if (found) return found;
+        }
+        return null;
+    }
+
+    function findKeyShortcut(el, key, skip) {
+        if (el === skip) return null;
+        const keys = el.getAttribute("aria-keyshortcuts");
+        if (keys && keys.split(/\s+/).includes(key)) return el;
+        for (const child of el.children) {
+            const found = findKeyShortcut(child, key, skip);
+            if (found) return found;
+        }
+        return null;
+    }
+
+    // The text under an element, hidden leaves included, joined. See
+    // memberText for why leaves rather than textContent.
+    function leafText(el, out = []) {
+        if (el.children.length === 0) {
+            if (el.textContent) out.push(el.textContent);
+            return out.join(" ");
+        }
+        for (const child of el.children) leafText(child, out);
+        return out.join(" ");
+    }
+
+    // Puts focus on the day a page key started from, in the page it opened.
+    // Called from syncComposite for the grid a pending page key belongs to.
+    //
+    // The tab stop moves with focus, as moveCompositeFocus moves it, but the
+    // selection hook is not run: this is reached from a patch pass, where a
+    // selection callback would render again (see moveCompositeFocus).
+    function landGridPage(container, members) {
+        const page = pendingGridPage;
+        pendingGridPage = null;
+        if (Date.now() - page.at > GRID_PAGE_LANDING_MS) return;
+        let inside = false;
+        for (let n = document.activeElement; n; n = n.parentNode) {
+            if (n === container) {
+                inside = true;
+                break;
+            }
+        }
+        if (!inside) return;
+        const enabled = members.filter((m) => m.getAttribute("aria-disabled") !== "true");
+        if (enabled.length === 0) return;
+        const to = enabled.find((m) => leafText(m) === page.text) || enabled[enabled.length - 1];
+        members.forEach((m) => m.setAttribute("tabindex", m === to ? "0" : "-1"));
+        if (document.activeElement !== to) to.focus();
+    }
+
     // A grid cell's keydown. Called from handleCompositeKey once it has found
     // the container and the member's index, so the walk out and the walk in are
     // the ones every composite shares.
@@ -1803,13 +1959,17 @@ const GrMob = (() => {
         });
         const row = rows[r];
 
+        // The reading-order step each horizontal arrow takes; see "Mirrored
+        // for right-to-left".
+        const forward = isRightToLeft(container) ? "ArrowLeft" : "ArrowRight";
+
         let to;
         switch (e.key) {
             case "ArrowRight":
-                to = row[Math.min(c + 1, row.length - 1)];
-                break;
             case "ArrowLeft":
-                to = row[Math.max(c - 1, 0)];
+                to = e.key === forward
+                    ? row[Math.min(c + 1, row.length - 1)]
+                    : row[Math.max(c - 1, 0)];
                 break;
             case "ArrowDown":
             case "ArrowUp": {
@@ -1826,6 +1986,10 @@ const GrMob = (() => {
             case "Enter":
             case " ":
                 activateCompositeMember(members[at], e);
+                return;
+            case "PageUp":
+            case "PageDown":
+                pageGrid(e, container, members[at]);
                 return;
             default:
                 // No typeahead: a grid's cells are not a list of names to
@@ -1866,13 +2030,20 @@ const GrMob = (() => {
             return;
         }
 
+        // The arrow that moves to the next member in reading order. A
+        // horizontal composite in a right-to-left layout is drawn with its
+        // first member at the right, so there Left is next; see "Mirrored for
+        // right-to-left" under the grid, which follows the same rule.
         const vertical = compositeIsVertical(container);
+        const rtl = !vertical && isRightToLeft(container);
+        const nextKey = vertical ? "ArrowDown" : (rtl ? "ArrowLeft" : "ArrowRight");
+        const prevKey = vertical ? "ArrowUp" : (rtl ? "ArrowRight" : "ArrowLeft");
         let to = -1;
         switch (e.key) {
-            case vertical ? "ArrowDown" : "ArrowRight":
+            case nextKey:
                 to = (at + 1) % members.length;
                 break;
-            case vertical ? "ArrowUp" : "ArrowLeft":
+            case prevKey:
                 to = (at - 1 + members.length) % members.length;
                 break;
             case "Home":
@@ -2540,6 +2711,11 @@ const GrMob = (() => {
         // being the current destination stops saying so. htmlout writes the
         // same; see core.Style.AccessibilityCurrent.
         setOrRemove(el, "aria-current", hidden ? "" : (style.AccessibilityCurrent || ""));
+        // Written by this runtime alone, because this runtime is the one
+        // target that honours a shortcut (see "PageUp and PageDown" under the
+        // grid). Global in ARIA, so no role guard; totality as above. See
+        // core.Style.AccessibilityKeyShortcuts.
+        setOrRemove(el, "aria-keyshortcuts", hidden ? "" : (style.AccessibilityKeyShortcuts || ""));
         // The combobox keyboard's listeners, stamped once, and the one
         // attribute this pass takes back from them when the popup closes. See
         // "The combobox pattern".

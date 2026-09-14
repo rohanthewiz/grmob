@@ -1331,13 +1331,31 @@ private func grMobCurrentTrait(_ kind: String, selected: String) -> Accessibilit
 /// grMobCurrentTrait), so the label is the one channel left. The suffix is the
 /// one comps.Calendar used to write in Go for every target; it moved here when
 /// the web targets gained aria-current="date", which a browser's screen reader
-/// announces in the user's own language. It is still English on this
-/// platform, as it was before.
+/// announces in the user's own language.
+///
+/// The word is the platform's, in the user's language: grMobTodayWord asks
+/// Foundation, as the web's aria-current="date" asks the screen reader. Only
+/// the ", " joining it to the label is fixed; a comma is a pause to
+/// VoiceOver in every language it speaks.
 ///
 /// Only called with a non-empty label (grMobAccessibility's branch requires
 /// one), so there is no bare ", today" to guard against here.
 private func grMobCurrentLabel(_ label: String, kind: String) -> String {
-    kind == "date" ? label + ", today" : label
+    kind == "date" ? label + ", " + grMobTodayWord() : label
+}
+
+/// Foundation's word for the current day ("today", "aujourd’hui", "heute") in
+/// the user's current locale.
+///
+/// RelativeDateTimeFormatter's `.named` style turns a zero-day offset into the
+/// word rather than "in 0 days". A formatter per call, not a shared one: it
+/// runs once per today cell per body evaluation, and a global formatter is a
+/// non-Sendable value that strict concurrency checking refuses to share.
+private func grMobTodayWord() -> String {
+    let formatter = RelativeDateTimeFormatter()
+    formatter.dateTimeStyle = .named
+    formatter.locale = .autoupdatingCurrent
+    return formatter.localizedString(from: DateComponents(day: 0))
 }
 
 

@@ -529,6 +529,33 @@ type Style struct {
 	// would otherwise be announced twice or contradict itself.
 	AccessibilityCurrent CurrentKind `json:",omitzero"`
 
+	// AccessibilityKeyShortcuts names the keys that activate this control
+	// from somewhere else on the screen, in ARIA's aria-keyshortcuts
+	// spelling: space-separated key names as KeyboardEvent.key writes them,
+	// modifiers joined with "+" ("PageDown", "Control+Shift+P").
+	//
+	// # A promise the WASM runtime keeps, not only an announcement
+	//
+	// aria-keyshortcuts on its own tells a screen reader about a shortcut and
+	// implements nothing, so a page that declared one and never handled the
+	// key would be lying to exactly the reader who tries it. The field is
+	// therefore written only where something honours it:
+	//
+	//	target        attribute   behaviour
+	//	WASM runtime  written     PageUp / PageDown pressed inside a
+	//	                          role="grid" activate the nearest control,
+	//	                          searching outward from the grid, that
+	//	                          declares that key
+	//	htmlout       not written a static page has no script to keep it
+	//	Compose       not read    no page keys reach a composite on a phone;
+	//	SwiftUI       not read    both platforms move focus themselves
+	//
+	// comps.Calendar's month arrows declare PageUp and PageDown, which is
+	// ARIA's date-picker grid pattern: page a month without leaving the day.
+	// Other keys are written as stated and handled by nothing yet; add the
+	// behaviour before declaring one.
+	AccessibilityKeyShortcuts string `json:",omitzero"`
+
 	// AccessibilityValue is where a valued control sits inside its range —
 	// how far an upload has got, which step a wizard is on. See ValueRange
 	// for the vocabulary, for why the numbers are strings, and for why the
@@ -1141,6 +1168,9 @@ func (s Style) applyTo(target *Style) {
 	// CurrentNone is the only zero, so the same rule again.
 	if s.AccessibilityCurrent != CurrentNone {
 		target.AccessibilityCurrent = s.AccessibilityCurrent
+	}
+	if s.AccessibilityKeyShortcuts != "" {
+		target.AccessibilityKeyShortcuts = s.AccessibilityKeyShortcuts
 	}
 	// As a unit, which is the one place this block departs from the
 	// field-at-a-time rule around it. The two levels merge independently

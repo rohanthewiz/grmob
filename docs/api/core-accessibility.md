@@ -266,12 +266,12 @@ Folding "today" into selected would be a lie in exactly the widget that states i
 	target      CurrentDate becomes
 	web (both)  aria-current="date", which the screen reader announces in
 	            its own language; the name is left as the widget wrote it
-	Compose     contentDescription + ", today"
-	SwiftUI     accessibilityLabel + ", today"
+	Compose     contentDescription + ", " + ICU's word for today
+	SwiftUI     accessibilityLabel + ", " + Foundation's word for today
 
-The suffix moved rather than disappeared, and it is still English on the two natives. That is not a regression — it was English in Go too — and the web targets, where a platform word exists, no longer carry it.
+The suffix moved rather than disappeared, and on the natives its word is now the platform's own, in the user's language: Foundation's RelativeDateTimeFormatter on SwiftUI and ICU's on Compose, the named form of a zero-day offset ("today", "aujourd’hui", "heute"). Only the ", " that joins it to the name is fixed. When it was written in Go it was English everywhere.
 
-<small>[core/current.go:73](https://github.com/rohanthewiz/grmob/blob/master/core/current.go#L73)</small>
+<small>[core/current.go:76](https://github.com/rohanthewiz/grmob/blob/master/core/current.go#L76)</small>
 
 ```go
 const (
@@ -303,7 +303,7 @@ func CurrentKinds() []CurrentKind
 
 CurrentKinds returns every stated value, in declaration order. CurrentNone is excluded for the reason PopupKinds() excludes PopupNone: it is the absence of a claim rather than one of the kinds.
 
-<small>[core/current.go:98](https://github.com/rohanthewiz/grmob/blob/master/core/current.go#L98)</small>
+<small>[core/current.go:101](https://github.com/rohanthewiz/grmob/blob/master/core/current.go#L101)</small>
 
 ### type ExpandedState
 

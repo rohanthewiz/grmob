@@ -1,5 +1,7 @@
 package com.grmob.runtime
 
+import android.icu.text.RelativeDateTimeFormatter
+import android.icu.util.ULocale
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Easing
@@ -38,6 +40,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import org.json.JSONObject
+import java.util.Locale
 import kotlin.math.roundToInt
 import androidx.compose.animation.core.withInfiniteAnimationFrameMillis
 import androidx.compose.runtime.getValue
@@ -1105,14 +1108,40 @@ fun SemanticsPropertyReceiver.grMobCurrent(kind: String, state: String) {
  * (see [grMobCurrent]), so the name is the one channel left. The suffix is the
  * one comps.Calendar used to write in Go for every target; it moved here when
  * the web targets gained aria-current="date", which a browser's screen reader
- * announces in the user's own language. It is still English on this platform,
- * as it was before.
+ * announces in the user's own language.
+ *
+ * The word is the platform's, in the device's language: [grMobTodayWord]
+ * asks ICU, as the web's aria-current="date" asks the screen reader. Only the
+ * ", " joining it to the name is fixed; a comma is a pause to every TTS
+ * engine TalkBack drives, whatever the script.
  *
  * A node with no name gets none: ", today" on its own would be a name that
  * says only the suffix.
  */
 fun grMobCurrentLabel(label: String, kind: String): String =
-    if (kind == "date" && label.isNotEmpty()) "$label, today" else label
+    if (kind == "date" && label.isNotEmpty()) "$label, ${grMobTodayWord()}" else label
+
+/**
+ * ICU's word for the current day ("today", "aujourd’hui", "heute") in the
+ * default locale.
+ *
+ * `RelativeDateTimeFormatter.format(THIS, DAY)` is the named form a date
+ * picker's "Today" row uses, and android.icu has carried it since API 24,
+ * this app's minSdk. It is cached per locale because the label is rebuilt on
+ * every recomposition of a today cell, and cleared by a locale change simply
+ * by the key no longer matching.
+ */
+@Volatile
+private var grMobTodayCache: Pair<Locale, String>? = null
+
+private fun grMobTodayWord(): String {
+    val locale = Locale.getDefault()
+    grMobTodayCache?.let { (cached, word) -> if (cached == locale) return word }
+    val word = RelativeDateTimeFormatter.getInstance(ULocale.forLocale(locale))
+        .format(RelativeDateTimeFormatter.Direction.THIS, RelativeDateTimeFormatter.AbsoluteUnit.DAY)
+    grMobTodayCache = locale to word
+    return word
+}
 
 /**
  * core.Spin on Compose: the box turns one revolution every [periodMs],

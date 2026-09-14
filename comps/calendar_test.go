@@ -693,8 +693,8 @@ func TestCalendarLabelSeamsAreTheLocalizationPoints(t *testing.T) {
 	// a suffix any more — both are states, announced separately — which is why
 	// a translated calendar needs no translation for either: the web says
 	// "current date" and "selected" in the reader's own language. (Both
-	// natives still append an English ", today" themselves, having no
-	// current-date property; see core.CurrentKind.)
+	// natives append ", today" themselves, in the platform's word for it,
+	// having no current-date property; see core.CurrentKind.)
 	cell := cellFor(t, dayCells(t, n), 2, 12)
 	if got := cell.Style.AccessibilityLabel; got != "dia 12" {
 		t.Errorf("spoken name = %q, want exactly the caller's name", got)
@@ -894,5 +894,35 @@ func TestCalendarTodayIsTheCurrentDateNotASuffix(t *testing.T) {
 		if cell.Style.AccessibilityCurrent != core.CurrentNone {
 			t.Errorf("with no Today, cell %d is stated as current", i)
 		}
+	}
+}
+
+// The month arrows declare the page keys that press them, which is how the
+// WASM runtime pages a month from inside the grid (ARIA's date-picker
+// pattern). The declaration is the whole contract: a Previous arrow that
+// declared PageDown would page backwards, and one that declared nothing would
+// leave the key to scroll the page.
+func TestCalendarMonthArrowsDeclareThePageKeys(t *testing.T) {
+	n := renderCalendar(t, Calendar{Month: sep2026, OnMonthChange: func(time.Time) {}})
+	want := map[string]string{"Previous month": "PageUp", "Next month": "PageDown"}
+	found := 0
+	var walk func(*core.Node)
+	walk = func(x *core.Node) {
+		if x.Style != nil {
+			if key, ok := want[x.Style.AccessibilityLabel]; ok {
+				found++
+				if x.Style.AccessibilityKeyShortcuts != key {
+					t.Errorf("%s declares %q, want %q", x.Style.AccessibilityLabel,
+						x.Style.AccessibilityKeyShortcuts, key)
+				}
+			}
+		}
+		for _, c := range x.Children {
+			walk(c)
+		}
+	}
+	walk(n)
+	if found != 2 {
+		t.Fatalf("found %d month arrows, want 2", found)
 	}
 }

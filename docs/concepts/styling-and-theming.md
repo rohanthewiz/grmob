@@ -854,14 +854,16 @@ their own navigation bars announce the current destination. A stated
 `CurrentDate` is the exception. `comps.Calendar` states it on today's cell, and
 a calendar already has a selected day that is usually not today, so folding it
 would announce the wrong day as chosen. Neither native folds it; both append
-", today" to the node's name instead. The web targets write `aria-current="date"`
-and leave the name alone, so a screen reader says "current date" in its own
-language.
+", today" to the node's name instead, with the word in the user's language
+(Foundation's and ICU's relative-date formatters supply it, so a French phone
+hears "aujourd’hui"). The web targets write `aria-current="date"` and leave the
+name alone, so a screen reader says "current date" in its own language.
 
 `comps.BottomBar`, `comps.Drawer`, `comps.StepIndicator`,
 `comps.ActionSheet`'s `Checked` action and `comps.Calendar` set it for you, and
 no longer add ", selected", ", current" or ", today" to the spoken name.
-`StepIndicator`'s ", done" stays: no ARIA state means "completed".
+`StepIndicator`'s ", done" stays: no ARIA state means "completed". Its names
+are translatable instead, through `StepLabel` and `PositionLabel`.
 
 #### `AccessibilityID` and `AccessibilityControls`
 

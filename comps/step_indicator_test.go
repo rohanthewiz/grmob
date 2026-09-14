@@ -1,6 +1,7 @@
 package comps
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/rohanthewiz/grmob/core"
@@ -58,6 +59,41 @@ func TestStepIndicatorIsAHorizontalScrollNamedByPosition(t *testing.T) {
 		if got := cells[i].Style.AccessibilityCurrent; got != want {
 			t.Errorf("cell %d AccessibilityCurrent = %q, want %q", i, got, want)
 		}
+	}
+}
+
+// The names are the caller's to translate. "done" has no platform state to
+// move into, so a Spanish flow must be able to say "completado" in the name
+// itself, and the strip's position with it. Each function is handed the facts,
+// and nothing is appended to what it returns.
+func TestStepIndicatorNamesComeFromTheCallerWhenGiven(t *testing.T) {
+	_, root := renderDebug(t, StepIndicator{
+		Steps:   []string{"Cuenta", "Dirección", "Pago"},
+		Current: 1,
+		Label:   "ignored when PositionLabel is set",
+		StepLabel: func(i int, label string, done bool) string {
+			if done {
+				return fmt.Sprintf("Paso %d: %s, completado", i+1, label)
+			}
+			return fmt.Sprintf("Paso %d: %s", i+1, label)
+		},
+		PositionLabel: func(cur, total int, label string) string {
+			return fmt.Sprintf("Paso %d de %d: %s", cur+1, total, label)
+		},
+	})
+	n := stripOf(t, root)
+	if got := n.Style.AccessibilityLabel; got != "Paso 2 de 3: Dirección" {
+		t.Errorf("strip name = %q, want the caller's PositionLabel verbatim", got)
+	}
+	cells := stepCells(n)
+	for i, want := range []string{"Paso 1: Cuenta, completado", "Paso 2: Dirección", "Paso 3: Pago"} {
+		if got := cells[i].Style.AccessibilityLabel; got != want {
+			t.Errorf("cell %d name = %q, want %q", i, got, want)
+		}
+	}
+	// The current step is still a state, whatever the name says.
+	if cells[1].Style.AccessibilityCurrent != core.CurrentStep {
+		t.Errorf("current cell lost core.CurrentStep under a custom StepLabel")
 	}
 }
 

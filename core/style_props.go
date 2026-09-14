@@ -552,6 +552,21 @@ func AccessibilityCurrent(kind CurrentKind) StyleProp {
 	})
 }
 
+// AccessibilityKeyShortcuts declares the keys that activate this control from
+// elsewhere on the screen, in aria-keyshortcuts spelling.
+//
+//	comps.Button{Label: "›", Style: []core.StyleProp{
+//		core.AccessibilityKeyShortcuts("PageDown")}}
+//
+// Only the WASM runtime writes it, and it honours PageUp and PageDown pressed
+// inside a grid. See Style.AccessibilityKeyShortcuts for why the other
+// targets leave it out.
+func AccessibilityKeyShortcuts(keys string) StyleProp {
+	return styleFunc(func(s *Style) {
+		s.AccessibilityKeyShortcuts = keys
+	})
+}
+
 // AccessibilityValue says where a valued control sits inside its range — how
 // far an upload has got, which step a wizard is on.
 //
