@@ -1,5 +1,5 @@
 #!/bin/sh
-# Refuse a push whose tip is not gofmt-clean, the check CI starts with.
+# Refuse a push whose commits are not gofmt-clean, the check CI starts with.
 #
 # # What this is for
 #
@@ -34,33 +34,27 @@
 #     through .git/info/exclude) and any scratch file, and gofmt walks
 #     directories without reading ignore rules.
 #
-# So each pushed tip's tracked Go files are exported with `git archive` into a
-# temporary directory, and `gofmt -l .` runs there. That tree matches what
-# actions/checkout gives CI, minus the non-Go files, which gofmt skips anyway.
-# The export and the check take about 0.2s for this repository's ~500 Go files.
+# So each pushed commit's tracked Go files are exported with `git archive`
+# into a temporary directory, and `gofmt -l .` runs there. That tree matches
+# what actions/checkout gives CI, minus the non-Go files, which gofmt skips
+# anyway. The export and the check take about 0.2s for this repository's ~500
+# Go files.
 #
-#   stdin (one line per ref)          per distinct tip
+#   stdin (one line per ref)          per distinct commit
 #   ─────────────────────────         ──────────────────────────────────────
 #   <local ref> <local sha>    ──►    git archive <sha> -- '*.go' | tar -x
 #   <remote ref> <remote sha>         cd tmp && gofmt -l .   ──► any output?
 #                                                                 │
 #                                              yes: list, exit 1 ◄┘ no: next
 #
-# By default only the tip of each ref is checked, not every commit in the
-# range, because CI checks only the tip too. An intermediate commit that is not
-# gofmt-clean but is fixed by a later commit in the same push never turns CI
-# red, so blocking it here would add friction without preventing a failure.
+# # Every commit, by default
 #
-# # Every commit, when asked
-#
-# A history that stays clean commit by commit is worth more to some uses than
-# to CI: `git bisect run go vet ./...` stops at a commit that does not build,
-# and a cherry-pick onto a release branch carries the one commit, not the fix
-# that followed it. For a clone that wants that:
-#
-#     git config grmob.prepush.everyCommit true
-#
-# Then each ref's new commits are checked, oldest first:
+# Each ref's new commits are checked, oldest first, not only its tip. CI
+# checks the tip alone, so an intermediate commit that a later commit in the
+# same push fixes never turns CI red. It still leaves a history that is not
+# clean commit by commit, and that costs other things: `git bisect run go vet
+# ./...` stops at a commit that does not build, and a cherry-pick onto a
+# release branch carries the one commit, not the fix that followed it.
 #
 #   remote already has <remote sha>?  ── yes ──► git rev-list <remote>..<local>
 #       │ no (a new branch, or a force push over commits this clone lacks)
@@ -68,11 +62,45 @@
 #   git rev-list <local> --not --remotes   (the commits no remote-tracking
 #                                            ref has yet)
 #
-# Each commit's whole Go tree is exported and checked, the same as a tip, so a
-# commit is reported for any unformatted file it contains, including one an
-# earlier, already-pushed commit introduced. That keeps the check one command
-# with one meaning ("would CI's gofmt pass on this commit") instead of a diff
-# attribution that merges and renames make unreliable.
+# This was opt-in while a commit was reported for every unformatted file in
+# its tree, including files it never touched: one bad commit early in a push
+# was reported again under every commit after it, and a file that
+# already-pushed history left unformatted blocked every commit of every push
+# until someone fixed it. The attribution below removed both, so the stricter
+# check became the default. For the tip only, as CI checks:
+#
+#     git config grmob.prepush.everyCommit false
+#
+# (or `git -c grmob.prepush.everyCommit=false push` for one push).
+#
+# # Which commit a file is reported against
+#
+# Each commit's whole Go tree is still exported and checked, the same as a
+# tip, so what is measured stays CI's own command. Only the report is sorted,
+# by `git diff --name-only <first parent> <commit>`, and each file's origin is
+# carried from commit to commit in a small status file per commit:
+#
+#   an unformatted file in a commit      reported as               blocks
+#   ───────────────────────────────      ───────────────────────   ──────
+#   changed by this commit (or a root    listed under the commit   yes
+#     commit, where every file is new)
+#   unchanged since a parent that        a count, "listed above"   yes
+#     introduced it in this push
+#   unchanged since before this push     listed once, then a       only at the
+#                                          count, "noted above"    ref's tip
+#
+# The last row is why the tip is special. A file that already-pushed history
+# left unformatted is no fault of the commits that carry it, and commits
+# already on a remote cannot be rewritten to fix it, so blocking every commit
+# on it would only teach --no-verify. The tip still blocks on it, because the
+# tip is what CI's gofmt runs on, and CI would fail.
+#
+# A merge is compared with its first parent, so a file a merge brings in from
+# its second parent counts as the merge's change, the answer
+# `git log --first-parent` gives too. `--no-renames` lists a renamed file
+# under its new name, which is the name gofmt reports. When the diff cannot be
+# taken, every file counts as the commit's own: the report is noisier, and the
+# push outcome is the stricter one.
 #
 # More than EVERY_COMMIT_MAX commits in one ref (a first push of a long branch
 # to a fresh remote, where --not --remotes excludes nothing) checks the tip
@@ -165,18 +193,30 @@ refs=$(cat)
 checked=""
 failed=0
 
-# See "Every commit, when asked". `--bool` normalises yes/on/1 to "true"; an
-# unset key or an unparseable value is anything else, which means tip only.
-every=$(git config --bool --get grmob.prepush.everyCommit 2>/dev/null) || every=""
+# See "Every commit, by default". `--bool` normalises no/off/0 to "false", and
+# only that value turns the per-commit check off. An unset key makes `git
+# config` exit 1 and an unparseable value makes it fail; both fall to the
+# default, so a typo in the setting never quietly loosens the check.
+every=$(git config --bool --get grmob.prepush.everyCommit 2>/dev/null) || every="true"
 EVERY_COMMIT_MAX=100
 
-# check_tree <label> <object>: export the object's tracked Go files, run gofmt
-# over them, and set failed=1 on any finding. A function so the tip and each
-# commit of an every-commit push go through one path. It runs in the calling
-# shell, not a subshell, so the assignment to failed is seen by the caller.
+# check_tree <label> <object> [<mode>]: export the object's tracked Go files,
+# run gofmt over them, and report what it finds. A function so the tip and
+# each commit of an every-commit push go through one path. It runs in the
+# calling shell, not a subshell, so the assignment to failed is seen by the
+# caller.
+#
+#   mode     used for                          an unformatted file
+#   ────     ────────                          ───────────────────
+#   tip      the tip-only check (the default   listed; blocks
+#            argument)
+#   commit   a commit before a ref's tip       sorted by attribute; blocks
+#                                              unless it predates the push
+#   last     the tip, in an every-commit run   sorted by attribute; blocks
 check_tree() {
     label=$1
     object=$2
+    mode=${3:-tip}
 
     # A branch and a tag pushed together often name the same commit (a release
     # push), and in every-commit mode two refs share their older commits.
@@ -220,10 +260,120 @@ check_tree() {
         sed 's/^/    /' "$tmp_root/gofmt.err" >&2
         failed=1
     fi
-    if [ -n "$unformatted" ]; then
+    [ -n "$unformatted" ] || return 0
+    files=$(printf '%s\n' "$unformatted" | sed 's|^\./||')
+    if [ "$mode" = "tip" ]; then
         echo "pre-push: $label is not gofmt-clean:" >&2
-        echo "$unformatted" | sed 's|^\./||; s/^/    /' >&2
+        printf '%s\n' "$files" | sed 's/^/    /' >&2
         failed=1
+        return 0
+    fi
+    attribute "$label" "$object" "$mode" "$files"
+    return 0
+}
+
+# attribute <label> <commit> <mode> <files>: report a commit's unformatted
+# files by where each came from, and set failed=1 when one of them blocks. See
+# "Which commit a file is reported against" for the table this implements.
+#
+# Each file's origin is written to $tmp_root/<commit>.status as "pushed
+# <path>" (introduced by a commit of this push) or "before <path>" (carried in
+# from history the push did not add), so the next commit can inherit it
+# instead of being blamed. Commits are checked oldest first, so a parent's
+# status file exists whenever the parent was checked in this run and had
+# anything to report; with no status file the parent was not part of the
+# push, and an unchanged file is from before it.
+#
+#   file in <files>
+#     │
+#     ├─ no parent, or changed since it ──► own     "pushed"   listed, blocks
+#     ├─ parent says "pushed <path>"    ──► count   "pushed"   blocks
+#     ├─ parent says "before <path>"    ──► count   "before"   blocks at last
+#     └─ parent has no status           ──► listed  "before"   blocks at last
+#
+# The while loop reads a here-document rather than a pipe, so it runs in this
+# shell and its counters survive the loop.
+attribute() {
+    label=$1
+    object=$2
+    mode=$3
+    files=$4
+
+    # A root commit has no first parent; `--verify -q` answers empty for it
+    # instead of printing an error.
+    parent=$(git rev-parse -q --verify "$object^1" 2>/dev/null) || parent=""
+    # -z because gofmt prints a path literally and git C-quotes any path it
+    # cannot write that way (`"core/\303\244.go"`, quotes included), so without
+    # it such a file would never match and would always count as the commit's
+    # own. The records go through a file, not a pipe, so a failed diff is seen
+    # (a pipeline's status is tr's). `tr '\0' '\n'` gives back the one case -z
+    # exists for beyond quoting, a newline inside a name: such a file splits
+    # into two lines that match nothing, and it too counts as the commit's own.
+    # That errs toward blocking and a longer report, never toward a missed file,
+    # which is what lets a shell with no NUL-safe read afford it.
+    changed=""
+    if [ -n "$parent" ]; then
+        if git diff --name-only -z --no-renames "$parent" "$object" -- '*.go' >"$tmp_root/changed" 2>/dev/null; then
+            changed=$(tr '\0' '\n' <"$tmp_root/changed")
+        else
+            parent=""
+        fi
+    fi
+    parent_status=""
+    if [ -n "$parent" ] && [ -f "$tmp_root/$parent.status" ]; then
+        parent_status="$tmp_root/$parent.status"
+    fi
+
+    status="$tmp_root/$object.status"
+    : >"$status"
+    own=""
+    before=""
+    pushed_count=0
+    noted_count=0
+    while IFS= read -r f; do
+        [ -n "$f" ] || continue
+        if [ -z "$parent" ] || printf '%s\n' "$changed" | grep -Fxq -- "$f"; then
+            own="$own    $f
+"
+            echo "pushed $f" >>"$status"
+        elif [ -n "$parent_status" ] && grep -Fxq -- "pushed $f" "$parent_status"; then
+            pushed_count=$((pushed_count + 1))
+            echo "pushed $f" >>"$status"
+        elif [ -n "$parent_status" ]; then
+            noted_count=$((noted_count + 1))
+            echo "before $f" >>"$status"
+        else
+            before="$before    $f
+"
+            echo "before $f" >>"$status"
+        fi
+    done <<FILES
+$files
+FILES
+
+    blocks=no
+    if [ -n "$own" ] || [ "$pushed_count" -gt 0 ] || [ "$mode" = "last" ]; then
+        blocks=yes
+    fi
+    short=""
+    [ -z "$parent" ] || short=$(git rev-parse --short "$parent" 2>/dev/null)
+
+    if [ "$blocks" = "yes" ]; then
+        echo "pre-push: $label is not gofmt-clean:" >&2
+        failed=1
+    else
+        echo "pre-push: note: $label has unformatted files from before this push; only the tip is held to them:" >&2
+    fi
+    printf '%s' "$own" >&2
+    if [ "$pushed_count" -gt 0 ]; then
+        echo "    + $pushed_count unchanged since $short, listed above" >&2
+    fi
+    if [ -n "$before" ]; then
+        echo "    from before this push, unchanged by it:" >&2
+        printf '%s' "$before" | sed 's/^/  /' >&2
+    fi
+    if [ "$noted_count" -gt 0 ]; then
+        echo "    + $noted_count from before this push, unchanged since $short, noted above" >&2
     fi
     return 0
 }
@@ -234,7 +384,7 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     [ -n "${local_sha:-}" ] || continue
     is_zero_sha "$local_sha" && continue
 
-    if [ "$every" != "true" ]; then
+    if [ "$every" = "false" ]; then
         check_tree "$local_ref ($local_sha)" "$local_sha"
         continue
     fi
@@ -260,9 +410,14 @@ while read -r local_ref local_sha remote_ref remote_sha; do
         check_tree "$local_ref ($local_sha)" "$local_sha"
         continue
     fi
+    # rev-list --reverse ends at the ref's tip commit (the commit a tag
+    # object points at, for a tag), which is the one CI's gofmt runs on.
+    last=$(printf '%s\n' "$commits" | tail -n 1)
     for commit in $commits; do
         subject=$(git log -1 --format=%s "$commit" 2>/dev/null)
-        check_tree "$local_ref at $commit ($subject)" "$commit"
+        mode=commit
+        [ "$commit" = "$last" ] && mode=last
+        check_tree "$local_ref at $commit ($subject)" "$commit" "$mode"
     done
 done <<REFS
 $refs
@@ -280,9 +435,9 @@ the WASM build, wasm/verify) is skipped. To fix:
 
 To push anyway: git push --no-verify
 
-A commit before the tip (grmob.prepush.everyCommit is on) is fixed by
-rewriting it, e.g. `git rebase -i` and an `edit` on that commit; or push with
-the setting off: git -c grmob.prepush.everyCommit=false push
+A commit before the tip is fixed by rewriting it, e.g. `git rebase -i` and an
+`edit` on that commit; or check the tip only, as CI does:
+git -c grmob.prepush.everyCommit=false push
 MSG
     exit 1
 fi
