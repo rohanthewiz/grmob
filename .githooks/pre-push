@@ -46,10 +46,38 @@
 #                                                                 │
 #                                              yes: list, exit 1 ◄┘ no: next
 #
-# Only the tip of each ref is checked, not every commit in the range, because
-# CI checks only the tip too. An intermediate commit that is not gofmt-clean
-# but is fixed by a later commit in the same push never turns CI red, so
-# blocking it here would add friction without preventing a failure.
+# By default only the tip of each ref is checked, not every commit in the
+# range, because CI checks only the tip too. An intermediate commit that is not
+# gofmt-clean but is fixed by a later commit in the same push never turns CI
+# red, so blocking it here would add friction without preventing a failure.
+#
+# # Every commit, when asked
+#
+# A history that stays clean commit by commit is worth more to some uses than
+# to CI: `git bisect run go vet ./...` stops at a commit that does not build,
+# and a cherry-pick onto a release branch carries the one commit, not the fix
+# that followed it. For a clone that wants that:
+#
+#     git config grmob.prepush.everyCommit true
+#
+# Then each ref's new commits are checked, oldest first:
+#
+#   remote already has <remote sha>?  ── yes ──► git rev-list <remote>..<local>
+#       │ no (a new branch, or a force push over commits this clone lacks)
+#       ▼
+#   git rev-list <local> --not --remotes   (the commits no remote-tracking
+#                                            ref has yet)
+#
+# Each commit's whole Go tree is exported and checked, the same as a tip, so a
+# commit is reported for any unformatted file it contains, including one an
+# earlier, already-pushed commit introduced. That keeps the check one command
+# with one meaning ("would CI's gofmt pass on this commit") instead of a diff
+# attribution that merges and renames make unreliable.
+#
+# More than EVERY_COMMIT_MAX commits in one ref (a first push of a long branch
+# to a fresh remote, where --not --remotes excludes nothing) checks the tip
+# only and says so: at about 0.2s a commit, a few hundred would hold the push
+# for a minute to answer a question the tip already mostly answers.
 #
 # # Enabling it
 #
@@ -58,6 +86,8 @@
 # once:
 #
 #     git config core.hooksPath .githooks
+#
+# core.hooksPath is per clone, so every clone needs this line once.
 #
 # # Failure modes that let the push through
 #
@@ -135,20 +165,28 @@ refs=$(cat)
 checked=""
 failed=0
 
-# `read` splits on IFS whitespace. The four fields git sends never contain
-# spaces (ref names cannot), so a plain read is enough.
-while read -r local_ref local_sha remote_ref remote_sha; do
-    [ -n "${local_sha:-}" ] || continue
-    is_zero_sha "$local_sha" && continue
+# See "Every commit, when asked". `--bool` normalises yes/on/1 to "true"; an
+# unset key or an unparseable value is anything else, which means tip only.
+every=$(git config --bool --get grmob.prepush.everyCommit 2>/dev/null) || every=""
+EVERY_COMMIT_MAX=100
+
+# check_tree <label> <object>: export the object's tracked Go files, run gofmt
+# over them, and set failed=1 on any finding. A function so the tip and each
+# commit of an every-commit push go through one path. It runs in the calling
+# shell, not a subshell, so the assignment to failed is seen by the caller.
+check_tree() {
+    label=$1
+    object=$2
 
     # A branch and a tag pushed together often name the same commit (a release
-    # push). Check each object once.
+    # push), and in every-commit mode two refs share their older commits.
+    # Check each object once.
     case " $checked " in
-    *" $local_sha "*) continue ;;
+    *" $object "*) return 0 ;;
     esac
-    checked="$checked $local_sha"
+    checked="$checked $object"
 
-    tree_dir="$tmp_root/$local_sha"
+    tree_dir="$tmp_root/$object"
     mkdir -p "$tree_dir"
 
     # The archive goes to a file, not straight into `tar -x` through a pipe.
@@ -159,15 +197,15 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     # `git archive` exits 128 both when the pathspec matches nothing (a tip
     # with no Go files) and when the object is not a tree-ish. Either way there
     # is no Go tree for CI's gofmt step to fail on, so git's own reason is
-    # printed and the ref is skipped.
-    archive="$tmp_root/$local_sha.tar"
-    if ! git archive -o "$archive" "$local_sha" -- '*.go' 2>"$tmp_root/archive.err"; then
-        echo "pre-push: nothing to check for $local_ref ($local_sha): $(cat "$tmp_root/archive.err")" >&2
-        continue
+    # printed and the object is skipped.
+    archive="$tmp_root/$object.tar"
+    if ! git archive -o "$archive" "$object" -- '*.go' 2>"$tmp_root/archive.err"; then
+        echo "pre-push: nothing to check for $label: $(cat "$tmp_root/archive.err")" >&2
+        return 0
     fi
     if ! tar -xf "$archive" -C "$tree_dir"; then
-        echo "pre-push: could not unpack $local_ref ($local_sha); skipping it." >&2
-        continue
+        echo "pre-push: could not unpack $label; skipping it." >&2
+        return 0
     fi
 
     # `gofmt -l` exits 0 whether or not it lists anything, the same thing the
@@ -178,15 +216,54 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     # stderr is captured separately so that case also blocks here.
     unformatted=$(cd "$tree_dir" && "$gofmt_bin" -l . 2>"$tmp_root/gofmt.err")
     if [ -s "$tmp_root/gofmt.err" ]; then
-        echo "pre-push: gofmt reported errors for $local_ref:" >&2
+        echo "pre-push: gofmt reported errors for $label:" >&2
         sed 's/^/    /' "$tmp_root/gofmt.err" >&2
         failed=1
     fi
     if [ -n "$unformatted" ]; then
-        echo "pre-push: $local_ref ($local_sha) is not gofmt-clean:" >&2
+        echo "pre-push: $label is not gofmt-clean:" >&2
         echo "$unformatted" | sed 's|^\./||; s/^/    /' >&2
         failed=1
     fi
+    return 0
+}
+
+# `read` splits on IFS whitespace. The four fields git sends never contain
+# spaces (ref names cannot), so a plain read is enough.
+while read -r local_ref local_sha remote_ref remote_sha; do
+    [ -n "${local_sha:-}" ] || continue
+    is_zero_sha "$local_sha" && continue
+
+    if [ "$every" != "true" ]; then
+        check_tree "$local_ref ($local_sha)" "$local_sha"
+        continue
+    fi
+
+    # Every commit this push adds to the ref, oldest first. `cat-file -e`
+    # asks whether the remote's old tip is here at all: after someone else's
+    # push that this clone has not fetched, it is not, and a range from it
+    # would be an error rather than a list.
+    if ! is_zero_sha "$remote_sha" && git cat-file -e "$remote_sha^{commit}" 2>/dev/null; then
+        commits=$(git rev-list --reverse "$remote_sha..$local_sha" 2>/dev/null) || commits=""
+    else
+        commits=$(git rev-list --reverse "$local_sha" --not --remotes 2>/dev/null) || commits=""
+    fi
+    count=$(printf '%s\n' "$commits" | grep -c .)
+    if [ "$count" -eq 0 ]; then
+        # Nothing new (a push of a ref to an older commit, or a tag object
+        # rev-list could not walk): the tip is still what CI will check.
+        check_tree "$local_ref ($local_sha)" "$local_sha"
+        continue
+    fi
+    if [ "$count" -gt "$EVERY_COMMIT_MAX" ]; then
+        echo "pre-push: $local_ref adds $count commits, more than $EVERY_COMMIT_MAX; checking its tip only." >&2
+        check_tree "$local_ref ($local_sha)" "$local_sha"
+        continue
+    fi
+    for commit in $commits; do
+        subject=$(git log -1 --format=%s "$commit" 2>/dev/null)
+        check_tree "$local_ref at $commit ($subject)" "$commit"
+    done
 done <<REFS
 $refs
 REFS
@@ -202,6 +279,10 @@ the WASM build, wasm/verify) is skipped. To fix:
     git commit, then push again
 
 To push anyway: git push --no-verify
+
+A commit before the tip (grmob.prepush.everyCommit is on) is fixed by
+rewriting it, e.g. `git rebase -i` and an `edit` on that commit; or push with
+the setting off: git -c grmob.prepush.everyCommit=false push
 MSG
     exit 1
 fi
