@@ -697,6 +697,41 @@ func TestTheScriptLexerFindsAGitCallInTheShapesThatHideIt(t *testing.T) {
 		want: []string{"ls-files -z", "status --porcelain", "diff --name-only",
 			"ls-tree -z HEAD"},
 	}, {
+		// A brace group runs its body in the current shell, and a function
+		// body is a brace group. `{` and `}` are separators to the lexer, so
+		// the call after the brace is in command position.
+		name: "a call in a brace group and a function body",
+		kind: shellScript,
+		src: "{ git ls-files -z; } >out\n" +
+			"list() { git ls-tree --name-only -z HEAD; }\n" +
+			"list2() {\n\tgit diff --name-only -z\n}\n",
+		want: []string{"ls-files -z", "ls-tree --name-only -z HEAD",
+			"diff --name-only -z"},
+	}, {
+		// A case arm's pattern ends at `)`, and its body is a command list
+		// ended by `;;`. The pattern words (`a`, `b|c`, `*`) must not be read
+		// as prefixes of the call, and `esac` must not become one.
+		name: "a call in a case arm",
+		kind: shellScript,
+		src: "case \"$1\" in a) git ls-files -z ;; esac\n" +
+			"case $x in\n" +
+			"  b|c) git status --porcelain -z ;;\n" +
+			"  *)\n    git diff --name-only -z\n    ;;\n" +
+			"esac\n",
+		want: []string{"ls-files -z", "status --porcelain -z",
+			"diff --name-only -z"},
+	}, {
+		// A command substitution, bare or in an assignment, quoted or not.
+		// The `$` before `(` is flushed as a word of its own, and an
+		// assignment's `name=$` is dropped as a leading assignment.
+		name: "a call in a command substitution",
+		kind: shellScript,
+		src: "files=$(git ls-files -z)\n" +
+			"echo \"$(git status --porcelain -z)\"\n" +
+			"n=`git diff --name-only -z | wc -l`\n",
+		want: []string{"ls-files -z", "status --porcelain -z",
+			"diff --name-only -z"},
+	}, {
 		// `#` is only a comment where a word can begin.
 		name: "a hash mid-word is not a comment",
 		kind: shellScript,

@@ -61,7 +61,7 @@
 #
 # # Failure modes that let the push through
 #
-# If gofmt is missing, or a tip cannot be exported (for example, it has no Go
+# If no gofmt can be found, or a tip cannot be exported (for example, it has no Go
 # files, or it is a tag that does not point at a tree), this prints why and
 # skips it. Such a push never runs the Go job's gofmt step on a Go tree, so
 # there is nothing here to stop, and a hook that errors on setups it cannot
@@ -79,9 +79,46 @@ is_zero_sha() {
     esac
 }
 
-if ! command -v gofmt >/dev/null 2>&1; then
-    echo "pre-push: gofmt not on PATH; skipping the gofmt check." >&2
-    exit 0
+# Which gofmt: the one go.mod selects, not whichever is first on PATH.
+#
+# CI installs Go with `go-version-file: go.mod`, so its gofmt is that release's.
+# A machine's PATH gofmt can be older or newer, and gofmt's output does change
+# between releases now and then (1.19 reformatted doc comments), which would
+# make this hook and CI disagree in either direction.
+#
+# `go env GOROOT`, run from the repository root, answers with the toolchain the
+# go command selects for this module. Under GOTOOLCHAIN=auto that is go.mod's
+# `go`/`toolchain` line, downloaded into the module cache if the installed Go
+# is older. Git runs a pre-push hook from the top of the work tree, so the
+# go.mod read is this repository's.
+#
+#   go on PATH?  ── no ──► gofmt on PATH? ── no ──► skip, with a message
+#       │ yes                  │ yes
+#       ▼                      ▼
+#   $(go env GOROOT)/bin/gofmt exists? ── no ──► PATH gofmt, with a note
+#       │ yes
+#       ▼
+#   that gofmt
+#
+# A failed `go env` (an offline machine that needs a toolchain download, say)
+# falls back to PATH's gofmt and says so, rather than skipping: an approximate
+# check is still worth more here than none.
+gofmt_bin=""
+if command -v go >/dev/null 2>&1; then
+    goroot=$(go env GOROOT 2>/dev/null) || goroot=""
+    if [ -n "$goroot" ] && [ -x "$goroot/bin/gofmt" ]; then
+        gofmt_bin="$goroot/bin/gofmt"
+    fi
+fi
+if [ -z "$gofmt_bin" ]; then
+    if ! command -v gofmt >/dev/null 2>&1; then
+        echo "pre-push: gofmt not on PATH; skipping the gofmt check." >&2
+        exit 0
+    fi
+    gofmt_bin=$(command -v gofmt)
+    if command -v go >/dev/null 2>&1; then
+        echo "pre-push: could not locate go.mod's toolchain; using $gofmt_bin, which may format differently from CI." >&2
+    fi
 fi
 
 tmp_root=$(mktemp -d "${TMPDIR:-/tmp}/grmob-prepush.XXXXXX") || {
@@ -139,7 +176,7 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     # to stderr and exits 2, and GitHub runs `run:` blocks under `bash -e`,
     # where `unformatted=$(gofmt -l .)` takes that status and fails the step.
     # stderr is captured separately so that case also blocks here.
-    unformatted=$(cd "$tree_dir" && gofmt -l . 2>"$tmp_root/gofmt.err")
+    unformatted=$(cd "$tree_dir" && "$gofmt_bin" -l . 2>"$tmp_root/gofmt.err")
     if [ -s "$tmp_root/gofmt.err" ]; then
         echo "pre-push: gofmt reported errors for $local_ref:" >&2
         sed 's/^/    /' "$tmp_root/gofmt.err" >&2
