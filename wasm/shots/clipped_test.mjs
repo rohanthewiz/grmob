@@ -190,6 +190,46 @@ test("CLIPPED against pages built to fail", { skip: !CHROME && "no Chrome to lau
         assert.deepEqual(await check(html, ["Low field"]), [`"Low field": outside the frame`]);
     });
 
+    await t.test("a letter-spaced value is measured with its spacing", async () => {
+        // Unspaced, "Alpha beta gamma" fits this field with room to spare;
+        // 6px after each of its 16 characters pushes "gamma" past the edge.
+        const html = page(
+            `<input style="position:absolute;top:10px;left:10px;width:160px;letter-spacing:6px" ` +
+            `value="Alpha beta gamma">`);
+        assert.deepEqual(await check(html, ["Alpha"]), []);
+        assert.deepEqual(await check(html, ["gamma"]), [`"gamma": cut sideways by its input`]);
+    });
+
+    await t.test("a right-to-left field is checked from its right edge", async () => {
+        // The value starts at the right: its first word is whole and its last
+        // runs off the left edge.
+        const html = page(
+            `<input dir="rtl" style="position:absolute;top:10px;left:10px;width:120px" ` +
+            `value="אלפא בטא גמא דלתא אפסילון זטא">`);
+        assert.deepEqual(await check(html, ["אלפא"]), []);
+        assert.deepEqual(await check(html, ["זטא"]), [`"זטא": cut sideways by its input`]);
+    });
+
+    await t.test("a right-to-left field scrolled to its end shows the tail", async () => {
+        // scrollLeft runs negative in a right-to-left scroller.
+        const html = page(
+            `<input id="r" dir="rtl" style="position:absolute;top:10px;left:10px;width:120px" ` +
+            `value="אלפא בטא גמא דלתא אפסילון זטא">` +
+            `<script>{ const f = document.getElementById("r"); f.scrollLeft = -f.scrollWidth; }</script>`);
+        assert.deepEqual(await check(html, ["זטא"]), []);
+        assert.deepEqual(await check(html, ["אלפא"]), [`"אלפא": cut sideways by its input`]);
+    });
+
+    await t.test("a right-to-left field with mixed-direction text keeps the box rule", async () => {
+        // Digits run left to right inside the value, so where "זטא" lands is
+        // not arithmetic; the whole field is inside the frame, and that is
+        // all the box rule asks.
+        const html = page(
+            `<input dir="rtl" style="position:absolute;top:10px;left:10px;width:120px" ` +
+            `value="אלפא 2026 גמא דלתא אפסילון זטא">`);
+        assert.deepEqual(await check(html, ["זטא"]), []);
+    });
+
     await t.test("a textarea keeps the box rule", async () => {
         const inside = page(
             `<textarea style="position:absolute;top:10px;left:10px;width:200px;height:60px">Some notes</textarea>`);

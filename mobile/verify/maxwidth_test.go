@@ -51,9 +51,9 @@ func TestBothNativeParsersReadMaxWidth(t *testing.T) {
 // the incoming constraints, and places at the start.
 func TestComposeResolvesWidthAndMaxWidthTogether(t *testing.T) {
 	kotlin := codeIn(t, kotlinStyle)
-	call := strings.Index(kotlin, "m = m.then(widthModifier(width, maxWidth))")
+	call := strings.Index(kotlin, "m = m.then(widthModifier(width, maxWidth, minWidth))")
 	if call < 0 {
-		t.Fatalf("%s: boxModifier does not call widthModifier(width, maxWidth) — "+
+		t.Fatalf("%s: boxModifier does not call widthModifier(width, maxWidth, minWidth) — "+
 			"core.MaxWidth parses and caps nothing", kotlinStyle)
 	}
 	if strings.Contains(kotlin, "m = m.then(dimensionModifier(width, horizontal = true))") {
@@ -64,7 +64,7 @@ func TestComposeResolvesWidthAndMaxWidthTogether(t *testing.T) {
 
 	// Inside the margin (CSS caps the border box) and alongside the height.
 	margin := strings.Index(kotlin, "start = margin.left.dp")
-	height := strings.Index(kotlin, "m = m.then(dimensionModifier(height, horizontal = false))")
+	height := strings.Index(kotlin, "m = m.then(heightModifier(height, minHeight))")
 	if margin < 0 || height < 0 {
 		t.Fatalf("%s: boxModifier was restructured; update this test rather than "+
 			"deleting it (margin=%d height=%d)", kotlinStyle, margin, height)
@@ -159,5 +159,82 @@ func TestMaxWidthArithmeticIsCheckedOnMacOS(t *testing.T) {
 	if !strings.Contains(codeIn(t, maxWidthMinContent), "GrMobMaxWidth.fixedLimit(") {
 		t.Errorf("%s: the min-content floor ignores core.MaxWidth, so a capped box "+
 			"holds a row open wider than it can be drawn", maxWidthMinContent)
+	}
+}
+
+// core.MinWidth and core.MinHeight on both natives.
+//
+// Documented as web-only for as long as MaxWidth was, while three widgets
+// leaned on them: comps.DatePicker's sheet (MinWidth 300, so the grid's
+// flex-basis-0 cells have a width to divide), the rich-text link prompt (280)
+// and comps.RichTextEditor's MinHeight (an empty editor still a place to
+// write). The same three links as MaxWidth: parsed, applied, and applied where
+// the constraint model lets a floor bind.
+func TestBothNativesApplyMinWidthAndMinHeight(t *testing.T) {
+	for _, pin := range []struct{ file, key string }{
+		{swiftStyle, `str("MinWidth")`},
+		{swiftStyle, `str("MinHeight")`},
+		{kotlinStyle, `optString("MinWidth")`},
+		{kotlinStyle, `optString("MinHeight")`},
+	} {
+		if src := valuesIn(t, pin.file); !strings.Contains(src, pin.key) {
+			t.Errorf("%s: does not parse %s — the floor crosses the bridge and is dropped",
+				pin.file, pin.key)
+		}
+	}
+
+	// Compose: the width floor is folded into widthModifier's constraints
+	// after the cap (CSS's min-width beats max-width), and the height floor is
+	// a layout modifier of its own for the same reason the cap is one: a size
+	// modifier cannot raise a minimum a weight or stretch already fixed.
+	kotlin := codeIn(t, kotlinStyle)
+	body := func(decl string) string {
+		start := strings.Index(kotlin, decl)
+		if start < 0 {
+			t.Fatalf("%s: no %s", kotlinStyle, decl)
+		}
+		end := strings.Index(kotlin[start:], "\n}\n")
+		if end < 0 {
+			t.Fatalf("%s: %s has no closing brace at column 0", kotlinStyle, decl)
+		}
+		return kotlin[start : start+end]
+	}
+	width := body("private fun widthModifier(")
+	limitAt := strings.Index(width, "maxW = minOf(maxW, limit)")
+	floorAt := strings.Index(width, "minW = maxOf(minW, least)")
+	if floorAt < 0 || strings.Index(width, "maxW = maxOf(maxW, least)") < 0 {
+		t.Errorf("%s: widthModifier does not fold MinWidth into the measured constraints", kotlinStyle)
+	} else if limitAt < 0 || floorAt < limitAt {
+		t.Errorf("%s: widthModifier applies the floor before the cap; min-width must win", kotlinStyle)
+	}
+	height := body("private fun heightModifier(")
+	for _, want := range []string{
+		"return dimensionModifier(height, horizontal = false)",
+		"Modifier.layout {",
+		"minHeight = maxOf(constraints.minHeight, least)",
+		"placeable.height.coerceIn(constraints.minHeight, constraints.maxHeight)",
+	} {
+		if !strings.Contains(height, want) {
+			t.Errorf("%s: heightModifier lacks %q", kotlinStyle, want)
+		}
+	}
+
+	// SwiftUI: a flexible frame's minimums, inside the background so the fill
+	// and the border cover the floored box.
+	// valuesIn, not codeIn: the anchors hold string literals ("").
+	swift := valuesIn(t, swiftStyle)
+	dim := strings.Index(swift, `.grMobDimension(s?.height ?? "", axis: .vertical, alignment: alignment)`)
+	floor := strings.Index(swift, `.grMobMinimum(width: s?.minWidth ?? "", height: s?.minHeight ?? "", alignment: alignment)`)
+	bg := strings.Index(swift, `.background(s?.background ?? .clear)`)
+	if dim < 0 || floor < 0 || bg < 0 {
+		t.Fatalf("%s: grMobBox does not apply grMobMinimum beside its dimensions "+
+			"(dimension=%d minimum=%d background=%d)", swiftStyle, dim, floor, bg)
+	}
+	if !(dim < floor && floor < bg) {
+		t.Errorf("%s: grMobMinimum must sit between the declared dimensions and the "+
+			"background", swiftStyle)
+	}
+	if !strings.Contains(swift, "frame(minWidth: w, minHeight: h, alignment: alignment)") {
+		t.Errorf("%s: grMobMinimum no longer applies a flexible frame's minimums", swiftStyle)
 	}
 }

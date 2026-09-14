@@ -207,3 +207,25 @@ func TestNoBareHorizontalScrollOnCompose(t *testing.T) {
 		}
 	}
 }
+
+// A FlexGrow child where Compose has nothing to divide keeps its content size
+// instead of a weight: sideways inside a horizontal Scroll, and down inside a
+// List's lazy rows. Both collapsed to zero before (Modifier.weight against an
+// infinite maximum divides the minimum, which is 0), and neither shows on
+// any target but Compose, so these are the only checks that can hold them.
+func TestComposeGrowChildrenKeepContentSizeWhereNothingIsBounded(t *testing.T) {
+	for _, c := range []struct{ decl, expr, why string }{
+		{"private fun GrMobScroll(", "LocalGrMobUnboundedWidth provides true",
+			"a horizontal Scroll's content is measured with an infinite width"},
+		{"private fun RowScope.RowChildren(", "if (grow > 0f && !unboundedWidth) Modifier.weight(grow)",
+			"a Row with no width to divide gives a grow child no weight"},
+		{"fun RenderNode(", "if (boundWidth) add(LocalGrMobUnboundedWidth provides false)",
+			"a points Width gives its subtree a width to divide again"},
+		{"private fun GrMobList(", "CompositionLocalProvider(LocalGrMobUnboundedHeight provides true) {",
+			"a lazy row is measured with an infinite height"},
+	} {
+		if !strings.Contains(codeOf(t, kotlinRenderer, c.decl), c.expr) {
+			t.Errorf("%s: %s has no %q — %s", kotlinRenderer, c.decl, c.expr, c.why)
+		}
+	}
+}

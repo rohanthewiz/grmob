@@ -57,10 +57,23 @@
 // the placeholder only when the value is empty. The coarse rule accepted a
 // placeholder hidden behind a typed value.
 //
+// The measurement uses the field's own letter-spacing as well as its font:
+// canvas has a letterSpacing of its own, and without it a spaced-out value is
+// measured narrower than it paints, which lets a clipped tail pass.
+//
+// A right-to-left field is placed from the other edge. Its leading edge is
+// the content box's right, text that fits is aligned by text-align read in
+// that direction (start is right, end is left), and overflow scrolls with a
+// scrollLeft that runs from 0 to negative, which is the CSSOM rule Chrome
+// follows (the only engine this check runs in). Offsets are measured leftward
+// from the leading edge. That arithmetic is only right when the whole value
+// runs one way, so a right-to-left value holding any left-to-right letter or
+// any digit (both run left to right inside it, reordering where the claimed
+// string lands) keeps the box rule below.
+//
 // Three cases keep the box rule, each because the arithmetic above would be a
 // guess: a <textarea> (it wraps), a <select> (the option's paint is the
-// platform's), and a right-to-left field (its overflow scrolls from the other
-// edge and scrollLeft's sign differs between engines).
+// platform's), and a right-to-left field holding mixed-direction text.
 //
 // Concatenating across elements can match a string that straddles two
 // unrelated nodes. That can only make the check more lenient, never report a
@@ -125,21 +138,29 @@ export const CLIPPED = `(shows, clipSel) => {
     // One canvas for every measurement, made on first use: most shots have
     // no field text claimed, and they should not pay for a canvas.
     let ctx2d = null;
-    const measure = (font, s) => {
+    const measure = (font, spacing, s) => {
         ctx2d = ctx2d || document.createElement("canvas").getContext("2d");
         ctx2d.font = font;
+        // "normal" is canvas's own spelling of none, the same as CSS's.
+        ctx2d.letterSpacing = spacing;
         return ctx2d.measureText(s).width;
     };
+    // A value that does not run one way in a right-to-left field: any letter
+    // outside the right-to-left scripts, or any digit. The backslashes are
+    // doubled because this source is a template literal evaluated in the page.
+    const mixedInRtl = /\\p{Nd}|(?=\\p{L})(?![\\p{Script=Arabic}\\p{Script=Hebrew}\\p{Script=Syriac}\\p{Script=Thaana}\\p{Script=Nko}])/u;
     // Where s is painted inside a single-line input, as a rect in viewport
     // coordinates, or null when the arithmetic would be a guess (see "Field
     // text, by where it is painted").
     const inputTextRect = (el, s) => {
         if (el.tagName !== "INPUT") return null;
         const cs = getComputedStyle(el);
-        if (cs.direction === "rtl") return null;
+        const rtl = cs.direction === "rtl";
         const shown = painted(el)[0];
         const i = shown.indexOf(s);
         if (i < 0) return null;
+        if (rtl && mixedInRtl.test(shown)) return null;
+        const spacing = cs.letterSpacing || "normal";
         // cs.font is the shorthand Chrome composes from the longhands; the
         // explicit form is the fallback for an engine that leaves it empty.
         const font = cs.font || [cs.fontStyle, cs.fontWeight, cs.fontSize, cs.fontFamily].join(" ");
@@ -151,23 +172,32 @@ export const CLIPPED = `(shows, clipSel) => {
             top: box.top + px(cs.borderTopWidth) + px(cs.paddingTop),
             bottom: box.bottom - px(cs.borderBottomWidth) - px(cs.paddingBottom),
         };
-        const whole = measure(font, shown);
+        const whole = measure(font, spacing, shown);
         const room = content.right - content.left;
-        // Text that fits is placed by text-align; text that does not starts
-        // at the leading edge and moves by the field's own scroll.
-        let x0 = content.left - el.scrollLeft;
-        if (whole < room) {
-            if (cs.textAlign === "center") x0 = content.left + (room - whole) / 2;
-            else if (cs.textAlign === "right" || cs.textAlign === "end") x0 = content.right - whole;
-        }
         // Measured through the end of s rather than as s alone, so kerning
         // across the boundary with the text before it is counted.
-        const rect = {
-            left: x0 + measure(font, shown.slice(0, i)),
-            right: x0 + measure(font, shown.slice(0, i + s.length)),
-            top: content.top,
-            bottom: content.bottom,
-        };
+        const before = measure(font, spacing, shown.slice(0, i));
+        const through = measure(font, spacing, shown.slice(0, i + s.length));
+        let rect;
+        if (!rtl) {
+            // Text that fits is placed by text-align; text that does not
+            // starts at the leading edge and moves by the field's own scroll.
+            let x0 = content.left - el.scrollLeft;
+            if (whole < room) {
+                if (cs.textAlign === "center") x0 = content.left + (room - whole) / 2;
+                else if (cs.textAlign === "right" || cs.textAlign === "end") x0 = content.right - whole;
+            }
+            rect = { left: x0 + before, right: x0 + through, top: content.top, bottom: content.bottom };
+        } else {
+            // The leading edge is the right one. scrollLeft is 0 or negative,
+            // and a negative one has moved the text rightward.
+            let xr = content.right - el.scrollLeft;
+            if (whole < room) {
+                if (cs.textAlign === "center") xr = content.left + (room + whole) / 2;
+                else if (cs.textAlign === "left" || cs.textAlign === "end") xr = content.left + whole;
+            }
+            rect = { left: xr - through, right: xr - before, top: content.top, bottom: content.bottom };
+        }
         return { rect, content };
     };
     const controls = Array.from(document.querySelectorAll("input, textarea, select"));

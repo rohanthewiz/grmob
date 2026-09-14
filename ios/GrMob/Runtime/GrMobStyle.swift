@@ -93,7 +93,12 @@ struct GrMobStyle: Equatable {
     /// Applied by GrMobMaxWidthLayout at the outside of grMobBox's chain, and
     /// folded into grMobDimension when a rigid Width would otherwise ignore it.
     var maxWidth: String = ""
+    /// core.MinWidth: CSS `min-width`, in points. Applied by grMobMinimum as a
+    /// flexible frame's minimum, just outside the declared dimensions.
+    var minWidth: String = ""
     var height: String = ""
+    /// core.MinHeight: CSS `min-height`, in points; see minWidth.
+    var minHeight: String = ""
     var borderColor: Color?
     var borderWidth: CGFloat = 0
     var gap: CGFloat = 0
@@ -247,7 +252,9 @@ struct GrMobStyle: Equatable {
         s.display = str("Display")
         s.width = str("Width")
         s.maxWidth = str("MaxWidth")
+        s.minWidth = str("MinWidth")
         s.height = str("Height")
+        s.minHeight = str("MinHeight")
         s.borderColor = parseColor(str("BorderColor"))
         s.borderWidth = num("BorderWidth")
         s.gap = num("Gap")
@@ -579,6 +586,11 @@ struct GrMobBoxModifier: ViewModifier {
             .grMobDimension(s?.width ?? "", axis: .horizontal, alignment: alignment,
                             cap: GrMobMaxWidth.fixedLimit(s?.maxWidth ?? ""))
             .grMobDimension(s?.height ?? "", axis: .vertical, alignment: alignment)
+            // core.MinWidth and core.MinHeight, right outside the declared
+            // size and inside the background, so the fill, the border and the
+            // touch target cover the whole floored box, as CSS's border box
+            // does.
+            .grMobMinimum(width: s?.minWidth ?? "", height: s?.minHeight ?? "", alignment: alignment)
             .background(s?.background ?? .clear)
             .modifier(GrMobGestures(onTap: onTap, onLongPress: onLongPress,
                                     disabled: s?.disabled ?? false))
@@ -891,6 +903,32 @@ extension View {
         }
     }
 
+
+    /// core.MinWidth and core.MinHeight as a flexible frame's minimums: CSS's
+    /// `min-width` and `min-height` in points.
+    ///
+    /// A flexible frame with only minimums proposes at least the minimum to
+    /// its content and reports max(content, minimum), which is CSS's rule for
+    /// a box with a min-width and an auto width: a hugging box grows to the
+    /// floor, a wider one keeps its width, and a rigid Width below the floor
+    /// sits inside a frame of the floor (at `alignment`, as grMobDimension
+    /// places content). It reports the floor even when proposed less, so a
+    /// floored child in a narrow flex line overflows rather than shrinks, as
+    /// a flex item stopped by min-width does.
+    ///
+    /// Points only. A percentage floor needs the containing block's length,
+    /// which containerRelativeFrame gives as a size but not as a minimum; it
+    /// is ignored, as Compose ignores a percentage of an unbounded width.
+    /// Conditional for grMobGrow's reason: no floor, no frame.
+    @ViewBuilder fileprivate func grMobMinimum(width: String, height: String, alignment: Alignment) -> some View {
+        let w = grMobFloorPoints(width)
+        let h = grMobFloorPoints(height)
+        if w == nil && h == nil {
+            self
+        } else {
+            frame(minWidth: w, minHeight: h, alignment: alignment)
+        }
+    }
 
     /// Kept strictly conditional: the no-fill case must add no frame at all,
     /// or every leaf in the tree would gain a layout container that changes
@@ -1467,4 +1505,13 @@ struct GrMobMaxWidthLayout: Layout {
         guard let bound = outerLimit(offered.isFinite ? offered : nil) else { return p }
         return ProposedViewSize(width: min(offered, bound), height: p.height)
     }
+}
+
+/// A core.MinWidth or core.MinHeight in points ("280px" or a bare number), or
+/// nil for anything that sets no floor: "", "auto", "none", a percentage, zero
+/// or a negative number (invalid CSS, dropped as Compose drops it).
+func grMobFloorPoints(_ value: String) -> CGFloat? {
+    let number = value.hasSuffix("px") ? String(value.dropLast(2)) : value
+    guard let points = Double(number), points > 0 else { return nil }
+    return CGFloat(points)
 }

@@ -120,7 +120,11 @@ data class GrMobStyle(
     val width: String,
     /** core.MaxWidth: CSS `max-width`, applied with Width in widthModifier. */
     val maxWidth: String,
+    /** core.MinWidth: CSS `min-width`, px or %; see widthModifier. */
+    val minWidth: String = "",
     val height: String,
+    /** core.MinHeight: CSS `min-height`, px or %; see heightModifier. */
+    val minHeight: String = "",
     val borderColor: Color?,
     val borderWidth: Float,
     val gap: Float,
@@ -332,7 +336,9 @@ data class GrMobStyle(
                 display = obj.optString("Display"),
                 width = obj.optString("Width"),
                 maxWidth = obj.optString("MaxWidth"),
+                minWidth = obj.optString("MinWidth"),
                 height = obj.optString("Height"),
+                minHeight = obj.optString("MinHeight"),
                 borderColor = parseColor(obj.optString("BorderColor")),
                 borderWidth = obj.optDouble("BorderWidth", 0.0).toFloat(),
                 gap = obj.optDouble("Gap", 0.0).toFloat(),
@@ -567,12 +573,13 @@ fun GrMobStyle?.boxModifier(extra: Modifier = Modifier, gestures: Modifier = Mod
     if (transitionMs > 0) {
         m = m.animateContentSize(transitionTween())
     }
-    // Width and MaxWidth are resolved together, inside the margin: CSS's
-    // max-width limits the border box, and the space reserved around it is
-    // not part of what it caps. See widthModifier for why the pair cannot be
-    // two independent modifiers.
-    m = m.then(widthModifier(width, maxWidth))
-    m = m.then(dimensionModifier(height, horizontal = false))
+    // Width, MaxWidth and MinWidth are resolved together, inside the margin:
+    // CSS's max-width and min-width limit the border box, and the space
+    // reserved around it is not part of what they bound. See widthModifier
+    // for why they cannot be independent modifiers. Height and MinHeight
+    // likewise, in heightModifier.
+    m = m.then(widthModifier(width, maxWidth, minWidth))
+    m = m.then(heightModifier(height, minHeight))
 
     // Rotation goes here — after margin and the dimension modifiers, before
     // shadow/clip/background/border — and the position is load-bearing in a
@@ -674,8 +681,9 @@ private fun dimensionModifier(value: String, horizontal: Boolean): Modifier {
 }
 
 /**
- * core.Width with core.MaxWidth: CSS's `min(width, max-width)`, and a capped
- * box placed at the start of any wider slot its parent forces on it.
+ * core.Width with core.MaxWidth and core.MinWidth: CSS's
+ * `max(min-width, min(width, max-width))`, and a capped box placed at the
+ * start of any wider slot its parent forces on it.
  *
  * Without a MaxWidth this is exactly dimensionModifier, so the uncapped chain —
  * nearly every node — is unchanged by the cap's existence.
@@ -725,18 +733,32 @@ private fun dimensionModifier(value: String, horizontal: Boolean): Modifier {
  * redistribute it to the other growers. iOS has the same gap
  * (GrMobMaxWidthLayout).
  */
-private fun widthModifier(width: String, maxWidth: String): Modifier {
-    val cap = parseWidthCap(maxWidth) ?: return dimensionModifier(width, horizontal = true)
+private fun widthModifier(width: String, maxWidth: String, minWidth: String = ""): Modifier {
+    val cap = parseWidthCap(maxWidth)
+    // A floor is written in the same forms as a cap (px or %, "auto" and
+    // "none" meaning nothing), so it is parsed by the same function.
+    val floor = parseWidthCap(minWidth)
+    if (cap == null && floor == null) return dimensionModifier(width, horizontal = true)
     val fraction = widthFraction(width)
     val inner = if (fraction != null) Modifier else dimensionModifier(width, horizontal = true)
     return Modifier.layout { measurable, constraints ->
         val bounded = constraints.hasBoundedWidth
-        val limit: Int? = when {
-            !cap.isFraction -> cap.amount.dp.roundToPx()
-            bounded -> (constraints.maxWidth * cap.amount).roundToInt()
-            // A percentage of an unbounded width is CSS's percentage against
-            // an indefinite containing block: it behaves as `none`.
-            else -> null
+        // A percentage of an unbounded width is CSS's percentage against an
+        // indefinite containing block: it behaves as `none` for a cap and as
+        // `0` for a floor, which is null (no bound) either way.
+        val limit: Int? = cap?.let {
+            when {
+                !it.isFraction -> it.amount.dp.roundToPx()
+                bounded -> (constraints.maxWidth * it.amount).roundToInt()
+                else -> null
+            }
+        }
+        val least: Int? = floor?.let {
+            when {
+                !it.isFraction -> it.amount.dp.roundToPx()
+                bounded -> (constraints.maxWidth * it.amount).roundToInt()
+                else -> null
+            }
         }
         var minW = constraints.minWidth
         var maxW = constraints.maxWidth
@@ -749,6 +771,15 @@ private fun widthModifier(width: String, maxWidth: String): Modifier {
             maxW = minOf(maxW, limit)
             minW = minOf(minW, maxW)
         }
+        // The floor last, because CSS's min-width beats max-width (and a
+        // declared width) when they disagree. It may raise the measurement
+        // past the incoming maximum: the box then overflows its slot, as a CSS
+        // box with a min-width wider than its container does, and the report
+        // below still stays inside the incoming constraints.
+        if (least != null) {
+            minW = maxOf(minW, least)
+            maxW = maxOf(maxW, least)
+        }
         val placeable = measurable.measure(constraints.copy(minWidth = minW, maxWidth = maxW))
         // Reported inside the incoming constraints, which a layout must honour:
         // a parent that forced a wider minimum gets that width, and the capped
@@ -756,6 +787,47 @@ private fun widthModifier(width: String, maxWidth: String): Modifier {
         val reported = placeable.width.coerceIn(constraints.minWidth, constraints.maxWidth)
         layout(reported, placeable.height) { placeable.placeRelative(0, 0) }
     }.then(inner)
+}
+
+/**
+ * core.Height with core.MinHeight: CSS's `max(height, min-height)`.
+ *
+ * The same shape as widthModifier's floor, for the same reason. A
+ * `Modifier.heightIn(min = …)` cannot raise a minimum the parent has already
+ * fixed (a weight or a stretch arrives with minHeight == maxHeight), and
+ * placed inside a Height it is coerced away. A layout modifier measures the
+ * content with the floor folded into the constraints and reports inside the
+ * incoming ones.
+ *
+ * ```
+ *   floor     = px                               (points × density)
+ *             | % × incoming maxHeight           (bounded only; else none)
+ *   minHeight = max(minHeight, floor);  maxHeight = max(maxHeight, floor)
+ *   measure; report height coerced into the INCOMING constraints; place at 0
+ * ```
+ *
+ * In a scrolled column (maxHeight infinite) the floor is simply the minimum,
+ * which is the case comps.RichTextEditor's MinHeight exists for: an empty
+ * document still gives the reader a place to write. The Height itself stays
+ * dimensionModifier's and runs inside, so a points Height below the floor is
+ * raised to it, as CSS raises it.
+ */
+private fun heightModifier(height: String, minHeight: String): Modifier {
+    val floor = parseWidthCap(minHeight) ?: return dimensionModifier(height, horizontal = false)
+    return Modifier.layout { measurable, constraints ->
+        val least: Int? = when {
+            !floor.isFraction -> floor.amount.dp.roundToPx()
+            constraints.hasBoundedHeight -> (constraints.maxHeight * floor.amount).roundToInt()
+            else -> null
+        }
+        val inner = if (least == null) constraints else constraints.copy(
+            minHeight = maxOf(constraints.minHeight, least),
+            maxHeight = maxOf(constraints.maxHeight, least),
+        )
+        val placeable = measurable.measure(inner)
+        val reported = placeable.height.coerceIn(constraints.minHeight, constraints.maxHeight)
+        layout(placeable.width, reported) { placeable.placeRelative(0, 0) }
+    }.then(dimensionModifier(height, horizontal = false))
 }
 
 /**

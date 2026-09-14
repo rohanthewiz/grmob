@@ -58,6 +58,7 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.ProvidedValue
 import androidx.compose.runtime.LaunchedEffect
 // The Float Animatable, aliased because androidx.compose.animation.Animatable
 // (the Color one, above) has the same simple name.
@@ -163,6 +164,8 @@ val LocalGrMobDisabled = compositionLocalOf { false }
  *
  * ```
  *   root / Dialog window / bounded parent      false (the default)
+ *   ├ List row (GrMobList's LazyColumn item)    true: a lazy item is measured
+ *   │                                                 unbounded, like a scroll
  *   └ Scroll's content (GrMobScroll)            true: measured unbounded
  *     ├ FlexGrow child, heightIn(min=viewport)  false: weights divide the min
  *     │                                               (Screen{Fill, Scroll})
@@ -184,6 +187,45 @@ val LocalGrMobDisabled = compositionLocalOf { false }
  * have thrown.
  */
 val LocalGrMobUnboundedHeight = compositionLocalOf { false }
+
+/**
+ * Whether the Row being composed has no width of its own to divide among
+ * FlexGrow children: true inside a horizontal Scroll's content, until a
+ * points Width gives one back. The horizontal twin of
+ * [LocalGrMobUnboundedHeight].
+ *
+ * # The defect it exists for
+ *
+ * A Row divides weight out of its maximum width, or its minimum when that is
+ * infinite. core.Horizontal() Scroll content is measured with an infinite
+ * width and no minimum, so a FlexGrow child of a Row there, at any depth,
+ * was measured at zero and vanished. With this local, RowChildren gives such
+ * a child its content width instead of a weight.
+ *
+ * That matches CSS whenever the strip's content already fills or overflows
+ * the viewport: there is no positive free space, so flex-grow hands out
+ * nothing. It does not match a strip SHORTER than its viewport, where CSS
+ * gives the leftover width to the growers; here they keep their content
+ * width. The vertical case fills that gap with the viewport as a minimum
+ * (GrMobScroll's growMinHeight); a sideways strip is laid out for its content
+ * and has no such case in any widget.
+ *
+ * ```
+ *   root / bounded parent                          false (the default)
+ *   └ horizontal Scroll's content (GrMobScroll)    true: measured unbounded
+ *     ├ node with a points Width (RenderNode)      false: a definite width
+ *     └ Row / Column descendants                   true, inherited
+ *       └ Row > FlexGrow child                     no weight: content width
+ * ```
+ */
+val LocalGrMobUnboundedWidth = compositionLocalOf { false }
+
+/** A Width that is a definite length on its own: points, not "auto" or a percentage. */
+private fun hasPointsWidth(s: GrMobStyle?): Boolean {
+    val w = s?.width ?: return false
+    if (w.isEmpty() || w == "auto" || w.endsWith("%")) return false
+    return w.removeSuffix("px").toFloatOrNull() != null
+}
 
 /** A Height that is a definite length on its own: points, not "auto" or a percentage. */
 private fun hasPointsHeight(s: GrMobStyle?): Boolean {
@@ -268,21 +310,24 @@ fun RenderNode(node: GrMobNode, extra: Modifier = Modifier) {
     //
     // The unbounded-height local is closed the same way, and only where it
     // changes: a node with a points Height gives its subtree a definite height
-    // to divide again (see LocalGrMobUnboundedHeight).
+    // to divide again (see LocalGrMobUnboundedHeight). A points Width does the
+    // same for the unbounded-width local (LocalGrMobUnboundedWidth).
+    //
+    // The values that change are collected and provided in one call, rather
+    // than one `when` arm per combination: three independent flags would be
+    // eight arms. An unchanged tree still provides nothing.
     val disable = node.style?.disabled == true && !LocalGrMobDisabled.current
     val bound = LocalGrMobUnboundedHeight.current && hasPointsHeight(node.style)
-    when {
-        disable && bound -> CompositionLocalProvider(
-            LocalGrMobDisabled provides true,
-            LocalGrMobUnboundedHeight provides false,
-        ) { RenderNodeContent(node, mods) }
-        disable -> CompositionLocalProvider(LocalGrMobDisabled provides true) {
-            RenderNodeContent(node, mods)
+    val boundWidth = LocalGrMobUnboundedWidth.current && hasPointsWidth(node.style)
+    if (!disable && !bound && !boundWidth) {
+        RenderNodeContent(node, mods)
+    } else {
+        val provided = buildList<ProvidedValue<*>> {
+            if (disable) add(LocalGrMobDisabled provides true)
+            if (bound) add(LocalGrMobUnboundedHeight provides false)
+            if (boundWidth) add(LocalGrMobUnboundedWidth provides false)
         }
-        bound -> CompositionLocalProvider(LocalGrMobUnboundedHeight provides false) {
-            RenderNodeContent(node, mods)
-        }
-        else -> RenderNodeContent(node, mods)
+        CompositionLocalProvider(*provided.toTypedArray()) { RenderNodeContent(node, mods) }
     }
 }
 
@@ -1546,10 +1591,13 @@ private fun RowScope.RowChildren(node: GrMobNode, intrinsicHeight: Boolean = fal
     // child at that one height, so a Column inside it has a definite height
     // even in a scrolled page; see LocalGrMobUnboundedHeight.
     val rebound = intrinsicHeight && LocalGrMobUnboundedHeight.current
+    // No width to divide: a grow child keeps its content width, as a flex
+    // item with no free space does. See LocalGrMobUnboundedWidth.
+    val unboundedWidth = LocalGrMobUnboundedWidth.current
     node.children.forEachIndexed { i, child ->
         key(child.key.ifEmpty { i }) {
             val grow = child.style?.flexGrow ?: 0f
-            var m: Modifier = if (grow > 0f) Modifier.weight(grow) else Modifier
+            var m: Modifier = if (grow > 0f && !unboundedWidth) Modifier.weight(grow) else Modifier
             // core.FlexShrink(0) on an unweighted child. A weighted one is not
             // given the modifier and that is not an omission: Modifier.weight
             // sets the child's main axis to its share of the remainder as both
@@ -1745,7 +1793,11 @@ private fun GrMobScroll(node: GrMobNode, extra: Modifier) {
             node.style.boxModifier(extra).horizontalScrollWhenBounded(rememberScrollState()),
             horizontalArrangement = packedHorizontally(node.style),
         ) {
-            RowChildren(node)
+            // The content is measured with no maximum width; see
+            // LocalGrMobUnboundedWidth.
+            CompositionLocalProvider(LocalGrMobUnboundedWidth provides true) {
+                RowChildren(node)
+            }
         }
         return
     }
@@ -2094,11 +2146,18 @@ private fun GrMobList(node: GrMobNode, extra: Modifier) {
                             // stuck, the lazy list is positioning it itself every
                             // frame, and an animation competing for the same offset
                             // makes it drift. Its rows still animate.
-                            RenderNode(row, fill)
+                            // A lazy row is measured with no maximum height,
+                            // so a Column row's FlexGrow children have
+                            // nothing to divide. See LocalGrMobUnboundedHeight.
+                            CompositionLocalProvider(LocalGrMobUnboundedHeight provides true) {
+                                RenderNode(row, fill)
+                            }
                         }
                     } else {
                         item(key = key, contentType = row.type) {
-                            RenderNode(row, rowPlacement(s).then(fill))
+                            CompositionLocalProvider(LocalGrMobUnboundedHeight provides true) {
+                                RenderNode(row, rowPlacement(s).then(fill))
+                            }
                         }
                     }
                 }

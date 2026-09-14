@@ -77,10 +77,9 @@ type RichTextEditor struct {
 	// with one line in it is one line tall, which reads as a text field rather
 	// than as a place to write.
 	//
-	// It is core.MinHeight underneath, which the two DOM targets honour and the
-	// natives do not yet (see the platform table in
-	// docs/concepts/styling-and-theming.md). On iOS and Android the editor is
-	// as tall as its document — one line when empty — unless Height is set.
+	// It is core.MinHeight underneath, which every target honours in points
+	// (Android also takes a percentage; see the platform table in
+	// docs/concepts/styling-and-theming.md).
 	MinHeight string
 
 	// Height fixes the editor's height instead, so a long document scrolls
