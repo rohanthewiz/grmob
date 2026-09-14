@@ -67,13 +67,18 @@
 // scrollLeft that runs from 0 to negative, which is the CSSOM rule Chrome
 // follows (the only engine this check runs in). Offsets are measured leftward
 // from the leading edge. That arithmetic is only right when the whole value
-// runs one way, so a right-to-left value holding any left-to-right letter or
-// any digit (both run left to right inside it, reordering where the claimed
-// string lands) keeps the box rule below.
+// runs one way. A right-to-left value holding any left-to-right letter or any
+// digit (both run left to right inside it, reordering where the claimed
+// string lands) is laid out by the browser instead: a hidden copy of the
+// value over the field's content box, with the field's font, spacing,
+// direction, alignment and bidi mode, answers with one rect per visual run
+// (bidiRects), and the field's scroll moves those rects as it moves the
+// arithmetic's. A field's scroll offset is a whole pixel while advances are
+// not, so field text is allowed a pixel past the content edge (FIELD_SLACK).
 //
-// Three cases keep the box rule, each because the arithmetic above would be a
-// guess: a <textarea> (it wraps), a <select> (the option's paint is the
-// platform's), and a right-to-left field holding mixed-direction text.
+// Two cases keep the box rule, each because the arithmetic above would be a
+// guess: a <textarea> (it wraps) and a <select> (the option's paint is the
+// platform's).
 //
 // Concatenating across elements can match a string that straddles two
 // unrelated nodes. That can only make the check more lenient, never report a
@@ -149,9 +154,39 @@ export const CLIPPED = `(shows, clipSel) => {
     // outside the right-to-left scripts, or any digit. The backslashes are
     // doubled because this source is a template literal evaluated in the page.
     const mixedInRtl = /\\p{Nd}|(?=\\p{L})(?![\\p{Script=Arabic}\\p{Script=Hebrew}\\p{Script=Syriac}\\p{Script=Thaana}\\p{Script=Nko}])/u;
-    // Where s is painted inside a single-line input, as a rect in viewport
-    // coordinates, or null when the arithmetic would be a guess (see "Field
-    // text, by where it is painted").
+    // Where the characters [i, i + n) of a right-to-left field's value are
+    // painted, when the value mixes directions. Bidi reordering is not
+    // arithmetic over advances, so the browser lays the value out itself: a
+    // hidden, fixed-position copy over the field's content box with the
+    // field's font, spacing, direction, alignment and bidi mode, whose Range
+    // rects are then the visual runs of the substring, one per run. The
+    // field's own scroll moves them all by -scrollLeft, as it moves the
+    // arithmetic's rect below. white-space: pre keeps the copy one line and
+    // lets a long value overflow its start edge the way the field's does.
+    const bidiRects = (el, cs, font, spacing, shown, i, n, content) => {
+        const probe = document.createElement("div");
+        probe.textContent = shown;
+        Object.assign(probe.style, {
+            position: "fixed", left: content.left + "px", top: content.top + "px",
+            width: (content.right - content.left) + "px", margin: "0", padding: "0", border: "0",
+            whiteSpace: "pre", overflow: "visible", visibility: "hidden",
+            font, letterSpacing: spacing, direction: cs.direction,
+            textAlign: cs.textAlign, unicodeBidi: cs.unicodeBidi,
+        });
+        document.body.appendChild(probe);
+        const range = document.createRange();
+        range.setStart(probe.firstChild, i);
+        range.setEnd(probe.firstChild, i + n);
+        const shift = -el.scrollLeft;
+        const rects = Array.from(range.getClientRects())
+            .filter((r) => r.width > 0)
+            .map((r) => ({ left: r.left + shift, right: r.right + shift, top: content.top, bottom: content.bottom }));
+        probe.remove();
+        return rects;
+    };
+    // Where s is painted inside a single-line input, as rects in viewport
+    // coordinates (one, or one per bidi run), or null when the field is not
+    // a single-line input (see "Field text, by where it is painted").
     const inputTextRect = (el, s) => {
         if (el.tagName !== "INPUT") return null;
         const cs = getComputedStyle(el);
@@ -159,7 +194,6 @@ export const CLIPPED = `(shows, clipSel) => {
         const shown = painted(el)[0];
         const i = shown.indexOf(s);
         if (i < 0) return null;
-        if (rtl && mixedInRtl.test(shown)) return null;
         const spacing = cs.letterSpacing || "normal";
         // cs.font is the shorthand Chrome composes from the longhands; the
         // explicit form is the fallback for an engine that leaves it empty.
@@ -172,6 +206,10 @@ export const CLIPPED = `(shows, clipSel) => {
             top: box.top + px(cs.borderTopWidth) + px(cs.paddingTop),
             bottom: box.bottom - px(cs.borderBottomWidth) - px(cs.paddingBottom),
         };
+        if (rtl && mixedInRtl.test(shown)) {
+            const rects = bidiRects(el, cs, font, spacing, shown, i, s.length, content);
+            return rects.length ? { rects, content } : null;
+        }
         const whole = measure(font, spacing, shown);
         const room = content.right - content.left;
         // Measured through the end of s rather than as s alone, so kerning
@@ -198,7 +236,7 @@ export const CLIPPED = `(shows, clipSel) => {
             }
             rect = { left: xr - through, right: xr - before, top: content.top, bottom: content.bottom };
         }
-        return { rect, content };
+        return { rects: [rect], content };
     };
     const controls = Array.from(document.querySelectorAll("input, textarea, select"));
     const out = [];
@@ -221,9 +259,15 @@ export const CLIPPED = `(shows, clipSel) => {
             if (placed) {
                 // The field clips its own text first; then the text, not the
                 // field, is what the frame and the ancestors must hold.
-                const { rect, content } = placed;
-                const cutX = rect.left < content.left - SLACK || rect.right > content.right + SLACK;
-                reason = cutX ? "cut sideways by its input" : cutRects([rect], c.parentElement);
+                const { rects, content } = placed;
+                // FIELD_SLACK, not SLACK: a field's scroll offset is a whole
+                // pixel and its text's advances are not, so a value scrolled
+                // flush to one end can sit up to a pixel past that edge in
+                // the arithmetic while the browser draws it whole (measured
+                // on a right-to-left field scrolled to its end: 0.7px).
+                const FIELD_SLACK = 1;
+                const cutX = rects.some((r) => r.left < content.left - FIELD_SLACK || r.right > content.right + FIELD_SLACK);
+                reason = cutX ? "cut sideways by its input" : cutRects(rects, c.parentElement);
             } else {
                 // The box's own overflow clips what is inside it, not the box,
                 // so the clipping ancestors start at its parent.

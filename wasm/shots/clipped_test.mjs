@@ -220,14 +220,29 @@ test("CLIPPED against pages built to fail", { skip: !CHROME && "no Chrome to lau
         assert.deepEqual(await check(html, ["אלפא"]), [`"אלפא": cut sideways by its input`]);
     });
 
-    await t.test("a right-to-left field with mixed-direction text keeps the box rule", async () => {
-        // Digits run left to right inside the value, so where "זטא" lands is
-        // not arithmetic; the whole field is inside the frame, and that is
-        // all the box rule asks.
+    await t.test("a right-to-left field with mixed-direction text is placed by bidi", async () => {
+        // Digits run left to right inside the value, so where each word lands
+        // is the browser's bidi layout rather than arithmetic; a laid-out copy
+        // of the value answers. The first word is whole at the right edge,
+        // the last runs off the left, and the digits' own run is found too.
         const html = page(
             `<input dir="rtl" style="position:absolute;top:10px;left:10px;width:120px" ` +
             `value="אלפא 2026 גמא דלתא אפסילון זטא">`);
-        assert.deepEqual(await check(html, ["זטא"]), []);
+        assert.deepEqual(await check(html, ["אלפא"]), []);
+        assert.deepEqual(await check(html, ["2026"]), []);
+        assert.deepEqual(await check(html, ["זטא"]), [`"זטא": cut sideways by its input`]);
+    });
+
+    await t.test("a Latin word in a right-to-left field is found where bidi puts it", async () => {
+        // In a right-to-left paragraph a trailing Latin run is drawn at the
+        // far left. Scrolled to the end, that run is on screen and the
+        // leading Hebrew has scrolled off the right.
+        const html = page(
+            `<input id="m" dir="rtl" style="position:absolute;top:10px;left:10px;width:120px" ` +
+            `value="אלפא בטא גמא דלתא אפסילון Omega">` +
+            `<script>{ const f = document.getElementById("m"); f.scrollLeft = -f.scrollWidth; }</script>`);
+        assert.deepEqual(await check(html, ["Omega"]), []);
+        assert.deepEqual(await check(html, ["אלפא"]), [`"אלפא": cut sideways by its input`]);
     });
 
     await t.test("a textarea keeps the box rule", async () => {

@@ -223,6 +223,12 @@ func TestComposeGrowChildrenKeepContentSizeWhereNothingIsBounded(t *testing.T) {
 			"a points Width gives its subtree a width to divide again"},
 		{"private fun GrMobList(", "CompositionLocalProvider(LocalGrMobUnboundedHeight provides true) {",
 			"a lazy row is measured with an infinite height"},
+		{"private fun GrMobScroll(", "GrMobGrowStrip(node, extra)",
+			"a strip with a grower is laid out against its viewport, as CSS divides free space"},
+		{"private fun GrMobGrowStrip(", "viewport.width = if (constraints.hasBoundedWidth) constraints.maxWidth else Constraints.Infinity",
+			"the viewport width is captured outside the scroll, where it is still bounded"},
+		{"private fun GrMobGrowStrip(", "placeables[i] = m.measure(loose.copy(minWidth = share))",
+			"a grower takes its share of the free space as a minimum, keeping its content width past it"},
 	} {
 		if !strings.Contains(codeOf(t, kotlinRenderer, c.decl), c.expr) {
 			t.Errorf("%s: %s has no %q — %s", kotlinRenderer, c.decl, c.expr, c.why)
