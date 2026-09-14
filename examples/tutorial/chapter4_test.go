@@ -859,6 +859,27 @@ func TestEndlessFeedDemoCarriesTheThreeCollectionProps(t *testing.T) {
 			"instead of panning it", strip.Style.Overflow)
 	}
 
+	// The footer strip: the other horizontal Scroll, shorter than the screen,
+	// whose FlexGrow spacer pushes the count to the far edge. Found by its
+	// "Start over" chip, since the chip strip above is the first match for
+	// the strip test.
+	footer := findNode(cur, func(n *node) bool {
+		return n.Type == "Scroll" && n.Style != nil && n.Style.FlexDirection == "row" &&
+			findNode(n, func(c *node) bool { return c.Type == "Button" && c.Props["label"] == "Start over" }) != nil
+	})
+	if footer == nil {
+		t.Fatal(`the "Start over" chip should sit in a sideways strip`)
+	}
+	grows := 0
+	for _, c := range footer.Children {
+		if c.Style != nil && c.Style.FlexGrow > 0 {
+			grows++
+		}
+	}
+	if grows != 1 || feedCaption(t, footer) == "" {
+		t.Fatalf("the footer strip should hold one FlexGrow spacer and the row/fetch count; %d grow", grows)
+	}
+
 	// B3: every group band carries the sticky marker, and the rows do not.
 	list := findNode(cur, func(n *node) bool { return n.Type == "List" })
 	if list == nil {

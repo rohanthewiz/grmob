@@ -210,8 +210,8 @@ val LocalGrMobUnboundedHeight = compositionLocalOf { false }
  * the viewport: there is no positive free space, so flex-grow hands out
  * nothing. A strip SHORTER than its viewport, where CSS gives the leftover
  * width to the growers, is laid out by GrMobGrowStrip instead, which knows the
- * viewport width and hands each grower its share as a minimum; the vertical
- * case does the same with GrMobScroll's growMinHeight.
+ * viewport width and hands each grower its content width plus its share as a
+ * minimum; the vertical case does the same with GrMobScroll's growMinHeight.
  *
  * ```
  *   root / bounded parent                          false (the default)
@@ -1837,8 +1837,36 @@ private class StripViewport {
     var width: Int = Constraints.Infinity
 }
 
-/** A strip child's core.FlexGrow, carried to GrMobGrowStrip's measure policy. */
-private data class StripGrow(val factor: Float)
+/**
+ * A strip child's core.FlexGrow, carried to GrMobGrowStrip's measure policy,
+ * and whether its subtree can be asked for an intrinsic width (see
+ * [answersIntrinsicWidth]).
+ */
+private data class StripGrow(val factor: Float, val intrinsic: Boolean)
+
+/**
+ * Whether a subtree can be asked for its max intrinsic width without
+ * throwing, so GrMobGrowStrip can learn a grower's content width without
+ * measuring it.
+ *
+ * Two node types render through a SubcomposeLayout, which refuses intrinsic
+ * measurements outright: a List (GrMobList: BoxWithConstraints around a
+ * LazyColumn) and a vertical Scroll (GrMobScroll's BoxWithConstraints). A
+ * horizontal Scroll is a layout modifier that forwards intrinsics
+ * (horizontalScrollWhenBounded asks its own content the same question), and a
+ * Modal is composed in a window of its own, outside this layout. A subtree
+ * under display none is not composed, so it cannot throw either.
+ *
+ * Read off the node tree rather than tried and caught: a thrown intrinsic
+ * query leaves nothing to fall back on in the same pass, and the list of
+ * subcomposing composables is short and named in Renderer.kt itself.
+ */
+private fun answersIntrinsicWidth(node: GrMobNode): Boolean {
+    if (node.style?.display == "none" || node.type == "Modal") return true
+    if (node.type == "List") return false
+    if (node.type == "Scroll" && node.style?.flexDirection != "row") return false
+    return node.children.all { answersIntrinsicWidth(it) }
+}
 
 /**
  * A horizontal Scroll whose content has a FlexGrow child: CSS's positive free
@@ -1864,20 +1892,31 @@ private data class StripGrow(val factor: Float)
  *
  * ```
  *   non-growers   measured unbounded             their content width
- *   free          viewport − non-growers − gaps  (0 when the viewport is
- *                                                 unbounded or overflowed)
- *   growers       measured with minWidth =       max(content, share)
- *                 free × grow ÷ Σgrow
+ *   grower base   maxIntrinsicWidth              its content width, asked
+ *                                                 without measuring
+ *   free          viewport − non-growers         (0 when the viewport is
+ *                 − grower bases − gaps           unbounded or overflowed)
+ *   growers       measured with minWidth =       CSS's flex-basis: auto plus
+ *                 base + free × grow ÷ Σgrow      its share of the free space
  *   width         Σ widths + gaps                at least the viewport when
  *                                                 there was free space
  * ```
  *
- * Where it differs from CSS: CSS adds the share to each grower's content
- * width, and this takes the larger of the two, which is what a weighted Row in
- * a bounded parent does on Compose too (weight ignores the content base). With
- * one grower, or growers whose content is narrower than their shares, the two
- * agree. An overflowing strip (free ≤ 0) gives growers their content width,
- * which is CSS's answer as well.
+ * # Content plus share
+ *
+ * CSS grows an item from its content width, so two growers of unequal content
+ * keep that difference and split the rest. A measurement cannot give both
+ * numbers here: a child measured once for its content cannot be measured again
+ * with the share added. The intrinsic query can, because it asks without
+ * measuring, and it is the same question horizontalScrollWhenBounded already
+ * puts to a strip's content.
+ *
+ * A grower whose subtree cannot answer it (a List or a vertical Scroll inside,
+ * see [answersIntrinsicWidth]) is counted as content 0 in `free` and measured
+ * with its share as a minimum, which is `max(content, share)`: the answer a
+ * weighted Row gives on Compose, and CSS's whenever that grower's content is
+ * narrower than its share. An overflowing strip (free ≤ 0) gives every grower
+ * its content width, which is CSS's answer as well.
  *
  * Vertical placement follows the Row's AlignItems (top, centre, bottom), and a
  * stretched child fills the height as in RowChildren. JustifyContent is not
@@ -1895,7 +1934,9 @@ private fun GrMobGrowStrip(node: GrMobNode, extra: Modifier) {
             CompositionLocalProvider(LocalGrMobUnboundedWidth provides true) {
                 node.children.forEachIndexed { i, child ->
                     key(child.key.ifEmpty { i }) {
-                        var m: Modifier = Modifier.layoutId(StripGrow(child.style?.flexGrow ?: 0f))
+                        var m: Modifier = Modifier.layoutId(
+                            StripGrow(child.style?.flexGrow ?: 0f, answersIntrinsicWidth(child)),
+                        )
                         if (stretch) m = m.fillMaxHeight()
                         RenderNode(child, m)
                     }
@@ -1914,6 +1955,12 @@ private fun GrMobGrowStrip(node: GrMobNode, extra: Modifier) {
         val gaps = gap * (measurables.size - 1).coerceAtLeast(0)
         val loose = Constraints(maxHeight = constraints.maxHeight)
         val grows = measurables.map { (it.layoutId as? StripGrow)?.factor ?: 0f }
+        // Each grower's content width where its subtree can say, null where it
+        // cannot; see "Content plus share".
+        val bases = measurables.mapIndexed { i, m ->
+            val intrinsic = (m.layoutId as? StripGrow)?.intrinsic ?: false
+            if (grows[i] > 0f && intrinsic) m.maxIntrinsicWidth(constraints.maxHeight) else null
+        }
         val placeables = arrayOfNulls<Placeable>(measurables.size)
         var fixed = 0
         measurables.forEachIndexed { i, m ->
@@ -1924,11 +1971,12 @@ private fun GrMobGrowStrip(node: GrMobNode, extra: Modifier) {
             }
         }
         val totalGrow = grows.filter { it > 0f }.sum()
-        val free = if (viewport.width == Constraints.Infinity) 0 else viewport.width - fixed - gaps
+        val growBases = bases.sumOf { it ?: 0 }
+        val free = if (viewport.width == Constraints.Infinity) 0 else viewport.width - fixed - growBases - gaps
         measurables.forEachIndexed { i, m ->
             if (grows[i] > 0f) {
                 val share = if (free > 0) (free * grows[i] / totalGrow).roundToInt() else 0
-                placeables[i] = m.measure(loose.copy(minWidth = share))
+                placeables[i] = m.measure(loose.copy(minWidth = (bases[i] ?: 0) + share))
             }
         }
         val laid = placeables.map { it!! }

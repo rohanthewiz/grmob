@@ -1532,13 +1532,29 @@ core.List(
 							},
 						},
 					),
-					caption(fmt.Sprintf("%d of %d rows, %d fetches", len(rows), total, fetches.Get())),
-					core.Row(core.Gap(8), core.Padding(0),
-						comps.Chip{Label: "Start over", OnTap: func() {
-							loaded.Set(endlessPageSize)
-							fetches.Set(0)
-						}},
-					),
+					// The footer is a strip too, and the other shape of one:
+					// shorter than the screen, so it has free space, and a
+					// FlexGrow spacer takes it and pushes the count to the far
+					// edge. The chip strip above overflows a phone, where a
+					// grower gets nothing; this one is the case where CSS hands
+					// the grower the leftover width, which Compose's
+					// GrMobGrowStrip reproduces inside a horizontal scroll.
+					//
+					// Children rather than Chips: a strip given Children draws
+					// them instead of its Chips, and this one holds more than
+					// chips.
+					comps.ChipStrip{
+						Scrollable: true,
+						Children: []core.View{
+							comps.Chip{Label: "Start over", OnTap: func() {
+								loaded.Set(endlessPageSize)
+								fetches.Set(0)
+							}},
+							core.Box(core.FlexGrow(1)),
+							caption(fmt.Sprintf("%d of %d rows, %d fetches", len(rows), total, fetches.Get())),
+						},
+						Style: []core.StyleProp{core.AlignItemsProp(core.AlignItemsCenter)},
+					},
 				),
 				prose("Keep the footer. A screen that drops its LoadMore for OnEndReached gains a "+
 					"feed that stops silently at whatever page failed, and loses the one control "+

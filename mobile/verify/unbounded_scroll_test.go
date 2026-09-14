@@ -227,11 +227,28 @@ func TestComposeGrowChildrenKeepContentSizeWhereNothingIsBounded(t *testing.T) {
 			"a strip with a grower is laid out against its viewport, as CSS divides free space"},
 		{"private fun GrMobGrowStrip(", "viewport.width = if (constraints.hasBoundedWidth) constraints.maxWidth else Constraints.Infinity",
 			"the viewport width is captured outside the scroll, where it is still bounded"},
-		{"private fun GrMobGrowStrip(", "placeables[i] = m.measure(loose.copy(minWidth = share))",
-			"a grower takes its share of the free space as a minimum, keeping its content width past it"},
+		{"private fun GrMobGrowStrip(", "placeables[i] = m.measure(loose.copy(minWidth = (bases[i] ?: 0) + share))",
+			"a grower takes its content width plus its share of the free space, as CSS grows from flex-basis: auto"},
+		{"private fun answersIntrinsicWidth(", "return node.children.all { answersIntrinsicWidth(it) }",
+			"a grower is asked for an intrinsic width only when nothing anywhere in it would throw"},
 	} {
 		if !strings.Contains(codeOf(t, kotlinRenderer, c.decl), c.expr) {
 			t.Errorf("%s: %s has no %q — %s", kotlinRenderer, c.decl, c.expr, c.why)
+		}
+	}
+
+	// The node types answersIntrinsicWidth refuses, read with their string
+	// literals intact (codeOf above blanks them). Each is a SubcomposeLayout on
+	// this renderer, and an intrinsic query into one throws.
+	intrinsic := valuesOf(t, kotlinRenderer, "private fun answersIntrinsicWidth(")
+	for _, refused := range []struct{ expr, why string }{
+		{`if (node.type == "List") return false`, "a List is a BoxWithConstraints around a LazyColumn"},
+		{`if (node.type == "Scroll" && node.style?.flexDirection != "row") return false`,
+			"a vertical Scroll is GrMobScroll's BoxWithConstraints"},
+	} {
+		if !strings.Contains(intrinsic, refused.expr) {
+			t.Errorf("%s: answersIntrinsicWidth has no %q — %s, so a strip grower holding one "+
+				"would be asked for an intrinsic width and throw", kotlinRenderer, refused.expr, refused.why)
 		}
 	}
 }
