@@ -556,8 +556,13 @@ private struct FlexChildren: View {
             // fillWidth). Vertical only, since that is the only axis with
             // a stretch default — see hugsContent.
             let hugs = axis == .vertical && hugsContent(child.style)
-            RenderNode(node: child, grow: fill(weight: weight, stretch: stretch && !hugs))
+            // A percentage floor along this stack's axis, resolved by the
+            // layout against its own extent (GrMobFlexSolver.percentFloors).
+            let floor = GrMobMinSize.fraction(axis == .horizontal ? (child.style?.minWidth ?? "")
+                                                                  : (child.style?.minHeight ?? "")) ?? 0
+            RenderNode(node: child, grow: fill(weight: weight, floored: floor > 0, stretch: stretch && !hugs))
                 .layoutValue(key: GrMobFlexWeight.self, value: weight)
+                .layoutValue(key: GrMobFlexPercentFloor.self, value: floor)
                 // The reading, not the raw field: core.FlexShrink(0) arrives as
                 // core.ShrinkNone and an absent declaration as 0, and
                 // shrinkFactor is the one place that knows which is which.
@@ -584,9 +589,13 @@ private struct FlexChildren: View {
         }
     }
 
-    private func fill(weight: CGFloat, stretch: Bool) -> GrMobGrow {
+    /// `floored` is a percentage floor on the main axis: like a grower, such a
+    /// child may be given a slot longer than its content, and a main-axis
+    /// fill is what makes it take the slot rather than draw its content
+    /// inside it.
+    private func fill(weight: CGFloat, floored: Bool, stretch: Bool) -> GrMobGrow {
         var g = GrMobGrow()
-        if weight > 0 {
+        if weight > 0 || floored {
             if axis == .horizontal { g.fillWidth = true } else { g.fillHeight = true }
         }
         if stretch {
@@ -603,6 +612,14 @@ private struct FlexChildren: View {
 /// back to the GrMobNode it came from, and a parallel array would silently
 /// mis-align the moment SwiftUI flattened a Group or dropped an empty view.
 private struct GrMobFlexWeight: LayoutValueKey {
+    static let defaultValue: CGFloat = 0
+}
+
+/// A child's percentage floor along the container's main axis, as a fraction
+/// (0.4 for "40%"), 0 for none. Carried the same way as the weight; see
+/// GrMobFlexSolver.percentFloors for why the container, not the child,
+/// resolves it.
+private struct GrMobFlexPercentFloor: LayoutValueKey {
     static let defaultValue: CGFloat = 0
 }
 
@@ -720,9 +737,10 @@ private struct GrMobFlexLayout: Layout {
         // The cross extent on offer is handed to every child as a bound (see
         // baseMains); nil when the parent is asking for an ideal size.
         let crossBound = GrMobFlexSolver.definite(crossOf(proposal))
-        let bases = baseMains(subviews, crossBound: crossBound)
-        let weights = subviews.map { $0[GrMobFlexWeight.self] }
         let offered = mainOf(proposal)
+        let floors = percentFloors(subviews, extent: offered)
+        let bases = baseMains(subviews, crossBound: crossBound, floors: floors)
+        let weights = subviews.map { $0[GrMobFlexWeight.self] }
         let main = solver.containerMain(offered: offered, bases: bases, weights: weights)
         // The container's own size is unchanged by the floor, and that is the
         // CSS shape: a flex container that cannot fit its children OVERFLOWS
@@ -733,7 +751,7 @@ private struct GrMobFlexLayout: Layout {
         let resolved = solver.resolve(
             main: main, bases: bases, weights: weights,
             shrinks: subviews.map { $0[GrMobFlexShrink.self] },
-            mins: minMains(subviews, bases: bases))
+            mins: minMains(subviews, bases: bases, floors: floors))
 
         // Cross size is re-measured at each child's *final* main size: a Text
         // that had to shrink wraps to more lines, and asking it before the
@@ -750,12 +768,17 @@ private struct GrMobFlexLayout: Layout {
         // hand over a different size than the one sizeThatFits asked for, and
         // bounds is the size that is actually being drawn into.
         let containerCross = crossOf(bounds.size)
-        let bases = baseMains(subviews, crossBound: containerCross)
+        // The percentage floors against the same extent sizeThatFits used, the
+        // offer, so a hugging container is not re-floored against its own
+        // hugged size; the bounds stand in only when no offer was made.
+        let floors = percentFloors(subviews,
+                                   extent: GrMobFlexSolver.definite(mainOf(proposal)) ?? mainOf(bounds.size))
+        let bases = baseMains(subviews, crossBound: containerCross, floors: floors)
         let weights = subviews.map { $0[GrMobFlexWeight.self] }
         let resolved = solver.resolve(
             main: mainOf(bounds.size), bases: bases, weights: weights,
             shrinks: subviews.map { $0[GrMobFlexShrink.self] },
-            mins: minMains(subviews, bases: bases))
+            mins: minMains(subviews, bases: bases, floors: floors))
         // The same read FlexChildren makes, and it has to be the same one:
         // an unset value stretches on the vertical axis (the CSS default the
         // DOM targets have always drawn) and packs on the horizontal one.
@@ -809,8 +832,19 @@ private struct GrMobFlexLayout: Layout {
     ///     child base:   sizeThatFits(width: W,  height: nil)   <- wraps at W
     ///     child final:  place(width: W, height: resolved)      <- same bound
     /// ```
-    private func baseMains(_ subviews: Subviews, crossBound: CGFloat?) -> [CGFloat] {
-        subviews.map { mainOf($0.sizeThatFits(proposed(main: nil, cross: crossBound))) }
+    ///
+    /// A child's percentage floor (see percentFloors) raises its base.
+    private func baseMains(_ subviews: Subviews, crossBound: CGFloat?, floors: [CGFloat]) -> [CGFloat] {
+        subviews.enumerated().map { i, subview in
+            max(mainOf(subview.sizeThatFits(proposed(main: nil, cross: crossBound))), floors[i])
+        }
+    }
+
+    /// Each child's percentage floor along the main axis in points, against
+    /// `extent`; see GrMobFlexSolver.percentFloors.
+    private func percentFloors(_ subviews: Subviews, extent: CGFloat?) -> [CGFloat] {
+        GrMobFlexSolver.percentFloors(fractions: subviews.map { $0[GrMobFlexPercentFloor.self] },
+                                      extent: extent)
     }
 
     /// Each child's automatic minimum size along the main axis — the floor
@@ -828,8 +862,11 @@ private struct GrMobFlexLayout: Layout {
     /// whole mechanism for a Column, whose children send `.infinity` to mean
     /// "floor at the base" (see GrMobFlexMin). The solver clamps again
     /// regardless.
-    private func minMains(_ subviews: Subviews, bases: [CGFloat]) -> [CGFloat] {
-        subviews.enumerated().map { i, subview in min(subview[GrMobFlexMin.self], bases[i]) }
+    ///
+    /// A percentage floor outranks the automatic one: CSS's min-width is the
+    /// declared minimum, and it is at most the base, which it already raised.
+    private func minMains(_ subviews: Subviews, bases: [CGFloat], floors: [CGFloat]) -> [CGFloat] {
+        subviews.enumerated().map { i, subview in max(min(subview[GrMobFlexMin.self], bases[i]), floors[i]) }
     }
 
     // -- axis-agnostic helpers ---------------------------------------------
@@ -1456,13 +1493,16 @@ private struct GrMobButton: View {
         // label/background rather than grMobBox: the control draws its own
         // container, so background/radius/padding belong inside the pressable
         // area (and inside the press feedback), with only margin/size outside.
-        Button {
+        // The Button's action, named so the extra keyboard chords behind it
+        // (grMobKeyShortcut) run exactly what a tap runs.
+        let press = {
             if longPressFired {
                 longPressFired = false
                 return
             }
             if !onClick.isEmpty { runtime?.click(onClick) }
-        } label: {
+        }
+        Button(action: press) {
             Text(node.stringProp("label"))
                 .font(.system(size: (s?.fontSize ?? 0) > 0 ? s!.fontSize : 17,
                               weight: grMobFontWeight(s?.fontWeight ?? 0)))
@@ -1504,7 +1544,7 @@ private struct GrMobButton: View {
         // also lists it in iPadOS's shortcut overlay. On the Button itself,
         // because keyboardShortcut triggers the primary action of the view it
         // modifies, and a disabled button's shortcut is disabled with it.
-        .grMobKeyShortcut(s?.accessibilityKeyShortcuts ?? "")
+        .grMobKeyShortcut(s?.accessibilityKeyShortcuts ?? "", press: press)
         .grMobBox(marginAndSizeOnly(s), grow: grow)
     }
 

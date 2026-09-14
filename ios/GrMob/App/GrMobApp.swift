@@ -26,6 +26,9 @@ struct GrMobApp: App {
         // nothing renders until start(). See SystemEvents.swift.
         SystemEvents.attach(bridge, runtime: runtime)
         runtime.start()
+        // F-key shortcuts, which SwiftUI does not deliver; see
+        // GrMobFunctionKeys.
+        GrMobFunctionKeys.attach(to: runtime)
         self.runtime = runtime
     }
 

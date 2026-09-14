@@ -35,6 +35,17 @@ type node struct {
 // Go field names. Chapter 7's tests read these to watch prop order, merging,
 // theme swaps and transition declarations land on actual nodes.
 type nodeStyle struct {
+	// Chapter 1's alignment lesson asserts on MinWidth, and chapter 2's
+	// events lesson on AccessibilityKeyShortcuts. Both are style fields with
+	// nothing in the tree's text to show them: a floor is a size, and a
+	// shortcut is a key nobody pressed.
+	MinWidth                  string
+	AccessibilityKeyShortcuts string
+
+	// Chapter 4's endless-feed lesson asserts on FlexGrow: its footer strip's
+	// spacer is an empty Box, so the grow factor is all there is to find.
+	FlexGrow float64
+
 	Background   string
 	TextColor    string
 	FontSize     float64
@@ -626,6 +637,37 @@ func TestStacksDemoSwitchesAxis(t *testing.T) {
 
 	if boxRow(tree(t, mgr), "Column") == nil {
 		t.Fatal("after switching the axis, the boxes should sit in a Column")
+	}
+	assertNoConcerns(t)
+}
+
+// --- 1.4 Alignment & flex ------------------------------------------------
+
+// The second checkbox floors box A (a demoBox, so a Column around one Text) at
+// 40% of its row. The percentage is the
+// lesson's subject, so the test reads the style the renderers receive rather
+// than any text: unticked, A has no floor; ticked, it carries "40%" exactly.
+func TestAlignmentDemoFloorsABoxByPercentage(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Alignment & flex")
+
+	boxA := func() *node {
+		n := findNode(tree(t, mgr), func(n *node) bool {
+			return n.Type == "Column" && len(n.Children) == 1 &&
+				n.Children[0].Type == "Text" && hasText(n, "A")
+		})
+		if n == nil {
+			t.Fatal("no demo box labelled A in the tree")
+		}
+		return n
+	}
+	if got := boxA().Style; got != nil && got.MinWidth != "" {
+		t.Fatalf("A should start with no floor; its MinWidth is %q", got.MinWidth)
+	}
+	// Checkbox 0 is FlexGrow on B, checkbox 1 the floor on A.
+	toggleCheckbox(t, mgr, 1, true)
+	if got := boxA().Style; got == nil || got.MinWidth != "40%" {
+		t.Fatalf("ticking the MinWidth checkbox should floor A at 40%%; got %+v", got)
 	}
 	assertNoConcerns(t)
 }

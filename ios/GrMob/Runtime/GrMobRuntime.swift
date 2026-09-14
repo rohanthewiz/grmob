@@ -88,6 +88,47 @@ final class GrMobRuntime {
         dispatch { $0.triggerCallback(callbackID) }
     }
 
+    /// core.AccessibilityKeyShortcuts' F-key chords from a hardware keyboard,
+    /// called by GrMobFunctionKeys for each F-key press; answers whether a
+    /// node took it.
+    ///
+    /// The same walk as Compose's GrMobRuntime.handleKeyEvent, because it is
+    /// the same problem: nothing in SwiftUI delivers the key (see "F-keys are
+    /// not SwiftUI's" on grMobKeyChord), so the tree is searched for it.
+    ///
+    ///  - The first node in tree order declaring an equal chord and carrying
+    ///    an onClick is pressed. Any such node, not only a Button: that is the
+    ///    web's and Compose's rule. A modifier chord on iOS reaches Buttons
+    ///    alone, because it rides SwiftUI's keyboardShortcut on GrMobButton.
+    ///  - A subtree under display none or AccessibilityHidden is not searched
+    ///    (a screen behind a modal, a shut panel).
+    ///  - A disabled match, by its own flag or an ancestor's, takes the key
+    ///    and clicks nothing.
+    func pressFunctionKey(_ pressed: GrMobFunctionKeyChord) -> Bool {
+        guard let root = store.root,
+              let target = Self.functionKeyTarget(root, ancestorDisabled: false, pressed)
+        else { return false }
+        if !target.disabled { click(target.node.stringProp("onClick")) }
+        return true
+    }
+
+    private static func functionKeyTarget(
+        _ node: GrMobNode, ancestorDisabled: Bool, _ pressed: GrMobFunctionKeyChord
+    ) -> (node: GrMobNode, disabled: Bool)? {
+        let style = node.style
+        if style?.display == "none" || style?.accessibilityHidden == true { return nil }
+        let disabled = ancestorDisabled || style?.disabled == true
+        let spec = style?.accessibilityKeyShortcuts ?? ""
+        if !spec.isEmpty, !node.stringProp("onClick").isEmpty,
+           GrMobFunctionKeyChord.parseAll(spec).contains(pressed) {
+            return (node, disabled)
+        }
+        for child in node.children {
+            if let hit = functionKeyTarget(child, ancestorDisabled: disabled, pressed) { return hit }
+        }
+        return nil
+    }
+
     func textChanged(_ callbackID: String, _ value: String) {
         dispatch { $0.triggerTextCallback(callbackID, value) }
     }

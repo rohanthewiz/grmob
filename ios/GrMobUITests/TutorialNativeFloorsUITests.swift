@@ -9,10 +9,17 @@ import XCTest
 ///   accessibility value: this test first asserted the value and read it
 ///   empty, because the cell stays an accessibility container (see
 ///   grMobCurrentLabel in GrMobStyle.swift).
+///   The same cell is one accessibility element with no Button inside it:
+///   the tap's button trait used to be applied inside the label's combine and
+///   reached the numeral, which made the cell a container of buttons (see
+///   GrMobGestureAccessibility in GrMobStyle.swift).
 /// - core.MinWidth: the rich-text link prompt (comps.RichTextEditor's 280pt
 ///   floor) is at least that wide on a phone, measured through its labelled
 ///   field, which stretches across it. On iOS the prompt is a sheet, so the
 ///   floor holds rather than binds.
+/// - core.MinWidth("40%"): lesson 1.4's box A, floored at 40% of its row. A
+///   Row resolves that floor itself (GrMobFlexSolver.percentFloors): before
+///   it did, A kept its content width on this simulator.
 ///
 /// Screenshots are attached to the result, and also written to
 /// GRMOB_SHOT_DIR when the runner is given one
@@ -65,7 +72,56 @@ final class TutorialNativeFloorsUITests: XCTestCase {
             .matching(NSPredicate(format: "label == %@", "Wednesday, March 11, 2026, " + today)).firstMatch
         scroll(app, to: cell)
         XCTAssertTrue(cell.exists, "no element is named \"Wednesday, March 11, 2026, \(today)\": the today cell does not speak the platform's word")
+        // Before GrMobGestureAccessibility this read two Buttons: "11" and an
+        // unlabelled 0×0 one.
+        XCTAssertEqual(cell.descendants(matching: .button).count, 0,
+                       "the today cell holds buttons of its own, so VoiceOver can stop inside it: \(cell.debugDescription)")
         shot(app, "i_4.9")
+    }
+
+    /// Lesson 1.4's demo row, before and after its MinWidth("40%") toggle.
+    ///
+    /// The boxes are unlabelled, but each demoBox's label reports its whole
+    /// box's frame to XCUITest, not the text's (measured: B's label started at
+    /// 95.3pt, the left edge of B's blue-green box in the screenshot, not 18pt
+    /// of padding inside it). So the labels are the boxes here:
+    ///
+    /// ```
+    ///   A's width        a.frame.width                 at least 40% of the row
+    ///   the row after    b.frame.minX == a.frame.maxX + 8 (the row's gap)
+    /// ```
+    ///
+    /// The 40% is of the row's content width, which is the window less the
+    /// page, panel and row insets on each side (32, 14 and 8pt). Loosely,
+    /// because those insets are the theme's: the check is that the floor
+    /// binds, not that the theme kept its numbers. That A's letter sits in the
+    /// middle of the wider box is not in any frame, so it is left to the
+    /// i_1.4_floor screenshot.
+    func testAPercentageMinWidthFloorsTheBox() throws {
+        let app = XCUIApplication()
+        app.launch()
+        app.open(URL(string: "grmob://lesson/1.4")!)
+        XCTAssertTrue(text(app, beginningWith: "1.4").waitForExistence(timeout: 10), "lesson 1.4 did not open")
+
+        let toggle = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "MinWidth(")).firstMatch
+        scroll(app, to: toggle)
+        XCTAssertTrue(toggle.isHittable, "the MinWidth toggle never came on screen")
+        let a = app.staticTexts["A"]
+        let b = app.staticTexts["B"]
+        XCTAssertTrue(a.exists && b.exists, "the demo row's A and B labels are missing")
+        let widthBefore = a.frame.width
+        shot(app, "i_1.4")
+
+        toggle.tap()
+        sleep(1)
+        shot(app, "i_1.4_floor")
+        let rowWidth = app.windows.firstMatch.frame.width - 2 * (32 + 14 + 8)
+        XCTAssertGreaterThan(a.frame.width, widthBefore + 40, "A did not widen: its 40% floor did not bind")
+        XCTAssertGreaterThanOrEqual(a.frame.width, rowWidth * 0.4 - 12,
+                                    "A is \(a.frame.width)pt wide, under 40% of a row of about \(rowWidth)pt")
+        XCTAssertEqual(b.frame.minX, a.frame.maxX + 8, accuracy: 1,
+                       "B does not start one gap after the floored A: the row placed A's floor without making room for it")
     }
 
     func testTheLinkPromptKeepsItsMinimumWidth() throws {

@@ -409,8 +409,11 @@ extension EnvironmentValues {
 /// and the inputs handle their own interaction). Inserted into grMobBox
 /// after the background layer, so the touch target is the visible box —
 /// padding included, margin excluded — matching the Android renderer.
-/// The accessibility actions mirror the gestures so a VoiceOver user can
-/// activate a row (and reach its long-press action by name) without touch.
+///
+/// The accessibility half (the button trait and the actions that let a
+/// VoiceOver user activate a row, and reach its long-press action by name,
+/// without touch) is not here: see GrMobGestureAccessibility for why it sits
+/// further out in the chain than the gestures do.
 private struct GrMobGestures: ViewModifier {
     let onTap: String
     let onLongPress: String
@@ -444,8 +447,6 @@ extension View {
             self
         } else {
             onTapGesture { dispatch?(id) }
-                .accessibilityAddTraits(.isButton)
-                .accessibilityAction { dispatch?(id) }
         }
     }
 
@@ -456,7 +457,75 @@ extension View {
             self
         } else {
             onLongPressGesture { dispatch?(id) }
-                .accessibilityAction(named: Text("Long press")) { dispatch?(id) }
+        }
+    }
+}
+
+/// The accessibility half of GrMobGestures: a tappable box is a button to
+/// VoiceOver, activated by the tap's callback, with the long press offered as
+/// a named action.
+///
+/// # Why it is applied outside grMobAccessibility, not with the gestures
+///
+/// It used to ride on the gestures, inside the background. That put the trait
+/// and the actions on the box's *content*, which grMobAccessibility then
+/// combines when the node has a label. A trait or an action applied to a
+/// container that is not yet an accessibility element is handed to each
+/// element inside it, so every child became an interactive element of its
+/// own, and `.combine` keeps interactive children as separate elements. On a
+/// simulator, XCUITest read each of comps.Calendar's day cells as
+///
+///     Button  "Wednesday, March 11, 2026, today"     the combined cell
+///       Button  "11"                                 the numeral, with the trait
+///       Button  (no label, 0×0)                      the hidden dot row's slot
+///
+/// so VoiceOver could stop on a bare numeral, and an accessibilityValue on the
+/// cell never reached the element that carried the label. Applied after the
+/// combine, the trait and the actions describe the one combined element, and
+/// the cell reads as a single button.
+///
+/// A node with no label is not combined, and for it this changes nothing a
+/// reader hears: the modifiers still meet a container that is not an element
+/// and still reach each child, which is what they reached before.
+///
+/// Disabled drops both, for GrMobGestures' reason: an activation that would do
+/// nothing should not be offered.
+/// grMobAccessibility followed by GrMobGestureAccessibility, as the one step
+/// GrMobBoxModifier's chain takes for both. See the note at the call site.
+struct GrMobAccessibilityModifier: ViewModifier {
+    let style: GrMobStyle?
+    let onTap: String
+    let onLongPress: String
+
+    func body(content: Content) -> some View {
+        content
+            .grMobAccessibility(style)
+            .modifier(GrMobGestureAccessibility(onTap: onTap, onLongPress: onLongPress,
+                                                disabled: style?.disabled ?? false))
+    }
+}
+
+struct GrMobGestureAccessibility: ViewModifier {
+    let onTap: String
+    let onLongPress: String
+    let disabled: Bool
+    @Environment(\.grMobDispatch) private var dispatch
+
+    func body(content: Content) -> some View {
+        if disabled || (onTap.isEmpty && onLongPress.isEmpty) {
+            content
+        } else if onLongPress.isEmpty {
+            content
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction { dispatch?(onTap) }
+        } else if onTap.isEmpty {
+            content
+                .accessibilityAction(named: Text("Long press")) { dispatch?(onLongPress) }
+        } else {
+            content
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction { dispatch?(onTap) }
+                .accessibilityAction(named: Text("Long press")) { dispatch?(onLongPress) }
         }
     }
 }
@@ -649,7 +718,14 @@ struct GrMobBoxModifier: ViewModifier {
             // branch here would add another _ConditionalContent layer to this
             // chain (see grMobTransition for what that costs).
             .disabled(s?.disabled ?? false)
-            .grMobAccessibility(s)
+            // Label, hint and hidden, then the gestures' button trait and
+            // actions on the element that makes; see GrMobGestureAccessibility.
+            // One modifier for both, not two steps: a further layer on this
+            // chain aborted SILGen in this body (the substOpaqueTypes crash
+            // described on GrMobBoxModifier), and a concrete ModifiedContent
+            // in place of grMobAccessibility's opaque @ViewBuilder result
+            // makes the tower no taller than it was.
+            .modifier(GrMobAccessibilityModifier(style: s, onTap: onTap, onLongPress: onLongPress))
             .grMobRole(s)
             .grMobValueText(s)
             .grMobTransition(s, reduceMotion: reduceMotion)
@@ -1617,11 +1693,25 @@ private func grMobAlignmentFraction(_ v: VerticalAlignment) -> CGFloat {
 ///
 /// # Which chords
 ///
-/// Page-global means the chord holds Control, Alt or Meta; see Go's
+/// Page-global means the chord holds Control, Alt or Meta, or its key is an
+/// F-key, the same rule as the web and Compose; see Go's
 /// Style.AccessibilityKeyShortcuts for why a bare key (PageDown, a letter) is
-/// left to the widget that owns it. The web and Compose also treat a bare
-/// F-key as page-global, but KeyEquivalent has no function keys, so here it
-/// is skipped rather than approximated.
+/// left to the widget that owns it.
+///
+/// # F-keys are not SwiftUI's
+///
+/// A chord whose key is an F-key is skipped here and pressed by
+/// GrMobFunctionKeys instead, from the GameController framework's keyboard.
+///
+/// KeyEquivalent has no named function keys. Its named keys are AppKit's
+/// function-key characters in the Unicode private use area (`.upArrow` is
+/// U+F700, `.pageUp` U+F72C, measured by printing them), and F1 to F12 sit at
+/// U+F704 to U+F70F in the same table, so a KeyEquivalent built from U+F709
+/// was tried for F6. It compiled and never fired: on the iOS 26.5 simulator,
+/// XCUITest's typeKey(.F6) pressed nothing, both as a Button's own shortcut
+/// and as the second one behind it, while Control+Option+K fired in both
+/// positions. SwiftUI's mapping to UIKeyCommand inputs covers the named keys
+/// and not the F-key characters.
 ///
 ///	ARIA          SwiftUI
 ///	Control       .control
@@ -1630,11 +1720,19 @@ private func grMobAlignmentFraction(_ v: VerticalAlignment) -> CGFloat {
 ///	Shift         .shift
 ///	"p", "P"      KeyEquivalent("p")
 ///	Enter         .return      and the other named keys in the switch
+///	F1 … F12      none here: GrMobFunctionKeys
 ///
-/// Only the first usable chord is taken: a Button carries one
-/// keyboardShortcut. A chord with an unknown modifier or key name is skipped,
-/// so a misspelling adds no shortcut rather than a wrong one.
+/// A chord with an unknown modifier or key name is skipped, so a misspelling
+/// adds no shortcut rather than a wrong one. The first usable chord is the
+/// Button's own keyboardShortcut; see grMobKeyShortcut for the rest.
 func grMobKeyChord(_ spec: String) -> (key: KeyEquivalent, modifiers: EventModifiers)? {
+    grMobKeyChords(spec).first
+}
+
+/// Every page-global chord of a core.AccessibilityKeyShortcuts value, in the
+/// order written, as grMobKeyChord describes each one.
+func grMobKeyChords(_ spec: String) -> [(key: KeyEquivalent, modifiers: EventModifiers)] {
+    var found: [(key: KeyEquivalent, modifiers: EventModifiers)] = []
     chords: for chord in spec.split(separator: " ") {
         var parts = chord.split(separator: "+", omittingEmptySubsequences: false).map(String.init)
         guard let name = parts.popLast(), !name.isEmpty else { continue }
@@ -1648,6 +1746,8 @@ func grMobKeyChord(_ spec: String) -> (key: KeyEquivalent, modifiers: EventModif
             default: continue chords
             }
         }
+        // An F-key chord is GrMobFunctionKeys'; see "F-keys are not SwiftUI's".
+        if grMobFunctionKeyNumber(name) != nil { continue }
         // A chord with no Control, Alt or Meta is not page-global.
         guard !modifiers.subtracting(.shift).isEmpty else { continue }
         let key: KeyEquivalent
@@ -1671,18 +1771,99 @@ func grMobKeyChord(_ spec: String) -> (key: KeyEquivalent, modifiers: EventModif
             default: continue chords
             }
         }
-        return (key, modifiers)
+        found.append((key, modifiers))
     }
-    return nil
+    return found
+}
+
+/// 1 to 12 for "F1" to "F12", nil for anything else, including spellings
+/// such as "F01" and F13 and above: GrMobFunctionKeys listens for F1 to F12,
+/// the function row every Apple keyboard has, where the web accepts up to
+/// F24.
+func grMobFunctionKeyNumber(_ name: String) -> Int? {
+    guard name.count >= 2, name.count <= 3, name.first == "F",
+          let n = Int(name.dropFirst()), (1...12).contains(n),
+          String(n) == name.dropFirst() else { return nil }
+    return n
+}
+
+/// One F-key chord of a core.AccessibilityKeyShortcuts value, or a key press
+/// described the same way: the F-key's number and the modifiers held with it.
+///
+/// The half of the value SwiftUI cannot deliver (see "F-keys are not
+/// SwiftUI's" on grMobKeyChord). GrMobFunctionKeys builds one from each F-key
+/// press and GrMobRuntime.pressFunctionKey looks for a node declaring an
+/// equal one. An F-key is page-global with or without modifiers, as on the
+/// web and Compose, and modifiers match exactly, so Shift+F6 does not answer
+/// F6.
+struct GrMobFunctionKeyChord: Equatable {
+    let number: Int
+    let control: Bool
+    let alt: Bool
+    let meta: Bool
+    let shift: Bool
+
+    /// The F-key chords of a value, in order; every other chord is skipped,
+    /// as is one with an unknown modifier.
+    static func parseAll(_ spec: String) -> [GrMobFunctionKeyChord] {
+        spec.split(separator: " ").compactMap { chord in
+            var parts = chord.split(separator: "+", omittingEmptySubsequences: false).map(String.init)
+            guard let name = parts.popLast(), let number = grMobFunctionKeyNumber(name) else { return nil }
+            var control = false, alt = false, meta = false, shift = false
+            for part in parts {
+                switch part {
+                case "Control": control = true
+                case "Alt": alt = true
+                case "Meta": meta = true
+                case "Shift": shift = true
+                default: return nil
+                }
+            }
+            return GrMobFunctionKeyChord(number: number, control: control, alt: alt, meta: meta, shift: shift)
+        }
+    }
 }
 
 extension View {
-    /// A Button's page-global shortcut, from grMobKeyChord. Strictly
+    /// A Button's page-global shortcuts, from grMobKeyChords. Strictly
     /// conditional, like grMobGrow: a button that declares none gets itself
     /// back, with no modifier in its chain.
-    @ViewBuilder func grMobKeyShortcut(_ spec: String) -> some View {
-        if let chord = grMobKeyChord(spec) {
-            keyboardShortcut(chord.key, modifiers: chord.modifiers)
+    ///
+    /// # Every chord, not only the first
+    ///
+    /// A view carries one keyboardShortcut, so the first chord goes on the
+    /// Button itself, where it also presses the Button's own action and is
+    /// disabled with it. Each further chord ("Control+Alt+K F6" declares two,
+    /// and the web and Compose answer both) is a Button of its own behind it,
+    /// running `press`:
+    ///
+    /// ```
+    ///   Button ─ .keyboardShortcut(chord 1)
+    ///     └ background
+    ///         ├ Button(press) .keyboardShortcut(chord 2)   invisible, 0×0
+    ///         └ Button(press) .keyboardShortcut(chord 3)
+    /// ```
+    ///
+    /// Invisible by opacity and a zero frame rather than `.hidden()`, which
+    /// SwiftUI treats as not there and so drops the shortcut with it. Hidden
+    /// from accessibility and from touch, so VoiceOver and a tap still meet
+    /// only the real Button. A `.disabled` on the Button or an ancestor
+    /// reaches the background buttons too, so a disabled control's extra
+    /// chords are disabled with its first.
+    @ViewBuilder func grMobKeyShortcut(_ spec: String, press: @escaping () -> Void) -> some View {
+        let chords = grMobKeyChords(spec)
+        if let first = chords.first {
+            keyboardShortcut(first.key, modifiers: first.modifiers)
+                .background {
+                    ForEach(Array(chords.dropFirst().enumerated()), id: \.offset) { _, chord in
+                        Button("", action: press)
+                            .keyboardShortcut(chord.key, modifiers: chord.modifiers)
+                            .opacity(0)
+                            .frame(width: 0, height: 0)
+                            .accessibilityHidden(true)
+                            .allowsHitTesting(false)
+                    }
+                }
         } else {
             self
         }

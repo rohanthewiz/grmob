@@ -90,6 +90,29 @@ func TestEventsDemoLogsBothGestures(t *testing.T) {
 	assertNoConcerns(t)
 }
 
+// The keyboard demo declares two chords on one button, a modifier chord and a
+// bare F-key, so both page-global forms are on screen for the natives' hardware
+// checks. The press is a callback like any tap, so it is dispatched here.
+func TestEventsDemoDeclaresScreenWideShortcuts(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Events & handlers")
+
+	button := findNode(tree(t, mgr), func(n *node) bool {
+		return n.Type == "Button" && n.Props["label"] == "Log from the keyboard"
+	})
+	if button == nil {
+		t.Fatal(`no "Log from the keyboard" button in the tree`)
+	}
+	if button.Style == nil || button.Style.AccessibilityKeyShortcuts != "Control+Alt+K F6" {
+		t.Fatalf(`the button should declare "Control+Alt+K F6"; its style is %+v`, button.Style)
+	}
+	tap(t, mgr, "Log from the keyboard")
+	if !hasTextContaining(tree(t, mgr), "1 · button") {
+		t.Fatal("pressing the keyboard button should log '1 · button'")
+	}
+	assertNoConcerns(t)
+}
+
 // --- 2.3 Controlled inputs ------------------------------------------------
 
 func TestInputDemoEchoesTransformsAndClears(t *testing.T) {

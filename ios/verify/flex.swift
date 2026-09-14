@@ -452,5 +452,44 @@ func checkMinSize() -> [String] {
     floor("auto", "auto", 400, nil)
     floor("empty", "", 400, nil)
     floor("junk percent", "abc%", 400, nil)
+
+    // The fraction GrMobFlexLayout resolves on a child's main axis, and what
+    // it resolves to. See GrMobFlexSolver.percentFloors.
+    func fraction(_ name: String, _ value: String, _ want: CGFloat?) {
+        let got = GrMobMinSize.fraction(value)
+        if got != want { problems.append("minSize fraction \(name): got \(String(describing: got)), want \(String(describing: want))") }
+    }
+    fraction("percent", "40%", 0.4)
+    fraction("points are not a fraction", "280px", nil)
+    fraction("zero percent is none", "0%", nil)
+    fraction("junk", "abc%", nil)
+
+    let noOffer = GrMobFlexSolver.percentFloors(fractions: [0.4, 0], extent: nil)
+    if noOffer != [0, 0] { problems.append("percentFloors with no extent: got \(noOffer), want [0, 0]") }
+    let probe = GrMobFlexSolver.percentFloors(fractions: [0.4], extent: .infinity)
+    if probe != [0] { problems.append("percentFloors against an infinite probe: got \(probe), want [0]") }
+
+    // Lesson 1.4's row on a 402pt phone: 294pt of content, A's label box
+    // 31pt, B 49pt, C 67pt, 8pt gaps, A floored at 40%. The floor raises A's
+    // base to 117.6 and nothing else moves: the run (117.6 + 49 + 67 + 16 =
+    // 249.6) still fits, so there is nothing to shrink and justify-start packs
+    // it at the leading edge.
+    let row = GrMobFlexSolver(spacing: 8, justify: "")
+    let floors = GrMobFlexSolver.percentFloors(fractions: [0.4, 0, 0], extent: 294)
+    let bases = zip([31, 49, 67] as [CGFloat], floors).map { max($0, $1) }
+    let laid = row.resolve(main: 294, bases: bases, weights: [0, 0, 0],
+                           mins: zip([31, 49, 67] as [CGFloat], floors).map { max($0, $1) })
+    if abs(laid.mains[0] - 117.6) > 0.001 || laid.mains[1] != 49 || laid.mains[2] != 67 {
+        problems.append("percent floor in a row: got \(laid.mains), want [117.6, 49, 67]")
+    }
+    // Squeezed to 200pt, B and C shrink and A holds its floor, because the
+    // floor is also its minimum.
+    let tight = GrMobFlexSolver.percentFloors(fractions: [0.4, 0, 0], extent: 200)
+    let tightBases = zip([31, 49, 67] as [CGFloat], tight).map { max($0, $1) }
+    let squeezed = row.resolve(main: 200, bases: tightBases, weights: [0, 0, 0],
+                               mins: [tight[0], 0, 0])
+    if abs(squeezed.mains[0] - 80) > 0.001 || squeezed.mains[1] >= 49 || squeezed.mains[2] >= 67 {
+        problems.append("percent floor under shrink: got \(squeezed.mains), want A held at 80 and B, C shrunk")
+    }
     return problems
 }

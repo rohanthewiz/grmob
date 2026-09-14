@@ -285,6 +285,7 @@ func lessonAlignment() Lesson {
 			justifyIdx := core.NewState(ctx, 0)
 			alignIdx := core.NewState(ctx, 0)
 			growB := core.NewState(ctx, false)
+			floorA := core.NewState(ctx, false)
 
 			return core.Column(
 				core.Gap(14),
@@ -308,7 +309,13 @@ func lessonAlignment() Lesson {
 							core.Gap(8),
 							core.Justify(justifyValues[justifyIdx.Get()]),
 							core.AlignItemsProp(alignValues[alignIdx.Get()]),
-							demoBox("A", boxBlue, 0),
+							// A percentage floor: at least 40% of the row's
+							// width, whatever its label needs. It resolves
+							// against the row on every target (on iOS through
+							// GrMobMinimumLayout, per proposal), and A's label
+							// stays centred inside the wider box.
+							demoBox("A", boxBlue, 0,
+								core.MaybeProp(floorA.Get(), core.MinWidth("40%"))),
 							demoBox("B", boxTeal, 8,
 								core.MaybeProp(growB.Get(), core.FlexGrow(1))),
 							demoBox("C", boxPlum, 16),
@@ -337,11 +344,13 @@ func lessonAlignment() Lesson {
 						},
 					),
 					checkRow("FlexGrow(1) on B — B soaks up the slack, and Justify has none left to distribute", growB),
+					checkRow("MinWidth(\"40%\") on A — a floor measured against the row, with A's label centred inside it", floorA),
 				),
 				keyPoints(
 					"Justify spends the container's spare main-axis space; once a child grows, there is none.",
 					"AlignItems works on the cross axis; Stretch equalizes the children's cross size.",
 					"FlexGrow is proportional on every target — weights, not fixed sizes.",
+					"MinWidth takes a percentage of the parent as well as points: a floor that scales with the container, which the box's content aligns inside.",
 				),
 			)
 		},

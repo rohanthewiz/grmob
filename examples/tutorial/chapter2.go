@@ -132,6 +132,18 @@ func lessonEvents() Lesson {
     core.OnLongPress(func() { record("long press") }),
     core.Text("Tap or long-press me"),
 )`),
+				prose("A control can be pressed from a hardware keyboard too. "+
+					"core.AccessibilityKeyShortcuts declares the keys in ARIA's spelling, and a chord "+
+					"that holds Control, Alt or Meta, or a bare F-key, presses the control from "+
+					"anywhere on the screen. A bare letter or arrow stays with the widget that has focus, "+
+					"so a page-wide shortcut can never steal typing:"),
+				codeBlock(`comps.Button{
+    Label: "Log from the keyboard",
+    OnTap: func() { record("button") },
+    Style: []core.StyleProp{
+        core.AccessibilityKeyShortcuts("Control+Alt+K F6"),  // either chord presses it
+    },
+}`),
 				prose("A handler is ordinary Go running outside the render pass — that is where "+
 					"state writes belong. The render function itself must stay pure: it reads state "+
 					"and returns a tree, and calling Set during it would request renders from inside "+
@@ -159,6 +171,15 @@ func lessonEvents() Lesson {
 							}),
 						),
 					),
+					// The shortcut demo. Control+Alt+K rather than a Meta chord,
+					// because Meta chords belong to the browser on the web
+					// (Cmd+K focuses its search bar), and F6 as the bare-F-key
+					// form. Both are pressed from anywhere on the screen: web
+					// and Compose walk the tree for the chord, and SwiftUI turns
+					// the first usable one into the button's keyboardShortcut.
+					comps.Button{Label: "Log from the keyboard",
+						OnTap: func() { record("button") },
+						Style: []core.StyleProp{core.AccessibilityKeyShortcuts("Control+Alt+K F6")}},
 					comps.Button{Label: "Clear log", Emphasis: comps.EmphasisGhost,
 						OnTap: func() { log.Set([]string{}); total.Set(0) }},
 				),
@@ -167,6 +188,7 @@ func lessonEvents() Lesson {
 					"Handlers run off the render pass — write state there, never while rendering.",
 					"Update slices and maps immutably: build a fresh value and Set it; previous renders still hold the old one.",
 					"One node may carry OnClick and OnLongPress — the renderers wire one gesture recognizer, so a long press never also fires the click.",
+					"core.AccessibilityKeyShortcuts presses a control from a keyboard: chords holding Control, Alt or Meta, and bare F-keys, work screen-wide; bare keys stay with the focused widget.",
 				),
 			)
 		},

@@ -86,6 +86,37 @@ struct GrMobFlexSolver {
         return offered
     }
 
+    /// Each child's percentage MinWidth (in a Row) or MinHeight (in a
+    /// Column) as points against the container's main extent, 0 for none.
+    ///
+    /// # Why the container resolves it, not the child
+    ///
+    /// CSS takes the percentage of the flex container's content box. The
+    /// child's own floor (GrMobMinimumLayout) resolves against its proposal,
+    /// which is right on the cross axis, where a flex parent proposes its own
+    /// extent. On the main axis it never hears that extent: while the
+    /// container measures bases it proposes nothing (an ideal-size query), and
+    /// at placement it proposes the child's slot, the very length the floor
+    /// should have decided. Lesson 1.4's `MinWidth("40%")` on a Row child
+    /// measured exactly that on a simulator: the box kept its content width.
+    ///
+    /// So the container applies the floor along its own axis:
+    ///
+    /// ```
+    ///   floor  = fraction × extent   0 when the extent is indefinite (CSS's
+    ///                                percentage of an indefinite containing
+    ///                                block, as GrMobMinSize.floor answers)
+    ///   base   = max(base, floor)    the child starts at least that long
+    ///   min    = max(min, floor)     and shrinking cannot take it below
+    /// ```
+    ///
+    /// and FlexChildren gives such a child a main-axis fill, so it accepts the
+    /// longer slot the way a grower accepts its share.
+    static func percentFloors(fractions: [CGFloat], extent: CGFloat?) -> [CGFloat] {
+        guard let extent = definite(extent) else { return fractions.map { _ in 0 } }
+        return fractions.map { $0 > 0 ? $0 * extent : 0 }
+    }
+
     /// The size the run of children wants with no growing or shrinking.
     func natural(bases: [CGFloat]) -> CGFloat {
         bases.reduce(0, +) + spacing * CGFloat(max(bases.count - 1, 0))
@@ -437,6 +468,16 @@ struct GrMobWrapSolver {
 /// Beside GrMobMaxWidth because it is the same question with the opposite
 /// sign, and because this file is the one ios/verify runs on macOS.
 enum GrMobMinSize {
+    /// The fraction of its containing block a percentage floor takes ("40%"
+    /// is 0.4), or nil for a floor in points, none, or an invalid one.
+    /// GrMobFlexLayout reads it for a child's main axis, where the child's own
+    /// proposal is its slot rather than the container; see
+    /// GrMobFlexSolver.percentFloors.
+    static func fraction(_ value: String) -> CGFloat? {
+        guard value.hasSuffix("%"), let pct = Double(value.dropLast()), pct > 0 else { return nil }
+        return CGFloat(pct / 100)
+    }
+
     static func floor(_ value: String, available: CGFloat?) -> CGFloat? {
         if value.hasSuffix("%") {
             guard let pct = Double(value.dropLast()), pct > 0,
