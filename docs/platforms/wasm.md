@@ -1190,7 +1190,7 @@ What it cannot answer is anything that needs real rendering: whether
 one, or anything about layout. Those still need a browser, exactly as the
 iOS view layer still needs a simulator.
 
-### The five keyboard facts that do get a browser
+### The six keyboard facts that do get a browser
 
 `dom.mjs` is a faithful model of the runtime's *bookkeeping* and a poor model
 of a browser, which is fine until a claim is about the browser. Three of the
@@ -1213,6 +1213,11 @@ keyboard pattern's are:
   `js/wasm`, opens lesson 4.9, and checks that the arrow's `onClick` reaches Go,
   the month comes back as a patch inside the same key press, and focus lands on
   the same day (or February's 28th, from the 31st).
+- A page-global shortcut really presses its control from anywhere. The
+  keynav_test.mjs cases dispatch keydowns they built at the shim's window; this
+  one, in the same live build, opens lesson 2.2 with nothing focused and
+  presses `Control+Alt+K` and `F6` at its "Log from the keyboard" button, which
+  declares both, and then a bare `K`, which must press nothing.
 
 No amount of widening the shim settles those, because a shim can only restate
 them: its `focus()` is an assignment and its `defaultPrevented` is a flag it

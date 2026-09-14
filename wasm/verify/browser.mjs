@@ -1,4 +1,4 @@
-// The facts a shimmed DOM cannot check, checked in a browser: five about the
+// The facts a shimmed DOM cannot check, checked in a browser: six about the
 // keyboard, three about paint, five about layout, one about what a browser
 // does with an accessibility value nobody here resolves, and one about how it
 // reads a CSS shorthand back.
@@ -7,7 +7,7 @@
 // few hundred lines that model element trees, attributes, listeners and which
 // element holds focus. That is enough for almost everything, and its limits
 // are stated in its own header: there is no layout, no bubbling, and `focus()`
-// is an assignment, and nothing is ever painted. Fifteen claims sit exactly in
+// is an assignment, and nothing is ever painted. Sixteen claims sit exactly in
 // that blind spot, and no amount of widening the shim would settle them,
 // because each one is a claim about what a *browser* does:
 //
@@ -146,6 +146,16 @@
 //      presses the keys on its calendar: back a month and forward again on
 //      the 11th, from the 31st into a 28-day February, and against the
 //      disabled arrow at the lesson's Max.
+//  16. a page-global shortcut presses its control from anywhere on the page,
+//      and a bare key does not. keynav_test.mjs dispatches keydowns it built
+//      itself at dom.mjs's window, so what it cannot settle is that a real key
+//      press with Control and Alt held, with nothing focused, reaches the
+//      runtime's window listener as an event that still matches (macOS's
+//      Option rewrites e.key, which is why the listener also reads e.code),
+//      and that the click goes through Go and back as a patch. In check 15's
+//      live build this opens lesson 2.2 and presses Control+Alt+K and F6,
+//      which its "Log from the keyboard" button declares, and then a bare K,
+//      which must press nothing.
 //
 // The numbering is one sequence, and it is the order the checks run in rather
 // than the order they were written. It is also load-bearing: a dozen comments
@@ -9696,6 +9706,63 @@ async function main() {
             }
         }
 
+        // ------------------------------------------------------------------
+        // 16. a page-global shortcut presses its control from anywhere on the
+        //     page, and a bare key does not
+        // ------------------------------------------------------------------
+        //
+        // The same live build as check 15, routed on to lesson 2.2, whose
+        // "Log from the keyboard" button declares "Control+Alt+K F6". Every
+        // press is sent with nothing focused, the state a page-global chord is
+        // for, and read back from the lesson's event log, which Go writes:
+        //
+        //	Control+Alt+K   log gains "1 · button"   a modifier chord
+        //	F6              log gains "2 · button"   a bare F-key, page-global too
+        //	K               no "3 · button"          a bare letter is the focused
+        //	                                         widget's, and none is focused
+        //
+        // CDP's modifier bits are Alt 1, Control 2, Meta 4, Shift 8.
+        if (liveBuild) {
+            const chord = async (name, code, vk, modifiers) => {
+                const common = { key: name, code, windowsVirtualKeyCode: vk,
+                    nativeVirtualKeyCode: vk, modifiers };
+                await session.send("Input.dispatchKeyEvent", { type: "rawKeyDown", ...common });
+                await session.send("Input.dispatchKeyEvent", { type: "keyUp", ...common });
+            };
+            // Resolves true once the page's text holds `text`, false after `ms`.
+            const pageShows = (text, ms) => evaluate(`new Promise((done) => {
+                const started = Date.now();
+                const poll = () => {
+                    if (document.body.textContent.includes(${JSON.stringify(text)})) return done(true);
+                    if (Date.now() - started > ${ms}) return done(false);
+                    setTimeout(poll, 25);
+                };
+                poll();
+            })`);
+            await evaluate(`(() => {
+                if (document.activeElement) document.activeElement.blur();
+                window.GrMobWASM.HostEvent("route", JSON.stringify({ lesson: "2.2" }));
+            })()`);
+            if (!(await pageShows("No events yet", 30000))) {
+                problems.push(`check 16: lesson 2.2 did not come up in the live build with an empty event log`);
+            } else {
+                let pressed = 0;
+                await chord("k", "KeyK", 75, 1 | 2);
+                if (await pageShows("1 · button", 3000)) pressed++;
+                else problems.push(`check 16: Control+Alt+K with nothing focused did not press "Log from the keyboard"`);
+                await chord("F6", "F6", 117, 0);
+                if (await pageShows("2 · button", 3000)) pressed++;
+                else problems.push(`check 16: F6 with nothing focused did not press "Log from the keyboard"`);
+                await chord("k", "KeyK", 75, 0);
+                if (await pageShows("3 · button", 500)) {
+                    problems.push(`check 16: a bare K pressed "Log from the keyboard"; only chords holding ` +
+                        `Control, Alt or Meta, and F-keys, are page-global`);
+                } else if (pressed === 2) {
+                    asked.liveShortcuts = 3;
+                }
+            }
+        }
+
     } finally {
         if (session) session.close();
         chrome.kill();
@@ -9707,7 +9774,7 @@ async function main() {
     // that only appears on the happy path is a skip that goes missing exactly
     // when the log is long.
     if (asked.liveSkip) {
-        console.log(`SKIP: check 15, paging the live calendar (${asked.liveSkip})`);
+        console.log(`SKIP: checks 15 and 16, the live calendar and shortcuts (${asked.liveSkip})`);
     }
     if (asked.inkFaceSkip) {
         console.log(`SKIP: the band grid's ink scan (${asked.inkFaceSkip})`);
@@ -9730,7 +9797,9 @@ async function main() {
     console.log(`OK: roving tabindex, disabled focus, ArrowDown and the toolbar walk
     hold in a real browser, ${asked.livePages
         ? `PageUp and PageDown page the 4.9 calendar through a live Go render ${asked.livePages} times with focus kept on the day,`
-        : "the live calendar unpaged,"} ${PALETTES.length} palette swatches paint the
+        : "the live calendar unpaged,"} ${asked.liveShortcuts
+        ? "Control+Alt+K and F6 press lesson 2.2's button with nothing focused and a bare K does not,"
+        : "the live shortcuts unpressed,"} ${PALETTES.length} palette swatches paint the
     hexes the contrast census measures, ${WIDGETS.length} real widgets draw
     their own boundary tones on both edges, a sticky band pins, ${VALUE_RANGES.length}
     value ranges resolve the way core.Progress says a browser resolves them,
