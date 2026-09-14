@@ -1961,3 +1961,86 @@ test("a toolbar member keeps the roving tabindex and answers Enter once", () => 
     first.dispatch("keydown", { key: "Enter" });
     assert.deepEqual(tb.rt.dispatched, [{ id: "cb_0", payload: {} }]);
 });
+
+// --------------------------------------------------------------------------
+// Page-global shortcuts
+// --------------------------------------------------------------------------
+//
+// A chord holding Control, Alt or Meta, or a bare function key, is answered by
+// the window's keydown listener from anywhere. The shim has no bubbling, so the
+// event is delivered to the window listener directly, as a real keydown would
+// arrive after bubbling from wherever focus was.
+
+function keyEvent(init) {
+    return {
+        key: "", code: "", ctrlKey: false, altKey: false, metaKey: false, shiftKey: false,
+        repeat: false, isComposing: false, defaultPrevented: false,
+        preventDefault() { this.defaultPrevented = true; },
+        ...init,
+    };
+}
+
+function shortcutTree(buttons, wrap = (children) => ({ Type: "Column", Children: children })) {
+    return mountTree(wrap(buttons.map(({ keys, cb, disabled }) => ({
+        Type: "Button",
+        Props: { label: cb, onClick: cb },
+        Style: { AccessibilityKeyShortcuts: keys, ...(disabled ? { Disabled: true } : {}) },
+    }))));
+}
+
+test("a modifier chord presses the control that declares it, from anywhere", () => {
+    const m = shortcutTree([{ keys: "Control+s", cb: "save" }, { keys: "Alt+Shift+N", cb: "new" }]);
+    assert.equal(m.rt.windowListenerCount("keydown"), 1, "the runtime installed no page-wide keydown listener");
+
+    const save = keyEvent({ key: "s", code: "KeyS", ctrlKey: true });
+    m.rt.fireWindowEvent("keydown", save);
+    assert.equal(save.defaultPrevented, true, "the browser's own Ctrl+S would still run");
+    assert.deepEqual(m.rt.dispatched.map((d) => d.id), ["save"]);
+
+    // Option+Shift+N on a Mac rewrites e.key; the physical key still names it.
+    m.rt.fireWindowEvent("keydown", keyEvent({ key: "˜", code: "KeyN", altKey: true, shiftKey: true }));
+    assert.deepEqual(m.rt.dispatched.map((d) => d.id), ["save", "new"]);
+});
+
+test("a chord matches with exactly its modifiers", () => {
+    const m = shortcutTree([{ keys: "Control+s", cb: "save" }]);
+    const extra = keyEvent({ key: "S", code: "KeyS", ctrlKey: true, shiftKey: true });
+    m.rt.fireWindowEvent("keydown", extra);
+    const bare = keyEvent({ key: "s", code: "KeyS" });
+    m.rt.fireWindowEvent("keydown", bare);
+    assert.deepEqual(m.rt.dispatched, []);
+    assert.equal(extra.defaultPrevented || bare.defaultPrevented, false);
+});
+
+test("a bare key is not page-global, and a bare function key is", () => {
+    const m = shortcutTree([{ keys: "PageDown", cb: "next" }, { keys: "F2", cb: "rename" }]);
+    const page = keyEvent({ key: "PageDown", code: "PageDown" });
+    m.rt.fireWindowEvent("keydown", page);
+    assert.equal(page.defaultPrevented, false, "PageDown outside a grid must stay the page's scroll");
+    m.rt.fireWindowEvent("keydown", keyEvent({ key: "F2", code: "F2" }));
+    assert.deepEqual(m.rt.dispatched.map((d) => d.id), ["rename"]);
+});
+
+test("a consumed, repeated or disabled shortcut presses nothing", () => {
+    const m = shortcutTree([{ keys: "Control+z", cb: "undo" }, { keys: "Meta+k", cb: "off", disabled: true }]);
+    m.rt.fireWindowEvent("keydown", keyEvent({ key: "z", code: "KeyZ", ctrlKey: true, defaultPrevented: true }));
+    m.rt.fireWindowEvent("keydown", keyEvent({ key: "z", code: "KeyZ", ctrlKey: true, repeat: true }));
+    const off = keyEvent({ key: "k", code: "KeyK", metaKey: true });
+    m.rt.fireWindowEvent("keydown", off);
+    assert.deepEqual(m.rt.dispatched, []);
+    assert.equal(off.defaultPrevented, true, "a disabled match takes the key, as a disabled page arrow does");
+});
+
+test("a control in a hidden subtree is not a candidate", () => {
+    const m = shortcutTree([{ keys: "Control+s", cb: "behind" }], (children) => ({
+        Type: "Column",
+        Children: [
+            { Type: "Column", Style: { AccessibilityHidden: true }, Children: children },
+            { Type: "Button", Props: { label: "front", onClick: "front" }, Style: { AccessibilityKeyShortcuts: "Control+s" } },
+        ],
+    }));
+    m.rt.fireWindowEvent("keydown", keyEvent({ key: "s", code: "KeyS", ctrlKey: true }));
+    assert.deepEqual(m.rt.dispatched.map((d) => d.id), ["front"],
+        "a shortcut behind an aria-hidden screen was pressed ahead of the visible one");
+});
+

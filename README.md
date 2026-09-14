@@ -429,7 +429,7 @@ transcripts against it, so all the targets stay in step:
 ```bash
 go test ./...            # the engine, the exporter and every source pin
 wasm/verify/run.sh       # the JS runtime, replayed — plus a headless-Chrome
-                         #   pass for the four keyboard facts a shimmed DOM
+                         #   pass for the five keyboard facts a shimmed DOM
                          #   cannot answer
 ios/verify/run.sh        # the Swift data layer, replayed and type-checked
 android/verify/run.sh    # the Kotlin decomposition, on a plain JVM

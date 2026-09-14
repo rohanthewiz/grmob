@@ -2,6 +2,7 @@ package com.grmob.app
 
 import android.content.Intent
 import android.os.Bundle
+import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -70,6 +71,15 @@ class MainActivity : ComponentActivity() {
      * recreation (a rotation) does not re-report the intent this launched with
      * — which would navigate the reader away from wherever they had got to.
      */
+    // core.AccessibilityKeyShortcuts from a hardware keyboard. Offered to the
+    // runtime before the window's own dispatch, so a declared chord is
+    // answered wherever focus is, including nowhere; see
+    // GrMobRuntime.handleKeyEvent.
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (runtime?.handleKeyEvent(event) == true) return true
+        return super.dispatchKeyEvent(event)
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)

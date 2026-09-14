@@ -131,7 +131,7 @@ AccessibilityControls says which element this control switches, by the Accessibi
 
 It is written verbatim and nothing checks that the target exists: an export is one document at a time and a runtime patch is one element at a time, so neither target can see the whole page at the moment the attribute is written. A reference to an id nothing answers to is inert rather than harmful, which is the same trade aria-description makes. See Style.AccessibilityID for why this is the one relationship the vocabulary carries.
 
-<small>[core/style_props.go:637](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L637)</small>
+<small>[core/style_props.go:638](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L638)</small>
 
 ### func AccessibilityCurrent
 
@@ -211,7 +211,7 @@ func AccessibilityHidden() StyleProp
 
 AccessibilityHidden removes the element (and its subtree) from the accessibility tree — for decorative content a screen reader should skip.
 
-<small>[core/style_props.go:645](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L645)</small>
+<small>[core/style_props.go:646](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L646)</small>
 
 ### func AccessibilityHint
 
@@ -235,7 +235,7 @@ AccessibilityID gives this element a document-global name that another element c
 
 Uniqueness is the caller's, as it is in hand-written HTML, and the "grmob-" prefix is reserved for core.TabView's own wiring. See Style.AccessibilityID for the whole argument — including why this and AccessibilityControls are the only two IDREF props in the vocabulary.
 
-<small>[core/style_props.go:612](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L612)</small>
+<small>[core/style_props.go:613](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L613)</small>
 
 ### func AccessibilityKeyShortcuts
 
@@ -248,9 +248,9 @@ AccessibilityKeyShortcuts declares the keys that activate this control from else
 	comps.Button{Label: "›", Style: []core.StyleProp{
 		core.AccessibilityKeyShortcuts("PageDown")}}
 
-Only the WASM runtime writes it, and it honours PageUp and PageDown pressed inside a grid. See Style.AccessibilityKeyShortcuts for why the other targets leave it out.
+A chord holding Control, Alt or Meta ("Control+S") is answered from anywhere on the screen, on the web, Compose and SwiftUI; a bare key ("PageDown") only by a widget that owns it, which today is a grid's PageUp and PageDown on the web. See Style.AccessibilityKeyShortcuts for the table and the reasons.
 
-<small>[core/style_props.go:564](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L564)</small>
+<small>[core/style_props.go:565](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L565)</small>
 
 ### func AccessibilityLabel
 
@@ -334,7 +334,7 @@ Set on the container — the listbox or the tablist — not on the members. See 
 
 A no-arg flag rather than a bool, like AccessibilityHidden and unlike Disabled: a caller does not have this in a variable, and there is no case for forcing it back off — a widget that does not want it writes no prop.
 
-<small>[core/style_props.go:661](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L661)</small>
+<small>[core/style_props.go:662](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L662)</small>
 
 ### func AccessibilityValue
 
@@ -357,7 +357,7 @@ Paired with a role that can carry it, as the level, the selection and the disclo
 
 ValueRange.Text is the half that is not web-only: it reaches Compose's stateDescription and SwiftUI's accessibilityValue, neither of which asks what the node is. See Style.AccessibilityValue for the guard table and core.ValueRange for why the numbers are strings.
 
-<small>[core/style_props.go:596](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L596)</small>
+<small>[core/style_props.go:597](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L597)</small>
 
 ### func Align
 
@@ -433,7 +433,7 @@ Disabled hands the node to the platform's own disabled state: it stops accepting
 
 It takes the value rather than being a no-arg flag (unlike AccessibilityHidden) because the caller almost always has a bool in hand — \`core.Disabled(sending.Get())\` — and because passing false is the only way to force a node back to enabled: UseStyle's "a zero value means unset" rule means a Style{Disabled: false} cannot clear a flag already on the target.
 
-<small>[core/style_props.go:677](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L677)</small>
+<small>[core/style_props.go:678](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L678)</small>
 
 ### func Display
 
@@ -531,7 +531,7 @@ Inert takes the node and everything inside it out of reach on the web: out of th
 
 A bool for Disabled's reason: passing false is the only way to clear a flag UseStyle has already put on the target.
 
-<small>[core/style_props.go:692](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L692)</small>
+<small>[core/style_props.go:693](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L693)</small>
 
 ### func Justify
 

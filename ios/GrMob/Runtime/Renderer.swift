@@ -1499,6 +1499,12 @@ private struct GrMobButton: View {
             },
             including: onLongPress.isEmpty ? .subviews : .all
         )
+        // core.AccessibilityKeyShortcuts: a page-global chord (Control, Alt
+        // or Meta held) presses this button from a hardware keyboard, which
+        // also lists it in iPadOS's shortcut overlay. On the Button itself,
+        // because keyboardShortcut triggers the primary action of the view it
+        // modifies, and a disabled button's shortcut is disabled with it.
+        .grMobKeyShortcut(s?.accessibilityKeyShortcuts ?? "")
         .grMobBox(marginAndSizeOnly(s), grow: grow)
     }
 

@@ -545,15 +545,34 @@ type Style struct {
 	//	WASM runtime  written     PageUp / PageDown pressed inside a
 	//	                          role="grid" activate the nearest control,
 	//	                          searching outward from the grid, that
-	//	                          declares that key
+	//	                          declares that key; a page-global chord
+	//	                          (below) activates the first rendered
+	//	                          control declaring it, from anywhere
 	//	htmlout       not written a static page has no script to keep it
-	//	Compose       not read    no page keys reach a composite on a phone;
-	//	SwiftUI       not read    both platforms move focus themselves
+	//	Compose       read        a page-global chord from a hardware
+	//	                          keyboard clicks the first node declaring
+	//	                          it (the Activity's dispatchKeyEvent)
+	//	SwiftUI       read        a Button's first page-global chord becomes
+	//	                          its .keyboardShortcut (iPad keyboards)
 	//
-	// comps.Calendar's month arrows declare PageUp and PageDown, which is
-	// ARIA's date-picker grid pattern: page a month without leaving the day.
-	// Other keys are written as stated and handled by nothing yet; add the
-	// behaviour before declaring one.
+	// # Which chords are page-global
+	//
+	// A chord holding Control, Alt or Meta ("Control+S", "Alt+Shift+N"), or a
+	// bare function key ("F2"; web and Compose, since SwiftUI's KeyEquivalent
+	// has none). Those type nothing, so answering them from anywhere steals
+	// nothing. A bare key ("PageDown", "a", "Enter") is only answered by a
+	// widget that owns it, because page-wide it would take typing from every
+	// field and scrolling from the page: comps.Calendar's month arrows declare
+	// PageUp and PageDown, which is ARIA's date-picker grid pattern, and only
+	// its grid answers them. A bare key no widget owns is written and handled
+	// by nothing; add the behaviour before declaring one.
+	//
+	// Modifier names are ARIA's: Control, Alt, Meta (Command on Apple
+	// keyboards), Shift. A chord matches with exactly its modifiers, and an
+	// unknown modifier name matches nothing. On every target a disabled match
+	// takes the key and does nothing, and a node behind display:none (or, on
+	// the web and Compose, an accessibility-hidden subtree) is not a
+	// candidate.
 	AccessibilityKeyShortcuts string `json:",omitzero"`
 
 	// AccessibilityValue is where a valued control sits inside its range —

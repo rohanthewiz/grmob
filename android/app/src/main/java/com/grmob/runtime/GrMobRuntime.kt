@@ -2,6 +2,7 @@ package com.grmob.runtime
 
 import android.os.Handler
 import android.os.Looper
+import android.view.KeyEvent
 import java.util.concurrent.Executors
 
 /**
@@ -111,6 +112,95 @@ class GrMobRuntime(private val bridge: GrMobBridge) {
 
     fun click(callbackId: String) =
         dispatch { bridge.triggerCallback(callbackId) }
+
+    /**
+     * core.AccessibilityKeyShortcuts from a hardware keyboard: a page-global
+     * chord clicks the first node, in tree order, that declares it and has an
+     * onClick. Called from the Activity's dispatchKeyEvent, before focus
+     * handling, and answers whether the event was taken.
+     *
+     * # Why the Activity and not a Compose key modifier
+     *
+     * Compose delivers key events to the focused node and its ancestors, and
+     * with nothing focused (the usual state of a touch UI with a keyboard
+     * attached) there is no node to hear them. The Activity sees every key
+     * the window receives.
+     *
+     * # What is not a candidate
+     *
+     * A subtree under display none or AccessibilityHidden (a screen behind a
+     * modal, a shut panel), as on the web. A disabled match takes the key and
+     * clicks nothing. Only the key-down of a press is read, and not its
+     * auto-repeats, so a held chord is one click.
+     */
+    fun handleKeyEvent(event: KeyEvent): Boolean {
+        if (event.action != KeyEvent.ACTION_DOWN || event.repeatCount != 0) return false
+        val name = keyName(event.keyCode) ?: return false
+        val root = store.root ?: return false
+        val target = findKeyShortcut(
+            root, false, name, event.isCtrlPressed, event.isAltPressed, event.isMetaPressed, event.isShiftPressed,
+        ) ?: return false
+        if (!target.disabled) click(target.node.stringProp("onClick"))
+        return true
+    }
+
+    /** A node answering a chord, and whether it or an ancestor is disabled. */
+    private class KeyShortcutTarget(val node: GrMobNode, val disabled: Boolean)
+
+    /**
+     * The first node in tree order declaring a page-global chord this key
+     * press is.
+     *
+     * Disabled state is carried down the walk rather than read with
+     * isDisabled(): that helper reads LocalGrMobDisabled, a composition local,
+     * and this runs from the Activity, outside any composition. Carrying the
+     * ancestor flag is the same rule the local encodes (Renderer provides it
+     * true below a disabled node).
+     */
+    private fun findKeyShortcut(
+        node: GrMobNode, ancestorDisabled: Boolean,
+        key: String, control: Boolean, alt: Boolean, meta: Boolean, shift: Boolean,
+    ): KeyShortcutTarget? {
+        val style = node.style
+        if (style?.display == "none" || style?.accessibilityHidden == true) return null
+        val disabled = ancestorDisabled || style?.disabled == true
+        val spec = style?.accessibilityKeyShortcuts.orEmpty()
+        if (spec.isNotEmpty() && node.stringProp("onClick").isNotEmpty() &&
+            GrMobKeyChord.parseAll(spec).any { it.pageGlobal && it.matches(key, control, alt, meta, shift) }
+        ) {
+            return KeyShortcutTarget(node, disabled)
+        }
+        for (child in node.children) {
+            findKeyShortcut(child, disabled, key, control, alt, meta, shift)?.let { return it }
+        }
+        return null
+    }
+
+    /**
+     * A key code as KeyboardEvent.key would name it, for the keys a chord can
+     * sensibly use; null for the rest. Letters are lower case: case is Shift's
+     * business, and GrMobKeyChord.matches compares one-character keys
+     * case-insensitively.
+     */
+    private fun keyName(code: Int): String? = when (code) {
+        in KeyEvent.KEYCODE_A..KeyEvent.KEYCODE_Z -> ('a' + (code - KeyEvent.KEYCODE_A)).toString()
+        in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9 -> ('0' + (code - KeyEvent.KEYCODE_0)).toString()
+        in KeyEvent.KEYCODE_F1..KeyEvent.KEYCODE_F12 -> "F${code - KeyEvent.KEYCODE_F1 + 1}"
+        KeyEvent.KEYCODE_ENTER -> "Enter"
+        KeyEvent.KEYCODE_ESCAPE -> "Escape"
+        KeyEvent.KEYCODE_TAB -> "Tab"
+        KeyEvent.KEYCODE_DEL -> "Backspace"
+        KeyEvent.KEYCODE_FORWARD_DEL -> "Delete"
+        KeyEvent.KEYCODE_DPAD_UP -> "ArrowUp"
+        KeyEvent.KEYCODE_DPAD_DOWN -> "ArrowDown"
+        KeyEvent.KEYCODE_DPAD_LEFT -> "ArrowLeft"
+        KeyEvent.KEYCODE_DPAD_RIGHT -> "ArrowRight"
+        KeyEvent.KEYCODE_MOVE_HOME -> "Home"
+        KeyEvent.KEYCODE_MOVE_END -> "End"
+        KeyEvent.KEYCODE_PAGE_UP -> "PageUp"
+        KeyEvent.KEYCODE_PAGE_DOWN -> "PageDown"
+        else -> null
+    }
 
     fun textChanged(callbackId: String, value: String) =
         dispatch { bridge.triggerTextCallback(callbackId, value) }

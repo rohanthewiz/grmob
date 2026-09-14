@@ -195,6 +195,13 @@ data class GrMobStyle(
      */
     val accessibilityCurrent: String = "",
     /**
+     * Go's core.Style.AccessibilityKeyShortcuts, verbatim (aria-keyshortcuts
+     * spelling). Not spent in boxModifier: a hardware keyboard's chord reaches
+     * the Activity, not a composable, so GrMobRuntime.handleKeyEvent reads it
+     * off the tree. Defaulted like accessibilityCurrent.
+     */
+    val accessibilityKeyShortcuts: String = "",
+    /**
      * Go's core.ExpandedState, verbatim: "true", "false", or "" for a node
      * that is not a disclosure. Unlike every other accessibility field here it
      * is *not* spent in boxModifier's semantics block — Compose says this with
@@ -359,6 +366,7 @@ data class GrMobStyle(
                 accessibilityRole = obj.optString("AccessibilityRole"),
                 accessibilitySelected = obj.optString("AccessibilitySelected"),
                 accessibilityCurrent = obj.optString("AccessibilityCurrent"),
+                accessibilityKeyShortcuts = obj.optString("AccessibilityKeyShortcuts"),
                 accessibilityExpanded = obj.optString("AccessibilityExpanded"),
                 accessibilityValue = parseValueRange(obj.optJSONObject("AccessibilityValue")),
                 disabled = obj.optBoolean("Disabled", false),

@@ -12,7 +12,7 @@
 #
 # Some of what was in that bucket is not any more: browser.mjs drives a
 # headless Chrome over the DevTools protocol at the end of this script and
-# checks four keyboard facts, three about paint, five about layout, one about
+# checks five keyboard facts, three about paint, five about layout, one about
 # ARIA's value rules and one about the CSSOM — that every bundled palette's
 # ControlBorder reaches the
 # screen as the hex the contrast census did its arithmetic about, that a real
@@ -26,7 +26,9 @@
 # is what puts a browser behind the CSS column of the pin census instead of one
 # solver — that a browser resolves a value range the way core.Progress says
 # it does, and that it reads a CSS shorthand back the way the table
-# cssstyle.mjs was written against says it does.
+# cssstyle.mjs was written against says it does. The fifth keyboard fact builds
+# the tutorial for js/wasm and pages 4.9's calendar with PageUp and PageDown
+# through a live Go render.
 # It skips when there is no Chrome to launch, which keeps the promise above
 # intact — see that file for the claims and why no amount of widening dom.mjs
 # would settle them.

@@ -558,9 +558,10 @@ func AccessibilityCurrent(kind CurrentKind) StyleProp {
 //	comps.Button{Label: "›", Style: []core.StyleProp{
 //		core.AccessibilityKeyShortcuts("PageDown")}}
 //
-// Only the WASM runtime writes it, and it honours PageUp and PageDown pressed
-// inside a grid. See Style.AccessibilityKeyShortcuts for why the other
-// targets leave it out.
+// A chord holding Control, Alt or Meta ("Control+S") is answered from anywhere
+// on the screen, on the web, Compose and SwiftUI; a bare key ("PageDown") only
+// by a widget that owns it, which today is a grid's PageUp and PageDown on the
+// web. See Style.AccessibilityKeyShortcuts for the table and the reasons.
 func AccessibilityKeyShortcuts(keys string) StyleProp {
 	return styleFunc(func(s *Style) {
 		s.AccessibilityKeyShortcuts = keys

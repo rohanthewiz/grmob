@@ -1,4 +1,4 @@
-// The facts a shimmed DOM cannot check, checked in a browser: four about the
+// The facts a shimmed DOM cannot check, checked in a browser: five about the
 // keyboard, three about paint, five about layout, one about what a browser
 // does with an accessibility value nobody here resolves, and one about how it
 // reads a CSS shorthand back.
@@ -7,7 +7,7 @@
 // few hundred lines that model element trees, attributes, listeners and which
 // element holds focus. That is enough for almost everything, and its limits
 // are stated in its own header: there is no layout, no bubbling, and `focus()`
-// is an assignment, and nothing is ever painted. Fourteen claims sit exactly in
+// is an assignment, and nothing is ever painted. Fifteen claims sit exactly in
 // that blind spot, and no amount of widening the shim would settle them,
 // because each one is a claim about what a *browser* does:
 //
@@ -136,6 +136,16 @@
 //      this holds the table to the browser, on every run, so a serialization
 //      that changes under it fails here instead of leaving the shim modelling a
 //      browser that no longer exists.
+//  15. PageUp and PageDown page a real calendar through Go, and focus stays
+//      on the day. keynav_test.mjs holds the runtime's half against dom.mjs
+//      with the month's patch written by hand, which is what it cannot
+//      settle: that the arrow's onClick reaches Go, that Go's new month comes
+//      back as a patch inside the same key press, and that the landing then
+//      finds the day through a real browser's focus. This builds the tutorial
+//      for js/wasm, opens lesson 4.9 through the page's own route event, and
+//      presses the keys on its calendar: back a month and forward again on
+//      the 11th, from the 31st into a 28-day February, and against the
+//      disabled arrow at the lesson's Max.
 //
 // The numbering is one sequence, and it is the order the checks run in rather
 // than the order they were written. It is also load-bearing: a dozen comments
@@ -166,7 +176,7 @@
 // it catches what this machine can catch, and a pass that fails on a machine
 // missing an optional tool is a pass people learn to ignore.
 
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -280,6 +290,71 @@ const PAGE = `<!DOCTYPE html>
 <script src="/grmob-runtime.js"></script>
 </body></html>
 `;
+
+// The page for check 15: the tutorial's real wasm build, booted the way
+// wasm/index.html boots it, minus the site chrome and the Leaflet script
+// (a CDN fetch, which this pass promises not to make). The route host event
+// is the page's deep link, so the app opens lesson 4.9 exactly as #4.9 would.
+//
+// GoInvokeCallback is index.html's: Go takes the event and renders, and the
+// patch is applied before the call returns. That synchronous path is what the
+// runtime's page landing is keyed to, and it is the thing check 15 is here to
+// run for real rather than with a hand-written patch.
+const LIVE_PAGE = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>grmob live calendar</title></head>
+<body>
+<div id="app"></div>
+<script src="wasm_exec.js"></script>
+<script src="grmob-runtime.js"></script>
+<script>
+  window.GoInvokeCallback = (id, payload) => {
+      window.GrMobWASM.ReceiveEvent(id, JSON.stringify(payload));
+      GrMob.patch(window.GrMobWASM.RenderAgain());
+  };
+  (async () => {
+      try {
+          const go = new Go();
+          const r = await fetch("main.wasm");
+          const { instance } = await WebAssembly.instantiate(await r.arrayBuffer(), go.importObject);
+          go.run(instance);
+          GrMob.mount(window.GrMobWASM.RenderInitial());
+          window.GrMobWASM.HostEvent("route", JSON.stringify({ lesson: "4.9" }));
+      } catch (err) {
+          window.__liveError = String((err && err.message) || err);
+      }
+  })();
+</script>
+</body></html>
+`;
+
+// Builds the tutorial for js/wasm into dir and finds Go's wasm_exec.js, for
+// check 15. Answers {wasm, wasmExec}, or {skip} when there is no go command to
+// build with (the same stance as a missing Chrome), or {error} when the build
+// itself fails, which is a finding: wasm/main.go is what the site ships.
+//
+// wasm_exec.js comes from GOROOT rather than from wasm/, where build.sh copies
+// it untracked, because it has to match the toolchain that built the module,
+// and this is that toolchain. lib/wasm is its home from Go 1.24, misc/wasm
+// before.
+function buildLiveTutorial(dir) {
+    const root = join(HERE, "..", "..");
+    const env = spawnSync("go", ["env", "GOROOT"], { cwd: root, encoding: "utf8" });
+    if (env.error || env.status !== 0) return { skip: "no go command to build the tutorial with" };
+    const goroot = env.stdout.trim();
+    const wasmExec = [join(goroot, "lib", "wasm", "wasm_exec.js"), join(goroot, "misc", "wasm", "wasm_exec.js")]
+        .find((p) => existsSync(p));
+    if (!wasmExec) return { skip: `no wasm_exec.js under ${goroot}` };
+    const wasm = join(dir, "main.wasm");
+    const built = spawnSync("go", ["build", "-o", wasm, "./wasm"], {
+        cwd: root,
+        encoding: "utf8",
+        env: { ...process.env, GOOS: "js", GOARCH: "wasm" },
+    });
+    if (built.error || built.status !== 0) {
+        return { error: `GOOS=js GOARCH=wasm go build ./wasm failed: ${(built.stderr || String(built.error)).trim()}` };
+    }
+    return { wasm, wasmExec };
+}
 
 // --------------------------------------------------------------------------
 // PNG
@@ -5395,7 +5470,35 @@ async function main() {
     // would be a second thing to get right and this needs no more than the
     // runtime file and the page that loads it.
     const runtimeSource = readFileSync(RUNTIME, "utf8");
+    // Check 15's build, filled in when that check runs. The /live/ paths below
+    // serve it; until then they answer 404, which the check never asks for.
+    let liveBuild = null;
     const server = http.createServer((req, res) => {
+        if (req.url === "/live/" || req.url === "/live/index.html") {
+            res.writeHead(200, { "content-type": "text/html" });
+            res.end(LIVE_PAGE);
+            return;
+        }
+        if (req.url === "/live/grmob-runtime.js") {
+            res.writeHead(200, { "content-type": "text/javascript" });
+            res.end(runtimeSource);
+            return;
+        }
+        if (liveBuild && req.url === "/live/wasm_exec.js") {
+            res.writeHead(200, { "content-type": "text/javascript" });
+            res.end(readFileSync(liveBuild.wasmExec));
+            return;
+        }
+        if (liveBuild && req.url === "/live/main.wasm") {
+            res.writeHead(200, { "content-type": "application/wasm" });
+            res.end(readFileSync(liveBuild.wasm));
+            return;
+        }
+        if (req.url.startsWith("/live/")) {
+            res.writeHead(404);
+            res.end();
+            return;
+        }
         if (req.url === "/grmob-runtime.js") {
             res.writeHead(200, { "content-type": "text/javascript" });
             res.end(runtimeSource);
@@ -9494,6 +9597,105 @@ async function main() {
             if (held) asked.cssomRows++;
         });
 
+        // ------------------------------------------------------------------
+        // 15. PageUp and PageDown page a real calendar through Go, and focus
+        //     stays on the day
+        // ------------------------------------------------------------------
+        //
+        // Lesson 4.9 pins its calendar: today is 11 March 2026, the month
+        // opens on March, and Max is 31 March, so the forward arrow is
+        // disabled on the opening month. Four presses, each read back as the
+        // month the calendar's header names and the text of the focused cell:
+        //
+        //	on 11 March   PageUp    February 2026, focus on 11
+        //	              PageDown  March 2026, focus on 11
+        //	              PageDown  March 2026 still (the arrow is disabled),
+        //	                        focus still on 11
+        //	on 31 March   PageUp    February 2026, focus on 28: the landing's
+        //	                        "last enabled cell" for a shorter month
+        //
+        // The month is read from the grid's parent, which holds the header
+        // row, rather than from the page, where the lesson's prose could name
+        // a month of its own.
+        const liveDir = mkdtempSync(join(tmpdir(), "grmob-live-"));
+        const live = buildLiveTutorial(liveDir);
+        if (live.skip) {
+            asked.liveSkip = live.skip;
+        } else if (live.error) {
+            problems.push(`check 15 could not build the tutorial: ${live.error}`);
+        } else {
+            liveBuild = live;
+            const liveLoaded = session.once("Page.loadEventFired");
+            await session.send("Page.navigate", { url: `${origin}/live/` });
+            await liveLoaded;
+            const booted = await evaluate(`new Promise((done) => {
+                const started = Date.now();
+                const poll = () => {
+                    if (window.__liveError) return done("the page threw: " + window.__liveError);
+                    if (document.querySelector('[role="grid"] [role="gridcell"]')) return done("");
+                    if (Date.now() - started > 30000) return done("no calendar grid 30s after load");
+                    setTimeout(poll, 50);
+                };
+                poll();
+            })`);
+            if (booted) {
+                problems.push(`check 15: lesson 4.9 did not come up in the live build: ${booted}`);
+            } else {
+                const focusDay = (day) => evaluate(`(() => {
+                    const grid = document.querySelector('[role="grid"]');
+                    const cell = [...grid.querySelectorAll('[role="gridcell"]')].find((c) =>
+                        c.textContent.trim() === ${JSON.stringify(day)} &&
+                        c.getAttribute("aria-disabled") !== "true");
+                    if (!cell) return false;
+                    cell.scrollIntoView({ block: "center" });
+                    cell.focus();
+                    return document.activeElement === cell;
+                })()`);
+                const calendarState = () => evaluate(`(() => {
+                    const grid = document.querySelector('[role="grid"]');
+                    const m = /\\b(January|February|March|April|May|June|July|August|September|October|November|December) \\d{4}\\b/
+                        .exec(grid.parentElement.textContent);
+                    const a = document.activeElement;
+                    return { month: m ? m[0] : null, inGrid: grid.contains(a),
+                        day: a ? a.textContent.trim() : "" };
+                })()`);
+                const expectState = async (step, month, day) => {
+                    const got = await calendarState();
+                    if (got.month === month && got.inGrid && got.day === day) return true;
+                    problems.push(`check 15, ${step}: the calendar shows ${got.month} with focus ` +
+                        `${got.inGrid ? `on the cell "${got.day}"` : "outside the grid"}; want ${month} ` +
+                        `with focus on "${day}"`);
+                    return false;
+                };
+                let held = true;
+                const opened = (await calendarState()).month;
+                if (opened !== "March 2026") {
+                    problems.push(`check 15: lesson 4.9's calendar opened on ${opened}; the ` +
+                        `lesson pins it to March 2026, and every step below is written against that`);
+                    held = false;
+                }
+                if (!(await focusDay("11"))) {
+                    problems.push(`check 15: no enabled cell reading "11" to start from in March 2026`);
+                    held = false;
+                } else {
+                    await key("PageUp", 33);
+                    held = await expectState("PageUp from 11 March", "February 2026", "11") && held;
+                    await key("PageDown", 34);
+                    held = await expectState("PageDown from 11 February", "March 2026", "11") && held;
+                    await key("PageDown", 34);
+                    held = await expectState("PageDown at Max, from 11 March", "March 2026", "11") && held;
+                    if (await focusDay("31")) {
+                        await key("PageUp", 33);
+                        held = await expectState("PageUp from 31 March", "February 2026", "28") && held;
+                    } else {
+                        problems.push(`check 15: no enabled cell reading "31" in March 2026`);
+                        held = false;
+                    }
+                }
+                if (held) asked.livePages = 4;
+            }
+        }
+
     } finally {
         if (session) session.close();
         chrome.kill();
@@ -9504,6 +9706,9 @@ async function main() {
     // FAILS on something else still reports what it did not look at. A skip
     // that only appears on the happy path is a skip that goes missing exactly
     // when the log is long.
+    if (asked.liveSkip) {
+        console.log(`SKIP: check 15, paging the live calendar (${asked.liveSkip})`);
+    }
     if (asked.inkFaceSkip) {
         console.log(`SKIP: the band grid's ink scan (${asked.inkFaceSkip})`);
         // And the measurement that remedy needs, taken on the way past. A skip
@@ -9523,7 +9728,9 @@ async function main() {
         process.exit(1);
     }
     console.log(`OK: roving tabindex, disabled focus, ArrowDown and the toolbar walk
-    hold in a real browser, ${PALETTES.length} palette swatches paint the
+    hold in a real browser, ${asked.livePages
+        ? `PageUp and PageDown page the 4.9 calendar through a live Go render ${asked.livePages} times with focus kept on the day,`
+        : "the live calendar unpaged,"} ${PALETTES.length} palette swatches paint the
     hexes the contrast census measures, ${WIDGETS.length} real widgets draw
     their own boundary tones on both edges, a sticky band pins, ${VALUE_RANGES.length}
     value ranges resolve the way core.Progress says a browser resolves them,

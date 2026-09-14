@@ -931,6 +931,16 @@ month is shorter). A disabled arrow takes the key and does nothing, like an
 arrow key at the grid's edge. Only this runtime writes `aria-keyshortcuts`;
 htmlout leaves it out, since a static page cannot honour the shortcut.
 
+A declared chord that holds `Control`, `Alt` or `Meta` (`"Control+S"`), or a
+bare function key (`"F2"`), is page-global: a keydown anywhere on the page
+presses the first rendered control declaring it, unless something already
+called `preventDefault` on the event. A bare key such as `PageDown` or a letter
+is never page-global, since it would take scrolling from the page and typing
+from every field. Controls inside an `inert` or `aria-hidden` subtree or under
+`display: none` are skipped. A disabled match takes the key and does nothing.
+Compose and SwiftUI answer the same chords from a hardware keyboard (see
+`core.Style.AccessibilityKeyShortcuts`).
+
 ARIA defines no `aria-orientation` on a grid, and neither web target writes one.
 
 #### Where the tab stop starts
@@ -1180,7 +1190,7 @@ What it cannot answer is anything that needs real rendering: whether
 one, or anything about layout. Those still need a browser, exactly as the
 iOS view layer still needs a simulator.
 
-### The four keyboard facts that do get a browser
+### The five keyboard facts that do get a browser
 
 `dom.mjs` is a faithful model of the runtime's *bookkeeping* and a poor model
 of a browser, which is fine until a claim is about the browser. Three of the
@@ -1198,6 +1208,11 @@ keyboard pattern's are:
   the right three elements, since a toolbar's members are named by no role — and
   the arrows are checked to reach the two that `Tab` now skips, which is what
   makes taking them out of the tab order legitimate rather than a regression.
+- `PageUp` and `PageDown` really page `comps.Calendar` through Go. The dom.mjs
+  cases write the new month's patch by hand; this one builds the tutorial for
+  `js/wasm`, opens lesson 4.9, and checks that the arrow's `onClick` reaches Go,
+  the month comes back as a patch inside the same key press, and focus lands on
+  the same day (or February's 28th, from the 31st).
 
 No amount of widening the shim settles those, because a shim can only restate
 them: its `focus()` is an assignment and its `defaultPrevented` is a flag it

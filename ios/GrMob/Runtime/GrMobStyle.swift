@@ -174,6 +174,10 @@ struct GrMobStyle: Equatable {
     /// node that is not the current item of a set. Folded into .isSelected by
     /// grMobCurrentTrait below.
     var accessibilityCurrent: String = ""
+    /// Go's core.Style.AccessibilityKeyShortcuts, verbatim (aria-keyshortcuts
+    /// spelling). Read by GrMobButton through grMobKeyChord: its first
+    /// page-global chord becomes the button's .keyboardShortcut.
+    var accessibilityKeyShortcuts: String = ""
     /// Go's core.ValueRange, verbatim: where a valued control sits inside its
     /// range. Only `text` is read — see grMobValueText below and the note on
     /// the three numbers this platform cannot say.
@@ -276,6 +280,7 @@ struct GrMobStyle: Equatable {
         s.accessibilityHeadingLevel = int("AccessibilityHeadingLevel")
         s.accessibilitySelected = str("AccessibilitySelected")
         s.accessibilityCurrent = str("AccessibilityCurrent")
+        s.accessibilityKeyShortcuts = str("AccessibilityKeyShortcuts")
         s.accessibilityValue = parseValueRange(obj["AccessibilityValue"] as? [String: Any])
         s.disabled = obj["Disabled"] as? Bool ?? false
         s.transition = str("Transition")
@@ -1514,4 +1519,81 @@ func grMobFloorPoints(_ value: String) -> CGFloat? {
     let number = value.hasSuffix("px") ? String(value.dropLast(2)) : value
     guard let points = Double(number), points > 0 else { return nil }
     return CGFloat(points)
+}
+
+/// The first page-global chord of a core.AccessibilityKeyShortcuts value, as
+/// SwiftUI's keyboardShortcut arguments, or nil when there is none.
+///
+/// # Which chords
+///
+/// Page-global means the chord holds Control, Alt or Meta; see Go's
+/// Style.AccessibilityKeyShortcuts for why a bare key (PageDown, a letter) is
+/// left to the widget that owns it. The web and Compose also treat a bare
+/// F-key as page-global, but KeyEquivalent has no function keys, so here it
+/// is skipped rather than approximated.
+///
+///	ARIA          SwiftUI
+///	Control       .control
+///	Alt           .option
+///	Meta          .command     (Command on an iPad keyboard)
+///	Shift         .shift
+///	"p", "P"      KeyEquivalent("p")
+///	Enter         .return      and the other named keys in the switch
+///
+/// Only the first usable chord is taken: a Button carries one
+/// keyboardShortcut. A chord with an unknown modifier or key name is skipped,
+/// so a misspelling adds no shortcut rather than a wrong one.
+func grMobKeyChord(_ spec: String) -> (key: KeyEquivalent, modifiers: EventModifiers)? {
+    chords: for chord in spec.split(separator: " ") {
+        var parts = chord.split(separator: "+", omittingEmptySubsequences: false).map(String.init)
+        guard let name = parts.popLast(), !name.isEmpty else { continue }
+        var modifiers: EventModifiers = []
+        for part in parts {
+            switch part {
+            case "Control": modifiers.insert(.control)
+            case "Alt": modifiers.insert(.option)
+            case "Meta": modifiers.insert(.command)
+            case "Shift": modifiers.insert(.shift)
+            default: continue chords
+            }
+        }
+        // A chord with no Control, Alt or Meta is not page-global.
+        guard !modifiers.subtracting(.shift).isEmpty else { continue }
+        let key: KeyEquivalent
+        if name.count == 1, let c = name.lowercased().first {
+            key = KeyEquivalent(c)
+        } else {
+            switch name {
+            case "Enter": key = .return
+            case "Escape": key = .escape
+            case "Tab": key = .tab
+            case "Backspace": key = .delete
+            case "Delete": key = .deleteForward
+            case "ArrowUp": key = .upArrow
+            case "ArrowDown": key = .downArrow
+            case "ArrowLeft": key = .leftArrow
+            case "ArrowRight": key = .rightArrow
+            case "Home": key = .home
+            case "End": key = .end
+            case "PageUp": key = .pageUp
+            case "PageDown": key = .pageDown
+            default: continue chords
+            }
+        }
+        return (key, modifiers)
+    }
+    return nil
+}
+
+extension View {
+    /// A Button's page-global shortcut, from grMobKeyChord. Strictly
+    /// conditional, like grMobGrow: a button that declares none gets itself
+    /// back, with no modifier in its chain.
+    @ViewBuilder func grMobKeyShortcut(_ spec: String) -> some View {
+        if let chord = grMobKeyChord(spec) {
+            keyboardShortcut(chord.key, modifiers: chord.modifiers)
+        } else {
+            self
+        }
+    }
 }

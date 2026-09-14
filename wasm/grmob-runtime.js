@@ -1914,6 +1914,107 @@ const GrMob = (() => {
         return out.join(" ");
     }
 
+    // # Page-global shortcuts
+    //
+    // core.AccessibilityKeyShortcuts beyond a grid's page keys. A declared
+    // chord that holds Control, Alt or Meta, or is a bare function key
+    // (F1–F24), is answered from anywhere on the page: the keydown reaches the
+    // window listener installed below, and the first rendered control under
+    // the mount point that declares the chord has its onClick invoked, as
+    // Enter on it would.
+    //
+    //	declared            answered where         why
+    //	Control+S, Alt+N    anywhere on the page   a modifier chord types nothing
+    //	F2                  anywhere on the page   a function key types nothing
+    //	PageDown, a, Enter  only by a widget that  a bare key is typing, scrolling
+    //	                    owns it (the grid)     or a composite's own navigation
+    //
+    // The split is by what the key would otherwise do. A bare letter declared
+    // page-wide would be stolen from every text field, and a bare PageDown
+    // from the page's own scroll, which is why comps.Calendar's arrows only
+    // answer inside their grid (see "PageUp and PageDown").
+    //
+    // A keydown something else already consumed (defaultPrevented: a code
+    // editor's Ctrl+Z, a composite's Ctrl+Home) is left alone, and so are
+    // auto-repeats and IME composition. A control inside an inert or
+    // aria-hidden subtree, or under display:none, is not a candidate: that is
+    // a screen behind a modal or a closed panel, and a reader cannot see what
+    // the key would press. A disabled match takes the key and does nothing,
+    // for the reason a disabled page arrow does: the browser's own meaning of
+    // the chord (Ctrl+S saves the page) is not what the reader asked for.
+
+    // One chord of an aria-keyshortcuts value: "Control+Shift+P" becomes
+    // {key: "P", control, alt, meta, shift}. null for an empty key or an
+    // unknown modifier name, so a misspelling matches nothing.
+    function parseKeyChord(spec) {
+        const parts = spec.split("+");
+        const key = parts.pop();
+        if (!key) return null;
+        const chord = { key, control: false, alt: false, meta: false, shift: false };
+        for (const part of parts) {
+            if (part === "Control") chord.control = true;
+            else if (part === "Alt") chord.alt = true;
+            else if (part === "Meta") chord.meta = true;
+            else if (part === "Shift") chord.shift = true;
+            else return null;
+        }
+        return chord;
+    }
+
+    function isPageGlobalChord(chord) {
+        return chord.control || chord.alt || chord.meta || /^F([1-9]|1[0-9]|2[0-4])$/.test(chord.key);
+    }
+
+    // Whether a keydown is this chord. Modifiers match exactly, so Control+S
+    // is not answered by Control+Shift+S. A single-character key compares
+    // case-insensitively (Shift+P arrives as "P"), and letters and digits
+    // also match by physical key, because Alt on macOS rewrites e.key
+    // (Option+P is "π") while e.code still says KeyP.
+    function keyChordMatches(chord, e) {
+        if (Boolean(e.ctrlKey) !== chord.control || Boolean(e.altKey) !== chord.alt ||
+            Boolean(e.metaKey) !== chord.meta || Boolean(e.shiftKey) !== chord.shift) {
+            return false;
+        }
+        if (chord.key.length !== 1) return e.key === chord.key;
+        const want = chord.key.toLowerCase();
+        if (typeof e.key === "string" && e.key.toLowerCase() === want) return true;
+        if (/^[a-z]$/.test(want)) return e.code === "Key" + want.toUpperCase();
+        if (/^[0-9]$/.test(want)) return e.code === "Digit" + want;
+        return false;
+    }
+
+    // The first control, in document order, declaring a page-global chord
+    // that this keydown is. Subtrees a reader cannot reach are skipped whole.
+    function findPageShortcut(el, e) {
+        if (el.getAttribute) {
+            if (el.getAttribute("inert") !== null && el.getAttribute("inert") !== undefined) return null;
+            if (el.getAttribute("aria-hidden") === "true") return null;
+            if (el.style && el.style.display === "none") return null;
+            const keys = el.getAttribute("aria-keyshortcuts");
+            if (keys && el.dataset && el.dataset.listener_onClick) {
+                for (const spec of keys.split(/\s+/)) {
+                    const chord = parseKeyChord(spec);
+                    if (chord && isPageGlobalChord(chord) && keyChordMatches(chord, e)) return el;
+                }
+            }
+        }
+        for (const child of el.children || []) {
+            const found = findPageShortcut(child, e);
+            if (found) return found;
+        }
+        return null;
+    }
+
+    // The window's keydown listener. See "Page-global shortcuts".
+    function handlePageShortcut(e) {
+        if (e.defaultPrevented || e.repeat || e.isComposing || !rootElement) return;
+        const control = findPageShortcut(rootElement, e);
+        if (!control) return;
+        e.preventDefault();
+        if (control.disabled || control.getAttribute("aria-disabled") === "true") return;
+        window.GoInvokeCallback(control.dataset.listener_onClick, {});
+    }
+
     // Puts focus on the day a page key started from, in the page it opened.
     // Called from syncComposite for the grid a pending page key belongs to.
     //
@@ -8128,6 +8229,15 @@ const GrMob = (() => {
                 state: document.hidden ? "background" : "active",
             }));
         });
+    })();
+
+    // Page-global shortcuts: one listener on the window for the page's life.
+    // A window listener rather than one per declaring element, because the
+    // key is pressed wherever focus happens to be, including on the body.
+    // Guarded like the lifecycle listener above, for hosts with no window.
+    (() => {
+        if (typeof window === "undefined" || typeof window.addEventListener !== "function") return;
+        window.addEventListener("keydown", handlePageShortcut);
     })();
 
     return {
