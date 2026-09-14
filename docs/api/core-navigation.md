@@ -44,7 +44,7 @@ func CanPop(ctx *Context) bool
 
 CanPop reports whether there is a screen to go back to, which is what a back button or a hardware-back handler needs in order to decide between popping and exiting the app. Pop is a safe no-op when this is false; the point of asking first is to avoid rendering a control that does nothing.
 
-<small>[core/navigation.go:411](https://github.com/rohanthewiz/grmob/blob/master/core/navigation.go#L411)</small>
+<small>[core/navigation.go:417](https://github.com/rohanthewiz/grmob/blob/master/core/navigation.go#L417)</small>
 
 ### func Modal
 
@@ -151,9 +151,11 @@ func PopToRoot(ctx *Context) bool
 
 PopToRoot unwinds to the bottom of the stack, discarding the state of every frame above it, and returns whether anything was popped.
 
-It differs from Reset in exactly one way, and it is the way that matters: the root frame is the one already there, state and all. Reset(ctx, root) would look identical on screen and quietly reset the root's scroll position, selected tab and form contents. Reach for PopToRoot to escape a deep drill-down ("Done" out of a five-level settings tree), and for Reset to end a session.
+It differs from Reset in exactly one way, and it is the way that matters: the root frame is the one already there, state and all. Reset(ctx, root) would look identical on screen and quietly reset the root's hook state: its selected tab, form contents and anything else it keeps with NewState. Reach for PopToRoot to escape a deep drill-down ("Done" out of a five-level settings tree), and for Reset to end a session.
 
-<small>[core/navigation.go:376](https://github.com/rohanthewiz/grmob/blob/master/core/navigation.go#L376)</small>
+The scroll offset is not part of that state, after either call. It lives in the host's scroll view, not in a hook, and the Navigator keys each frame's root by its entry, so a frame that comes back on top gets a new host view that opens at its top. A root that has to come back mid-page has to keep its offset in its own state and scroll to it.
+
+<small>[core/navigation.go:382](https://github.com/rohanthewiz/grmob/blob/master/core/navigation.go#L382)</small>
 
 ### func Push
 
@@ -175,7 +177,7 @@ func Render(ctx *Context, view View) *Node
 
 Render renders view into ctx after restarting ctx's hook cursors. It is the entry point for a host driving passes by hand; render.Manager does the same two steps itself (with the debug pass boundary around them) and does not call this.
 
-<small>[core/navigation.go:419](https://github.com/rohanthewiz/grmob/blob/master/core/navigation.go#L419)</small>
+<small>[core/navigation.go:425](https://github.com/rohanthewiz/grmob/blob/master/core/navigation.go#L425)</small>
 
 ### func Replace
 
@@ -219,7 +221,7 @@ StackDepth reports how many frames are on the stack.
 
 Before the Navigator's first render it counts only what the app itself pushed — 0 for an app that has not navigated yet, because the initial route is installed lazily by that first render. Afterwards it is at least 1.
 
-<small>[core/navigation.go:401](https://github.com/rohanthewiz/grmob/blob/master/core/navigation.go#L401)</small>
+<small>[core/navigation.go:407](https://github.com/rohanthewiz/grmob/blob/master/core/navigation.go#L407)</small>
 
 ## Types
 

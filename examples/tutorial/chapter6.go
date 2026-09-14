@@ -318,8 +318,9 @@ func lessonUnwind() Lesson {
 				core.Gap(14),
 				prose("Two calls throw away everything above the bottom of the stack, and they "+
 					"look identical on screen — which is exactly why they are worth a lesson. "+
-					"core.PopToRoot unwinds to the EXISTING root frame: scroll position, "+
-					"selected tab, form contents all intact. core.Reset replaces the whole "+
+					"core.PopToRoot unwinds to the EXISTING root frame: selected tab, form "+
+					"contents and every other piece of hook state intact. (The scroll offset "+
+					"is the host's, not a hook's, so the root opens at its top either way.) core.Reset replaces the whole "+
 					"stack with a NEW root frame, even when the route is the same function the "+
 					"old root ran. Use PopToRoot for \"Done\" out of a deep drill-down; use "+
 					"Reset to end a session — logout, onboarding complete, account switch — "+

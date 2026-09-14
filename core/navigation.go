@@ -369,10 +369,16 @@ func Reset(ctx *Context, route func(*Context) View) {
 //
 // It differs from Reset in exactly one way, and it is the way that matters:
 // the root frame is the one already there, state and all. Reset(ctx, root)
-// would look identical on screen and quietly reset the root's scroll position,
-// selected tab and form contents. Reach for PopToRoot to escape a deep
-// drill-down ("Done" out of a five-level settings tree), and for Reset to end
-// a session.
+// would look identical on screen and quietly reset the root's hook state: its
+// selected tab, form contents and anything else it keeps with NewState. Reach
+// for PopToRoot to escape a deep drill-down ("Done" out of a five-level
+// settings tree), and for Reset to end a session.
+//
+// The scroll offset is not part of that state, after either call. It lives
+// in the host's scroll view, not in a hook, and the Navigator keys each
+// frame's root by its entry, so a frame that comes back on top gets a new
+// host view that opens at its top. A root that has to come back mid-page
+// has to keep its offset in its own state and scroll to it.
 func PopToRoot(ctx *Context) bool {
 	n := ctx.nav
 	n.mu.Lock()
