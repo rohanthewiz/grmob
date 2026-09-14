@@ -48,7 +48,7 @@ difference is structural rather than an oversight:
 |---|---|---|---|---|
 | typography, color, box model, borders, `Shadow`, `Gap`, `RowGap`/`ColumnGap`, `Justify`, `AlignItems`, `FlexWrap`, `StackAlign`, `Transition`, `Rotate`, `Spin`, `Translate`, accessibility, `Disabled` | yes | yes | yes | yes |
 | `Position` + `Top`/`Right`/`Bottom`/`Left`/`ZIndex`, `MaxHeight`, `WhiteSpace`, `AlignSelf`, `FlexBasis`, `FlexDirection`, `Inert` | — | — | yes | yes |
-| `MinWidth`, `MinHeight` | px, % | px | yes | yes |
+| `MinWidth`, `MinHeight` | px, % | px, % | yes | yes |
 | `Overflow` | `hidden` only | `hidden` only | yes | yes |
 | `FlexShrink` | `0` only | yes | yes | yes |
 | `MaxWidth` | px, % | px, % | yes | yes |

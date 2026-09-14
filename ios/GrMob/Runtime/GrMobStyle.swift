@@ -921,14 +921,24 @@ extension View {
     /// floored child in a narrow flex line overflows rather than shrinks, as
     /// a flex item stopped by min-width does.
     ///
-    /// Points only. A percentage floor needs the containing block's length,
-    /// which containerRelativeFrame gives as a size but not as a minimum; it
-    /// is ignored, as Compose ignores a percentage of an unbounded width.
-    /// Conditional for grMobGrow's reason: no floor, no frame.
+    /// A percentage floor needs the containing block's length, which a frame
+    /// modifier never sees, so a floor with a percentage in either axis goes
+    /// through GrMobMinimumLayout instead, which resolves it against the
+    /// proposal the way GrMobMaxWidthLayout resolves a percentage cap. A
+    /// proposal with no length on that axis (an ideal-size query, a scroll's
+    /// content) sets no floor there, as Compose ignores a percentage of an
+    /// unbounded width.
+    ///
+    ///	floors            applied as
+    ///	none              nothing (grMobGrow's reason: no floor, no frame)
+    ///	points only       frame(minWidth:minHeight:alignment:)
+    ///	any percentage    GrMobMinimumModifier → GrMobMinimumLayout
     @ViewBuilder fileprivate func grMobMinimum(width: String, height: String, alignment: Alignment) -> some View {
         let w = grMobFloorPoints(width)
         let h = grMobFloorPoints(height)
-        if w == nil && h == nil {
+        if width.hasSuffix("%") || height.hasSuffix("%") {
+            modifier(GrMobMinimumModifier(width: width, height: height, alignment: alignment))
+        } else if w == nil && h == nil {
             self
         } else {
             frame(minWidth: w, minHeight: h, alignment: alignment)
@@ -1381,6 +1391,18 @@ private func grMobCurrentTrait(_ kind: String, selected: String) -> Accessibilit
 /// the ", " joining it to the label is fixed; a comma is a pause to
 /// VoiceOver in every language it speaks.
 ///
+/// # Why the label and not the accessibility value, as Compose uses its state
+///
+/// VoiceOver reads label, value and traits as separate parts, so the value
+/// would let VoiceOver do the joining, which is what Compose's
+/// stateDescription does on Android. It was tried and measured: on a
+/// simulator, XCUITest read the tutorial calendar's today cell with the label
+/// and an EMPTY value, both with the value applied by grMobValueText and with
+/// it applied beside the label here. That cell's box has control children
+/// (its numeral), so it stays an accessibility container, and the value does
+/// not reach the element that carries the label, while the label does. So the
+/// word stays in the one channel that is known to arrive.
+///
 /// Only called with a non-empty label (grMobAccessibility's branch requires
 /// one), so there is no bare ", today" to guard against here.
 private func grMobCurrentLabel(_ label: String, kind: String) -> String {
@@ -1513,12 +1535,81 @@ struct GrMobMaxWidthLayout: Layout {
 }
 
 /// A core.MinWidth or core.MinHeight in points ("280px" or a bare number), or
-/// nil for anything that sets no floor: "", "auto", "none", a percentage, zero
-/// or a negative number (invalid CSS, dropped as Compose drops it).
+/// nil for anything that sets no floor without a parent to resolve against:
+/// "", "auto", "none", a percentage, zero or a negative number (invalid CSS,
+/// dropped as Compose drops it). GrMobMinSize.floor with no offered length.
 func grMobFloorPoints(_ value: String) -> CGFloat? {
-    let number = value.hasSuffix("px") ? String(value.dropLast(2)) : value
-    guard let points = Double(number), points > 0 else { return nil }
-    return CGFloat(points)
+    GrMobMinSize.floor(value, available: nil)
+}
+
+/// A percentage MinWidth/MinHeight; see grMobMinimum. A ViewModifier around
+/// the Layout for GrMobMaxWidthModifier's reason: a Layout called from the
+/// @ViewBuilder chain directly crashed swiftc.
+struct GrMobMinimumModifier: ViewModifier {
+    let width: String
+    let height: String
+    let alignment: Alignment
+
+    func body(content: Content) -> some View {
+        GrMobMinimumLayout(width: width, height: height, alignment: alignment) { content }
+    }
+}
+
+/// CSS `min-width` / `min-height` with a percentage, resolved per proposal.
+///
+/// The same contract as `frame(minWidth:minHeight:alignment:)`, with the floor
+/// computed from what the parent offers on each axis:
+///
+/// ```
+///   floor     = GrMobMinSize.floor(value, available: proposal on that axis)
+///   child is proposed   max(proposal, floor)   (nil stays nil: an ideal query)
+///   reports             max(child, floor)      even when proposed less, so a
+///                                              floored flex item overflows
+///                                              rather than shrinks
+///   places child        inside the bounds, at `alignment`
+/// ```
+///
+/// A floor in points on the other axis goes through the same function, which
+/// reads points without an offered length, so a mixed pair needs no second
+/// path.
+struct GrMobMinimumLayout: Layout {
+    let width: String
+    let height: String
+    let alignment: Alignment
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let child = subviews.first else { return .zero }
+        let w = GrMobMinSize.floor(width, available: proposal.width)
+        let h = GrMobMinSize.floor(height, available: proposal.height)
+        let inner = ProposedViewSize(width: proposal.width.map { max($0, w ?? 0) },
+                                     height: proposal.height.map { max($0, h ?? 0) })
+        let size = child.sizeThatFits(inner)
+        return CGSize(width: max(size.width, w ?? 0), height: max(size.height, h ?? 0))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard let child = subviews.first else { return }
+        // The bounds already hold the floor (they are at least what
+        // sizeThatFits reported), so the child is proposed the bounds and
+        // placed where `alignment` puts a smaller box inside them, as a
+        // flexible frame does.
+        let inner = ProposedViewSize(width: bounds.width, height: bounds.height)
+        let size = child.sizeThatFits(inner)
+        let x = bounds.minX + (bounds.width - size.width) * grMobAlignmentFraction(alignment.horizontal)
+        let y = bounds.minY + (bounds.height - size.height) * grMobAlignmentFraction(alignment.vertical)
+        child.place(at: CGPoint(x: x, y: y), anchor: .topLeading, proposal: inner)
+    }
+}
+
+/// Where along its slack an alignment puts a box: 0 at the start, 1 at the
+/// end, 0.5 for centre and anything else (a custom guide has no fixed answer
+/// here, and centre is SwiftUI's own default).
+private func grMobAlignmentFraction(_ h: HorizontalAlignment) -> CGFloat {
+    h == .leading ? 0 : (h == .trailing ? 1 : 0.5)
+}
+
+private func grMobAlignmentFraction(_ v: VerticalAlignment) -> CGFloat {
+    v == .top ? 0 : (v == .bottom ? 1 : 0.5)
 }
 
 /// The first page-global chord of a core.AccessibilityKeyShortcuts value, as

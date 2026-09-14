@@ -550,8 +550,10 @@ fun GrMobStyle?.boxModifier(extra: Modifier = Modifier, gestures: Modifier = Mod
         isDisabled || kind.isNotEmpty() || selectedState.isNotEmpty() ||
         currentKind.isNotEmpty() || valueRange.stated()
     ) {
-        val description = listOf(grMobCurrentLabel(accessibilityLabel, currentKind), accessibilityHint)
+        val description = listOf(grMobCurrentLabel(accessibilityLabel, currentKind, valueRange.text), accessibilityHint)
             .filter { it.isNotEmpty() }.joinToString(". ")
+        // core.CurrentDate's word, when no stated value holds the state slot.
+        val currentState = grMobCurrentState(accessibilityLabel, currentKind, valueRange.text)
         m = m.semantics {
             if (description.isNotEmpty()) contentDescription = description
             // TalkBack announces the Disabled property itself, so a disabled
@@ -565,6 +567,7 @@ fun GrMobStyle?.boxModifier(extra: Modifier = Modifier, gestures: Modifier = Mod
             grMobSelected(selectedState)
             grMobCurrent(currentKind, selectedState)
             grMobValue(valueRange)
+            if (currentState.isNotEmpty()) stateDescription = currentState
         }
     }
 
@@ -1174,7 +1177,7 @@ fun SemanticsPropertyReceiver.grMobSelected(state: String) {
  *
  * "date" is not folded. A calendar's today cell stating selected would be
  * announced as the chosen day, and a calendar has a chosen day of its own; the
- * fact goes into the name instead, through [grMobCurrentLabel]. See Go's
+ * fact goes into stateDescription instead, through [grMobCurrentState]. See Go's
  * core.CurrentKind, "CurrentDate is the exception to the fold".
  */
 fun SemanticsPropertyReceiver.grMobCurrent(kind: String, state: String) {
@@ -1182,24 +1185,37 @@ fun SemanticsPropertyReceiver.grMobCurrent(kind: String, state: String) {
 }
 
 /**
- * The accessible name with core.CurrentDate spoken into it.
+ * The accessible name, with core.CurrentDate spoken into it only when the
+ * state channel is already taken.
  *
  * Compose has no current property and "today" must not become `selected`
- * (see [grMobCurrent]), so the name is the one channel left. The suffix is the
- * one comps.Calendar used to write in Go for every target; it moved here when
- * the web targets gained aria-current="date", which a browser's screen reader
- * announces in the user's own language.
+ * (see [grMobCurrent]). The word goes into `stateDescription` instead
+ * ([grMobCurrentState]): TalkBack reads a node's state, name and role as
+ * separate parts, in the order the user's "element description order"
+ * setting chooses, with its own pauses. The joining is then the screen
+ * reader's, in the user's language, rather than a fixed ", " in this file.
+ *
+ * `stateDescription` holds one text, and a stated core.AccessibilityValue
+ * already fills it ([grMobValue]). Only then is the word folded into the name,
+ * after a ", " (a pause to every TTS engine TalkBack drives):
+ *
+ * ```
+ *   AccessibilityValue text   contentDescription    stateDescription
+ *   none                      label                 "today"
+ *   stated                    label + ", today"     the stated text
+ * ```
  *
  * The word is the platform's, in the device's language: [grMobTodayWord]
- * asks ICU, as the web's aria-current="date" asks the screen reader. Only the
- * ", " joining it to the name is fixed; a comma is a pause to every TTS
- * engine TalkBack drives, whatever the script.
- *
- * A node with no name gets none: ", today" on its own would be a name that
- * says only the suffix.
+ * asks ICU, as the web's aria-current="date" asks the screen reader. A node
+ * with no name gets neither: "today" on its own would announce only the
+ * suffix.
  */
-fun grMobCurrentLabel(label: String, kind: String): String =
-    if (kind == "date" && label.isNotEmpty()) "$label, ${grMobTodayWord()}" else label
+fun grMobCurrentLabel(label: String, kind: String, valueText: String = ""): String =
+    if (kind == "date" && label.isNotEmpty() && valueText.isNotEmpty()) "$label, ${grMobTodayWord()}" else label
+
+/** The stateDescription core.CurrentDate speaks, or "" (see [grMobCurrentLabel]). */
+fun grMobCurrentState(label: String, kind: String, valueText: String): String =
+    if (kind == "date" && label.isNotEmpty() && valueText.isEmpty()) grMobTodayWord() else ""
 
 /**
  * ICU's word for the current day ("today", "aujourd’hui", "heute") in the

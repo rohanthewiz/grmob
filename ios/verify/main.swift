@@ -161,7 +161,7 @@ func run() -> Int32 {
     // produces are half of what the shrink arm does now, and a floor measured
     // wrong is a layout bug that the solver's own arithmetic cannot see.
     let flexProblems = checkFlexSolver() + checkWrapSolver() + checkFixedSizeContainer()
-        + checkMinContent() + checkMaxWidth()
+        + checkMinContent() + checkMaxWidth() + checkMinSize()
     if flexProblems.isEmpty {
         print("OK: flex solver matches the CSS rules, including the fixed-size "
             + "census and the min-content floors")

@@ -420,6 +420,35 @@ struct GrMobWrapSolver {
 /// against. Percent above 100 is kept (CSS allows it; it simply never binds);
 /// a negative number is invalid CSS and is ignored rather than clamped to 0,
 /// since a clamp would collapse the box instead of leaving it alone.
+/// core.MinWidth and core.MinHeight as a floor in points, against the length
+/// the parent offers along that axis.
+///
+/// ```
+///   "280px", "280"   280 points
+///   "50%"            0.5 x the offered length (nil when it offers none, or
+///                    offers infinity: CSS's percentage of an indefinite
+///                    containing block, which a floor treats as 0)
+///   "", "auto",
+///   "none", 0,
+///   a negative       no floor (a negative is invalid CSS, dropped as
+///                    Compose drops it)
+/// ```
+///
+/// Beside GrMobMaxWidth because it is the same question with the opposite
+/// sign, and because this file is the one ios/verify runs on macOS.
+enum GrMobMinSize {
+    static func floor(_ value: String, available: CGFloat?) -> CGFloat? {
+        if value.hasSuffix("%") {
+            guard let pct = Double(value.dropLast()), pct > 0,
+                  let available, available.isFinite else { return nil }
+            return available * CGFloat(pct / 100)
+        }
+        let number = value.hasSuffix("px") ? String(value.dropLast(2)) : value
+        guard let points = Double(number), points > 0 else { return nil }
+        return CGFloat(points)
+    }
+}
+
 enum GrMobMaxWidth {
     /// The cap in points, or nil when `value` imposes none against `available`.
     static func limit(_ value: String, available: CGFloat?) -> CGFloat? {

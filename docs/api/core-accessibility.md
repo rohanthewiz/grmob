@@ -261,17 +261,20 @@ Both web targets write aria-current verbatim, on any role, unless the node is hi
 
 #### CurrentDate is the exception to the fold
 
-Folding "today" into selected would be a lie in exactly the widget that states it: a calendar has a selected day already, and it is usually not today. So neither native sets selected for CurrentDate. They append ", today" to the node's accessible name instead — the suffix comps.Calendar used to add in Go for every target — because a name is the one channel both platforms read that can carry the fact at all.
+Folding "today" into selected would be a lie in exactly the widget that states it: a calendar has a selected day already, and it is usually not today. So neither native sets selected for CurrentDate. They speak the platform's word for today instead:
 
 	target      CurrentDate becomes
 	web (both)  aria-current="date", which the screen reader announces in
 	            its own language; the name is left as the widget wrote it
-	Compose     contentDescription + ", " + ICU's word for today
+	Compose     stateDescription = ICU's word for today, which TalkBack
+	            joins to the name itself, in the user's description order;
+	            the name + ", " + the word when AccessibilityValue already
+	            holds the state slot
 	SwiftUI     accessibilityLabel + ", " + Foundation's word for today
 
-The suffix moved rather than disappeared, and on the natives its word is now the platform's own, in the user's language: Foundation's RelativeDateTimeFormatter on SwiftUI and ICU's on Compose, the named form of a zero-day offset ("today", "aujourd’hui", "heute"). Only the ", " that joins it to the name is fixed. When it was written in Go it was English everywhere.
+The word is the platform's own, in the user's language: Foundation's RelativeDateTimeFormatter on SwiftUI and ICU's on Compose, the named form of a zero-day offset ("today", "aujourd’hui", "heute"). SwiftUI keeps the fixed ", " because its value channel was measured not to reach a calendar cell's element (see grMobCurrentLabel in GrMobStyle.swift). A node with no name gets nothing on either native.
 
-<small>[core/current.go:76](https://github.com/rohanthewiz/grmob/blob/master/core/current.go#L76)</small>
+<small>[core/current.go:77](https://github.com/rohanthewiz/grmob/blob/master/core/current.go#L77)</small>
 
 ```go
 const (
@@ -303,7 +306,7 @@ func CurrentKinds() []CurrentKind
 
 CurrentKinds returns every stated value, in declaration order. CurrentNone is excluded for the reason PopupKinds() excludes PopupNone: it is the absence of a claim rather than one of the kinds.
 
-<small>[core/current.go:101](https://github.com/rohanthewiz/grmob/blob/master/core/current.go#L101)</small>
+<small>[core/current.go:102](https://github.com/rohanthewiz/grmob/blob/master/core/current.go#L102)</small>
 
 ### type ExpandedState
 

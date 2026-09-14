@@ -430,3 +430,27 @@ func checkMaxWidth() -> [String] {
     check("maxWidth with no cap", GrMobMaxWidth.clamp(600, to: nil), 600, into: &problems)
     return problems
 }
+
+// Checks for GrMobMinSize — core.MinWidth and core.MinHeight's arithmetic on
+// iOS, which GrMobMinimumLayout resolves per proposal. Expected values are
+// CSS's for a floor: px, % of the containing block (no floor when that block
+// is indefinite), and no floor for zero, a negative or anything unreadable.
+func checkMinSize() -> [String] {
+    var problems: [String] = []
+    func floor(_ name: String, _ value: String, _ available: CGFloat?, _ want: CGFloat?) {
+        let got = GrMobMinSize.floor(value, available: available)
+        if got != want { problems.append("minSize \(name): got \(String(describing: got)), want \(String(describing: want))") }
+    }
+    floor("px", "280px", 400, 280)
+    floor("bare number is points", "280", nil, 280)
+    floor("percent of the offer", "50%", 400, 200)
+    floor("percent with no offer is none", "50%", nil, nil)
+    floor("percent of an infinite probe is none", "50%", .infinity, nil)
+    floor("zero is no floor", "0px", 400, nil)
+    floor("zero percent is no floor", "0%", 400, nil)
+    floor("negative is invalid", "-5px", 400, nil)
+    floor("auto", "auto", 400, nil)
+    floor("empty", "", 400, nil)
+    floor("junk percent", "abc%", 400, nil)
+    return problems
+}
