@@ -55,7 +55,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
 | [Events & focus](core-events.md) | Event props, host and system events, focus refs and focus order. | 2 types, 19 functions and methods |
 | [Navigation & overlays](core-navigation.md) | The navigator stack, modals, toasts, deep links and opening URLs. | 4 types, 19 functions and methods |
 | [Accessibility](core-accessibility.md) | Roles, selected, expanded and current states, value ranges and the accessibility audit. | 9 types, 19 functions and methods |
-| [Device services](core-device.md) | Audio, camera, compass heading, location, maps and the app lifecycle. | 10 types, 55 functions and methods |
+| [Device services](core-device.md) | Audio, camera, clipboard, compass heading, location, maps and the app lifecycle. | 10 types, 57 functions and methods |
 
 ## Index
 
@@ -385,6 +385,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
     - [`func OnMarkerTap`](core-device.md#func-onmarkertap)
     - [`func OnRegionChange`](core-device.md#func-onregionchange)
     - [`func ParseLatLng`](core-device.md#func-parselatlng)
+    - [`func ReadClipboard`](core-device.md#func-readclipboard)
     - [`func ReceiveAudioStatus`](core-device.md#func-receiveaudiostatus)
     - [`func ReceiveHeading`](core-device.md#func-receiveheading)
     - [`func ReceiveLifecycle`](core-device.md#func-receivelifecycle)
@@ -395,6 +396,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
     - [`func StopHeading`](core-device.md#func-stopheading)
     - [`func StopLocation`](core-device.md#func-stoplocation)
     - [`func WrapLongitude`](core-device.md#func-wraplongitude)
+    - [`func WriteClipboard`](core-device.md#func-writeclipboard)
     - [`type AudioOpt`](core-device.md#type-audioopt)
         - [`func AudioAutoplay`](core-device.md#func-audioautoplay)
         - [`func AudioStartAt`](core-device.md#func-audiostartat)

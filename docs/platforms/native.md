@@ -53,8 +53,8 @@ consistent. Patch semantics — positional paths, ordering rules — are in
 | `RenderInitial()` | Full tree JSON for the first mount |
 | `TriggerCallback(id)` / `TriggerTextCallback` / `TriggerBoolCallback` / `TriggerIntCallback` | Event dispatch; returns the resulting patches |
 | `RenderAgain()` | Escape hatch for shells that drive rendering themselves |
-| `SetSystemEventListener(l)` | Sink for app→host system events (`toast`, `open_url`, `audio`); `OnSystemEvent(name, payloadJSON)` |
-| `ReportHostEvent(name, payloadJSON)` | Host→app events that answer no callback (`audio_status`, `lifecycle`); returns the resulting patches like `Trigger*` |
+| `SetSystemEventListener(l)` | Sink for app→host system events (`toast`, `open_url`, `audio`, `clipboard`); `OnSystemEvent(name, payloadJSON)` |
+| `ReportHostEvent(name, payloadJSON)` | Host→app events that answer no callback (`audio_status`, `lifecycle`, `clipboard`); returns the resulting patches like `Trigger*` |
 
 ## Building — Android
 
@@ -225,6 +225,41 @@ state, so subscribers hear transitions only. The initial state is active —
 an app that has just started is on screen — and a shell that disagrees says
 so with its first report. `mobile/verify` holds the three shells' spellings
 of the event and its states to core's.
+
+## Clipboard
+
+`core.WriteClipboard(text)` puts text on the system clipboard, and
+`core.ReadClipboard(fn)` asks for the text on it and calls `fn(text, ok)`
+exactly once. Both are callable from any goroutine and take no Context.
+
+```go
+components.Button{Label: "Paste", OnTap: func() {
+    core.ReadClipboard(func(text string, ok bool) {
+        if ok && text != "" { draft.Set(draft.Get() + text) }
+    })
+}}
+```
+
+A write is the `"clipboard"` system event with `command: "write"`; a read
+sends `command: "read"` with an `id`, and the shell answers with the
+`"clipboard"` host event carrying that `id`, `text` and `ok`. The id is what
+makes this a reply rather than a record: unlike a permission status, the
+clipboard changes under the app with no event, so each read's answer goes to
+the callback that asked and to no one else.
+
+| Shell | Write | Read | `ok: false` when |
+|---|---|---|---|
+| iOS | `UIPasteboard.general.string =` | `UIPasteboard.general.string` | never — a declined paste prompt reads as empty |
+| Android | `ClipboardManager.setPrimaryClip` | `primaryClip.getItemAt(0).coerceToText` | never — a read without focus reads as empty |
+| Browser | `navigator.clipboard.writeText` | `navigator.clipboard.readText` | no async Clipboard API, an insecure context, or a refusal |
+| Headless | nothing | `fn("", false)` at once | always |
+
+Every shell answers every read, because Go holds the callback until the id
+comes back and has no timeout. iOS 16 shows its "Allow Paste" prompt on a
+read, and Android 13 draws its own "Copied" confirmation on a write, so
+neither is something an app should duplicate. `mobile/verify` holds the
+three shells' spellings of the event, the commands and the reply keys to
+core's, and requires each dispatcher's arm.
 
 ## Permissions
 

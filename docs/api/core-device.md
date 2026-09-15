@@ -4,9 +4,9 @@
 import "github.com/rohanthewiz/grmob/core"
 ```
 
-Audio, camera, compass heading, location, maps and the app lifecycle.
+Audio, camera, clipboard, compass heading, location, maps and the app lifecycle.
 
-One of 11 topic pages of [package core](core.md), which has the package overview and an index of every topic. This page documents the declarations in `core/audio.go`, `core/camera.go`, `core/heading.go`, `core/location.go`, `core/mapview.go`, `core/lifecycle.go`.
+One of 11 topic pages of [package core](core.md), which has the package overview and an index of every topic. This page documents the declarations in `core/audio.go`, `core/camera.go`, `core/clipboard.go`, `core/heading.go`, `core/location.go`, `core/mapview.go`, `core/lifecycle.go`.
 
 ## Index
 
@@ -39,6 +39,7 @@ One of 11 topic pages of [package core](core.md), which has the package overview
 - [`func OnMarkerTap`](#func-onmarkertap)
 - [`func OnRegionChange`](#func-onregionchange)
 - [`func ParseLatLng`](#func-parselatlng)
+- [`func ReadClipboard`](#func-readclipboard)
 - [`func ReceiveAudioStatus`](#func-receiveaudiostatus)
 - [`func ReceiveHeading`](#func-receiveheading)
 - [`func ReceiveLifecycle`](#func-receivelifecycle)
@@ -49,6 +50,7 @@ One of 11 topic pages of [package core](core.md), which has the package overview
 - [`func StopHeading`](#func-stopheading)
 - [`func StopLocation`](#func-stoplocation)
 - [`func WrapLongitude`](#func-wraplongitude)
+- [`func WriteClipboard`](#func-writeclipboard)
 - [`type AudioOpt`](#type-audioopt)
     - [`func AudioAutoplay`](#func-audioautoplay)
     - [`func AudioStartAt`](#func-audiostartat)
@@ -492,6 +494,20 @@ ParseLatLng reads a host's "lat,lng" payload, for OnMapTap. Same contract as Par
 
 <small>[core/mapview.go:380](https://github.com/rohanthewiz/grmob/blob/master/core/mapview.go#L380)</small>
 
+### func ReadClipboard
+
+```go
+func ReadClipboard(fn func(text string, ok bool))
+```
+
+ReadClipboard asks the host for the clipboard's text and calls fn with the answer, exactly once. See the file comment for what ok means.
+
+With no host registered (a headless test, htmlout) fn runs immediately with ("", false) on the caller's goroutine: there is no platform to ask, and a caller waiting on a reply that can never come would be a hang, not a degradation.
+
+fn is registered before the event is sent, because a native host may answer synchronously inside SendSystemEvent's call and the reply must find its callback already waiting.
+
+<small>[core/clipboard.go:97](https://github.com/rohanthewiz/grmob/blob/master/core/clipboard.go#L97)</small>
+
 ### func ReceiveAudioStatus
 
 ```go
@@ -615,6 +631,18 @@ Exported because every consumer of a coordinate needs it and getting it wrong is
 math.Mod keeps the sign of its first argument, so a negative input stays west, and the two adjustments are what carry a value past ±180 round to the other side.
 
 <small>[core/location.go:508](https://github.com/rohanthewiz/grmob/blob/master/core/location.go#L508)</small>
+
+### func WriteClipboard
+
+```go
+func WriteClipboard(text string)
+```
+
+WriteClipboard puts text on the system clipboard. Fire-and-forget, like OpenURL: callable from any goroutine, silent when no host is registered.
+
+An empty string is sent rather than dropped (unlike OpenURL's empty url): clearing the clipboard — after copying a one-time code, say — is a legitimate thing to ask for.
+
+<small>[core/clipboard.go:79](https://github.com/rohanthewiz/grmob/blob/master/core/clipboard.go#L79)</small>
 
 ## Types
 

@@ -10,6 +10,7 @@ import UIKit
 ///     core.StartHeading ▶ "sensor"    ──▶ HeadingSensor (CLLocationManager)
 ///     core.StartLocation ▶ "sensor"   ──▶ LocationSensor (CLLocationManager)
 ///     permission.Check  ▶ "permission"──▶ Permissions (AVFoundation/Photos/CL)
+///     core.*Clipboard ──▶ "clipboard" ──▶ Clipboard (UIPasteboard)
 ///
 /// Before this existed the events were emitted into a nil Go handler and
 /// vanished on both natives — only the WASM host had a sink — so an app
@@ -33,6 +34,7 @@ enum SystemEvents {
         HeadingSensor.shared.report = { name, payload in runtime.hostEvent(name, payload) }
         LocationSensor.shared.report = { name, payload in runtime.hostEvent(name, payload) }
         Permissions.shared.report = { name, payload in runtime.hostEvent(name, payload) }
+        Clipboard.shared.report = { name, payload in runtime.hostEvent(name, payload) }
         bridge.setSystemEventListener { name, payload in
             // The callback runs on the Go goroutine that emitted the event.
             // Everything below is UIKit, which is main-actor only, so every
@@ -69,6 +71,9 @@ enum SystemEvents {
         // command is replied to over the host-event channel. See
         // Permissions.swift for why the mapping table lives there.
         case "permission": Permissions.shared.handle(object)
+        // Write is fire-and-forget; a read is answered over the host-event
+        // channel with the id it carried (core/clipboard.go).
+        case "clipboard": Clipboard.shared.handle(object)
         default: break
         }
     }

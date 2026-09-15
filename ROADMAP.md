@@ -768,6 +768,11 @@
       `hooks.UseLifecycle` over the `"lifecycle"` host event; active /
       inactive / background from `ProcessLifecycleOwner`, `scenePhase` and
       the Page Visibility API, so a client can reconnect on resume
+- [x] Clipboard — `core.WriteClipboard` / `core.ReadClipboard` over the
+      `"clipboard"` system event, the read answered by the `"clipboard"` host
+      event under the id it carried (core's first reply to one request rather
+      than a record); `ClipboardManager`, `UIPasteboard` and the async
+      Clipboard API. cats-mobile's composer pastes with it
 - [x] `core.Select` — the picker, on all four targets: a `<select>` whose
       options are built from a prop, a SwiftUI `Menu`, a Compose
       `DropdownMenu`. `onChange` carries the option's *value*, never its label
@@ -1442,7 +1447,6 @@
 
 - [ ] Keystore (Secure): `Keystore.Save()`, `Keystore.Get()` — the church app
       keeps its bearer token in bytdb for want of this; see its README
-- [ ] Clipboard: read/write — cats-mobile wants paste into its composer
 - [ ] URL-scheme deep links (`cats://pair` from a QR lands in the app)
 - [ ] Haptics (cats-mobile: a buzz when an agent blocks)
 - [ ] Local notifications

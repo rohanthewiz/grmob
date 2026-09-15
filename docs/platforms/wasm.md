@@ -128,10 +128,14 @@ installs beside `ReceiveEvent`. A page that copies the runtime needs nothing
 more: the `"audio"` system event is handled inside `grmob-runtime.js`
 (`GrMob.audio`, an `HTMLAudioElement` plus the Media Session API), the
 `"lifecycle"` event is reported from `visibilitychange` (visible is
-`active`, hidden is `background`; a page has no `inactive`), and consumers'
-state writes reach the screen through the push channel. See
-[Native — Audio](native.md#audio) and [Native — Lifecycle](native.md#lifecycle)
-for the shapes.
+`active`, hidden is `background`; a page has no `inactive`), the
+`"clipboard"` system event goes to the async Clipboard API with a read's
+answer coming back as the `"clipboard"` host event (`ok: false` outside a
+secure context or on a refusal, which a page can report and the natives
+cannot), and consumers' state writes reach the screen through the push
+channel. See [Native — Audio](native.md#audio),
+[Native — Lifecycle](native.md#lifecycle) and
+[Native — Clipboard](native.md#clipboard) for the shapes.
 
 ### Browser back
 

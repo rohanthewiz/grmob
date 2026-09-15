@@ -8240,6 +8240,47 @@ const GrMob = (() => {
         window.addEventListener("keydown", handlePageShortcut);
     })();
 
+    // The browser half of core's clipboard (core/clipboard.go). The async
+    // Clipboard API is the only one that can read: the old execCommand
+    // path can write but never read outside a paste event. Every read is
+    // answered, ok:false included, because Go holds the caller's callback
+    // until its id comes back and has no timeout (clipboard.go).
+    //
+    // Both calls reject outside a secure context, and readText also rejects
+    // when the user declines the permission prompt or the page is not
+    // focused — all of which are refusals, reported as ok:false, which is
+    // the distinction the natives cannot make and a page can.
+    const clipboard = (() => {
+        function send(id, text, ok) {
+            const host = window.GrMobWASM;
+            if (!host || typeof host.HostEvent !== "function") return;
+            host.HostEvent("clipboard", JSON.stringify({ "id": id, "text": text, "ok": ok }));
+        }
+        function handle(data) {
+            const api = typeof navigator !== "undefined" ? navigator.clipboard : undefined;
+            if (data.command === "write") {
+                // Fire-and-forget like the natives: a rejected write has no
+                // return channel (core.WriteClipboard reports nothing).
+                if (api && typeof api.writeText === "function") {
+                    api.writeText(data.text || "").catch(() => {});
+                }
+                return;
+            }
+            if (data.command === "read") {
+                if (!data.id) return;
+                if (!api || typeof api.readText !== "function") {
+                    send(data.id, "", false);
+                    return;
+                }
+                api.readText().then(
+                    (text) => send(data.id, text || "", true),
+                    () => send(data.id, "", false),
+                );
+            }
+        }
+        return { handle };
+    })();
+
     return {
         mount,
         patch,
@@ -8247,6 +8288,7 @@ const GrMob = (() => {
         audio,
         heading,
         permission,
+        clipboard,
     };
 })();
 
@@ -8275,6 +8317,12 @@ window.GrMobSystemEvent = function (name, payloadJSON) {
     if (name === "permission") {
         // Go's permission package: check/request for one named capability.
         GrMob.permission.handle(JSON.parse(payloadJSON));
+        return;
+    }
+    if (name === "clipboard") {
+        // core's clipboard (core/clipboard.go): a write, or a read answered
+        // over GrMobWASM.HostEvent with the id it carried.
+        GrMob.clipboard.handle(JSON.parse(payloadJSON));
         return;
     }
     if (name === "open_url") {
