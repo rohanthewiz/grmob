@@ -422,3 +422,24 @@ func TestACollapseBandTakesTheChromeOnItsControl(t *testing.T) {
 			"band changes size on the day it gets a handler", got, want)
 	}
 }
+
+// A band given its own Content picks the glyph's tier too. The chevron is the
+// control's first child; with ChevronStyle it takes the caller's type over the
+// Caption default, and without it the default band's sameness test above is
+// what holds it to Caption.
+func TestACollapseBandsChevronTakesTheCallersType(t *testing.T) {
+	group := Group{Key: "a", Label: "A", Count: 3}
+	shut := Collapse{OnToggle: func(Group) {}}
+
+	n := renderBand(t, CollapseBand{Collapse: shut, Group: group,
+		ChevronStyle: []core.StyleProp{core.FontSize(20)}})
+	_, control := bandNodes(t, n)
+	if len(control.Children) == 0 {
+		t.Fatal("the band's control has no children, so no chevron")
+	}
+	chevron := control.Children[0]
+	if chevron.Style == nil || chevron.Style.FontSize != 20 {
+		t.Errorf("the chevron is styled %+v, want FontSize 20 — the caller's "+
+			"ChevronStyle is not applied after the Caption default", chevron.Style)
+	}
+}

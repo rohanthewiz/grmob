@@ -113,6 +113,21 @@
   #app [data-node-type="Scroll"] {
     flex: 1 1 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
   }
+  /* A core.List is a scrolling container on both natives (LazyColumn,
+     SwiftUI's List), and the runtime gives it no overflow either — so a screen
+     whose whole page is a List (the tutorial's contents, since it became one)
+     grew to its content's 2,200px inside a 709px screen, the screen's
+     `overflow: hidden` clipped it, and nothing below the fold could be scrolled
+     to or tapped. Same viewport rule as Scroll.
+
+     Except inside a Scroll. There the column has no definite height, so a
+     zero basis would collapse the list to nothing (the horizontal-Scroll bug
+     below, on the other axis), and a list nested in a scrolled page is meant
+     to be as tall as its rows — lesson 4's outline demo is one. The :not()
+     keeps that case on the runtime's own `flex: 1 1 auto`. */
+  #app [data-node-type="List"]:not([data-node-type="Scroll"] [data-node-type="List"]) {
+    flex: 1 1 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+  }
   /* A Scroll with core.Horizontal pans sideways, and the viewport rule above
      is wrong for it inside a column: flex 1 1 0 there is a zero-height basis,
      so a scrollable ChipStrip measured 0px tall with its chips spilling out.

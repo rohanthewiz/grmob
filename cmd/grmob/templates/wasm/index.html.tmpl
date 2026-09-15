@@ -35,6 +35,13 @@
   #app [data-node-type="Scroll"] {
     flex: 1 1 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
   }
+  /* A core.List scrolls on the natives too, so a screen that is one List needs
+     the same viewport or it is clipped at the fold. Not inside a Scroll: that
+     column has no definite height, a zero basis would collapse the list, and
+     a list nested in a scrolled page is meant to be as tall as its rows. */
+  #app [data-node-type="List"]:not([data-node-type="Scroll"] [data-node-type="List"]) {
+    flex: 1 1 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+  }
   /* A Scroll with core.Horizontal pans sideways, and the viewport rule above
      is wrong for it inside a column: flex 1 1 0 there is a zero-height basis,
      so a scrollable ChipStrip measured 0px tall with its chips spilling out.

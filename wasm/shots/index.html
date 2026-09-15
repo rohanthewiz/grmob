@@ -60,6 +60,12 @@
   #app [data-node-type="Scroll"] {
     flex: 1 1 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
   }
+  /* The same viewport for a core.List that is a page rather than a section
+     of a scrolled one — see wasm/index.html for the clipped contents screen
+     that made it necessary, and for why a List inside a Scroll is left out. */
+  #app [data-node-type="List"]:not([data-node-type="Scroll"] [data-node-type="List"]) {
+    flex: 1 1 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+  }
   /* A Scroll with core.Horizontal pans sideways, and the viewport rule above
      is wrong for it inside a column: flex 1 1 0 there is a zero-height basis,
      so a scrollable ChipStrip measured 0px tall with its chips spilling out.

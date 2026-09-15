@@ -251,6 +251,23 @@ type CollapseBand struct {
 	// branches must be the same size, or a band changes shape on the day
 	// somebody gives it a handler.
 	ControlStyle []core.StyleProp
+
+	// ChevronStyle types the ▸/▾ glyph, applied after the band's own Caption
+	// type so a caller's declaration wins.
+	//
+	// # Why a band needs it and GroupHeader does not
+	//
+	// The Caption default is right for the default band, whose words are
+	// Caption too — disclosure's ChevronStyle doc says why a chevron has to
+	// match the tier beside it. A band given Content has chosen its own words
+	// and their size, and the glyph cannot follow them there: at Caption next to
+	// a Body-sized title it is a 6px speck that reads as a bullet, which is what
+	// the tutorial's chapter cards showed. So the caller who picked the words
+	// picks the glyph's tier too.
+	//
+	// An inactive Collapse draws no chevron, so this has nothing to land on
+	// there and is ignored.
+	ChevronStyle []core.StyleProp
 }
 
 func (b CollapseBand) Render(ctx *core.Context) *core.Node {
@@ -309,7 +326,11 @@ func (b CollapseBand) Render(ctx *core.Context) *core.Node {
 		Level:        b.HeadingLevel,
 		OwnLevel:     headingLevelSection,
 		HeadingStyle: b.Style,
-		ChevronStyle: []core.StyleProp{core.UseStyle(t.Typography.Caption)},
+		// Caption first, the caller's after: containers and Text apply style
+		// props in order, so an empty ChevronStyle builds exactly the glyph
+		// the default band builds and TestACollapseBandIsTheSameDisclosure…
+		// keeps comparing like with like.
+		ChevronStyle: append([]core.StyleProp{core.UseStyle(t.Typography.Caption)}, b.ChevronStyle...),
 		ControlStyle: append([]core.StyleProp{
 			core.Gap(float64(t.Spacing.SM)),
 			core.AlignItemsProp(core.AlignItemsCenter),

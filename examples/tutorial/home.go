@@ -103,6 +103,10 @@ func titleText(s string) core.View {
 func progressCard(opened, total int) core.View {
 	return core.Card(
 		core.Gap(8),
+		// Margin(0) for the chapter cards' reason (see chapterCardViews): in
+		// Home's List the gap is the spacing, and a margin here would set this
+		// card 8px in from the chapter cards below it.
+		core.Margin(0),
 		caption(fmt.Sprintf("%d of %d lessons opened", opened, total)),
 		comps.ProgressBar{
 			Value:              float64(opened) / float64(total),
@@ -154,9 +158,19 @@ func (t *tutorial) chapterCardViews(ctx *core.Context) []core.View {
 
 		card := []core.PropsAndChildren{
 			core.Gap(2),
+			// The theme's Card base carries an 8px margin on every side, which
+			// is right for a card standing alone and doubles up inside Home's
+			// List: its Gap(16) plus two 8px margins left 32px between cards,
+			// and the side margins set the cards 8px in from the title above
+			// them. The List's gap is the one spacing this page means.
+			core.Margin(0),
 			core.Row(
 				core.AlignItemsProp(core.AlignItemsCenter),
 				core.Gap(8),
+				// The theme's Row base insets 8/16, and this row sits inside a
+				// Card that already insets 16 — so the header drew 16px further
+				// in than the summary caption directly beneath it.
+				core.Padding(0),
 				comps.CollapseBand{
 					Collapse: comps.Collapse{
 						IsCollapsed: func(g comps.Group) bool { return !open[chapter] },
@@ -172,8 +186,32 @@ func (t *tutorial) chapterCardViews(ctx *core.Context) []core.View {
 						core.FontWeight(core.Bold),
 					)},
 					Style: []core.StyleProp{core.FlexGrow(1)},
+					// The glyph at the title's tier. At the band's default
+					// Caption size it drew 6px wide beside a bold title and
+					// read as a stray bullet. Body is where comps.Accordion
+					// starts for the same reason, and the size goes past it:
+					// ▸/▾ are the *small* triangles (U+25B8/U+25BE), about half
+					// an em wide, so at Body's 17 the glyph was still an 8px
+					// mark beside a bold title. 20 is as far as it goes: every
+					// pixel of glyph comes out of the title's line, and at 22
+					// "Chapter 6 — Navigation & Overlays" wrapped by 1.5px on
+					// the web host's phone-width screen.
+					ChevronStyle: []core.StyleProp{
+						core.UseStyle(ctx.Theme().Typography.Body),
+						core.FontSize(20),
+					},
+					// No side inset on the button: the Card's 16 is the inset,
+					// and a second 16 here (plus the Row's, removed above) is
+					// what squeezed "Chapter 1 — Views & Layout" onto two lines.
+					// The vertical 8 stays — it is the press target's height.
+					//
+					// Gap(4) replaces the band's Spacing.SM (8) between the
+					// chevron and the title. A triangle needs less air than a
+					// word, and those 4px are the slack that keeps the longest
+					// chapter title (Chapter 6) on one line.
+					ControlStyle: []core.StyleProp{core.PaddingHorizontal(0), core.Gap(4)},
 				},
-				caption(count),
+				lessonCount(count),
 			),
 			// The summary stays visible while the card is shut. It is one line
 			// per chapter and it is the whole of what a reader has to choose
@@ -186,7 +224,11 @@ func (t *tutorial) chapterCardViews(ctx *core.Context) []core.View {
 		// lesson rows are 97.4% of this screen's JSON, and a shut chapter puts
 		// none of them on the wire. See TestHomeTreeSize.
 		if open[chapter] {
-			card = append(card, core.Column(rows...))
+			// Padding(0) for the Row's reason above: the theme's Column base
+			// would inset the rows 12/16 inside the Card's own 16, and every
+			// ListRow already insets its content by 16 so its press target
+			// can reach the card's edge. One inset from each is enough.
+			card = append(card, core.Column(append([]core.PropsAndChildren{core.Padding(0)}, rows...)...))
 		}
 		cards = append(cards, core.Card(card...))
 		rows = nil
@@ -226,6 +268,24 @@ func (t *tutorial) chapterCardViews(ctx *core.Context) []core.View {
 // past. See openLesson in app_test.go.
 func chapterBandText(ci int) string {
 	return fmt.Sprintf("%s  Chapter %d — %s", Chapters[ci].Icon, ci+1, Chapters[ci].Title)
+}
+
+// lessonCount is a chapter card's "6 lessons" / "2 of 6", in caption type.
+//
+// Not caption() because it must not shrink. It shares its Row with a band
+// whose title claims the slack, and when that title is long the deficit is
+// shared among the children that can shrink — which folded "5 lessons" onto
+// two lines at its min-content width. A count is short and not negotiable,
+// the same argument lessonRow makes for its leading number.
+func lessonCount(s string) core.View {
+	return core.ComponentFunc(func(ctx *core.Context) *core.Node {
+		t := ctx.Theme()
+		return core.Text(s,
+			core.UseStyle(t.Typography.Caption),
+			core.TextColor(t.Colors.TextSecondary),
+			core.FlexShrink(0),
+		).Render(ctx)
+	})
 }
 
 // lessonRow is one tappable line of the contents. The row is keyed by lesson

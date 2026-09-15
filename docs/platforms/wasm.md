@@ -53,6 +53,10 @@ the document did — so `grmob-runtime.js` gives it no `overflow`. Inside a
 fixed-height screen the page adds the rule itself
 (`#app [data-node-type="Scroll"] { flex: 1 1 0; min-height: 0; overflow-y:
 auto }`), which is what makes the node the viewport the natives make of it.
+A `core.List` scrolls on the natives too, so the page gives it the same rule,
+except when it sits inside a Scroll. A list nested in a scrolled page has no
+definite height to fill, so it keeps its rows' height instead. Without the
+rule, a screen whose whole content is a List is clipped at the fold.
 
 That rule is for a vertical Scroll. A Scroll with `core.Horizontal` inside a
 column would get a zero-height basis from it and collapse, so the page follows
