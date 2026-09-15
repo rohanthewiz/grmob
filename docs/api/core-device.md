@@ -210,7 +210,7 @@ func CancelNotification(id string)
 
 CancelNotification takes down the notification posted under id, whether it is still on screen or already in the notification list. Cancelling one that is not there is harmless on every host.
 
-<small>[core/notifications.go:96](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L96)</small>
+<small>[core/notifications.go:106](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L106)</small>
 
 ### func Cardinal
 
@@ -272,7 +272,7 @@ Haptic asks the host to play one haptic effect.
 
 A kind outside HapticKinds is dropped here rather than sent: every shell would have to ignore it separately, and an older shell receiving a newer kind already ignores it, so the check in Go only catches a typo'd HapticKind("sucess") at the one place that can log nothing useful either way — the call simply does nothing, same as on a device with no motor.
 
-<small>[core/haptics.go:80](https://github.com/rohanthewiz/grmob/blob/master/core/haptics.go#L80)</small>
+<small>[core/haptics.go:89](https://github.com/rohanthewiz/grmob/blob/master/core/haptics.go#L89)</small>
 
 ### func HeadingActive
 
@@ -509,7 +509,7 @@ OnNotificationTap subscribes fn to taps on the app's notifications; fn receives 
 
 Like OnDeepLink, a typed wrapper over OnHostEvent and nothing more: core keeps no record of taps, because a tap is an instruction ("show me this") rather than a state anyone reads later. fn runs on the goroutine that delivered the host event and must not block. An empty or absent id is dropped — a subscriber cannot route a tap it cannot identify.
 
-<small>[core/notifications.go:115](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L115)</small>
+<small>[core/notifications.go:125](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L125)</small>
 
 ### func OnRegionChange
 
@@ -543,7 +543,7 @@ func PostNotification(n LocalNotification)
 
 PostNotification asks the host to show n, replacing any notification already showing under the same ID. Dropped without an ID or without any text; see the file comment for why the ID is required and for permissions.
 
-<small>[core/notifications.go:81](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L81)</small>
+<small>[core/notifications.go:91](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L91)</small>
 
 ### func ReadClipboard
 
@@ -905,7 +905,7 @@ type HapticKind string
 
 HapticKind names one haptic effect. See the table above for what each one maps to on every host.
 
-<small>[core/haptics.go:43](https://github.com/rohanthewiz/grmob/blob/master/core/haptics.go#L43)</small>
+<small>[core/haptics.go:52](https://github.com/rohanthewiz/grmob/blob/master/core/haptics.go#L52)</small>
 
 ```go
 const (
@@ -929,7 +929,7 @@ HapticKinds lists every kind, in the order the table above documents them.
 
 It exists for the shell coverage test in mobile/verify rather than for apps: iterating core's own list is what makes adding an eighth kind fail that test until all three shells spell it, instead of the new kind silently doing nothing on whichever shell was forgotten.
 
-<small>[core/haptics.go:66](https://github.com/rohanthewiz/grmob/blob/master/core/haptics.go#L66)</small>
+<small>[core/haptics.go:75](https://github.com/rohanthewiz/grmob/blob/master/core/haptics.go#L75)</small>
 
 ### type Heading
 
@@ -1048,7 +1048,7 @@ type LocalNotification struct {
 
 LocalNotification is one banner to post. ID is required; Title and Body may each be empty but not both.
 
-<small>[core/notifications.go:60](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L60)</small>
+<small>[core/notifications.go:70](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L70)</small>
 
 ### type Location
 

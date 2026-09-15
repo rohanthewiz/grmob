@@ -48,12 +48,22 @@ package core
 //
 // # Backgrounded apps
 //
-// A post only happens while the Go side is running. On iOS that is roughly
-// "while on screen, and for a few seconds after" — the process is suspended
-// soon after it leaves the foreground — so this is a way to tell the user
-// something the app learned while it could, not a replacement for server push.
-// Android keeps a backgrounded process alive longer, and a browser tab keeps
-// running while hidden, so both get more out of it.
+// A post only happens while the Go side is running *and can hear about
+// whatever it is posting about*, and both natives take that away within
+// seconds of the app leaving the screen:
+//
+//	iOS       the process is suspended shortly after it leaves the foreground
+//	Android   the process keeps running, but the platform's background
+//	          firewall cuts the app's network after a short grace period —
+//	          measured at about 5 s on an API 36 emulator (dumpsys netpolicy:
+//	          effective=APP_BACKGROUND). A socket-driven app hears the first
+//	          event in that window and nothing after it, cancels included,
+//	          until it is back on screen.
+//	Browser   a hidden tab keeps running and keeps its network
+//
+// So this is a way to tell the user something the app learned while it could,
+// not a replacement for server push. An app that must alert from the
+// background needs push (APNs/FCM) or, on Android, a foreground service.
 
 // LocalNotification is one banner to post. ID is required; Title and Body may
 // each be empty but not both.

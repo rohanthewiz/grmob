@@ -37,6 +37,15 @@ package core
 // success / warning / error for the outcome of something the user was
 // waiting on. "An agent needs you" is a warning: something outside the app
 // wants attention, nothing has failed.
+//
+// # Only while the app is on screen
+//
+// Android 12+ drops a vibration from an app that is not in the foreground —
+// the vibrator service records it as ignored_background and the motor never
+// runs — and a suspended iOS app runs no code to ask. So a haptic is feedback
+// for someone looking at the app, and anything that has to reach a pocket
+// belongs in a notification (PostNotification), which the platform delivers
+// with its own sound and vibration.
 
 // HapticKind names one haptic effect. See the table above for what each one
 // maps to on every host.

@@ -296,6 +296,12 @@ silent. `mobile/verify` requires the manifest line, every kind in
 `core.HapticKinds()` spelled by all three shells, and each dispatcher's arm.
 Safari has no Vibration API, so haptics in any iOS browser are silent.
 
+A haptic lands only while the app is on screen. Android 12+ drops a
+vibration from a background app — `dumpsys vibrator_manager` records it as
+`ignored_background` and the motor never runs — and a suspended iOS app runs
+no code to ask for one. Anything that has to reach a pocket belongs in a
+notification, which the platform delivers with its own sound and vibration.
+
 ## Notifications
 
 `core.PostNotification(core.LocalNotification{ID, Title, Body})` shows a
@@ -335,9 +341,16 @@ monochrome drawable) and a platform drawable until then. Chrome on Android
 refuses the `Notification` constructor without a service worker, so there
 the post is silent.
 
-A post happens only while the Go side runs: on iOS that is while the app is
-on screen and briefly after, so this tells the user something the app
-learned while it could — it is not server push. `mobile/verify` holds the
+A post happens only while the Go side runs and can still hear the news, and
+both natives end that within seconds of the app leaving the screen. iOS
+suspends the process. Android keeps it running but its background firewall
+cuts the app's network after a short grace period — about 5 s on an API 36
+emulator (`dumpsys netpolicy` shows `effective=APP_BACKGROUND`) — so a
+socket-driven app posts for the first event in that window and hears nothing
+after it, a cancel included, until it is in front again. This tells the user
+something the app learned while it could; it is not server push, and an app
+that must alert from the background needs APNs/FCM or, on Android, a
+foreground service. `mobile/verify` holds the
 event names, commands and keys across the three shells, the dispatch arms,
 Android's tap report and iOS's delegate.
 
