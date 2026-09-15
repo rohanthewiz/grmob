@@ -1165,3 +1165,34 @@ have to type into a `contenteditable`, apply a partial rewrite, and compare the
 resulting DOM with what a full rebuild produces from the same document.
 `wasm/verify` already drives a real browser for other claims; that is where it
 would go.
+
+---
+
+## An F-key is not a SwiftUI keyboard shortcut
+
+*Raised: 2026-09-13 · Moved here: 2026-09-14 · Code: `ios/GrMob/App/GrMobFunctionKeys.swift`*
+
+**What was declined.** Delivering core.AccessibilityKeyShortcuts' F-key chords
+through SwiftUI's `keyboardShortcut`, the route every modifier chord takes on
+iOS, so that one mechanism would carry both and iPadOS's shortcut overlay would
+list the F-keys too.
+
+**Why.** It was built and it does not fire. `KeyEquivalent` has no named
+function keys; AppKit's function-key characters put F1 to F12 at U+F704 to
+U+F70F, beside `.upArrow` (U+F700) and `.pageUp` (U+F72C), which were measured
+by printing them. A `KeyEquivalent` from U+F709 compiled, and on the iOS 26.5
+simulator XCUITest's `typeKey(.F6)` pressed nothing, both as a Button's own
+shortcut and as a second one behind it, where Control+Option+K fired in both
+positions. A UIApplication subclass overriding `sendEvent` was the next route,
+and a SwiftUI App ignores `NSPrincipalClass` (the running class was measured as
+`SwiftUIApplication`). F-keys go through `GCKeyboard.keyChangedHandler` instead,
+which sees every key with nothing focused, and `GrMobRuntime.pressFunctionKey`
+walks the tree as Compose does.
+
+**What it costs.** The F-keys are missing from the shortcut overlay, and
+GameController observes a press without taking it: UIKit still delivers the key
+to its responder. An F-key has no action of its own on iOS, so nothing is
+doubled in practice.
+
+**What would change this.** A SwiftUI or UIKit release whose `KeyEquivalent`
+names the function keys, measured by the same `typeKey(.F6)` on a Button.

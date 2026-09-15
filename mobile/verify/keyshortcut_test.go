@@ -24,7 +24,8 @@ import (
 //	SwiftUI   str("AccessibilityKeyShortcuts") ─► GrMobButton
 //	          .grMobKeyShortcut ─► grMobKeyChords ─► .keyboardShortcut on the
 //	          Button (first chord), and on an invisible Button behind it (each
-//	          further chord)
+//	          further chord); a tappable box's GrMobGestures
+//	          .grMobBoxKeyShortcuts puts every chord on an invisible Button
 //	iOS       F-keys, which SwiftUI does not deliver: GrMobApp.init ─►
 //	          GrMobFunctionKeys (GCKeyboard.keyChangedHandler) ─►
 //	          GrMobRuntime.pressFunctionKey ─► functionKeyTarget ─► click
@@ -64,6 +65,12 @@ func TestBothNativesPressADeclaredPageGlobalChord(t *testing.T) {
 			"every further chord, which a Button's one keyboardShortcut cannot hold"},
 		{swiftRenderer, `.grMobKeyShortcut(s?.accessibilityKeyShortcuts ?? "", press: press)`,
 			"GrMobButton asks for its chords, with the action a tap runs"},
+		{swiftStyle, `keyShortcuts: s?.accessibilityKeyShortcuts ?? ""))`,
+			"a tappable box is handed its chords, as the web and Compose press any node with an onClick"},
+		{swiftStyle, `.grMobBoxKeyShortcuts(onTap.isEmpty ? "" : keyShortcuts) { dispatch?(onTap) }`,
+			"each of a box's chords presses its tap, and only past the disabled branch"},
+		{swiftStyle, `background { GrMobShortcutButtons(chords: chords, press: press) }`,
+			"a box has no keyboardShortcut slot, so every chord gets an invisible Button"},
 		{kotlinStyle, `optString("AccessibilityKeyShortcuts")`, "the field is parsed"},
 		{kotlinChord, `get() = control || alt || meta || FUNCTION_KEY.matches(key)`,
 			"the page-global rule, the same as the WASM runtime's isPageGlobalChord"},

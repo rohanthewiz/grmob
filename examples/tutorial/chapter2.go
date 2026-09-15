@@ -154,6 +154,11 @@ func lessonEvents() Lesson {
 						return core.Card(
 							core.OnClick(func() { record("tap") }),
 							core.OnLongPress(func() { record("long press") }),
+							// A card is not a Button, and a chord presses it all
+							// the same: the web and Compose click any node with
+							// an onClick, and iOS gives a tappable box an
+							// invisible Button per chord (GrMobGestures).
+							core.AccessibilityKeyShortcuts("Control+Alt+J"),
 							core.Text("Tap or long-press me",
 								core.FontWeight(core.Bold),
 								core.TextColor(t.Colors.Primary),

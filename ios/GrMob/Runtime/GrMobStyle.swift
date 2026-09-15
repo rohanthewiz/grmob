@@ -418,6 +418,9 @@ private struct GrMobGestures: ViewModifier {
     let onTap: String
     let onLongPress: String
     let disabled: Bool
+    /// core.AccessibilityKeyShortcuts. A page-global chord presses the box's
+    /// tap, as it presses any node with an onClick on the web and Compose.
+    let keyShortcuts: String
     @Environment(\.grMobDispatch) private var dispatch
 
     func body(content: Content) -> some View {
@@ -435,6 +438,13 @@ private struct GrMobGestures: ViewModifier {
                 .contentShape(Rectangle())
                 .grMobOnTap(onTap, dispatch)
                 .grMobOnLongPress(onLongPress, dispatch)
+                // Only a tap is pressed by a chord, as on the other targets,
+                // whose key walks click a node's onClick. Inside this
+                // modifier's body rather than as another step of
+                // GrMobBoxModifier's chain, which SILGen does not survive
+                // growing (see GrMobAccessibilityModifier). A disabled box
+                // took the branch above, so its chords are gone with its tap.
+                .grMobBoxKeyShortcuts(onTap.isEmpty ? "" : keyShortcuts) { dispatch?(onTap) }
         }
     }
 }
@@ -667,7 +677,8 @@ struct GrMobBoxModifier: ViewModifier {
             .grMobMinimum(width: s?.minWidth ?? "", height: s?.minHeight ?? "", alignment: alignment)
             .background(s?.background ?? .clear)
             .modifier(GrMobGestures(onTap: onTap, onLongPress: onLongPress,
-                                    disabled: s?.disabled ?? false))
+                                    disabled: s?.disabled ?? false,
+                                    keyShortcuts: s?.accessibilityKeyShortcuts ?? ""))
             .grMobClip(shape)
             .grMobBorder(shape, color: s?.borderColor, width: s?.borderWidth ?? 0)
             .grMobShadow(s?.shadow ?? 0)
@@ -1724,7 +1735,8 @@ private func grMobAlignmentFraction(_ v: VerticalAlignment) -> CGFloat {
 ///
 /// A chord with an unknown modifier or key name is skipped, so a misspelling
 /// adds no shortcut rather than a wrong one. The first usable chord is the
-/// Button's own keyboardShortcut; see grMobKeyShortcut for the rest.
+/// Button's own keyboardShortcut; see grMobKeyShortcut for the rest, and
+/// grMobBoxKeyShortcuts for a tappable box, which has no slot of its own.
 func grMobKeyChord(_ spec: String) -> (key: KeyEquivalent, modifiers: EventModifiers)? {
     grMobKeyChords(spec).first
 }
@@ -1843,29 +1855,54 @@ extension View {
     ///         ├ Button(press) .keyboardShortcut(chord 2)   invisible, 0×0
     ///         └ Button(press) .keyboardShortcut(chord 3)
     /// ```
-    ///
-    /// Invisible by opacity and a zero frame rather than `.hidden()`, which
-    /// SwiftUI treats as not there and so drops the shortcut with it. Hidden
-    /// from accessibility and from touch, so VoiceOver and a tap still meet
-    /// only the real Button. A `.disabled` on the Button or an ancestor
-    /// reaches the background buttons too, so a disabled control's extra
-    /// chords are disabled with its first.
     @ViewBuilder func grMobKeyShortcut(_ spec: String, press: @escaping () -> Void) -> some View {
         let chords = grMobKeyChords(spec)
         if let first = chords.first {
             keyboardShortcut(first.key, modifiers: first.modifiers)
-                .background {
-                    ForEach(Array(chords.dropFirst().enumerated()), id: \.offset) { _, chord in
-                        Button("", action: press)
-                            .keyboardShortcut(chord.key, modifiers: chord.modifiers)
-                            .opacity(0)
-                            .frame(width: 0, height: 0)
-                            .accessibilityHidden(true)
-                            .allowsHitTesting(false)
-                    }
-                }
+                .background { GrMobShortcutButtons(chords: Array(chords.dropFirst()), press: press) }
         } else {
             self
+        }
+    }
+
+    /// A tappable box's page-global shortcuts: every chord on an invisible
+    /// Button behind the box, running its tap. See GrMobGestures.
+    ///
+    /// A box is not a Button, so it has no keyboardShortcut slot of its own
+    /// to give the first chord; each chord takes the route grMobKeyShortcut
+    /// gives the second and later ones. Strictly conditional, so a box that
+    /// declares no chord gets itself back.
+    @ViewBuilder fileprivate func grMobBoxKeyShortcuts(_ spec: String, press: @escaping () -> Void) -> some View {
+        let chords = grMobKeyChords(spec)
+        if chords.isEmpty {
+            self
+        } else {
+            background { GrMobShortcutButtons(chords: chords, press: press) }
+        }
+    }
+}
+
+/// Invisible Buttons, one per chord, each pressing `press` from a hardware
+/// keyboard: the half of a page-global shortcut SwiftUI can only attach to a
+/// Button. Shared by a Button's further chords (grMobKeyShortcut) and by a
+/// tappable box's every chord (grMobBoxKeyShortcuts).
+///
+/// Invisible by opacity and a zero frame rather than `.hidden()`, which
+/// SwiftUI treats as not there and so drops the shortcut with it. Hidden from
+/// accessibility and from touch. A `.disabled` on an ancestor reaches these
+/// Buttons as it reaches any, so a disabled control's chords go with it.
+struct GrMobShortcutButtons: View {
+    let chords: [(key: KeyEquivalent, modifiers: EventModifiers)]
+    let press: () -> Void
+
+    var body: some View {
+        ForEach(Array(chords.enumerated()), id: \.offset) { _, chord in
+            Button("", action: press)
+                .keyboardShortcut(chord.key, modifiers: chord.modifiers)
+                .opacity(0)
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
+                .allowsHitTesting(false)
         }
     }
 }

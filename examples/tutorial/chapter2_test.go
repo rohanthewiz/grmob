@@ -110,6 +110,16 @@ func TestEventsDemoDeclaresScreenWideShortcuts(t *testing.T) {
 	if !hasTextContaining(tree(t, mgr), "1 · button") {
 		t.Fatal("pressing the keyboard button should log '1 · button'")
 	}
+
+	// The gesture card declares a chord too: a shortcut is not a Button's
+	// alone, and iOS reaches a tappable box by its own route.
+	card := findNode(tree(t, mgr), func(n *node) bool {
+		_, hasLong := n.Props["onLongPress"].(string)
+		return hasLong && hasText(n, "Tap or long-press me")
+	})
+	if card == nil || card.Style == nil || card.Style.AccessibilityKeyShortcuts != "Control+Alt+J" {
+		t.Fatalf(`the gesture card should declare "Control+Alt+J"; got %+v`, card)
+	}
 	assertNoConcerns(t)
 }
 

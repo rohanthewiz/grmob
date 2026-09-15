@@ -552,14 +552,18 @@ type Style struct {
 	//	Compose       read        a page-global chord from a hardware
 	//	                          keyboard clicks the first node declaring
 	//	                          it (the Activity's dispatchKeyEvent)
-	//	SwiftUI       read        a Button's first page-global chord becomes
-	//	                          its .keyboardShortcut (iPad keyboards)
+	//	SwiftUI       read        a page-global modifier chord presses the
+	//	                          Button or tappable box declaring it,
+	//	                          through .keyboardShortcut (iPad
+	//	                          keyboards); an F-key is heard through
+	//	                          GameController and clicks the first node
+	//	                          declaring it
 	//
 	// # Which chords are page-global
 	//
 	// A chord holding Control, Alt or Meta ("Control+S", "Alt+Shift+N"), or a
-	// bare function key ("F2"; web and Compose, since SwiftUI's KeyEquivalent
-	// has none). Those type nothing, so answering them from anywhere steals
+	// bare function key ("F2"; F1 to F12 on iOS, where SwiftUI's KeyEquivalent
+	// has none and GameController delivers them). Those type nothing, so answering them from anywhere steals
 	// nothing. A bare key ("PageDown", "a", "Enter") is only answered by a
 	// widget that owns it, because page-wide it would take typing from every
 	// field and scrolling from the page: comps.Calendar's month arrows declare

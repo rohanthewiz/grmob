@@ -98,8 +98,9 @@ final class GrMobRuntime {
     ///
     ///  - The first node in tree order declaring an equal chord and carrying
     ///    an onClick is pressed. Any such node, not only a Button: that is the
-    ///    web's and Compose's rule. A modifier chord on iOS reaches Buttons
-    ///    alone, because it rides SwiftUI's keyboardShortcut on GrMobButton.
+    ///    web's and Compose's rule. A modifier chord on iOS reaches the same
+    ///    nodes by another route: SwiftUI's keyboardShortcut, on GrMobButton
+    ///    and on a tappable box's invisible Buttons (GrMobGestures).
     ///  - A subtree under display none or AccessibilityHidden is not searched
     ///    (a screen behind a modal, a shut panel).
     ///  - A disabled match, by its own flag or an ancestor's, takes the key

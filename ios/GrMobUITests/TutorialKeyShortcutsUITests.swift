@@ -3,13 +3,13 @@ import XCTest
 /// core.AccessibilityKeyShortcuts from a hardware keyboard, on lesson 2.2's
 /// "Log from the keyboard" button, which declares "Control+Alt+K F6".
 ///
-/// Both chords are measured, because they reach SwiftUI by two different
-/// routes (see grMobKeyShortcut in GrMobStyle.swift):
+/// Both chords are measured, because they reach the app by two different
+/// routes:
 ///
-///	Control+Alt+K   the first chord    the Button's own keyboardShortcut
-///	F6              the second chord   an invisible Button behind it, and a
-///	                                   KeyEquivalent built from AppKit's
-///	                                   function-key character (U+F709)
+///	Control+Alt+K   the Button's own keyboardShortcut (grMobKeyShortcut in
+///	                GrMobStyle.swift)
+///	F6              GameController's keyboard (GrMobFunctionKeys), since a
+///	                KeyEquivalent has no function keys
 ///
 /// XCUIElement.typeKey sends the key through the simulator's hardware keyboard
 /// path, the one an iPad keyboard uses, with no text field focused: the case a
@@ -40,5 +40,21 @@ final class TutorialKeyShortcutsUITests: XCTestCase {
         app.typeKey(XCUIKeyboardKey.F6.rawValue, modifierFlags: [])
         XCTAssertTrue(text(app, beginningWith: "2 · button").waitForExistence(timeout: 5),
                       "F6 did not press \"Log from the keyboard\"")
+    }
+
+    /// The gesture card above the log declares "Control+Alt+J". A card is a
+    /// tappable box rather than a Button, so the chord reaches it through
+    /// GrMobGestures' invisible Button, and a press logs "tap".
+    func testAChordPressesATappableBox() throws {
+        let app = XCUIApplication()
+        app.launch()
+        app.open(URL(string: "grmob://lesson/2.2")!)
+        XCTAssertTrue(text(app, beginningWith: "2.2").waitForExistence(timeout: 10), "lesson 2.2 did not open")
+        XCTAssertTrue(text(app, beginningWith: "No events yet").waitForExistence(timeout: 5),
+                      "the event log should start empty")
+
+        app.typeKey("j", modifierFlags: [.control, .option])
+        XCTAssertTrue(text(app, beginningWith: "1 · tap").waitForExistence(timeout: 5),
+                      "Control+Option+J did not press the gesture card")
     }
 }
