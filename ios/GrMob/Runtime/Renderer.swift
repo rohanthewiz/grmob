@@ -1056,13 +1056,57 @@ private struct GrMobScroll: View {
     /// stretch: a Row's cross axis is vertical, and neither native stretches a
     /// row's children unless AlignItems says "stretch" outright — the
     /// Style.Align fallback is a vertical-container rule (see crossAxisValue).
-    private var horizontal: some View {
+    ///
+    /// # A strip with a grower
+    ///
+    /// A ScrollView proposes its content an unbounded width, so a FlexGrow
+    /// child has no free space to take: lesson 4.8's footer drew its count
+    /// 16pt after "Start over" on the simulator, where the web and Compose
+    /// (GrMobGrowStrip) push it to the strip's far edge. CSS divides the free
+    /// space whenever the content is narrower than the viewport.
+    ///
+    /// So a strip with a grower is a flex row (GrMobFlexStack, which divides
+    /// free space and reads AlignItems) proposed at least the viewport width:
+    ///
+    /// ```
+    ///   viewport   the ScrollView's width, read in its background
+    ///   ideal      the row's width with nothing to divide (bases + gaps)
+    ///   proposed   max(ideal, viewport)    free space only when it is short
+    /// ```
+    ///
+    /// A strip with no grower keeps the plain HStack, as Compose keeps its
+    /// plain Row: nothing to divide, and no row that already draws moves.
+    @ViewBuilder private var horizontal: some View {
+        let grows = node.children.contains { ($0.style?.flexGrow ?? 0) > 0 }
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(alignment: .top, spacing: node.style?.horizontalGap ?? 0) {
-                ForEach(node.children, id: \.viewID) { child in
-                    RenderNode(node: child, grow: .none)
+            if grows {
+                GrMobStripContentLayout(viewport: viewport) {
+                    GrMobFlexStack(axis: .horizontal, style: node.style) {
+                        FlexChildren(node: node, axis: .horizontal)
+                    }
+                }
+            } else {
+                HStack(alignment: .top, spacing: node.style?.horizontalGap ?? 0) {
+                    ForEach(node.children, id: \.viewID) { child in
+                        RenderNode(node: child, grow: .none)
+                    }
                 }
             }
+        }
+        // The viewport width, for the grower branch. `viewport` holds a
+        // height on the vertical body and a width here; a Scroll is one or
+        // the other for its whole life, since the axis is its node type's.
+        //
+        // onGeometryChange rather than the GeometryReader preference the
+        // vertical body uses: on the simulator that preference reached this
+        // modifier as 0 on every change, so the row was proposed only its
+        // ideal width and the spacer took nothing. A preference also travels
+        // up to every ancestor, where a strip inside a vertical Scroll would
+        // hand that Scroll its width as the page's viewport height.
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.width
+        } action: { width in
+            viewport = grows ? width : 0
         }
         .grMobKeyboardAware(node.boolProp("keyboardAware"))
         .grMobBox(node.style, grow: grow)
@@ -1090,6 +1134,35 @@ private struct GrMobScroll: View {
         .onPreferenceChange(GrMobViewportHeight.self) { viewport = $0 }
         .grMobKeyboardAware(node.boolProp("keyboardAware"))
         .grMobBox(node.style, grow: grow)
+    }
+}
+
+/// The content of a horizontal Scroll that has a FlexGrow child: the row is
+/// proposed `max(ideal, viewport)` wide, so its growers divide the viewport's
+/// free space when the row is shorter, and it scrolls at its ideal width when
+/// it is longer. See GrMobScroll.horizontal.
+///
+/// A Layout rather than `.frame(minWidth:)`: a flexible frame passes the
+/// ScrollView's unbounded proposal straight to its child and only pads the
+/// result, so the row would still be measured with no width to divide.
+private struct GrMobStripContentLayout: Layout {
+    let viewport: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let row = subviews.first else { return .zero }
+        let width = stripWidth(row, height: proposal.height)
+        let size = row.sizeThatFits(ProposedViewSize(width: width, height: proposal.height))
+        return CGSize(width: max(size.width, width), height: size.height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: bounds.origin, anchor: .topLeading,
+                              proposal: ProposedViewSize(width: bounds.width, height: bounds.height))
+    }
+
+    private func stripWidth(_ row: LayoutSubview, height: CGFloat?) -> CGFloat {
+        let ideal = row.sizeThatFits(ProposedViewSize(width: nil, height: height)).width
+        return max(ideal, viewport)
     }
 }
 
