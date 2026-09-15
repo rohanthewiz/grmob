@@ -24,8 +24,9 @@
          in the background and puts the player on the lock screen; Android
          14 rejects startForeground without the typed permission. WAKE_LOCK
          lets ExoPlayer hold the CPU and radio while playing with the screen
-         off. No POST_NOTIFICATIONS: a MediaSession's notification is exempt
-         from the Android 13 notification permission. -->
+         off. POST_NOTIFICATIONS (declared further down)
+         is for core's own notifications: a MediaSession's notification is
+         exempt from it, so playback does not wait on that answer. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
@@ -50,6 +51,11 @@
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
+    <!-- permission.Notifications, which core.PostNotification needs
+         (app/Notifications.kt). A runtime permission from Android 13; earlier
+         releases have no such permission and ignore the line, so it is
+         declared unconditionally rather than with a minSdkVersion. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- enableOnBackInvokedCallback opts in to predictive back: on Android 13+
          a back gesture previews its destination (the home screen, from the

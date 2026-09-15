@@ -4,7 +4,7 @@
 import "github.com/rohanthewiz/grmob/permission"
 ```
 
-Package permission asks the platform for the capabilities an app cannot simply take: the camera, the microphone, the user's location, the shared media store.
+Package permission asks the platform for the capabilities an app cannot simply take: the camera, the microphone, the user's location, the shared media store, and showing notifications.
 
 ## What kind of thing this is
 
@@ -76,7 +76,7 @@ Check asks what the platform currently says about p, without prompting.
 
 Safe on mount and safe to repeat, which is what makes it the right call on a lifecycle change: a user can grant or revoke a permission in the system settings and come back, and nothing tells an app that happened. Re-checking when core.CurrentLifecycle returns to "active" is how a screen notices, and WatchForeground is that arrangement written once — one check per permission per resume however many screens are watching. hooks.UsePermissionLive is this and the mount check together, and is what most callers want.
 
-<small>[permission/permission.go:267](https://github.com/rohanthewiz/grmob/blob/master/permission/permission.go#L267)</small>
+<small>[permission/permission.go:281](https://github.com/rohanthewiz/grmob/blob/master/permission/permission.go#L281)</small>
 
 ### func IsGranted
 
@@ -88,7 +88,7 @@ Granted reports whether p is usable right now. Sugar for the comparison every ca
 
 Note which way the unknown cases fall: only Granted is true, so a status that has not come back yet is treated as not-yet-usable rather than optimistically allowed. That is the safe direction — the alternative reaches for a camera the OS has not opened.
 
-<small>[permission/permission.go:309](https://github.com/rohanthewiz/grmob/blob/master/permission/permission.go#L309)</small>
+<small>[permission/permission.go:323](https://github.com/rohanthewiz/grmob/blob/master/permission/permission.go#L323)</small>
 
 ### func On
 
@@ -102,7 +102,7 @@ fn runs on whichever goroutine delivered the host event — a bridge call on the
 
 Only \*changes\* notify. A host that answers a Check with the status already on record — which is every repeat check on an unchanged permission, and a lifecycle-driven re-check is mostly those — reaches here and stops, so the screen does not re-render for news that is not news.
 
-<small>[permission/permission.go:324](https://github.com/rohanthewiz/grmob/blob/master/permission/permission.go#L324)</small>
+<small>[permission/permission.go:338](https://github.com/rohanthewiz/grmob/blob/master/permission/permission.go#L338)</small>
 
 ### func Receive
 
@@ -114,7 +114,7 @@ Receive is the typed entry point for a host that builds the answer in Go — a t
 
 It validates exactly as the JSON path does rather than trusting a typed caller: the two constants are strings, so a typed caller can produce the same nonsense a malformed payload can.
 
-<small>[permission/permission.go:380](https://github.com/rohanthewiz/grmob/blob/master/permission/permission.go#L380)</small>
+<small>[permission/permission.go:394](https://github.com/rohanthewiz/grmob/blob/master/permission/permission.go#L394)</small>
 
 ### func Request
 
@@ -130,7 +130,7 @@ Call it from a user gesture. Every platform here either requires that (a browser
 
 Requesting something already Granted is harmless and re-reports the same status; requesting something Denied usually shows nothing at all, which is what Denied's doc is about.
 
-<small>[permission/permission.go:256](https://github.com/rohanthewiz/grmob/blob/master/permission/permission.go#L256)</small>
+<small>[permission/permission.go:270](https://github.com/rohanthewiz/grmob/blob/master/permission/permission.go#L270)</small>
 
 ### func WatchForeground
 
@@ -168,9 +168,9 @@ type Permission string
 
 Permission is one capability the platform guards.
 
-The set is deliberately the four the original file named rather than every permission the three platforms have. A value here has to mean the same thing on all of them or the type is lying, and each of these four does; the per-constant notes say what each host actually asks for.
+The set began as the four the original file named and grows only by a capability the rest of grmob uses (Notifications, for core.PostNotification), not toward every permission the three platforms have. A value here has to mean the same thing on all of them or the type is lying, and each of these does; the per-constant notes say what each host actually asks for.
 
-<small>[permission/permission.go:86](https://github.com/rohanthewiz/grmob/blob/master/permission/permission.go#L86)</small>
+<small>[permission/permission.go:87](https://github.com/rohanthewiz/grmob/blob/master/permission/permission.go#L87)</small>
 
 ```go
 const (
@@ -209,6 +209,19 @@ const (
 	//	Android   Manifest.permission.RECORD_AUDIO
 	//	Browser   the "microphone" descriptor
 	Microphone Permission = "microphone"
+
+	// Notifications is showing banners with core.PostNotification — alert,
+	// sound and badge together, since no host lets an app show one without
+	// the others being part of the same answer.
+	//
+	//	iOS       UNUserNotificationCenter.requestAuthorization([.alert, .sound, .badge])
+	//	Android   POST_NOTIFICATIONS on 13+. Below 13 there is no runtime
+	//	          permission and nothing to prompt: the answer is whether the
+	//	          user has left the app's notifications switched on, so it is
+	//	          Granted or Denied and never Prompt.
+	//	Browser   Notification.permission, and Notification.requestPermission
+	//	          to ask ("default" is Prompt)
+	Notifications Permission = "notifications"
 )
 ```
 
@@ -222,7 +235,7 @@ Permissions returns every declared Permission, in declaration order.
 
 Pinned to the const block above by permission\_enum\_test.go and consumed by the host coverage checks, on the same footing as core.Roles(): a host that has no arm for a permission drops it silently, which on this bridge is indistinguishable from a user who has not answered yet.
 
-<small>[permission/permission.go:132](https://github.com/rohanthewiz/grmob/blob/master/permission/permission.go#L132)</small>
+<small>[permission/permission.go:146](https://github.com/rohanthewiz/grmob/blob/master/permission/permission.go#L146)</small>
 
 ### type PermissionStatus
 
@@ -234,7 +247,7 @@ PermissionStatus is the name this type had when the package was a vocabulary wit
 
 Deprecated: use Status. permission.PermissionStatus stutters, and the alias costs one line where a rename would break an import that may exist outside this repository.
 
-<small>[permission/permission.go:145](https://github.com/rohanthewiz/grmob/blob/master/permission/permission.go#L145)</small>
+<small>[permission/permission.go:159](https://github.com/rohanthewiz/grmob/blob/master/permission/permission.go#L159)</small>
 
 ### type Status
 
@@ -244,7 +257,7 @@ type Status string
 
 Status is what the platform says about one Permission.
 
-<small>[permission/permission.go:137](https://github.com/rohanthewiz/grmob/blob/master/permission/permission.go#L137)</small>
+<small>[permission/permission.go:151](https://github.com/rohanthewiz/grmob/blob/master/permission/permission.go#L151)</small>
 
 ```go
 const (
@@ -310,7 +323,7 @@ func Current(p Permission) Status
 
 Current returns the last status recorded for p, or Unknown if none. Safe from any goroutine.
 
-<small>[permission/permission.go:295](https://github.com/rohanthewiz/grmob/blob/master/permission/permission.go#L295)</small>
+<small>[permission/permission.go:309](https://github.com/rohanthewiz/grmob/blob/master/permission/permission.go#L309)</small>
 
 #### func Statuses
 
@@ -322,5 +335,5 @@ Statuses returns every status a host can report, in declaration order.
 
 Unknown is excluded for the reason core.RoleNone is excluded from Roles(): it is the field's zero value rather than one of the answers, no host has an arm for it, and a coverage check that demanded one would be asking each platform to implement "we have not asked yet".
 
-<small>[permission/permission.go:207](https://github.com/rohanthewiz/grmob/blob/master/permission/permission.go#L207)</small>
+<small>[permission/permission.go:221](https://github.com/rohanthewiz/grmob/blob/master/permission/permission.go#L221)</small>
 

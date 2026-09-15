@@ -12,6 +12,7 @@ import UIKit
 ///     permission.Check  ▶ "permission"──▶ Permissions (AVFoundation/Photos/CL)
 ///     core.*Clipboard ──▶ "clipboard" ──▶ Clipboard (UIPasteboard)
 ///     core.Haptic     ──▶ "haptic"    ──▶ Haptics (UIKit feedback generators)
+///     core.*Notification ▶ "notification" ▶ Notifications (UNUserNotificationCenter)
 ///
 /// Before this existed the events were emitted into a nil Go handler and
 /// vanished on both natives — only the WASM host had a sink — so an app
@@ -36,6 +37,11 @@ enum SystemEvents {
         LocationSensor.shared.report = { name, payload in runtime.hostEvent(name, payload) }
         Permissions.shared.report = { name, payload in runtime.hostEvent(name, payload) }
         Clipboard.shared.report = { name, payload in runtime.hostEvent(name, payload) }
+        Notifications.shared.report = { name, payload in runtime.hostEvent(name, payload) }
+        // Here rather than lazily: the notification center's delegate has to be
+        // in place before launch finishes, or a tap that cold-launched the app
+        // is never delivered. See Notifications.swift.
+        Notifications.shared.attach()
         bridge.setSystemEventListener { name, payload in
             // The callback runs on the Go goroutine that emitted the event.
             // Everything below is UIKit, which is main-actor only, so every
@@ -77,6 +83,9 @@ enum SystemEvents {
         case "clipboard": Clipboard.shared.handle(object)
         // Fire-and-forget, one named effect (core/haptics.go).
         case "haptic": Haptics.handle(object)
+        // Post or cancel; a tap comes back through the notification center's
+        // delegate (Notifications.swift).
+        case "notification": Notifications.shared.handle(object)
         default: break
         }
     }

@@ -9,6 +9,7 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import org.json.JSONObject
 
@@ -130,6 +131,14 @@ object Permissions {
             @Suppress("DEPRECATION")
             arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
         },
+        // Empty below 13 on purpose: there is no runtime permission to ask
+        // for, and status() reads the app's notification switch instead of
+        // treating the empty array as "unavailable" — see [status].
+        "notifications" to if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            arrayOf(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            emptyArray()
+        },
     )
 
     private var activity: ComponentActivity? = null
@@ -216,6 +225,15 @@ object Permissions {
         // class doc. The flag that produced it may be stale, and the launcher
         // is the only thing that can say so.
         val current = status(kind)
+        // A kind with no runtime permission (notifications below 13) has no
+        // dialog either: launching an empty request would answer "denied"
+        // whatever the switch says, so the current status is the answer.
+        // Kept apart from the short-circuit below, which is pinned to exactly
+        // granted and unavailable by TestTheAndroidAskedFlagSurvivesARestart.
+        if (PERMISSIONS.getValue(kind).isEmpty()) {
+            send(kind, current)
+            return
+        }
         if (current == "granted" || current == "unavailable") {
             send(kind, current)
             return
@@ -229,6 +247,13 @@ object Permissions {
     private fun status(kind: String): String {
         val host = activity ?: return "unavailable"
         val wanted = PERMISSIONS.getValue(kind)
+        // Notifications below 13: no runtime permission exists, so the answer
+        // is the app's notification switch in Settings. Never "prompt" —
+        // there is no dialog that could change it — and never "unavailable",
+        // since the user can turn it on.
+        if (wanted.isEmpty() && kind == "notifications") {
+            return if (NotificationManagerCompat.from(host).areNotificationsEnabled()) "granted" else "denied"
+        }
         if (wanted.isEmpty() || !declared(host, wanted)) return "unavailable"
 
         val allGranted = wanted.all {

@@ -4,9 +4,9 @@
 import "github.com/rohanthewiz/grmob/core"
 ```
 
-Audio, camera, clipboard, haptics, compass heading, location, maps and the app lifecycle.
+Audio, camera, clipboard, haptics, local notifications, compass heading, location, maps and the app lifecycle.
 
-One of 11 topic pages of [package core](core.md), which has the package overview and an index of every topic. This page documents the declarations in `core/audio.go`, `core/camera.go`, `core/clipboard.go`, `core/haptics.go`, `core/heading.go`, `core/location.go`, `core/mapview.go`, `core/lifecycle.go`.
+One of 11 topic pages of [package core](core.md), which has the package overview and an index of every topic. This page documents the declarations in `core/audio.go`, `core/camera.go`, `core/clipboard.go`, `core/haptics.go`, `core/notifications.go`, `core/heading.go`, `core/location.go`, `core/mapview.go`, `core/lifecycle.go`.
 
 ## Index
 
@@ -21,6 +21,7 @@ One of 11 topic pages of [package core](core.md), which has the package overview
 - [`func AudioStop`](#func-audiostop)
 - [`func AudioToggle`](#func-audiotoggle)
 - [`func CameraView`](#func-cameraview)
+- [`func CancelNotification`](#func-cancelnotification)
 - [`func Cardinal`](#func-cardinal)
 - [`func DistanceMeters`](#func-distancemeters)
 - [`func FormatLatLng`](#func-formatlatlng)
@@ -38,8 +39,10 @@ One of 11 topic pages of [package core](core.md), which has the package overview
 - [`func OnLocation`](#func-onlocation)
 - [`func OnMapTap`](#func-onmaptap)
 - [`func OnMarkerTap`](#func-onmarkertap)
+- [`func OnNotificationTap`](#func-onnotificationtap)
 - [`func OnRegionChange`](#func-onregionchange)
 - [`func ParseLatLng`](#func-parselatlng)
+- [`func PostNotification`](#func-postnotification)
 - [`func ReadClipboard`](#func-readclipboard)
 - [`func ReceiveAudioStatus`](#func-receiveaudiostatus)
 - [`func ReceiveHeading`](#func-receiveheading)
@@ -77,6 +80,7 @@ One of 11 topic pages of [package core](core.md), which has the package overview
     - [`func (Heading) Cardinal`](#func-heading-cardinal)
 - [`type LifecycleState`](#type-lifecyclestate)
     - [`func CurrentLifecycle`](#func-currentlifecycle)
+- [`type LocalNotification`](#type-localnotification)
 - [`type Location`](#type-location)
     - [`func CurrentLocation`](#func-currentlocation)
 - [`type Region`](#type-region)
@@ -197,6 +201,16 @@ func CameraView(props ...CameraProp) View
 ```
 
 <small>[core/camera.go:17](https://github.com/rohanthewiz/grmob/blob/master/core/camera.go#L17)</small>
+
+### func CancelNotification
+
+```go
+func CancelNotification(id string)
+```
+
+CancelNotification takes down the notification posted under id, whether it is still on screen or already in the notification list. Cancelling one that is not there is harmless on every host.
+
+<small>[core/notifications.go:96](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L96)</small>
 
 ### func Cardinal
 
@@ -485,6 +499,18 @@ An id rather than the marker's coordinates, because the id is what the app has a
 
 <small>[core/mapview.go:264](https://github.com/rohanthewiz/grmob/blob/master/core/mapview.go#L264)</small>
 
+### func OnNotificationTap
+
+```go
+func OnNotificationTap(fn func(id string)) (cancel func())
+```
+
+OnNotificationTap subscribes fn to taps on the app's notifications; fn receives the ID the tapped notification was posted under. The returned function cancels the subscription.
+
+Like OnDeepLink, a typed wrapper over OnHostEvent and nothing more: core keeps no record of taps, because a tap is an instruction ("show me this") rather than a state anyone reads later. fn runs on the goroutine that delivered the host event and must not block. An empty or absent id is dropped — a subscriber cannot route a tap it cannot identify.
+
+<small>[core/notifications.go:115](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L115)</small>
+
 ### func OnRegionChange
 
 ```go
@@ -508,6 +534,16 @@ func ParseLatLng(s string) (lat, lng float64, ok bool)
 ParseLatLng reads a host's "lat,lng" payload, for OnMapTap. Same contract as ParseRegion: false rather than zeros.
 
 <small>[core/mapview.go:380](https://github.com/rohanthewiz/grmob/blob/master/core/mapview.go#L380)</small>
+
+### func PostNotification
+
+```go
+func PostNotification(n LocalNotification)
+```
+
+PostNotification asks the host to show n, replacing any notification already showing under the same ID. Dropped without an ID or without any text; see the file comment for why the ID is required and for permissions.
+
+<small>[core/notifications.go:81](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L81)</small>
 
 ### func ReadClipboard
 
@@ -997,6 +1033,22 @@ func CurrentLifecycle() LifecycleState
 CurrentLifecycle reports the last state the host announced; active until it has announced anything.
 
 <small>[core/lifecycle.go:75](https://github.com/rohanthewiz/grmob/blob/master/core/lifecycle.go#L75)</small>
+
+### type LocalNotification
+
+```go
+type LocalNotification struct {
+	// ID identifies the notification for replacement, cancellation and taps.
+	// Posting a second notification with the same ID replaces the first.
+	ID    string
+	Title string
+	Body  string
+}
+```
+
+LocalNotification is one banner to post. ID is required; Title and Body may each be empty but not both.
+
+<small>[core/notifications.go:60](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L60)</small>
 
 ### type Location
 

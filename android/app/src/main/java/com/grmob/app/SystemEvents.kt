@@ -25,6 +25,7 @@ import org.json.JSONObject
  *   permission.Check  ▶ "permission"──▶ Permissions (runtime permissions)
  *   core.*Clipboard ──▶ "clipboard" ──▶ Clipboard (ClipboardManager)
  *   core.Haptic     ──▶ "haptic"    ──▶ Haptics (Vibrator)
+ *   core.*Notification ▶ "notification" ▶ Notifications (NotificationCompat)
  *
  * Before this existed the events were emitted into a nil Go handler and
  * vanished on both natives — only the WASM host had a sink — so an app
@@ -60,6 +61,9 @@ object SystemEvents {
         LocationSensor.attach(appContext, runtime::hostEvent)
         Clipboard.attach(appContext, runtime::hostEvent)
         Haptics.attach(appContext)
+        // Creates the notification channel. The tap comes back through
+        // MainActivity, which is the component the notification launches.
+        Notifications.attach(appContext)
         // The callback runs on the Go goroutine that emitted the event. Both
         // actions below touch the UI (a Toast must be shown from a Looper
         // thread; startActivity from an arbitrary thread is unreliable), so
@@ -103,6 +107,9 @@ object SystemEvents {
             "clipboard" -> Clipboard.handle(data)
             // Fire-and-forget, one named effect (core/haptics.go).
             "haptic" -> Haptics.handle(data)
+            // Post or cancel; a tap comes back through MainActivity, the
+            // component a notification's PendingIntent launches.
+            "notification" -> Notifications.handle(data)
         }
     }
 

@@ -8064,6 +8064,10 @@ const GrMob = (() => {
             microphone: "microphone",
             location: "geolocation",
             storage: null,
+            // Answered from Notification.permission rather than the
+            // Permissions API (see query): Safari has the one and not the
+            // other, and the two always agree where both exist.
+            notifications: "notifications",
         };
 
         function report(kind, status) {
@@ -8078,6 +8082,15 @@ const GrMob = (() => {
         // for a name it does not know rather than resolving to a state, so
         // the catch is the common path on some browsers and not an edge case.
         function query(kind) {
+            // Notifications answer from the Notification object: it is present
+            // wherever notifications are (Safari included, which has no
+            // "notifications" descriptor to query), and its three words map
+            // one to one — "default" is the undecided state Go calls prompt.
+            if (kind === "notifications") {
+                if (typeof Notification !== "function") return Promise.resolve("unavailable");
+                const states = { granted: "granted", denied: "denied", default: "prompt" };
+                return Promise.resolve(states[Notification.permission] || "unavailable");
+            }
             const name = DESCRIPTORS[kind];
             if (!name || !navigator.permissions
                 || typeof navigator.permissions.query !== "function") {
@@ -8164,11 +8177,28 @@ const GrMob = (() => {
         // puts a prompt on screen, and the part that opens a device to do it.
         // Reached only when the read above could not answer; see "The query is
         // what keeps the device shut".
+        // Notification.requestPermission is the one permission a page asks for
+        // directly rather than by using the feature. Older Safari takes a
+        // callback and returns undefined instead of a promise, so both forms
+        // are honoured. The answer is read back through query() rather than
+        // taken from the resolved word, so "prompt" still only ever reaches Go
+        // as the browser's own state.
+        function askNotifications() {
+            if (typeof Notification !== "function" || typeof Notification.requestPermission !== "function") {
+                report("notifications", "unavailable");
+                return;
+            }
+            const answer = () => query("notifications").then((status) => report("notifications", status));
+            const maybe = Notification.requestPermission(answer);
+            if (maybe && typeof maybe.then === "function") maybe.then(answer, answer);
+        }
+
         function prompt(kind) {
             switch (kind) {
                 case "camera": askMedia("camera", { video: true }); break;
                 case "microphone": askMedia("microphone", { audio: true }); break;
                 case "location": askLocation(); break;
+                case "notifications": askNotifications(); break;
             }
         }
 
@@ -8308,6 +8338,55 @@ const GrMob = (() => {
         return { handle };
     })();
 
+    // The browser half of core's local notifications (core/notifications.go).
+    // One Notification object is kept per Go id: posting again under an id
+    // closes the old one first (the tag alone replaces it on most browsers,
+    // closing makes it true on all of them), and cancel has something to
+    // close. Permission is the permission object's business — the
+    // "notifications" descriptor above — and a post without it is dropped,
+    // as every host drops it. Payload keys are quoted so mobile/verify's
+    // spelling scan can see them.
+    const notifications = (() => {
+        const open = new Map();
+
+        function tapped(id, n) {
+            n.close();
+            if (typeof window.focus === "function") window.focus();
+            const host = window.GrMobWASM;
+            if (!host || typeof host.HostEvent !== "function") return;
+            host.HostEvent("notification_tap", JSON.stringify({ "id": id }));
+        }
+
+        function handle(data) {
+            const id = data["id"];
+            if (!id || typeof Notification !== "function") return;
+            if (data.command === "cancel") {
+                const n = open.get(id);
+                if (n) n.close();
+                open.delete(id);
+                return;
+            }
+            if (data.command !== "post" || Notification.permission !== "granted") return;
+            const previous = open.get(id);
+            if (previous) previous.close();
+            let n;
+            try {
+                n = new Notification(data["title"] || "", { "body": data["body"] || "", "tag": id });
+            } catch (e) {
+                // Chrome on Android refuses the constructor outright ("use
+                // ServiceWorkerRegistration.showNotification"), and a page
+                // with no service worker has no other way to post. Silence,
+                // the same answer a host gives a post it cannot draw.
+                return;
+            }
+            n.onclick = () => tapped(id, n);
+            n.onclose = () => { if (open.get(id) === n) open.delete(id); };
+            open.set(id, n);
+        }
+
+        return { handle };
+    })();
+
     return {
         mount,
         patch,
@@ -8317,6 +8396,7 @@ const GrMob = (() => {
         permission,
         clipboard,
         haptics,
+        notifications,
     };
 })();
 
@@ -8356,6 +8436,12 @@ window.GrMobSystemEvent = function (name, payloadJSON) {
     if (name === "haptic") {
         // core.Haptic (core/haptics.go): one named effect, as a vibrate pattern.
         GrMob.haptics.handle(JSON.parse(payloadJSON));
+        return;
+    }
+    if (name === "notification") {
+        // core's local notifications (core/notifications.go): post or cancel,
+        // a click reported back as the "notification_tap" host event.
+        GrMob.notifications.handle(JSON.parse(payloadJSON));
         return;
     }
     if (name === "open_url") {

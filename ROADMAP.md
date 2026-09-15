@@ -778,6 +778,13 @@
       predefined `VibrationEffect`s (waveforms below API 29, `VIBRATE` in the
       manifest), `navigator.vibrate` patterns in the browser. cats-mobile
       buzzes when an agent blocks
+- [x] Local notifications — `core.PostNotification` / `core.CancelNotification`
+      over the `"notification"` system event and `core.OnNotificationTap` over
+      the `"notification_tap"` host event, keyed by an app-chosen id;
+      `permission.Notifications` asks (`POST_NOTIFICATIONS` on 13+,
+      `UNUserNotificationCenter` authorization, `Notification.requestPermission`).
+      iOS shows them in the foreground too. cats-mobile posts when an agent
+      blocks
 - [x] `core.Select` — the picker, on all four targets: a `<select>` whose
       options are built from a prop, a SwiftUI `Menu`, a Compose
       `DropdownMenu`. `onChange` carries the option's *value*, never its label
@@ -1453,7 +1460,6 @@
 - [ ] Keystore (Secure): `Keystore.Save()`, `Keystore.Get()` — the church app
       keeps its bearer token in bytdb for want of this; see its README
 - [ ] URL-scheme deep links (`cats://pair` from a QR lands in the app)
-- [ ] Local notifications
 - [ ] Device Storage (Plain): `DeviceStorage.Set()`, `DeviceStorage.Get()`
 - [ ] Bluetooth: `Scan`, `Connect`, `Send`
 - [ ] FaceID / Biometric authentication

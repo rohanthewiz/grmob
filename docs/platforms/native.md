@@ -53,8 +53,8 @@ consistent. Patch semantics — positional paths, ordering rules — are in
 | `RenderInitial()` | Full tree JSON for the first mount |
 | `TriggerCallback(id)` / `TriggerTextCallback` / `TriggerBoolCallback` / `TriggerIntCallback` | Event dispatch; returns the resulting patches |
 | `RenderAgain()` | Escape hatch for shells that drive rendering themselves |
-| `SetSystemEventListener(l)` | Sink for app→host system events (`toast`, `open_url`, `audio`, `clipboard`, `haptic`); `OnSystemEvent(name, payloadJSON)` |
-| `ReportHostEvent(name, payloadJSON)` | Host→app events that answer no callback (`audio_status`, `lifecycle`, `clipboard`); returns the resulting patches like `Trigger*` |
+| `SetSystemEventListener(l)` | Sink for app→host system events (`toast`, `open_url`, `audio`, `clipboard`, `haptic`, `notification`); `OnSystemEvent(name, payloadJSON)` |
+| `ReportHostEvent(name, payloadJSON)` | Host→app events that answer no callback (`audio_status`, `lifecycle`, `clipboard`, `notification_tap`); returns the resulting patches like `Trigger*` |
 
 ## Building — Android
 
@@ -295,6 +295,51 @@ permission, but one whose absence makes `vibrate()` throw rather than stay
 silent. `mobile/verify` requires the manifest line, every kind in
 `core.HapticKinds()` spelled by all three shells, and each dispatcher's arm.
 Safari has no Vibration API, so haptics in any iOS browser are silent.
+
+## Notifications
+
+`core.PostNotification(core.LocalNotification{ID, Title, Body})` shows a
+banner the OS draws outside the app; posting again under the same `ID`
+replaces it, `core.CancelNotification(id)` takes it down, and
+`core.OnNotificationTap(fn)` hears which one the user touched. The first two
+are the `"notification"` system event (`command: "post"` / `"cancel"`); a tap
+is the `"notification_tap"` host event with the `id`.
+
+```go
+// Once, from a screen that says why:
+permission.Request(permission.Notifications)
+
+// Later, from wherever the news arrives:
+core.PostNotification(core.LocalNotification{
+    ID: "w1:p3", Title: "claude is blocked", Body: "w1:p3 is waiting for you",
+})
+core.OnNotificationTap(func(id string) { openPane(id) })
+```
+
+The ID is required because all three follow-ups need it. Permission is
+`permission.Notifications`, asked for by the app from a screen with a reason
+on it; a post without it is dropped by the platform, silently, on every host.
+
+| Shell | Posts with | Tap arrives through | Permission |
+|---|---|---|---|
+| iOS | `UNUserNotificationCenter.add`, id as the request identifier | the center's delegate, set during launch | `requestAuthorization([.alert, .sound, .badge])` |
+| Android | `NotificationCompat` on one `"grmob"` channel, id as the tag | `MainActivity` (`onCreate` for a cold launch, `onNewIntent` otherwise) | `POST_NOTIFICATIONS` on 13+; below 13 the app's notification switch |
+| Browser | `new Notification(title, {body, tag: id})` | the notification's `onclick` | `Notification.requestPermission` |
+
+iOS needs the delegate for more than taps: without one a notification posted
+while the app is on screen is never drawn, so `Notifications.swift` answers
+`willPresent` with a banner and becomes the delegate from `GrMobApp.init`,
+before a cold-launch tap can be delivered. Android's small icon is
+`res/drawable/ic_notification` when the app supplies one (it must be a
+monochrome drawable) and a platform drawable until then. Chrome on Android
+refuses the `Notification` constructor without a service worker, so there
+the post is silent.
+
+A post happens only while the Go side runs: on iOS that is while the app is
+on screen and briefly after, so this tells the user something the app
+learned while it could — it is not server push. `mobile/verify` holds the
+event names, commands and keys across the three shells, the dispatch arms,
+Android's tap report and iOS's delegate.
 
 ## Permissions
 

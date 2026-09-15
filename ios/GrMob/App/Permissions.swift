@@ -2,6 +2,7 @@ import AVFoundation
 import CoreLocation
 import Foundation
 import Photos
+import UserNotifications
 
 /// The iOS half of Go's permission package.
 ///
@@ -19,6 +20,10 @@ import Photos
 ///     microphone   AVCaptureDevice.authorizationStatus(for: .audio)
 ///     location     CLLocationManager.authorizationStatus  (delegate callback)
 ///     storage      PHPhotoLibrary.authorizationStatus(for: .readWrite)
+///     notifications UNUserNotificationCenter.getNotificationSettings  (async)
+///
+/// Notifications need no usage-description key: the system prompt carries the
+/// app's name and nothing the app writes.
 ///
 /// So the mapping table Go's Status exists to avoid on the *web* is
 /// unavoidable here, and it is written once, in `map(_:)` below, rather than
@@ -95,6 +100,12 @@ final class Permissions: NSObject, CLLocationManagerDelegate {
         case "microphone": send(kind, map(AVCaptureDevice.authorizationStatus(for: .audio)))
         case "storage": send(kind, map(PHPhotoLibrary.authorizationStatus(for: .readWrite)))
         case "location": send(kind, map(location.authorizationStatus))
+        case "notifications":
+            // The one status here that is only available asynchronously.
+            UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
+                guard let self else { return }
+                self.send(kind, self.map(settings.authorizationStatus))
+            }
         default: break
         }
     }
@@ -126,6 +137,19 @@ final class Permissions: NSObject, CLLocationManagerDelegate {
             }
             locationRequested = true
             location.requestWhenInUseAuthorization()
+        case "notifications":
+            // requestAuthorization prompts only while undecided and answers
+            // from the stored decision otherwise, so it is safe either way.
+            // The status is read back afterwards rather than taken from the
+            // Bool, which cannot say provisional (granted, quietly) or tell a
+            // restriction from a refusal.
+            let center = UNUserNotificationCenter.current()
+            center.requestAuthorization(options: [.alert, .sound, .badge]) { [weak self] _, _ in
+                center.getNotificationSettings { settings in
+                    guard let self else { return }
+                    self.send(kind, self.map(settings.authorizationStatus))
+                }
+            }
         default:
             break
         }
@@ -184,6 +208,18 @@ final class Permissions: NSObject, CLLocationManagerDelegate {
         case .notDetermined: return "prompt"
         case .denied: return "denied"
         case .restricted: return "unavailable"
+        @unknown default: return "unavailable"
+        }
+    }
+
+    private func map(_ status: UNAuthorizationStatus) -> String {
+        switch status {
+        // Provisional delivers quietly to the notification list without ever
+        // prompting, and ephemeral is an App Clip's temporary grant: in both
+        // the app can post, which is all Granted promises.
+        case .authorized, .provisional, .ephemeral: return "granted"
+        case .notDetermined: return "prompt"
+        case .denied: return "denied"
         @unknown default: return "unavailable"
         }
     }

@@ -207,6 +207,9 @@ func TestTheAndroidShellDeclaresEveryRuntimePermission(t *testing.T) {
 		// on either side of that line.
 		"android.permission.READ_MEDIA_IMAGES",
 		"android.permission.READ_EXTERNAL_STORAGE",
+		// Notifications on 13+. Below 13 there is nothing to declare, but the
+		// line is harmless there and required above.
+		"android.permission.POST_NOTIFICATIONS",
 	} {
 		if !strings.Contains(src, `android:name="`+name+`"`) {
 			t.Errorf("%s: does not declare %s — the request is auto-denied with no "+

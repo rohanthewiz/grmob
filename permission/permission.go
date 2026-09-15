@@ -1,6 +1,6 @@
 // Package permission asks the platform for the capabilities an app cannot
 // simply take: the camera, the microphone, the user's location, the shared
-// media store.
+// media store, and showing notifications.
 //
 // # What kind of thing this is
 //
@@ -79,10 +79,11 @@ import (
 
 // Permission is one capability the platform guards.
 //
-// The set is deliberately the four the original file named rather than every
-// permission the three platforms have. A value here has to mean the same thing
-// on all of them or the type is lying, and each of these four does; the
-// per-constant notes say what each host actually asks for.
+// The set began as the four the original file named and grows only by a
+// capability the rest of grmob uses (Notifications, for core.PostNotification),
+// not toward every permission the three platforms have. A value here has to
+// mean the same thing on all of them or the type is lying, and each of these
+// does; the per-constant notes say what each host actually asks for.
 type Permission string
 
 const (
@@ -121,6 +122,19 @@ const (
 	//	Android   Manifest.permission.RECORD_AUDIO
 	//	Browser   the "microphone" descriptor
 	Microphone Permission = "microphone"
+
+	// Notifications is showing banners with core.PostNotification — alert,
+	// sound and badge together, since no host lets an app show one without
+	// the others being part of the same answer.
+	//
+	//	iOS       UNUserNotificationCenter.requestAuthorization([.alert, .sound, .badge])
+	//	Android   POST_NOTIFICATIONS on 13+. Below 13 there is no runtime
+	//	          permission and nothing to prompt: the answer is whether the
+	//	          user has left the app's notifications switched on, so it is
+	//	          Granted or Denied and never Prompt.
+	//	Browser   Notification.permission, and Notification.requestPermission
+	//	          to ask ("default" is Prompt)
+	Notifications Permission = "notifications"
 )
 
 // Permissions returns every declared Permission, in declaration order.
@@ -130,7 +144,7 @@ const (
 // has no arm for a permission drops it silently, which on this bridge is
 // indistinguishable from a user who has not answered yet.
 func Permissions() []Permission {
-	return []Permission{Camera, Location, Storage, Microphone}
+	return []Permission{Camera, Location, Storage, Microphone, Notifications}
 }
 
 // Status is what the platform says about one Permission.
