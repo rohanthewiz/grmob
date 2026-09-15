@@ -1388,6 +1388,37 @@ Two pieces close that, and neither costs a network call at test time:
 The call site pins stay either way: they are about *this* repository's code,
 which no reading of androidx can answer for.
 
+### An unweighted container in a Compose `Row` is as wide as its content
+
+The same measure loop has a second consequence, and it is not about shrinking.
+The Row offers each unweighted child a *maximum*, and a child that fills its
+maximum takes all of it. A `Column` with no `AlignItems` stretches its children
+(`fillMaxWidth`), so it is exactly such a child, and every child after it is
+offered nothing:
+
+```
+   Row( Column(A), Column(B), Column(C) )
+
+   Compose, measured at the offer   [ A ........................... ]   B, C: 0
+   CSS, flex-basis: auto            [ A ][ B ][ C ]
+```
+
+On the emulator that was lessons 1.1 (one stat of three), 1.3 and 1.4 (box A
+alone), 4.15 (one star of five) and 8.2 (counter B missing). `RowChildren` now
+hands an unweighted container child `hugRowOffer`, which measures it within
+`min(offer, maxIntrinsicWidth)`: CSS's content width, shrunk to the space left
+when that is less. A percentage `MinWidth` is resolved there against the Row's
+offer, because `widthModifier` further in would only see the content width, so
+lesson 1.4's `MinWidth("40%")` box is 40% of the row. Leaves (Text, Button, the
+fields) already measure to their content and are not asked; a subtree holding a
+`List` or a vertical `Scroll`, which cannot answer intrinsics, keeps the old
+reading, and so does a child with a `Width` or a percentage `MaxWidth`.
+
+What this does not add is CSS's `min-width: auto`. A Row whose children's
+contents together exceed it still gives the last ones what is left, and a Text
+there breaks mid-word where a browser would overflow at the word: 1.1's third
+stat and 8.2's "Repair" button.
+
 ### `core.FlexShrink(0)` on a target with no proportional shrink
 
 `core.FlexShrink` was a web-only prop for two releases, and then half of it

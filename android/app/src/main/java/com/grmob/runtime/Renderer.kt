@@ -1611,6 +1611,13 @@ private fun RowScope.RowChildren(node: GrMobNode, intrinsicHeight: Boolean = fal
             // flex-shrink divides negative — so a Row that is overflowing has
             // no growth to hand out either way.
             if (grow <= 0f && child.style?.shrinkPinned == true) m = m.pinMainAxis(horizontal = true)
+            // An unweighted container is as wide as its content, shrunk to the
+            // offer when that is narrower; see hugRowOffer. A pinned child is
+            // already measured unbounded, and in an unbounded strip there is no
+            // offer to fill.
+            if (grow <= 0f && !unboundedWidth && child.style?.shrinkPinned != true && hugsRowOffer(child)) {
+                m = m.hugRowOffer(child.style?.minWidth ?: "")
+            }
             if (stretch) m = m.fillMaxHeight()
             if (rebound) {
                 CompositionLocalProvider(LocalGrMobUnboundedHeight provides false) { RenderNode(child, m) }
@@ -1618,6 +1625,107 @@ private fun RowScope.RowChildren(node: GrMobNode, intrinsicHeight: Boolean = fal
                 RenderNode(child, m)
             }
         }
+    }
+}
+
+/**
+ * The node types whose width can reach a Row's offer on their own: the
+ * containers, through ColumnChildren's fillMaxWidth (a stretched Column), a
+ * weighted grandchild, or a percentage Width somewhere inside. Leaves (Text,
+ * Button, the fields) already measure to their content, so they are not asked
+ * for an intrinsic width they would only repeat.
+ *
+ * A horizontal Scroll is left out: a grow strip sizes itself from the viewport
+ * width it captures during measure, and an intrinsic query would run that
+ * capture under an unbounded width. A Modal is composed in a window of its own
+ * and takes no room in the Row.
+ */
+private val RowOfferFillers = setOf("Column", "Card", "Box", "Row", "ZStack", "SafeArea", "Spacer")
+
+/**
+ * Whether an unweighted Row child gets [hugRowOffer].
+ *
+ * Skipped for any Width (points are already definite; a percentage is a share
+ * of the Row on purpose), and for a percentage MaxWidth, which widthModifier
+ * resolves against the incoming maximum: under the hug that maximum is the
+ * content width, so the cap would become a share of the content instead of the
+ * Row. A subtree that cannot answer intrinsics (see [answersIntrinsicWidth])
+ * keeps Compose's reading, filling the offer.
+ */
+private fun hugsRowOffer(child: GrMobNode): Boolean {
+    val s = child.style
+    if (s != null && (s.width.isNotEmpty() || s.maxWidth.endsWith("%"))) return false
+    return child.type in RowOfferFillers && answersIntrinsicWidth(child)
+}
+
+/**
+ * CSS's width for an unweighted flex item in a row: its content width
+ * (flex-basis: auto, max-content), shrunk to the space left when that is less.
+ *
+ * # The defect it exists for
+ *
+ * A Compose Row measures an unweighted child against everything the children
+ * before it left, as a maximum. A child that fills its maximum takes all of it,
+ * and the children after it are measured against nothing. The common filler is
+ * a Column with no AlignItems: it stretches (isColumnStretch), so its Text gets
+ * fillMaxWidth and the Column is as wide as the offer.
+ *
+ * ```
+ *   Row( Column(A), Column(B), Column(C) )     every demoBox in chapter 1
+ *
+ *   Compose, before   [ A ............................................ ]
+ *                     B and C measured against 0: gone
+ *   CSS               [ A ][ B ][ C ]
+ * ```
+ *
+ * Lessons 1.1 (the stats row showed "128" alone), 1.3, 1.4, 4.15 (one star
+ * of five) and 8.2 (counter B gone) all drew this on the emulator.
+ *
+ * # What it does
+ *
+ * ```
+ *   content = maxIntrinsicWidth           asked, not measured; a stretched
+ *                                          Column answers its widest child
+ *   floor   = MinWidth px | % × offer     the percentage against the ROW
+ *   minW    = max(incoming min, floor)
+ *   maxW    = max(min(offer, content), minW)
+ *   measure within minW..maxW; report inside the incoming constraints
+ * ```
+ *
+ * The percentage floor is resolved here because nothing further in can resolve
+ * it: widthModifier reads a percentage off the maximum it receives, and after
+ * this that maximum is the content width. Folding the floor into minW gives
+ * `max(content, 40% of the Row)`, which is lesson 1.4's box A; the floor
+ * widthModifier then computes, a share of the narrower maximum, is below minW
+ * and moves nothing. A points floor is the same number either way.
+ *
+ * A child whose content is wider than the offer is measured at the offer, as
+ * before: that is CSS's shrink to fit, and a long Text inside still wraps.
+ *
+ * # Cost
+ *
+ * One intrinsic query of the child's subtree per measure, the same question
+ * GrMobGrowStrip and horizontalScrollWhenBounded already ask. Only containers
+ * pay it ([RowOfferFillers]).
+ */
+private fun Modifier.hugRowOffer(minWidth: String): Modifier {
+    val floor = parseWidthCap(minWidth)
+    return layout { measurable, constraints ->
+        if (!constraints.hasBoundedWidth) {
+            val placeable = measurable.measure(constraints)
+            return@layout layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+        }
+        val content = measurable.maxIntrinsicWidth(constraints.maxHeight)
+        val least = floor?.let {
+            if (it.isFraction) (constraints.maxWidth * it.amount).roundToInt() else it.amount.dp.roundToPx()
+        } ?: 0
+        val minW = maxOf(constraints.minWidth, least)
+        val maxW = maxOf(minOf(constraints.maxWidth, content), minW)
+        val placeable = measurable.measure(constraints.copy(minWidth = minW, maxWidth = maxW))
+        // Inside the incoming constraints, as a layout must report; a floor
+        // past the offer overflows the slot as widthModifier's does.
+        val reported = placeable.width.coerceIn(constraints.minWidth, constraints.maxWidth)
+        layout(reported, placeable.height) { placeable.placeRelative(0, 0) }
     }
 }
 
