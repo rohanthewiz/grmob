@@ -4,9 +4,9 @@
 import "github.com/rohanthewiz/grmob/core"
 ```
 
-Audio, camera, clipboard, compass heading, location, maps and the app lifecycle.
+Audio, camera, clipboard, haptics, compass heading, location, maps and the app lifecycle.
 
-One of 11 topic pages of [package core](core.md), which has the package overview and an index of every topic. This page documents the declarations in `core/audio.go`, `core/camera.go`, `core/clipboard.go`, `core/heading.go`, `core/location.go`, `core/mapview.go`, `core/lifecycle.go`.
+One of 11 topic pages of [package core](core.md), which has the package overview and an index of every topic. This page documents the declarations in `core/audio.go`, `core/camera.go`, `core/clipboard.go`, `core/haptics.go`, `core/heading.go`, `core/location.go`, `core/mapview.go`, `core/lifecycle.go`.
 
 ## Index
 
@@ -25,6 +25,7 @@ One of 11 topic pages of [package core](core.md), which has the package overview
 - [`func DistanceMeters`](#func-distancemeters)
 - [`func FormatLatLng`](#func-formatlatlng)
 - [`func FormatRegion`](#func-formatregion)
+- [`func Haptic`](#func-haptic)
 - [`func HeadingActive`](#func-headingactive)
 - [`func LocationAcquiring`](#func-locationacquiring)
 - [`func LocationActive`](#func-locationactive)
@@ -69,6 +70,8 @@ One of 11 topic pages of [package core](core.md), which has the package overview
     - [`func WithFlash`](#func-withflash)
     - [`func WithOverlay`](#func-withoverlay)
     - [`func WithStyle`](#func-withstyle)
+- [`type HapticKind`](#type-haptickind)
+    - [`func HapticKinds`](#func-haptickinds)
 - [`type Heading`](#type-heading)
     - [`func CurrentHeading`](#func-currentheading)
     - [`func (Heading) Cardinal`](#func-heading-cardinal)
@@ -244,6 +247,18 @@ Nothing in Go sends one today — the hosts are the writers, in Swift, Kotlin an
 'f' with -1 precision: the shortest form that round-trips, so 38.7223 stays "38.7223" and a whole degree stays "38". Deliberately not 'g', which switches to exponent form for small numbers — "1e-05" is a valid float in Go and is not what a hand-written host parser expects to find in a comma-separated coordinate.
 
 <small>[core/mapview.go:406](https://github.com/rohanthewiz/grmob/blob/master/core/mapview.go#L406)</small>
+
+### func Haptic
+
+```go
+func Haptic(kind HapticKind)
+```
+
+Haptic asks the host to play one haptic effect.
+
+A kind outside HapticKinds is dropped here rather than sent: every shell would have to ignore it separately, and an older shell receiving a newer kind already ignores it, so the check in Go only catches a typo'd HapticKind("sucess") at the one place that can log nothing useful either way — the call simply does nothing, same as on a device with no motor.
+
+<small>[core/haptics.go:80](https://github.com/rohanthewiz/grmob/blob/master/core/haptics.go#L80)</small>
 
 ### func HeadingActive
 
@@ -845,6 +860,40 @@ func WithStyle(style Style) CameraProp
 ```
 
 <small>[core/camera.go:90](https://github.com/rohanthewiz/grmob/blob/master/core/camera.go#L90)</small>
+
+### type HapticKind
+
+```go
+type HapticKind string
+```
+
+HapticKind names one haptic effect. See the table above for what each one maps to on every host.
+
+<small>[core/haptics.go:43](https://github.com/rohanthewiz/grmob/blob/master/core/haptics.go#L43)</small>
+
+```go
+const (
+	HapticSelection HapticKind = "selection"
+	HapticLight     HapticKind = "light"
+	HapticMedium    HapticKind = "medium"
+	HapticHeavy     HapticKind = "heavy"
+	HapticSuccess   HapticKind = "success"
+	HapticWarning   HapticKind = "warning"
+	HapticError     HapticKind = "error"
+)
+```
+
+#### func HapticKinds
+
+```go
+func HapticKinds() []HapticKind
+```
+
+HapticKinds lists every kind, in the order the table above documents them.
+
+It exists for the shell coverage test in mobile/verify rather than for apps: iterating core's own list is what makes adding an eighth kind fail that test until all three shells spell it, instead of the new kind silently doing nothing on whichever shell was forgotten.
+
+<small>[core/haptics.go:66](https://github.com/rohanthewiz/grmob/blob/master/core/haptics.go#L66)</small>
 
 ### type Heading
 

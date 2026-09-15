@@ -773,6 +773,11 @@
       event under the id it carried (core's first reply to one request rather
       than a record); `ClipboardManager`, `UIPasteboard` and the async
       Clipboard API. cats-mobile's composer pastes with it
+- [x] Haptics — `core.Haptic` with seven named kinds (`core.HapticKinds`)
+      over the `"haptic"` system event: UIKit's feedback generators, Android's
+      predefined `VibrationEffect`s (waveforms below API 29, `VIBRATE` in the
+      manifest), `navigator.vibrate` patterns in the browser. cats-mobile
+      buzzes when an agent blocks
 - [x] `core.Select` — the picker, on all four targets: a `<select>` whose
       options are built from a prop, a SwiftUI `Menu`, a Compose
       `DropdownMenu`. `onChange` carries the option's *value*, never its label
@@ -1448,7 +1453,6 @@
 - [ ] Keystore (Secure): `Keystore.Save()`, `Keystore.Get()` — the church app
       keeps its bearer token in bytdb for want of this; see its README
 - [ ] URL-scheme deep links (`cats://pair` from a QR lands in the app)
-- [ ] Haptics (cats-mobile: a buzz when an agent blocks)
 - [ ] Local notifications
 - [ ] Device Storage (Plain): `DeviceStorage.Set()`, `DeviceStorage.Get()`
 - [ ] Bluetooth: `Scan`, `Connect`, `Send`

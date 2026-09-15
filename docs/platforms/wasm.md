@@ -132,10 +132,13 @@ more: the `"audio"` system event is handled inside `grmob-runtime.js`
 `"clipboard"` system event goes to the async Clipboard API with a read's
 answer coming back as the `"clipboard"` host event (`ok: false` outside a
 secure context or on a refusal, which a page can report and the natives
-cannot), and consumers' state writes reach the screen through the push
-channel. See [Native — Audio](native.md#audio),
-[Native — Lifecycle](native.md#lifecycle) and
-[Native — Clipboard](native.md#clipboard) for the shapes.
+cannot), the `"haptic"` system event plays a short `navigator.vibrate`
+pattern where the Vibration API exists (Safari has none, so every iOS
+browser is silent), and consumers' state writes reach the screen through the
+push channel. See [Native — Audio](native.md#audio),
+[Native — Lifecycle](native.md#lifecycle),
+[Native — Clipboard](native.md#clipboard) and
+[Native — Haptics](native.md#haptics) for the shapes.
 
 ### Browser back
 

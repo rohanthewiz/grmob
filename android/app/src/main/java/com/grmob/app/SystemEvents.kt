@@ -24,6 +24,7 @@ import org.json.JSONObject
  *   core.StartLocation ▶ "sensor"   ──▶ LocationSensor (LocationManager)
  *   permission.Check  ▶ "permission"──▶ Permissions (runtime permissions)
  *   core.*Clipboard ──▶ "clipboard" ──▶ Clipboard (ClipboardManager)
+ *   core.Haptic     ──▶ "haptic"    ──▶ Haptics (Vibrator)
  *
  * Before this existed the events were emitted into a nil Go handler and
  * vanished on both natives — only the WASM host had a sink — so an app
@@ -58,6 +59,7 @@ object SystemEvents {
         HeadingSensor.attach(appContext, runtime::hostEvent)
         LocationSensor.attach(appContext, runtime::hostEvent)
         Clipboard.attach(appContext, runtime::hostEvent)
+        Haptics.attach(appContext)
         // The callback runs on the Go goroutine that emitted the event. Both
         // actions below touch the UI (a Toast must be shown from a Looper
         // thread; startActivity from an arbitrary thread is unreliable), so
@@ -99,6 +101,8 @@ object SystemEvents {
             // Write is fire-and-forget; a read is answered over the host-event
             // channel with the id it carried (core/clipboard.go).
             "clipboard" -> Clipboard.handle(data)
+            // Fire-and-forget, one named effect (core/haptics.go).
+            "haptic" -> Haptics.handle(data)
         }
     }
 

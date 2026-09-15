@@ -53,7 +53,7 @@ consistent. Patch semantics — positional paths, ordering rules — are in
 | `RenderInitial()` | Full tree JSON for the first mount |
 | `TriggerCallback(id)` / `TriggerTextCallback` / `TriggerBoolCallback` / `TriggerIntCallback` | Event dispatch; returns the resulting patches |
 | `RenderAgain()` | Escape hatch for shells that drive rendering themselves |
-| `SetSystemEventListener(l)` | Sink for app→host system events (`toast`, `open_url`, `audio`, `clipboard`); `OnSystemEvent(name, payloadJSON)` |
+| `SetSystemEventListener(l)` | Sink for app→host system events (`toast`, `open_url`, `audio`, `clipboard`, `haptic`); `OnSystemEvent(name, payloadJSON)` |
 | `ReportHostEvent(name, payloadJSON)` | Host→app events that answer no callback (`audio_status`, `lifecycle`, `clipboard`); returns the resulting patches like `Trigger*` |
 
 ## Building — Android
@@ -260,6 +260,41 @@ read, and Android 13 draws its own "Copied" confirmation on a write, so
 neither is something an app should duplicate. `mobile/verify` holds the
 three shells' spellings of the event, the commands and the reply keys to
 core's, and requires each dispatcher's arm.
+
+## Haptics
+
+`core.Haptic(kind)` plays one short effect from the vibration motor —
+fire-and-forget, callable from any goroutine, silent where there is no motor,
+no API or the user has turned system haptics off. It travels as the
+`"haptic"` system event with one key, `kind`.
+
+```go
+// Something outside the app wants attention; nothing has failed.
+core.Haptic(core.HapticWarning)
+```
+
+Kinds rather than durations, because iOS offers no duration at all — only
+its three feedback-generator families, tuned to feel like the rest of the
+system — and Android's predefined effects are likewise the ones that feel
+native there. The browser, which has only milliseconds, gets a small pattern
+table.
+
+| Kind | iOS | Android (API 29+) | Browser (`navigator.vibrate`) |
+|---|---|---|---|
+| `selection` | `UISelectionFeedbackGenerator` | `EFFECT_TICK` | 5 |
+| `light` / `medium` / `heavy` | `UIImpactFeedbackGenerator` at that weight | `EFFECT_TICK` / `EFFECT_CLICK` / `EFFECT_HEAVY_CLICK` | 10 / 20 / 30 |
+| `success` | `UINotificationFeedbackGenerator` `.success` | `EFFECT_DOUBLE_CLICK` | 10, 40, 10 |
+| `warning` | `.warning` | waveform, two pulses | 20, 60, 20 |
+| `error` | `.error` | waveform, three pulses | 30, 40, 30, 40, 30 |
+
+Android below API 29 plays one-shots and waveforms of the same lengths.
+It uses the `Vibrator` service rather than `View.performHapticFeedback`, so a
+buzz does not depend on the user's touch-feedback setting, and that needs
+`android.permission.VIBRATE` in the manifest — a normal, install-time
+permission, but one whose absence makes `vibrate()` throw rather than stay
+silent. `mobile/verify` requires the manifest line, every kind in
+`core.HapticKinds()` spelled by all three shells, and each dispatcher's arm.
+Safari has no Vibration API, so haptics in any iOS browser are silent.
 
 ## Permissions
 

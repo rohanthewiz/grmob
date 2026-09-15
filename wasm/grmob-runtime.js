@@ -8281,6 +8281,33 @@ const GrMob = (() => {
         return { handle };
     })();
 
+    // The browser half of core.Haptic (core/haptics.go). The Vibration API
+    // takes milliseconds only, so each kind is a small pattern, the same
+    // timings Haptics.kt uses below API 29. Absent in Safari (so on every
+    // iOS browser) and on desktops with no motor, where it is silence — the
+    // contract every host applies to haptics it cannot play. Kinds are
+    // quoted so mobile/verify's spelling scan can see them.
+    const haptics = (() => {
+        const PATTERNS = {
+            "selection": 5,
+            "light": 10,
+            "medium": 20,
+            "heavy": 30,
+            "success": [10, 40, 10],
+            "warning": [20, 60, 20],
+            "error": [30, 40, 30, 40, 30],
+        };
+        function handle(data) {
+            if (typeof navigator === "undefined" || typeof navigator.vibrate !== "function") return;
+            const pattern = PATTERNS[data.kind];
+            if (pattern === undefined) return;
+            // vibrate() returns false when the page has not had a user
+            // gesture yet (Chrome's sticky activation rule); nothing to do.
+            navigator.vibrate(pattern);
+        }
+        return { handle };
+    })();
+
     return {
         mount,
         patch,
@@ -8289,6 +8316,7 @@ const GrMob = (() => {
         heading,
         permission,
         clipboard,
+        haptics,
     };
 })();
 
@@ -8323,6 +8351,11 @@ window.GrMobSystemEvent = function (name, payloadJSON) {
         // core's clipboard (core/clipboard.go): a write, or a read answered
         // over GrMobWASM.HostEvent with the id it carried.
         GrMob.clipboard.handle(JSON.parse(payloadJSON));
+        return;
+    }
+    if (name === "haptic") {
+        // core.Haptic (core/haptics.go): one named effect, as a vibrate pattern.
+        GrMob.haptics.handle(JSON.parse(payloadJSON));
         return;
     }
     if (name === "open_url") {

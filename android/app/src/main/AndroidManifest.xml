@@ -12,6 +12,13 @@
          draws a blank grid. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- core.Haptic (app/Haptics.kt) drives the Vibrator service, which throws
+         SecurityException without this rather than staying silent. A normal
+         permission: granted at install, never prompted, so it is not a
+         permission.Permission. mobile/verify's TestTheAndroidShellDeclaresVibrate
+         holds this line in place. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
     <!-- core's audio service (GrMobAudioService): a foreground service of
          the mediaPlayback type is what keeps a stream playing with the app
          in the background and puts the player on the lock screen; Android

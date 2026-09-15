@@ -11,6 +11,7 @@ import UIKit
 ///     core.StartLocation ▶ "sensor"   ──▶ LocationSensor (CLLocationManager)
 ///     permission.Check  ▶ "permission"──▶ Permissions (AVFoundation/Photos/CL)
 ///     core.*Clipboard ──▶ "clipboard" ──▶ Clipboard (UIPasteboard)
+///     core.Haptic     ──▶ "haptic"    ──▶ Haptics (UIKit feedback generators)
 ///
 /// Before this existed the events were emitted into a nil Go handler and
 /// vanished on both natives — only the WASM host had a sink — so an app
@@ -74,6 +75,8 @@ enum SystemEvents {
         // Write is fire-and-forget; a read is answered over the host-event
         // channel with the id it carried (core/clipboard.go).
         case "clipboard": Clipboard.shared.handle(object)
+        // Fire-and-forget, one named effect (core/haptics.go).
+        case "haptic": Haptics.handle(object)
         default: break
         }
     }

@@ -55,7 +55,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
 | [Events & focus](core-events.md) | Event props, host and system events, focus refs and focus order. | 2 types, 19 functions and methods |
 | [Navigation & overlays](core-navigation.md) | The navigator stack, modals, toasts, deep links and opening URLs. | 4 types, 19 functions and methods |
 | [Accessibility](core-accessibility.md) | Roles, selected, expanded and current states, value ranges and the accessibility audit. | 9 types, 19 functions and methods |
-| [Device services](core-device.md) | Audio, camera, clipboard, compass heading, location, maps and the app lifecycle. | 10 types, 57 functions and methods |
+| [Device services](core-device.md) | Audio, camera, clipboard, haptics, compass heading, location, maps and the app lifecycle. | 11 types, 59 functions and methods |
 
 ## Index
 
@@ -371,6 +371,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
     - [`func DistanceMeters`](core-device.md#func-distancemeters)
     - [`func FormatLatLng`](core-device.md#func-formatlatlng)
     - [`func FormatRegion`](core-device.md#func-formatregion)
+    - [`func Haptic`](core-device.md#func-haptic)
     - [`func HeadingActive`](core-device.md#func-headingactive)
     - [`func LocationAcquiring`](core-device.md#func-locationacquiring)
     - [`func LocationActive`](core-device.md#func-locationactive)
@@ -413,6 +414,8 @@ Package core's reference is split into 11 topic pages by source file. The index 
         - [`func WithFlash`](core-device.md#func-withflash)
         - [`func WithOverlay`](core-device.md#func-withoverlay)
         - [`func WithStyle`](core-device.md#func-withstyle)
+    - [`type HapticKind`](core-device.md#type-haptickind)
+        - [`func HapticKinds`](core-device.md#func-haptickinds)
     - [`type Heading`](core-device.md#type-heading)
         - [`func CurrentHeading`](core-device.md#func-currentheading)
     - [`type LifecycleState`](core-device.md#type-lifecyclestate)
