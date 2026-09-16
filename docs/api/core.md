@@ -50,7 +50,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
 | [Styling: the Style struct](core-style.md) | Style and the value types its fields take: alignment, flex, position, weights and edge insets. | 11 types, 10 functions and methods |
 | [Styling: style props](core-style-props.md) | The StyleProp constructors: spacing and per-side insets, flex, typography, colour, borders and animation. | 1 types, 69 functions and methods |
 | [Theming](core-theme.md) | Themes, palettes, typography and spacing scales, and per-component defaults. | 5 types, 14 functions and methods |
-| [Controls](core-controls.md) | Buttons, text inputs, switches, sliders, selects, images, tab views, text grids and vector canvases. | 18 types, 44 functions and methods |
+| [Controls](core-controls.md) | Buttons, text inputs, switches, sliders, selects, images, tab views, text grids and vector canvases. | 18 types, 45 functions and methods |
 | [Editors](core-editors.md) | The code editor and the rich text editor, and the refs and commands that drive them. | 2 types, 15 functions and methods |
 | [Events & focus](core-events.md) | Event props, host and system events, focus refs and focus order. | 2 types, 19 functions and methods |
 | [Navigation & overlays](core-navigation.md) | The navigator stack, modals, toasts, deep links and opening URLs. | 4 types, 19 functions and methods |
@@ -240,6 +240,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
     - [`func Canvas`](core-controls.md#func-canvas)
     - [`func CanvasMapping`](core-controls.md#func-canvasmapping)
     - [`func Checkbox`](core-controls.md#func-checkbox)
+    - [`func GradientKey`](core-controls.md#func-gradientkey)
     - [`func Image`](core-controls.md#func-image)
     - [`func ImageWithMode`](core-controls.md#func-imagewithmode)
     - [`func Input`](core-controls.md#func-input)

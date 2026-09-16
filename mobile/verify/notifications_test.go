@@ -79,3 +79,61 @@ func TestEveryShellDispatchesNotificationsAndReportsTaps(t *testing.T) {
 		}
 	}
 }
+
+// A sweep cancels what is still to come and leaves banners already shown
+// (core.SweepNotifications). Each shell's sweep declaration is read with its
+// literals and without its comments, so a comment explaining the old call
+// does not trip the check and a call put back does.
+func TestSweepsLeaveShownBanners(t *testing.T) {
+	for _, c := range []struct {
+		file, anchor string
+		must, never  []string
+	}{
+		{nativeFile("android", "app", "src", "main", "java", "com", "grmob", "app", "Notifications.kt"),
+			"private fun sweep(",
+			[]string{"alarms?.cancel(alarmIntent(context, id"},
+			[]string{"manager.cancel(", "activeNotifications"}},
+		{nativeFile("ios", "GrMob", "App", "Notifications.swift"),
+			"private func sweep(",
+			[]string{"removePendingNotificationRequests"},
+			[]string{"removeDeliveredNotifications", "getDeliveredNotifications"}},
+		{nativeFile("wasm", "grmob-runtime.js"),
+			"function sweep(",
+			[]string{"clearTimer(id)"},
+			[]string{".close()"}},
+	} {
+		src := valuesOf(t, c.file, c.anchor)
+		// The runtime's functions are nested in one closure, so the cut runs
+		// past the sweep into its neighbours (tapped closes a banner, rightly);
+		// end it at the next function.
+		if next := strings.Index(src[1:], "function "); strings.HasSuffix(c.file, ".js") && next >= 0 {
+			src = src[:next+1]
+		}
+		for _, want := range c.must {
+			if !strings.Contains(src, want) {
+				t.Errorf("%s: the sweep no longer cancels pending posts (%q)", c.file, want)
+			}
+		}
+		for _, bad := range c.never {
+			if strings.Contains(src, bad) {
+				t.Errorf("%s: the sweep takes down shown banners again (%q)", c.file, bad)
+			}
+		}
+	}
+}
+
+// Android's exact-alarm re-check answers from the application context and is
+// gated on the host-event channel, not on an Activity being attached: the
+// grant is a property of the app, and the answer only needs a Go to hear it.
+func TestExactAlarmRecheckNeedsNoActivity(t *testing.T) {
+	file := nativeFile("android", "app", "src", "main", "java", "com", "grmob", "app", "Permissions.kt")
+	src := valuesOf(t, file, "fun recheckExactAlarms(")
+	if strings.Contains(src, "activity") {
+		t.Errorf("%s: recheckExactAlarms reads the Activity again", file)
+	}
+	for _, want := range []string{"appContext", "report == null", "exactAlarmStatus(context)"} {
+		if !strings.Contains(src, want) {
+			t.Errorf("%s: recheckExactAlarms is missing %q", file, want)
+		}
+	}
+}

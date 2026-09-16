@@ -77,9 +77,9 @@ import "math"
 //
 // # Not in v1
 //
-// Text inside the drawing (lay labels out around it as Text nodes), gradient
-// strokes, clipping and per-shape hit-testing. Fills are flat or a Gradient,
-// and use the nonzero rule, every target's default, unless a shape asks for
+// Text inside the drawing (lay labels out around it as Text nodes), clipping
+// and per-shape hit-testing. Fills and strokes are flat or a Gradient; fills
+// use the nonzero rule, every target's default, unless a shape asks for
 // FillEvenOdd.
 func Canvas(w, h float64, shapes []Shape, props ...PropsAndChildren) View {
 	return ComponentFunc(func(ctx *Context) *Node {
@@ -203,6 +203,15 @@ type Shape struct {
 	// RadialGradientFill. See Gradient.
 	FillGradient *Gradient
 
+	// StrokeGradient paints the stroke with a gradient instead of the flat
+	// Stroke colour, and wins when both are set. Its geometry is in viewBox
+	// units like a fill's, while the stroke's width stays in layout units:
+	// the gradient says what colour a point of the drawing is, the width only
+	// how much of the drawing around the path is painted. The same
+	// constructors build it (LinearGradientFill, RadialGradientFill); the
+	// "Fill" in their names is historical, not a restriction.
+	StrokeGradient *Gradient
+
 	// FillRule decides which regions of a self-overlapping path the fill
 	// (flat or gradient) paints; the zero value is FillNonZero. See FillRule.
 	FillRule FillRule
@@ -240,7 +249,7 @@ func (s Shape) node(places int) *Node {
 	// a fill" as "fill or gradient".
 	filled := false
 	if g := s.FillGradient; g != nil {
-		if flat, ok := g.wire(props, places); ok {
+		if flat, ok := g.wire(props, places, ""); ok {
 			filled = true
 		} else if flat != "" {
 			props["fill"] = flat
@@ -256,8 +265,23 @@ func (s Shape) node(places int) *Node {
 	if filled && s.FillRule == FillEvenOdd {
 		props["fillRule"] = string(FillEvenOdd)
 	}
-	if s.Stroke != "" {
+	// The stroke follows the fill's rule, under its own key prefix:
+	// "strokeGradient…" or "stroke", never both, and a degenerate gradient
+	// arrives as the flat stroke colour it reduces to.
+	stroked := false
+	if g := s.StrokeGradient; g != nil {
+		if flat, ok := g.wire(props, places, "stroke"); ok {
+			stroked = true
+		} else if flat != "" {
+			props["stroke"] = flat
+			stroked = true
+		}
+	}
+	if !stroked && s.Stroke != "" {
 		props["stroke"] = s.Stroke
+		stroked = true
+	}
+	if stroked {
 		w := s.StrokeWidth
 		if w <= 0 {
 			w = 1
@@ -278,7 +302,7 @@ func (s Shape) node(places int) *Node {
 
 // Gradient is a fill that varies across a shape: linear along a line, or
 // radial out from a centre. Build one with LinearGradientFill or RadialGradientFill
-// and hand it to Shape.FillGradient.
+// and hand it to Shape.FillGradient or Shape.StrokeGradient.
 //
 // (The names carry "Fill" because core.LinearGradient already exists: an
 // older helper that formats a CSS linear-gradient() string for a Style
@@ -384,17 +408,23 @@ func RadialGradientFill(cx, cy, r float64, stops ...GradientStop) *Gradient {
 // as a gradient. When it does not, flat is the single colour it degenerates to
 // ("" for one that paints nothing), and props is left untouched.
 //
-// The keys, all written together:
+// The keys, all written together, for a fill (prefix ""):
 //
 //	gradient        "linear" | "radial"
 //	gradientAt      [x1, y1, x2, y2] | [cx, cy, r]    viewBox units
 //	gradientStops   [offset, ...]                    non-decreasing, in [0, 1]
 //	gradientColors  [color, ...]                     one per offset
 //
+// and for a stroke (prefix "stroke") the same four as strokeGradient,
+// strokeGradientAt, strokeGradientStops and strokeGradientColors. The fill's
+// names stay unprefixed because they shipped first; a prefix rather than a
+// nested object keeps every key a flat scalar or list, which is all the
+// readers decode.
+//
 // Offsets and colours are two parallel flat lists rather than a list of
 // pairs, because every reader of this wire (Kotlin, Swift, JS, Go's htmlout)
 // decodes a flat list of one type without a type switch.
-func (g *Gradient) wire(props map[string]any, places int) (flat string, ok bool) {
+func (g *Gradient) wire(props map[string]any, places int, prefix string) (flat string, ok bool) {
 	var offsets []float64
 	var colors []string
 	prev := 0.0
@@ -438,11 +468,22 @@ func (g *Gradient) wire(props map[string]any, places int) (flat string, ok bool)
 	if g.Kind == GradientRadial {
 		kind = GradientRadial
 	}
-	props["gradient"] = string(kind)
-	props["gradientAt"] = at
-	props["gradientStops"] = offsets
-	props["gradientColors"] = colors
+	props[GradientKey(prefix, "gradient")] = string(kind)
+	props[GradientKey(prefix, "gradientAt")] = at
+	props[GradientKey(prefix, "gradientStops")] = offsets
+	props[GradientKey(prefix, "gradientColors")] = colors
 	return "", true
+}
+
+// GradientKey is the wire key for one of a gradient's four names under a
+// paint prefix: GradientKey("", "gradientAt") is "gradientAt", and
+// GradientKey("stroke", "gradientAt") is "strokeGradientAt". Exported so
+// htmlout reads the keys core writes by the same rule.
+func GradientKey(prefix, name string) string {
+	if prefix == "" || name == "" {
+		return name
+	}
+	return prefix + string(name[0]-'a'+'A') + name[1:]
 }
 
 // FillRule is how a fill decides whether a point is inside a path whose

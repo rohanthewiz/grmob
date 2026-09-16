@@ -53,8 +53,9 @@ import SwiftUI
 ///                           `Box(Width("60px"))` therefore floors at 0 in a
 ///                           browser, which is the column internal/pinfixture
 ///                           records and wasm/verify has watched Chrome
-///                           produce. A Canvas is the exception, being a
-///                           replaced element on the web; see width(of:).
+///                           produce. A Canvas and an Image with a source are
+///                           the exceptions, being replaced elements on the
+///                           web; see width(of:).
 ///
 ///   a border                not added. It is drawn as an overlay here
 ///                           (grMobBorder strokes the shape rather than
@@ -102,9 +103,33 @@ enum GrMobMinContent {
         // a long caption, Compose keeps it too, and flooring it at 0 here let
         // the row squeeze the box while the drawing kept its size and spilled
         // over the caption.
+        //
+        // An Image with a src is an <img>, the other replaced element the web
+        // targets write, and its content size suggestion is its natural width
+        // — transferred through its natural aspect ratio when a height is
+        // declared. Measured in headless Chrome, a flex item Width 110px ×
+        // Height 40px beside an unbreakable word:
+        //
+        //   400 × 100 image   floors at 110   (40 · 4 = 160, capped at 110)
+        //    50 ×  50 image   floors at  40   (40 · 1)
+        //   failed to load    floors at 110
+        //   no src            floors at   0   (htmlout writes a <div>)
+        //
+        // A tree walk has no natural size — the image may not have arrived,
+        // and the node never carries one — so this floors at the declared
+        // width, which is Chrome's answer for every image at least as wide
+        // (at the declared height) as its box, and for one still loading.
+        // It is too high only for an image narrower in proportion than its
+        // box, which a browser would let the row squeeze to that proportion;
+        // flooring at 0 instead let SwiftUI squeeze every image, the Canvas
+        // bug again. A MapView is a <div> on the web and stays at 0.
         if let s = node.style, !s.width.isEmpty {
             if node.type == "Canvas", let w = GrMobMaxWidth.fixedLimit(s.width) {
                 return min(w, 300) + CGFloat(s.margin.left + s.margin.right)
+            }
+            if node.type == "Image", !node.stringProp("src").isEmpty,
+               let w = GrMobMaxWidth.fixedLimit(s.width) {
+                return w + CGFloat(s.margin.left + s.margin.right)
             }
             return 0
         }

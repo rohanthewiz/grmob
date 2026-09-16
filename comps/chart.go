@@ -451,20 +451,37 @@ func weightedLabel(t *core.Theme, text string, weight float64, align core.Alignm
 }
 
 // pointLabels is the x label row under a line or area chart, whose n points sit
-// at x = i/(n−1) of the width, edge to edge.
+// at x = i/(n−1) of the width, edge to edge. It is also the tick row of every
+// value axis that runs left to right (a horizontal BarChart, a ScatterChart's
+// x), since ticks, like points, run edge to edge.
+//
+// # Boxes of two thirds of a stride
 //
 // A label is centred on its point by giving it a box that extends equally
-// either side of the point. With labels every s points, interior boxes span
-// [i − s/2, i + s/2], which tile the row exactly. The two end points cannot
-// have symmetric boxes without leaving the row, so the first label is aligned
-// to the start edge and a label on the last point to the end edge — the usual
-// convention for a time axis. A final labelled point that is not the last
-// point keeps a centred box only if that box fits; the rest of the row is an
-// empty filler.
+// either side of the point. The two end points cannot have symmetric boxes
+// without leaving the row, so the first label is aligned to the start edge and
+// a label on the last point to the end edge — the usual convention for a time
+// axis — and an end box extends inwards only.
 //
-//	points   0 . . 3 . . 6 . . 9 . 11          s = 3
-//	boxes   [0 ][  3  ][  6  ][  9  ][ ]       weights 1.5, 3, 3, 3, 0.5
-//	         ↑start     centred       filler
+// The boxes tile the row, and with labels every s points that is a budget
+// shared between neighbours. Splitting it at the midpoints (interior boxes s
+// wide, end boxes s/2) gave the end labels half the room of the rest, and an
+// end label is often a value axis's widest ("$1500" at the top). An interior
+// box of half-width r leaves its end neighbour s − r, and the two are equal at
+// r = s/3:
+//
+//	points   0 . . 3 . . 6 . . 9 . 11          s = 3, r = 1
+//	boxes   [0 ][ 3][ ][ 6][ ][ 9][ ]          every labelled box 2 wide
+//	         ↑start  ↑gap  centred    filler
+//
+// So every label gets two thirds of a stride, and the gaps between interior
+// boxes are empty fillers. For labels of similar width, which ticks and month
+// names are, nothing is cut that fits in 2s/3, where the midpoint split cut
+// an end label past s/2. Two end labels with nothing between them (a
+// two-label row) still meet at the midpoint.
+//
+// A final labelled point that is not the last point keeps a centred box only
+// if that box fits; the rest of the row is an empty filler.
 func pointLabels(t *core.Theme, labels []string, n int) core.View {
 	if len(labels) == 0 || n == 0 {
 		return nil
@@ -482,25 +499,48 @@ func pointLabels(t *core.Theme, labels []string, n int) core.View {
 	}
 
 	last := n - 1
-	s := (last + chartMaxXLabels - 2) / (chartMaxXLabels - 1) // ceil(last / (max−1))
-	s = max(s, 1)
-	half := float64(s) / 2
+	stride := (last + chartMaxXLabels - 2) / (chartMaxXLabels - 1) // ceil(last / (max−1))
+	stride = max(stride, 1)
+	s := float64(stride)
+	r := s / 3
 
-	items = append(items, weightedLabel(t, label(0), half, core.AlignStart))
-	used := half
-	for i := s; i <= last; i += s {
-		if i == last {
-			items = append(items, weightedLabel(t, label(i), half, core.AlignEnd))
-			used += half
+	// The labelled points: every stride from 0, including the last point when
+	// the stride lands on it, and a final interior point only if its centred
+	// box fits before the end.
+	var points []int
+	for i := 0; i <= last; i += stride {
+		if i != 0 && i != last && float64(i)+r > float64(last) {
 			break
 		}
-		if float64(i)+half > float64(last) {
-			break
-		}
-		items = append(items, weightedLabel(t, label(i), float64(s), core.AlignCenter))
-		used += float64(s)
+		points = append(points, i)
 	}
-	if rest := float64(last) - used; rest > 1e-9 {
+	endPair := len(points) == 2 && points[1] == last
+
+	// Each labelled point's box as [lo, hi] in point units, with an empty
+	// filler for any gap before it. Ends extend inwards by 2r, or to the
+	// midpoint when their only neighbour is the other end.
+	pos := 0.0
+	for _, p := range points {
+		lo, hi, align := float64(p)-r, float64(p)+r, core.AlignCenter
+		switch {
+		case p == 0:
+			lo, hi, align = 0, 2*r, core.AlignStart
+			if endPair {
+				hi = s / 2
+			}
+		case p == last:
+			lo, hi, align = float64(last)-2*r, float64(last), core.AlignEnd
+			if endPair {
+				lo = float64(last) - s/2
+			}
+		}
+		if gap := lo - pos; gap > 1e-9 {
+			items = append(items, weightedLabel(t, "", gap, core.AlignCenter))
+		}
+		items = append(items, weightedLabel(t, label(p), hi-lo, align))
+		pos = hi
+	}
+	if rest := float64(last) - pos; rest > 1e-9 {
 		items = append(items, weightedLabel(t, "", rest, core.AlignCenter))
 	}
 	return core.Row(items...)
@@ -565,15 +605,19 @@ func swatch(color string) core.View {
 // announcing label. xLabels may be nil.
 func cartesianFrame(ctx *core.Context, s valueScale, h float64, format func(float64) string,
 	canvas core.View, xLabels core.View, legendView core.View, label string, style []core.StyleProp) *core.Node {
-	return cartesianFrameWithTop(ctx, s, h, format, canvas, xLabels, legendView, label, style, nil)
+	return cartesianFrameWithValues(ctx, s, h, format, canvas, xLabels, legendView, label, style, nil, 0)
 }
 
-// cartesianFrameWithTop is cartesianFrame with an optional row over the plot,
-// one label line (chartLabelLine) tall — BarChart's values. The y axis gets a
-// spacer of the same height, so its labels stay level with the gridlines.
-func cartesianFrameWithTop(ctx *core.Context, s valueScale, h float64, format func(float64) string,
+// cartesianFrameWithValues is cartesianFrame with an optional layer laid over
+// the plot — BarChart's values (BarChart.valueLayer). The plot then gains a
+// label line (chartLabelLine) of headroom above it and bottomExtra px more
+// foot below it, and the canvas, its pads and the layer share a ZStack pinned
+// to their total height, so the layer's px arithmetic lands on the canvas.
+// The y axis gets a spacer as tall as the headroom, so its labels stay level
+// with the gridlines.
+func cartesianFrameWithValues(ctx *core.Context, s valueScale, h float64, format func(float64) string,
 	canvas core.View, xLabels core.View, legendView core.View, label string, style []core.StyleProp,
-	top core.View) *core.Node {
+	values core.View, bottomExtra float64) *core.Node {
 	t := ctx.Theme()
 
 	plot := []core.PropsAndChildren{
@@ -584,8 +628,18 @@ func cartesianFrameWithTop(ctx *core.Context, s valueScale, h float64, format fu
 		core.MinWidth("0px"),
 	}
 	axis := yAxis(t, s, h, format)
-	if top != nil {
-		plot = append(plot, top)
+	// Half a label line above and below, so the top and bottom gridlines
+	// meet the centres of the top and bottom labels.
+	pads := []core.View{
+		core.Box(core.Padding(0), core.Height(px(chartLabelLine/2))),
+		canvas,
+		core.Box(core.Padding(0), core.Height(px(chartLabelLine/2+bottomExtra))),
+	}
+	if values == nil {
+		for _, v := range pads {
+			plot = append(plot, v)
+		}
+	} else {
 		axis = core.Column(
 			core.Padding(0),
 			core.Gap(0),
@@ -593,14 +647,20 @@ func cartesianFrameWithTop(ctx *core.Context, s valueScale, h float64, format fu
 			core.Box(core.Padding(0), core.Height(px(chartLabelLine))),
 			axis,
 		)
+		under := []core.PropsAndChildren{
+			core.Padding(0), core.Gap(0), core.Width("100%"),
+			core.Box(core.Padding(0), core.Height(px(chartLabelLine))),
+		}
+		for _, v := range pads {
+			under = append(under, v)
+		}
+		total := chartLabelLine*2 + h + bottomExtra
+		plot = append(plot, core.ZStack(
+			core.Padding(0), core.Width("100%"), core.Height(px(total)),
+			core.Column(under...),
+			values,
+		))
 	}
-	plot = append(plot,
-		// Half a label line above and below, so the top and bottom gridlines
-		// meet the centres of the top and bottom labels.
-		core.Box(core.Padding(0), core.Height(px(chartLabelLine/2))),
-		canvas,
-		core.Box(core.Padding(0), core.Height(px(chartLabelLine/2))),
-	)
 	if xLabels != nil {
 		plot = append(plot, xLabels)
 	}

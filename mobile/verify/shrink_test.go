@@ -373,3 +373,25 @@ func TestEveryNativeReadNamesItsQuestion(t *testing.T) {
 		}
 	}
 }
+
+// core.FlexBasis("0") on iOS: the style decodes it, FlexChildren hands it to
+// the layout as the child's main-axis padding, and baseMains starts such a
+// child from that padding (raised to its automatic minimum) when the extent
+// is definite. Without it a weighted row sized each box by its content, and
+// a bar's value label sat off its bar's tip by its own text's width.
+func TestIOSFlexHonoursAZeroBasis(t *testing.T) {
+	style := valuesIn(t, nativeFile("ios", "GrMob", "Runtime", "GrMobStyle.swift"))
+	if !strings.Contains(style, `s.flexBasis = str("FlexBasis")`) {
+		t.Errorf("GrMobStyle.swift no longer decodes FlexBasis")
+	}
+	renderer := valuesIn(t, swiftRenderer)
+	for _, want := range []string{
+		".layoutValue(key: GrMobFlexZeroBasis.self, value: zeroBasisPadding(child.style))",
+		"if definite, padding >= 0, automatic.isFinite {",
+		"return max(padding, automatic, floors[i])",
+	} {
+		if !strings.Contains(renderer, want) {
+			t.Errorf("Renderer.swift: missing %q", want)
+		}
+	}
+}

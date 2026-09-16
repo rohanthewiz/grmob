@@ -3891,8 +3891,8 @@ comps.ScatterChart{Series: []comps.ScatterSeries{{Points: points}}}`),
 						ShowValues: true,
 						Labels:     []string{"Rent", "Groceries and household", "Transport", "Subscriptions and memberships"},
 						Series:     []comps.ChartSeries{{Name: "Spend", Values: rotated([]float64{1200, 450, 200, 85}, k)}},
-						// Compact, because the end ticks have half an interval
-						// each and a wider label is cut ("$15…").
+						// Compact, because each tick label has two thirds of
+						// an interval and a wider one is cut ("$15…").
 						Format: func(v float64) string {
 							if v >= 1000 {
 								return fmt.Sprintf("$%.1fk", v/1000)

@@ -152,6 +152,14 @@ object Permissions {
     )
 
     private var activity: ComponentActivity? = null
+
+    /**
+     * The application context, for the answers that are properties of the
+     * app rather than of an Activity (see [recheckExactAlarms]). Set by
+     * [attach] with the Activity, and never released: the application
+     * context lives as long as the process.
+     */
+    private var appContext: Context? = null
     private var launcher: ActivityResultLauncher<Array<String>>? = null
     private var report: ((String, String) -> Unit)? = null
 
@@ -185,6 +193,7 @@ object Permissions {
      */
     fun attach(host: ComponentActivity, report: (String, String) -> Unit) {
         activity = host
+        appContext = host.applicationContext
         this.report = report
         loadAsked(host)
         launcher = host.registerForActivityResult(
@@ -219,14 +228,20 @@ object Permissions {
 
     /**
      * Re-sends the exact-alarm status after the system broadcast that it was
-     * granted (Notifications.kt's NotificationBootReceiver). Nothing is sent
-     * without an attached Activity: the receiver may be running in a process
-     * the system started for it, where [status] could only say "unavailable",
-     * and the next launch checks afresh anyway.
+     * granted (Notifications.kt's NotificationBootReceiver).
+     *
+     * The answer is read from the application context, not the Activity:
+     * whether AlarmManager honours exact alarms is a fact about the app, and
+     * this used to return early without an Activity even though nothing in the
+     * answer needed one. What it does need is somewhere to send it, so the
+     * gate is the host-event channel [attach] wired. A process the system
+     * started only to deliver the broadcast has neither — no Go runs in it to
+     * hear an answer — and the next launch checks afresh.
      */
     fun recheckExactAlarms() {
-        if (activity == null) return
-        send("exact_alarms", status("exact_alarms"))
+        val context = appContext ?: return
+        if (report == null) return
+        send("exact_alarms", exactAlarmStatus(context))
     }
 
     private fun request(kind: String) {
@@ -290,16 +305,20 @@ object Permissions {
 
     /** The three-state reconstruction described in the class doc. */
     private fun status(kind: String): String {
-        val host = activity ?: return "unavailable"
         val wanted = PERMISSIONS.getValue(kind)
+        // The two answers that are app-wide settings rather than runtime
+        // permissions read the application context, so they do not hang on
+        // an Activity being attached (see [recheckExactAlarms]).
+        val app = appContext
         // Notifications below 13: no runtime permission exists, so the answer
         // is the app's notification switch in Settings. Never "prompt" —
         // there is no dialog that could change it — and never "unavailable",
         // since the user can turn it on.
-        if (wanted.isEmpty() && kind == "notifications") {
-            return if (NotificationManagerCompat.from(host).areNotificationsEnabled()) "granted" else "denied"
+        if (app != null && wanted.isEmpty() && kind == "notifications") {
+            return if (NotificationManagerCompat.from(app).areNotificationsEnabled()) "granted" else "denied"
         }
-        if (kind == "exact_alarms") return exactAlarmStatus(host)
+        if (app != null && kind == "exact_alarms") return exactAlarmStatus(app)
+        val host = activity ?: return "unavailable"
         if (wanted.isEmpty() || !declared(host, wanted)) return "unavailable"
 
         val allGranted = wanted.all {

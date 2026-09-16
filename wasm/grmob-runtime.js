@@ -3802,17 +3802,19 @@ const GrMob = (() => {
     // black. String(number) matches Go's shortest 'g' formatting for every
     // value core writes (coordinates are rounded to at most four places).
     //
-    // gradientId is the id this shape's paint server carries (see
-    // canvasGradientId); a well-formed gradient fills by reference to it.
-    function canvasShapeAttrs(props, gradientId) {
+    // fillId and strokeId are the ids this shape's paint servers carry (see
+    // canvasGradientId); a well-formed gradient paints by reference to one.
+    function canvasShapeAttrs(props, fillId, strokeId) {
         const out = [["d", canvasPathData(props.d)]];
         let fill = props.fill ? String(props.fill) : "";
-        if (canvasGradient(props, gradientId)) fill = `url(#${gradientId})`;
+        if (canvasGradient(props, fillId, "")) fill = `url(#${fillId})`;
         out.push(["fill", fill || "none"]);
         // core.FillEvenOdd, only with a fill, in htmlout's position.
         if (fill && props.fillRule === "evenodd") out.push(["fill-rule", "evenodd"]);
-        if (!props.stroke) return out;
-        out.push(["stroke", String(props.stroke)]);
+        let stroke = props.stroke ? String(props.stroke) : "";
+        if (canvasGradient(props, strokeId, "stroke")) stroke = `url(#${strokeId})`;
+        if (!stroke) return out;
+        out.push(["stroke", stroke]);
         out.push(["stroke-width", String(props.strokeWidth)]);
         out.push(["vector-effect", "non-scaling-stroke"]);
         if (props.cap) out.push(["stroke-linecap", String(props.cap)]);
@@ -3851,24 +3853,36 @@ const GrMob = (() => {
     // painted.
     const SHAPE_PROPS = "__grmobShapeProps";
 
-    // htmlout's CanvasGradientID: the canvas's tab-style scope plus -fill-i.
-    function canvasGradientId(canvasPath, i) {
-        return "grmob-" + String(canvasPath || "").replace(/\//g, "-") + "-fill-" + i;
+    // htmlout's CanvasGradientID (kind "fill", the default) and
+    // CanvasStrokeGradientID (kind "stroke"): the canvas's tab-style scope
+    // plus -fill-i or -stroke-i.
+    function canvasGradientId(canvasPath, i, kind = "fill") {
+        return "grmob-" + String(canvasPath || "").replace(/\//g, "-") + "-" + kind + "-" + i;
     }
 
-    // htmlout's CanvasGradient: the paint server for a shape's gradient keys,
-    // as { tag, attrs: [[name, value]], stops: [[[name, value], ...]] }, or
-    // null when there is none or the keys are malformed.
-    function canvasGradient(props, id) {
-        const at = props.gradientAt, offsets = props.gradientStops, colors = props.gradientColors;
+    // core.GradientKey: a gradient key under a paint prefix, so "gradientAt"
+    // is "strokeGradientAt" for a stroke.
+    function canvasGradientKey(prefix, name) {
+        return prefix ? prefix + name[0].toUpperCase() + name.slice(1) : name;
+    }
+
+    // htmlout's CanvasGradient (prefix "") and CanvasStrokeGradient (prefix
+    // "stroke"): the paint server for a shape's gradient keys, as
+    // { tag, attrs: [[name, value]], stops: [[[name, value], ...]] }, or null
+    // when there is none or the keys are malformed.
+    function canvasGradient(props, id, prefix = "") {
+        const kind = props[canvasGradientKey(prefix, "gradient")];
+        const at = props[canvasGradientKey(prefix, "gradientAt")];
+        const offsets = props[canvasGradientKey(prefix, "gradientStops")];
+        const colors = props[canvasGradientKey(prefix, "gradientColors")];
         if (!Array.isArray(at) || !Array.isArray(offsets) || !Array.isArray(colors)) return null;
         if (offsets.length === 0 || offsets.length !== colors.length) return null;
         let tag, attrs;
-        if (props.gradient === "linear" && at.length === 4) {
+        if (kind === "linear" && at.length === 4) {
             tag = "linearGradient";
             attrs = [["id", id], ["gradientUnits", "userSpaceOnUse"],
                 ["x1", String(at[0])], ["y1", String(at[1])], ["x2", String(at[2])], ["y2", String(at[3])]];
-        } else if (props.gradient === "radial" && at.length === 3) {
+        } else if (kind === "radial" && at.length === 3) {
             tag = "radialGradient";
             attrs = [["id", id], ["gradientUnits", "userSpaceOnUse"],
                 ["cx", String(at[0])], ["cy", String(at[1])], ["r", String(at[2])]];
@@ -3879,8 +3893,9 @@ const GrMob = (() => {
         return { tag, attrs, stops };
     }
 
-    // Re-derives a canvas's <defs> and its gradient shapes' fills from the
-    // shapes as they stand now; see "Rebuilt whole" above.
+    // Re-derives a canvas's <defs> and its gradient shapes' paints from the
+    // shapes as they stand now; see "Rebuilt whole" above. Servers are in
+    // htmlout's order: shape by shape, a shape's fill before its stroke.
     function syncCanvasGradients(svg) {
         if (!svg || svg.dataset.nodeType !== "Canvas") return;
         const canvasPath = svg.getAttribute("data-node-path");
@@ -3895,14 +3910,17 @@ const GrMob = (() => {
         for (const child of svg.children) {
             if (child.getAttribute("data-node-path") === null) continue;
             const props = child[SHAPE_PROPS];
-            const id = canvasGradientId(canvasPath, i++);
+            const fillId = canvasGradientId(canvasPath, i, "fill");
+            const strokeId = canvasGradientId(canvasPath, i++, "stroke");
             if (!props) continue;
-            const g = canvasGradient(props, id);
-            if (!g) continue;
-            servers.push(g);
-            // The fill (and the rule that rides with it) is written again
-            // because the id it points at is a function of this slot.
-            applyCanvasShapeAttrs(child, props, id);
+            const fill = canvasGradient(props, fillId, "");
+            const stroke = canvasGradient(props, strokeId, "stroke");
+            if (!fill && !stroke) continue;
+            if (fill) servers.push(fill);
+            if (stroke) servers.push(stroke);
+            // The paints are written again because the ids they point at are
+            // a function of this slot.
+            applyCanvasShapeAttrs(child, props, fillId, strokeId);
         }
         if (servers.length === 0) {
             if (defs) svg.removeChild(defs);
@@ -3943,8 +3961,8 @@ const GrMob = (() => {
 
     // Writes a shape's attribute set, removing the managed ones it no longer
     // carries (an update-props carries the whole new map).
-    function applyCanvasShapeAttrs(el, props, gradientId) {
-        const attrs = canvasShapeAttrs(props, gradientId);
+    function applyCanvasShapeAttrs(el, props, fillId, strokeId) {
+        const attrs = canvasShapeAttrs(props, fillId, strokeId);
         const written = new Set(attrs.map(([name]) => name));
         for (const name of CANVAS_SHAPE_ATTRS) {
             if (!written.has(name)) el.removeAttribute(name);
@@ -3971,7 +3989,10 @@ const GrMob = (() => {
         // once the canvas's children exist.
         const path = el.getAttribute("data-node-path") || "";
         const slash = path.lastIndexOf("/");
-        applyCanvasShapeAttrs(el, props, slash < 0 ? "" : canvasGradientId(path.slice(0, slash), path.slice(slash + 1)));
+        const canvasPath = path.slice(0, slash), slot = path.slice(slash + 1);
+        applyCanvasShapeAttrs(el, props,
+            slash < 0 ? "" : canvasGradientId(canvasPath, slot, "fill"),
+            slash < 0 ? "" : canvasGradientId(canvasPath, slot, "stroke"));
     }
 
     // A MapView's region and a Marker's position, as dataset entries.
@@ -8651,8 +8672,9 @@ const GrMob = (() => {
     // longer wait sleeps in capped steps.
     //
     // A sweep (core.SweepNotifications: {"command": "sweep", "prefix",
-    // "request"}) closes and stops everything under the prefix and answers
-    // "notification_swept" with the ids whose scheduled time had come. The
+    // "request"}) stops every timer under the prefix, leaves the banners
+    // already shown open, and answers "notification_swept" with the ids whose
+    // scheduled time had come. The
     // natives answer from a record that outlives the process; a page's record
     // is `fired` below and dies with the tab, which is also when its timers
     // die, so a fresh page correctly has nothing to cancel or report.
@@ -8688,12 +8710,6 @@ const GrMob = (() => {
             }
             for (const id of [...timers.keys()]) {
                 if (id.startsWith(prefix)) clearTimer(id);
-            }
-            for (const [id, n] of [...open]) {
-                if (id.startsWith(prefix)) {
-                    n.close();
-                    open.delete(id);
-                }
             }
             for (const id of ids) fired.delete(id);
             ids.sort();

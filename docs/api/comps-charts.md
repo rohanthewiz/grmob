@@ -90,8 +90,8 @@ type BarChart struct {
 	// 0 means 96. Unused by vertical bars.
 	LabelWidth float64
 
-	// ShowValues writes each bar's value (a stack's total) along the plot's
-	// edge. See "Values" above.
+	// ShowValues writes each bar's value (a stack's total) at the bar's tip.
+	// See "Values" above.
 	ShowValues bool
 
 	// Format writes a tick label, a shown value and a spoken value.
@@ -135,21 +135,33 @@ Stacked puts a category's series in one bar, end to end, instead of side by side
 
 Horizontal lays the categories top to bottom and the bars along the value axis, which is the arrangement for category names too long to sit under a bar:
 
-	┌──────────┬──────────────────────────┬─────┐
-	│  Rent    │██████████████████████    │ 1200│  one band per category,
-	│  Food    │█████████                 │  450│  Height/n px each
-	│ Transpo… │████                      │  200│
-	└──────────┼──────────────────────────┼─────┘
+	┌──────────┬────────────────────────────────┐
+	│  Rent    │██████████████████ 1200         │  one band per category,
+	│  Food    │█████████ 450                   │  Height/n px each
+	│ Transpo… │████ 200                        │
+	└──────────┼────────────────────────────────┘
 	           0      500     1000   1500         ticks on a point axis
 	 names: MaxLines(1), at most LabelWidth wide; values: ShowValues
 
-The name column is sized by its widest name, up to LabelWidth, and a longer name is cut with an ellipsis (core.MaxLines). So is a tick label wider than its box, and the end ticks' boxes are half an interval wide (they cannot extend past the plot's edges), so a Format that writes "$1500" where "$1.5k" would do is the likeliest thing to be cut. The bands are fixed px boxes rather than flex weights, since Go knows the plot's height exactly; the tick labels use LineChart's point arithmetic, because ticks, like points, run edge to edge.
+The name column is sized by its widest name, up to LabelWidth, and a longer name is cut with an ellipsis (core.MaxLines). So is a tick label wider than its box. Every tick's box is two thirds of an interval wide (see pointLabels; the end ones cannot extend past the plot's edges), so a Format that writes "$1500" where "$1.5k" would do can still be cut on a narrow plot. The bands are fixed px boxes rather than flex weights, since Go knows the plot's height exactly; the tick labels use LineChart's point arithmetic, because ticks, like points, run edge to edge.
 
 #### Values
 
-ShowValues writes each bar's value beside its end of the plot: in a row along the top edge, above its bar, for vertical bars, and in a column along the right edge, level with its bar, for horizontal ones. Text cannot be placed inside core.Canvas, and a label that followed each bar's tip would need the drawn size of the plot, which no target reports to Go; a row and a column placed by the same flex arithmetic as the axes stay exact. A stacked chart shows each category's total, and a grouped one a value per bar.
+ShowValues writes each bar's value at its tip: just above a vertical bar (below one that hangs negative), just past a horizontal one's end. A stacked chart shows each category's total at the end of its stack, and a grouped one a value per bar.
 
-<small>[comps/bar_chart.go:78](https://github.com/rohanthewiz/grmob/blob/master/comps/bar_chart.go#L78)</small>
+Text cannot be placed inside core.Canvas, so the values are a layer of ordinary Text over it (core.ZStack), and each is placed by arithmetic Go can do without knowing the drawn size of the plot:
+
+	vertical     across: the bar's share of the width, as flex weights —
+	             the cells barValueCells centres on the bars
+	             along:  px, because the plot is Height px tall and a
+	             stretched viewBox maps y linearly onto it
+	horizontal   along:  flex weights again, a spacer as long as the bar's
+	             share of the width before the label
+	             across: px bands, as the names column has
+
+A vertical chart keeps a label line of headroom above the plot (and one below, when a value is negative), so a bar reaching the end of the axis still has room for its label. A horizontal one cannot reserve room it cannot measure, so a bar leaving less than a quarter of the plot past its tip (barValueRoom) carries its value inside, against its end, in whichever of the theme's inks contrasts with the bar.
+
+<small>[comps/bar_chart.go:94](https://github.com/rohanthewiz/grmob/blob/master/comps/bar_chart.go#L94)</small>
 
 #### func (BarChart) Render
 
@@ -157,7 +169,7 @@ ShowValues writes each bar's value beside its end of the plot: in a row along th
 func (c BarChart) Render(ctx *core.Context) *core.Node
 ```
 
-<small>[comps/bar_chart.go:132](https://github.com/rohanthewiz/grmob/blob/master/comps/bar_chart.go#L132)</small>
+<small>[comps/bar_chart.go:148](https://github.com/rohanthewiz/grmob/blob/master/comps/bar_chart.go#L148)</small>
 
 ### type ChartPoint
 

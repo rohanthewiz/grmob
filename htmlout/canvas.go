@@ -1,6 +1,7 @@
 package htmlout
 
 import (
+	"html"
 	"strconv"
 	"strings"
 
@@ -77,6 +78,10 @@ func preserveAspectRatio(scale string) string {
 // It is marked data-grmob-chrome like a TabView's bar, which is how the live
 // runtime's add-child patches skip it (chromeOffset), and it is written only
 // when some shape has a gradient, so a flat canvas exports as it always did.
+//
+// Servers are written shape by shape, each shape's fill gradient before its
+// stroke gradient — the order the runtime's syncCanvasGradients rebuilds them
+// in, which is what lets wasm/verify compare the two <defs> child by child.
 func renderCanvas(b *element.Builder, node *core.Node, attrs []string, path string) {
 	lead := []string{
 		"viewBox", "0 0 " + formatNumber(node.Props["vw"]) + " " + formatNumber(node.Props["vh"]),
@@ -85,19 +90,29 @@ func renderCanvas(b *element.Builder, node *core.Node, attrs []string, path stri
 	e := b.Ele("svg", withLead(attrs, lead...)...)
 	var defs element.Element
 	open := false
-	for i, c := range node.Children {
-		tag, gattrs, stops := CanvasGradient(c.Props, CanvasGradientID(path, i))
+	server := func(tag string, gattrs []string, stops [][]string) {
 		if tag == "" {
-			continue
+			return
 		}
 		if !open {
 			defs, open = b.Ele("defs", "data-grmob-chrome", "gradients"), true
 		}
-		g := b.Ele(tag, gattrs...)
+		// The server's own tags are written by hand, because the element
+		// builder lowercases every tag name and SVG's are camelCase. An HTML
+		// parser restores "linearGradient" in foreign content, so a browser
+		// never noticed, but an XML reader of the export (XHTML, an SVG
+		// extracted from it, an image pipeline) matches names exactly and
+		// would find no gradient. <stop> is lowercase already and goes
+		// through the builder.
+		writeSVGOpen(b, tag, gattrs)
 		for _, st := range stops {
 			b.Ele("stop", st...).R()
 		}
-		g.R()
+		_ = b.WriteString("</" + tag + ">")
+	}
+	for i, c := range node.Children {
+		server(CanvasGradient(c.Props, CanvasGradientID(path, i)))
+		server(CanvasStrokeGradient(c.Props, CanvasStrokeGradientID(path, i)))
 	}
 	if open {
 		defs.R()
@@ -106,6 +121,20 @@ func renderCanvas(b *element.Builder, node *core.Node, attrs []string, path stri
 		renderNode(b, c, imposed{}, childPath(path, i))
 	}
 	e.R()
+}
+
+// writeSVGOpen writes an opening tag whose name keeps its case. Attribute
+// values are escaped with html.EscapeString, a superset of what the builder
+// escapes (it quotes only '"'), so nothing written here is less safe than a
+// b.Ele call.
+func writeSVGOpen(b *element.Builder, tag string, attrs []string) {
+	var sb strings.Builder
+	sb.WriteString("<" + tag)
+	for i := 0; i+1 < len(attrs); i += 2 {
+		sb.WriteString(" " + attrs[i] + `="` + html.EscapeString(attrs[i+1]) + `"`)
+	}
+	sb.WriteString(">")
+	_ = b.WriteString(sb.String())
 }
 
 // renderCanvasShape writes one <path>. The attribute set is CanvasShapeAttrs,
@@ -118,7 +147,8 @@ func renderCanvasShape(b *element.Builder, node *core.Node, attrs []string, path
 		canvas = path[:slash]
 		i, _ = strconv.Atoi(path[slash+1:])
 	}
-	b.Ele("path", withLead(attrs, CanvasShapeAttrs(node.Props, CanvasGradientID(canvas, i))...)...).R()
+	b.Ele("path", withLead(attrs, CanvasShapeAttrs(node.Props,
+		CanvasGradientID(canvas, i), CanvasStrokeGradientID(canvas, i))...)...).R()
 }
 
 // CanvasGradientID is the document id of the gradient shape i of the canvas
@@ -131,6 +161,13 @@ func CanvasGradientID(canvasPath string, i int) string {
 	return tabScope(canvasPath) + "-fill-" + strconv.Itoa(i)
 }
 
+// CanvasStrokeGradientID is CanvasGradientID's twin for the shape's stroke
+// gradient: "-stroke-i" in place of "-fill-i", so one shape can carry both.
+// The runtime restates it as canvasGradientId with the "stroke" kind.
+func CanvasStrokeGradientID(canvasPath string, i int) string {
+	return tabScope(canvasPath) + "-stroke-" + strconv.Itoa(i)
+}
+
 // CanvasGradient is the paint-server element for a shape's gradient props
 // (see core.Gradient's wire keys): the tag, its attributes, and one attribute
 // list per <stop>. tag is "" when the shape has no gradient, or when the keys
@@ -141,10 +178,28 @@ func CanvasGradientID(canvasPath string, i int) string {
 // the contract core.Gradient states; SVG's default, objectBoundingBox, would
 // read (0, 0)–(1, 1) as the shape's own bounds.
 func CanvasGradient(props map[string]any, id string) (tag string, attrs []string, stops [][]string) {
-	kind := getStr(props["gradient"])
-	at := floats(props["gradientAt"])
-	offsets := floats(props["gradientStops"])
-	colors := strs(props["gradientColors"])
+	return canvasPaintServer(props, "", id)
+}
+
+// CanvasStrokeGradient is CanvasGradient for the shape's stroke gradient keys
+// (strokeGradient, strokeGradientAt, ...), with the same malformed-keys rule:
+// no element, and the stroke falls to none.
+//
+// userSpaceOnUse holds for a stroke under vector-effect="non-scaling-stroke"
+// too: Chrome maps the gradient in the viewBox's space while keeping the
+// stroke's width unscaled (checked headless, including a radial under
+// preserveAspectRatio="none"), which is the split core.Shape documents.
+func CanvasStrokeGradient(props map[string]any, id string) (tag string, attrs []string, stops [][]string) {
+	return canvasPaintServer(props, "stroke", id)
+}
+
+// canvasPaintServer reads the gradient keys under a paint prefix; see
+// core.GradientKey.
+func canvasPaintServer(props map[string]any, prefix, id string) (tag string, attrs []string, stops [][]string) {
+	kind := getStr(props[core.GradientKey(prefix, "gradient")])
+	at := floats(props[core.GradientKey(prefix, "gradientAt")])
+	offsets := floats(props[core.GradientKey(prefix, "gradientStops")])
+	colors := strs(props[core.GradientKey(prefix, "gradientColors")])
 	if len(offsets) == 0 || len(offsets) != len(colors) {
 		return "", nil, nil
 	}
@@ -193,16 +248,17 @@ func strs(v any) []string {
 // fill="none" is written for a shape with no fill because SVG's default fill
 // is black — the one place the two vocabularies disagree about "unset".
 //
-// gradientID is the id CanvasGradient's element carries for this shape (see
-// CanvasGradientID); a shape with a well-formed gradient fills with a
-// reference to it. A malformed one falls to fill="none", as CanvasGradient
-// writes no element for it and a reference to nothing would paint black in
+// fillID and strokeID are the ids CanvasGradient's and CanvasStrokeGradient's
+// elements carry for this shape (see CanvasGradientID and
+// CanvasStrokeGradientID); a shape with a well-formed gradient paints with a
+// reference to it. A malformed one falls to fill="none" (or no stroke), as no
+// element is written for it and a reference to nothing would paint black in
 // some engines rather than nothing.
-func CanvasShapeAttrs(props map[string]any, gradientID string) []string {
+func CanvasShapeAttrs(props map[string]any, fillID, strokeID string) []string {
 	out := []string{"d", PathData(floats(props["d"]))}
 	fill := getStr(props["fill"])
-	if tag, _, _ := CanvasGradient(props, gradientID); tag != "" {
-		fill = "url(#" + gradientID + ")"
+	if tag, _, _ := CanvasGradient(props, fillID); tag != "" {
+		fill = "url(#" + fillID + ")"
 	}
 	if fill != "" {
 		out = append(out, "fill", fill)
@@ -213,6 +269,9 @@ func CanvasShapeAttrs(props map[string]any, gradientID string) []string {
 		out = append(out, "fill", "none")
 	}
 	stroke := getStr(props["stroke"])
+	if tag, _, _ := CanvasStrokeGradient(props, strokeID); tag != "" {
+		stroke = "url(#" + strokeID + ")"
+	}
 	if stroke == "" {
 		return out
 	}

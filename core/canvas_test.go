@@ -256,3 +256,58 @@ func TestGradientWire(t *testing.T) {
 		}
 	}
 }
+
+// A stroke gradient writes the same four keys under the "stroke" prefix, in
+// place of "stroke", and brings the stroke's width and style with it; a
+// degenerate one is the flat stroke it reduces to; one that paints nothing
+// leaves the flat Stroke standing; and a fill and a stroke gradient on one
+// shape do not share keys.
+func TestStrokeGradientWire(t *testing.T) {
+	box := Rect(0, 0, 100, 50)
+	n := renderCanvas(Canvas(100, 50, []Shape{
+		// 0: both gradients, and a cap.
+		{Path: box,
+			FillGradient:   LinearGradientFill(0, 0, 0, 50, Stop(0, "#000000"), Stop(1, "#ffffff")),
+			StrokeGradient: RadialGradientFill(50, 25, 30, Stop(0, "#2a78d6"), Stop(1, "#eb6834")),
+			Stroke:         "#ff0000", StrokeWidth: 3, Cap: CapRound},
+		// 1: a zero-length line is a flat stroke in the last colour, with the
+		// default width.
+		{Path: box, StrokeGradient: LinearGradientFill(5, 5, 5, 5, Stop(0, "#000000"), Stop(1, "#123456"))},
+		// 2: no stops, so the flat Stroke stands.
+		{Path: box, Stroke: "#00ff00", StrokeGradient: LinearGradientFill(0, 0, 1, 1)},
+		// 3: no stops and no Stroke is no stroke at all.
+		{Path: box, StrokeWidth: 4, StrokeGradient: LinearGradientFill(0, 0, 1, 1)},
+	}))
+	p := n.Children[0].Props
+	if _, ok := p["stroke"]; ok {
+		t.Errorf("a painting stroke gradient also wrote stroke %v", p["stroke"])
+	}
+	if p["gradient"] != "linear" || !reflect.DeepEqual(p["gradientAt"], []float64{0, 0, 0, 50}) {
+		t.Errorf("the fill gradient's keys moved: %v %v", p["gradient"], p["gradientAt"])
+	}
+	if p["strokeGradient"] != "radial" || !reflect.DeepEqual(p["strokeGradientAt"], []float64{50, 25, 30}) {
+		t.Errorf("stroke gradient: %v %v", p["strokeGradient"], p["strokeGradientAt"])
+	}
+	if !reflect.DeepEqual(p["strokeGradientStops"], []float64{0, 1}) ||
+		!reflect.DeepEqual(p["strokeGradientColors"], []string{"#2a78d6", "#eb6834"}) {
+		t.Errorf("stroke stops %v colours %v", p["strokeGradientStops"], p["strokeGradientColors"])
+	}
+	if p["strokeWidth"] != 3.0 || p["cap"] != "round" {
+		t.Errorf("a gradient stroke lost its style: width %v cap %v", p["strokeWidth"], p["cap"])
+	}
+	for i, want := range map[int]string{1: "#123456", 2: "#00ff00"} {
+		c := n.Children[i].Props
+		if c["stroke"] != want || c["strokeWidth"] != 1.0 {
+			t.Errorf("shape %d: stroke %v width %v, want %s at 1", i, c["stroke"], c["strokeWidth"], want)
+		}
+		if _, ok := c["strokeGradient"]; ok {
+			t.Errorf("shape %d: a degenerate stroke gradient reached the wire", i)
+		}
+	}
+	if c := n.Children[3].Props; len(c) != 1 {
+		t.Errorf("shape 3 paints nothing, so only d belongs on the wire: %v", c)
+	}
+	if got := GradientKey("stroke", "gradientColors"); got != "strokeGradientColors" {
+		t.Errorf("GradientKey = %q", got)
+	}
+}

@@ -676,11 +676,11 @@ StopLocation releases one Start. The sensor is turned off when the last holder l
 func SweepNotifications(prefix string, fn func(fired []string))
 ```
 
-SweepNotifications cancels every notification posted or scheduled under an ID beginning with prefix, and calls fn once with the IDs among the scheduled ones whose time had arrived (see "Sweeping by prefix"). fn may be nil.
+SweepNotifications cancels every notification still scheduled under an ID beginning with prefix, and calls fn once with the IDs among the scheduled ones whose time had arrived (see "Sweeping by prefix"). Banners already shown stay. fn may be nil.
 
 An empty prefix is refused (fn runs with no ids and nothing is sent): sweeping everything would take down notifications this caller never posted. With no host registered fn runs at once on the caller's goroutine, as ReadClipboard's does; otherwise on the goroutine that delivers the reply.
 
-<small>[core/notifications.go:239](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L239)</small>
+<small>[core/notifications.go:246](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L246)</small>
 
 ### func WrapLongitude
 

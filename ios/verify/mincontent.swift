@@ -156,6 +156,24 @@ func checkMinContent() -> [String] {
         problems.append("a 110px Box should still floor at 0")
     }
 
+    // An Image with a src is an <img>, also replaced, and floors at its
+    // declared px width (Chrome's answer while it loads, and for any image at
+    // least as wide in proportion as its box). Without a src htmlout writes a
+    // <div>, and a MapView is always one: both stay at 0.
+    let photo = node("Image", style: fixed110, props: ["src": "https://example.com/a.png"])
+    if GrMobMinContent.width(of: photo) != 110 {
+        problems.append("a 110px Image with a src should floor at 110, got \(GrMobMinContent.width(of: photo))")
+    }
+    if GrMobMinContent.width(of: node("Image", style: fixed110)) != 0 {
+        problems.append("a 110px Image with no src should floor at 0")
+    }
+    if GrMobMinContent.width(of: node("Image", style: percent, props: ["src": "a.png"])) != 0 {
+        problems.append("a percentage-width Image should floor at 0")
+    }
+    if GrMobMinContent.width(of: node("MapView", style: fixed110)) != 0 {
+        problems.append("a 110px MapView should floor at 0, as its <div> does")
+    }
+
     let column = node("Column", children: [a, b])
     if abs(GrMobMinContent.width(of: column) - max(wA, wB)) > 0.01 {
         problems.append("a column's minimum should be its widest child")

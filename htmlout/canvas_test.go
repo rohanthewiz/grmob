@@ -1,6 +1,8 @@
 package htmlout
 
 import (
+	"encoding/xml"
+	"io"
 	"regexp"
 	"strings"
 	"testing"
@@ -24,8 +26,8 @@ func TestPathDataSpellsEachOpcode(t *testing.T) {
 
 // The JSON-decoded form of the props ([]any, not []float64) draws the same.
 func TestCanvasShapeAttrsAcceptDecodedProps(t *testing.T) {
-	typed := CanvasShapeAttrs(map[string]any{"d": []float64{0, 1, 2}, "stroke": "#000", "strokeWidth": 2.0, "dash": []float64{4, 2}}, "g")
-	decoded := CanvasShapeAttrs(map[string]any{"d": []any{0.0, 1.0, 2.0}, "stroke": "#000", "strokeWidth": 2.0, "dash": []any{4.0, 2.0}}, "g")
+	typed := CanvasShapeAttrs(map[string]any{"d": []float64{0, 1, 2}, "stroke": "#000", "strokeWidth": 2.0, "dash": []float64{4, 2}}, "g", "s")
+	decoded := CanvasShapeAttrs(map[string]any{"d": []any{0.0, 1.0, 2.0}, "stroke": "#000", "strokeWidth": 2.0, "dash": []any{4.0, 2.0}}, "g", "s")
 	if strings.Join(typed, "|") != strings.Join(decoded, "|") {
 		t.Errorf("typed %v != decoded %v", typed, decoded)
 	}
@@ -77,17 +79,19 @@ func TestCanvasGradientExport(t *testing.T) {
 		{Path: core.Circle(50, 25, 20), FillRule: core.FillEvenOdd, FillGradient: core.RadialGradientFill(50, 25, 20, core.Stop(0, "#ffffff"), core.Stop(1, "#000000"))},
 	}).Render(ctx)
 
-	// Compared with the pretty-printer's whitespace between tags removed and
-	// case folded: the element builder lowercases tag names, and an HTML
-	// parser restores SVG's camel case (linearGradient) in foreign content.
-	html := strings.ToLower(regexp.MustCompile(`>\s+<`).ReplaceAllString(ExportHTML(node), "><"))
+	// Compared with the pretty-printer's whitespace between tags removed, and
+	// case-sensitively: SVG's camelCase tag names must survive the export for
+	// an XML reader, which matches them exactly.
+	html := regexp.MustCompile(`>\s+<`).ReplaceAllString(ExportHTML(node), "><")
 	for _, want := range []string{
 		`<defs data-grmob-chrome="gradients"><linearGradient id="grmob-root-fill-1" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="50"><stop offset="0" stop-color="#2A78D666"></stop><stop offset="1" stop-color="#2A78D600"></stop></linearGradient><radialGradient id="grmob-root-fill-2" gradientUnits="userSpaceOnUse" cx="50" cy="25" r="20">`,
 		`fill="#eee"`,
 		`fill="url(#grmob-root-fill-1)"`,
 		`fill="url(#grmob-root-fill-2)" fill-rule="evenodd"`,
+		`</linearGradient>`,
+		`</radialGradient>`,
 	} {
-		if !strings.Contains(html, strings.ToLower(want)) {
+		if !strings.Contains(html, want) {
 			t.Errorf("export missing %s\n%s", want, html)
 		}
 	}
@@ -110,5 +114,78 @@ func TestCanvasGradientExport(t *testing.T) {
 	flat := ExportHTML(core.Canvas(10, 10, []core.Shape{{Path: core.Rect(0, 0, 10, 10), Fill: "#000"}}).Render(ctx))
 	if strings.Contains(flat, "<defs") {
 		t.Errorf("a canvas with no gradient wrote a <defs>: %s", flat)
+	}
+}
+
+// A stroke gradient gets its own server, after the same shape's fill one and
+// under a "-stroke-i" id, and the <path> strokes by reference with its width
+// and non-scaling rule intact. A degenerate stroke gradient is the flat stroke
+// Go reduced it to.
+func TestCanvasStrokeGradientExport(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+	node := core.Canvas(100, 50, []core.Shape{
+		{Path: core.Rect(0, 0, 100, 50),
+			FillGradient:   core.LinearGradientFill(0, 0, 0, 50, core.Stop(0, "#ffffff"), core.Stop(1, "#000000")),
+			StrokeGradient: core.LinearGradientFill(0, 0, 100, 0, core.Stop(0, "#2A78D6"), core.Stop(1, "#EB6834")),
+			StrokeWidth:    3, Cap: core.CapRound},
+		{Path: core.Line(0, 0, 10, 10), StrokeGradient: core.RadialGradientFill(5, 5, 0, core.Stop(0, "#000000"), core.Stop(1, "#123456"))},
+	}).Render(ctx)
+
+	html := regexp.MustCompile(`>\s+<`).ReplaceAllString(ExportHTML(node), "><")
+	for _, want := range []string{
+		`<linearGradient id="grmob-root-fill-0"`,
+		`</linearGradient><linearGradient id="grmob-root-stroke-0" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="100" y2="0">`,
+		`fill="url(#grmob-root-fill-0)" stroke="url(#grmob-root-stroke-0)" stroke-width="3" vector-effect="non-scaling-stroke" stroke-linecap="round"`,
+		`fill="none" stroke="#123456" stroke-width="1"`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Errorf("export missing %s\n%s", want, html)
+		}
+	}
+	if strings.Contains(html, "grmob-root-stroke-1") {
+		t.Error("a degenerate stroke gradient wrote a server")
+	}
+
+	// Malformed stroke keys draw no stroke, not a reference to nothing.
+	bad := CanvasShapeAttrs(map[string]any{"d": []float64{0, 0, 0}, "strokeGradient": "linear",
+		"strokeGradientAt": []float64{0, 0, 1}, "strokeGradientStops": []float64{0, 1},
+		"strokeGradientColors": []string{"#000", "#fff"}, "strokeWidth": 1.0}, "g", "s")
+	if strings.Contains(strings.Join(bad, " "), "stroke") {
+		t.Errorf("malformed stroke gradient still stroked: %v", bad)
+	}
+}
+
+// The <svg> of an export parses as XML with its gradient servers under their
+// exact SVG names, which is what a non-HTML consumer of the export sees.
+func TestCanvasGradientExportIsXMLCased(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+	out := ExportHTML(core.Canvas(10, 10, []core.Shape{
+		{Path: core.Rect(0, 0, 10, 10), FillGradient: core.LinearGradientFill(0, 0, 10, 0, core.Stop(0, "#000000"), core.Stop(1, "#ffffff"))},
+		{Path: core.Circle(5, 5, 4), StrokeGradient: core.RadialGradientFill(5, 5, 4, core.Stop(0, "#000000"), core.Stop(1, "#ffffff"))},
+	}).Render(ctx))
+	start, end := strings.Index(out, "<svg"), strings.LastIndex(out, "</svg>")
+	if start < 0 || end < 0 {
+		t.Fatalf("no <svg> in export:\n%s", out)
+	}
+	dec := xml.NewDecoder(strings.NewReader(out[start : end+len("</svg>")]))
+	seen := map[string]bool{}
+	for {
+		tok, err := dec.Token()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatalf("the exported <svg> is not well-formed XML: %v", err)
+		}
+		if se, ok := tok.(xml.StartElement); ok {
+			seen[se.Name.Local] = true
+		}
+	}
+	for _, name := range []string{"linearGradient", "radialGradient", "stop", "path"} {
+		if !seen[name] {
+			t.Errorf("an XML reader found no <%s>; saw %v", name, seen)
+		}
 	}
 }

@@ -100,7 +100,7 @@ import org.json.JSONObject
  *                                      └─ not fired ─────▶ mark fired, post
  *
  *   sweep(prefix) ──▶ [lock] for each entry under prefix:
- *                       cancel alarm + banner; at ≤ now ─▶ reported as fired; remove
+ *                       cancel alarm; at ≤ now ─▶ reported as fired; remove
  * ```
  *
  * - The sweep (core.SweepNotifications) reports what fired while the app was
@@ -243,12 +243,15 @@ object Notifications {
     }
 
     /**
-     * Cancels everything under [prefix] — pending alarms, stored entries and
-     * banners on screen — and reports the stored ones whose time had come.
-     * See core.SweepNotifications.
+     * Cancels what is still to come under [prefix] — pending alarms and
+     * stored entries — and reports the stored ones whose time had come. See
+     * core.SweepNotifications.
      *
-     * Banners are found through getActiveNotifications as well as the store,
-     * because an immediate post under the prefix never entered the store.
+     * Banners already on screen stay. The sweep runs when an app mounts, and
+     * after a force stop [attach] has just posted the missed ones late (see
+     * "What outlives a reboot or a force stop"): taking them down here
+     * removed a missed-alarm notice moments after it appeared, sound and all.
+     * A banner the OS drew is the user's to dismiss.
      */
     private fun sweep(context: Context, prefix: String, request: String) {
         val now = System.currentTimeMillis()
@@ -270,17 +273,8 @@ object Notifications {
             editor.apply()
         }
         val alarms = alarmManager(context)
-        val manager = NotificationManagerCompat.from(context)
         for (id in ids) {
             alarms?.cancel(alarmIntent(context, id, "", ""))
-            manager.cancel(id, NOTIFY_ID)
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            val shown = context.getSystemService(NotificationManager::class.java)?.activeNotifications.orEmpty()
-            for (n in shown) {
-                val tag = n.tag ?: continue
-                if (tag.startsWith(prefix)) manager.cancel(tag, NOTIFY_ID)
-            }
         }
         // One line per sweep: they are rare (a mount, a first return), and the
         // log is the only place a person can see what a relaunch reported.
@@ -489,8 +483,9 @@ class NotificationBootReceiver : BroadcastReceiver() {
             Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED ->
                 Notifications.rearm(context)
             // A grant of exact alarms (see "An exact-alarm grant"): inexact
-            // alarms set before it become exact, and a running app's
-            // permission record hears it. The literal rather than
+            // alarms set before it become exact, and a running Go app's
+            // permission record hears it, with or without an Activity on
+            // screen. The literal rather than
             // AlarmManager's constant, which only exists from API 31.
             "android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" -> {
                 Notifications.rearm(context)

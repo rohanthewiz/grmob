@@ -54,6 +54,40 @@ type AlarmOptions struct {
 	// NotifyText writes a scheduled notification's title and body. Nil uses
 	// the alarm's Label (or "Alarm") and its 12-hour time.
 	NotifyText func(a alarm.Alarm) (title, body string)
+
+	// NotifyGroup names this UseAlarms's notifications, so an app can run
+	// more than one with Notify: each sweeps and cancels only its own group.
+	// Empty is the default group. See "Off screen" on UseAlarms.
+	//
+	// A group is part of every notification id it schedules, so renaming one
+	// strands what the old name scheduled until the OS fires it; pick a
+	// constant.
+	NotifyGroup string
+}
+
+// notifyPrefix is the id prefix of this configuration's notifications:
+//
+//	NotifyGroup ""       grmob.alarm.<alarm id>.<unix seconds>
+//	NotifyGroup "work"   grmob.alarms.work.<alarm id>.<unix seconds>
+//
+// The default group keeps the spelling it shipped with, so notifications a
+// previous version scheduled are still swept. Named groups live under
+// "grmob.alarms.", which "grmob.alarm." is not a prefix of (the sixth
+// character after "grmob." is "." in one and "s" in the other), so the
+// default group's sweep cannot take a named group's notifications, nor the
+// reverse.
+//
+// Between named groups the trailing dot does the same job — "work." is not a
+// prefix of "workday." — as long as a name cannot contain a dot itself:
+// "a" would sweep "a.b". So dots (and the escape character) are escaped,
+// which keeps the mapping one-to-one where replacing them would not ("a.b"
+// and "a_b" would collide).
+func (o AlarmOptions) notifyPrefix() string {
+	if o.NotifyGroup == "" {
+		return alarmNotifyPrefix
+	}
+	group := strings.NewReplacer("%", "%25", ".", "%2E").Replace(o.NotifyGroup)
+	return alarmGroupPrefix + group + "."
 }
 
 // notifyText resolves NotifyText.
@@ -186,9 +220,13 @@ type alarmsRecord struct {
 	sweepOnReturn bool
 }
 
-// alarmNotifyPrefix begins every notification id UseAlarms schedules; see
-// notifications for the whole spelling and UseAlarms for the sweep.
-const alarmNotifyPrefix = "grmob.alarm."
+// alarmNotifyPrefix begins every notification id the default group schedules,
+// and alarmGroupPrefix every named group's; see AlarmOptions.notifyPrefix for
+// the whole spelling and UseAlarms for the sweep.
+const (
+	alarmNotifyPrefix = "grmob.alarm."
+	alarmGroupPrefix  = "grmob.alarms."
+)
 
 func (o AlarmOptions) snooze() time.Duration {
 	if o.Snooze > 0 {
@@ -229,9 +267,16 @@ func (o AlarmOptions) ringFor() time.Duration {
 //	background       schedules a core.LocalNotification{At} for every
 //	                 enabled alarm's occurrences in the next week, and for
 //	                 each pending snooze; the in-app ringer stands down
-//	active           cancels them all, and skips whatever came due while
-//	                 away — the OS already rang it, and ringing it again on
-//	                 return would wake the user for an alarm they answered
+//	active           cancels the ones still to come, and skips whatever came
+//	                 due while away — the OS already rang it, and ringing it
+//	                 again on return would wake the user for an alarm they
+//	                 answered
+//
+// What the OS already rang is left on screen. Its banner is the one record
+// the user has of an alarm that went off while they were elsewhere — a
+// missed-alarm notice — and it is theirs to dismiss, not the app's to take
+// down the moment it opens (which, after a force stop, is moments after the
+// host posted it late; see core.SweepNotifications).
 //
 // Standing down while away matters on Android, where the process (and this
 // goroutine) keeps running in the background: without it the alarm would
@@ -250,9 +295,10 @@ func (o AlarmOptions) ringFor() time.Duration {
 // must not still ring — and the host's reply names the ones that already
 // fired, which reach OnRing for every alarm still in the list, soonest first,
 // once each. The reply is asynchronous, so those calls arrive shortly after
-// the first render rather than during it. Only one UseAlarms with Notify per
-// app: the prefix is the hook's, not the call's, so a second one would sweep
-// the first one's notifications. Occurrences are scheduled a week ahead and
+// the first render rather than during it. The sweep covers this call's
+// NotifyGroup only, so an app with two UseAlarms with Notify gives them
+// different groups; two in one group would sweep each other's notifications.
+// Occurrences are scheduled a week ahead and
 // capped at 60 in all (iOS's pending limit is 64); an app away for longer is
 // rescheduled the next time it runs and leaves the screen.
 //
@@ -496,7 +542,17 @@ func (r *alarmsRecord) setAway(away bool, now time.Time) (rangAway []alarm.Alarm
 		}
 		return nil
 	}
-	cancel := r.scheduled
+	// On the way back only what is still to come is cancelled; an id whose
+	// instant has passed was rung by the OS, and its banner stays (see "Off
+	// screen"). An id this record cannot read an instant from is cancelled,
+	// the old behaviour, rather than left to ring.
+	var cancel []string
+	for _, id := range r.scheduled {
+		if at, ok := notifyInstant(id); !ok || away || at > now.Unix() {
+			cancel = append(cancel, id)
+		}
+	}
+	hadScheduled := len(r.scheduled) > 0
 	r.scheduled = nil
 	var post []core.LocalNotification
 	if away {
@@ -525,7 +581,7 @@ func (r *alarmsRecord) setAway(away bool, now time.Time) (rangAway []alarm.Alarm
 		r.snoozes = kept
 		// Only what was actually handed to the OS counts as rung: an app
 		// that switched Notify on while away scheduled nothing.
-		if len(cancel) > 0 && !r.awaySince.IsZero() {
+		if hadScheduled && !r.awaySince.IsZero() {
 			rangAway = r.dueBetween(r.awaySince, now)
 		}
 	}
@@ -607,7 +663,7 @@ func (r *alarmsRecord) notifications(now time.Time) []core.LocalNotification {
 	for _, d := range all {
 		title, body := r.opts.notifyText(d.a)
 		out = append(out, core.LocalNotification{
-			ID:    alarmNotifyPrefix + d.a.ID + "." + strconv.FormatInt(d.at.Unix(), 10),
+			ID:    r.opts.notifyPrefix() + d.a.ID + "." + strconv.FormatInt(d.at.Unix(), 10),
 			Title: title,
 			Body:  body,
 			At:    d.at,
@@ -620,9 +676,12 @@ func (r *alarmsRecord) notifications(now time.Time) []core.LocalNotification {
 // the OS and reports the ones that fired to OnRing. Called without mu held:
 // the host may answer inside the call, and the answer takes mu.
 func (r *alarmsRecord) sweepPrevious() {
-	core.SweepNotifications(alarmNotifyPrefix, func(fired []string) {
+	r.mu.Lock()
+	prefix := r.opts.notifyPrefix()
+	r.mu.Unlock()
+	core.SweepNotifications(prefix, func(fired []string) {
 		r.mu.Lock()
-		rang := r.firedAlarms(fired)
+		rang := r.firedAlarms(prefix, fired)
 		onRing := r.opts.OnRing
 		r.mu.Unlock()
 		if onRing == nil {
@@ -640,9 +699,10 @@ func (r *alarmsRecord) sweepPrevious() {
 // hand over), as is one that does not parse — it was not this hook's.
 // Called with mu held.
 //
-// The id is "grmob.alarm.<alarm id>.<unix seconds>". An alarm id may itself
-// contain dots, so the time is split off at the last one.
-func (r *alarmsRecord) firedAlarms(fired []string) []alarm.Alarm {
+// The id is "<prefix><alarm id>.<unix seconds>" (AlarmOptions.notifyPrefix).
+// An alarm id may itself contain dots, so the time is split off at the last
+// one.
+func (r *alarmsRecord) firedAlarms(prefix string, fired []string) []alarm.Alarm {
 	type hit struct {
 		a  alarm.Alarm
 		at int64
@@ -653,7 +713,7 @@ func (r *alarmsRecord) firedAlarms(fired []string) []alarm.Alarm {
 	}
 	first := map[string]int64{}
 	for _, id := range fired {
-		rest, ok := strings.CutPrefix(id, alarmNotifyPrefix)
+		rest, ok := strings.CutPrefix(id, prefix)
 		if !ok {
 			continue
 		}
@@ -661,8 +721,8 @@ func (r *alarmsRecord) firedAlarms(fired []string) []alarm.Alarm {
 		if dot <= 0 {
 			continue
 		}
-		at, err := strconv.ParseInt(rest[dot+1:], 10, 64)
-		if err != nil {
+		at, ok := notifyInstant(rest)
+		if !ok {
 			continue
 		}
 		alarmID := rest[:dot]
@@ -689,4 +749,15 @@ func (r *alarmsRecord) firedAlarms(fired []string) []alarm.Alarm {
 		out[i] = h.a
 	}
 	return out
+}
+
+// notifyInstant reads the unix seconds a notification id ends with: the part
+// after its last dot.
+func notifyInstant(id string) (int64, bool) {
+	dot := strings.LastIndexByte(id, '.')
+	if dot < 0 {
+		return 0, false
+	}
+	at, err := strconv.ParseInt(id[dot+1:], 10, 64)
+	return at, err == nil
 }

@@ -114,6 +114,19 @@ struct GrMobStyle: Equatable {
     var alignItems: String = ""
     var flexGrow: CGFloat = 0
 
+    /// core.FlexBasis, as written. Only a zero basis is read (see zeroBasis):
+    /// it is the one value core's widgets write, always beside a FlexGrow, to
+    /// divide a row by weight regardless of what each box holds.
+    var flexBasis: String = ""
+
+    /// Whether this is a zero flex-basis ("0", "0px", "0%"): a flex item whose
+    /// base size is nothing but its own padding, so the free space its
+    /// container shares out by weight is the whole line rather than what is
+    /// left after each item's content. See GrMobFlexZeroBasis in Renderer.swift.
+    var zeroBasis: Bool {
+        ["0", "0px", "0%"].contains(flexBasis.trimmingCharacters(in: .whitespaces))
+    }
+
     /// core.Style.FlexShrink, as written — which is NOT the shrink factor.
     ///
     /// Zero means "unset" here, as it does for every other number in a
@@ -271,6 +284,7 @@ struct GrMobStyle: Equatable {
         s.justifyContent = str("JustifyContent")
         s.alignItems = str("AlignItems")
         s.flexGrow = num("FlexGrow")
+        s.flexBasis = str("FlexBasis")
         s.flexShrink = num("FlexShrink")
         s.flexWrap = str("FlexWrap")
         s.flexDirection = str("FlexDirection")

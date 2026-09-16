@@ -110,9 +110,10 @@ test("permission is read when the banner is due", () => {
     assert.deepEqual(h.shown.map((n) => n.tag), ["p"]);
 });
 
-// A sweep stops every timer and closes every banner under its prefix, leaves
-// other ids alone, and answers with the scheduled ids whose time came — once:
-// a second sweep, or a cancel or re-post in between, reports nothing more.
+// A sweep stops every timer under its prefix, leaves banners already shown
+// open and other ids alone, and answers with the scheduled ids whose time
+// came — once: a second sweep, or a cancel or re-post in between, reports
+// nothing more.
 test("a sweep cancels by prefix and reports what fired", () => {
     const h = harness();
     const replies = [];
@@ -138,8 +139,8 @@ test("a sweep cancels by prefix and reports what fired", () => {
 
     h.rt.GrMob.notifications.handle({ command: "sweep", prefix: "a.", request: "7" });
     assert.deepEqual(replies, [{ name: "notification_swept", request: "7", fired: ["a.1"] }]);
-    assert.deepEqual(closed.filter((t) => t.startsWith("a.")).sort(), ["a.1", "a.2", "a.2"],
-        "a.1 and the re-posted a.2 closed (a.2's first banner closed by its re-post)");
+    assert.deepEqual(closed.filter((t) => t.startsWith("a.")).sort(), ["a.2"],
+        "only a.2's first banner closed, by its re-post; the sweep closes no shown banner");
 
     h.clock.now += 60_000;
     h.fire();

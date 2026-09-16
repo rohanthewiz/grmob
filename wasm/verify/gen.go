@@ -424,9 +424,14 @@ func canvasCases() []canvasCase {
 		// The runtime test mounts the canvas as the first child of a root
 		// Column, so it sits at "root/0" and its gradient ids are scoped so.
 		for i, shape := range n.Children {
-			id := htmlout.CanvasGradientID("root/0", i)
-			c.Shapes = append(c.Shapes, htmlout.CanvasShapeAttrs(shape.Props, id))
-			if tag, attrs, stops := htmlout.CanvasGradient(shape.Props, id); tag != "" {
+			fillID := htmlout.CanvasGradientID("root/0", i)
+			strokeID := htmlout.CanvasStrokeGradientID("root/0", i)
+			c.Shapes = append(c.Shapes, htmlout.CanvasShapeAttrs(shape.Props, fillID, strokeID))
+			// A shape's fill server, then its stroke server: htmlout's order.
+			if tag, attrs, stops := htmlout.CanvasGradient(shape.Props, fillID); tag != "" {
+				c.Gradients = append(c.Gradients, canvasGradientCase{tag, attrs, stops})
+			}
+			if tag, attrs, stops := htmlout.CanvasStrokeGradient(shape.Props, strokeID); tag != "" {
 				c.Gradients = append(c.Gradients, canvasGradientCase{tag, attrs, stops})
 			}
 		}
@@ -459,6 +464,14 @@ func canvasCases() []canvasCase {
 			{Path: core.NewPath().Arc(50, 25, 20, 0, 360).Close().Arc(50, 25, 10, 0, 360).Close(), FillRule: core.FillEvenOdd, FillGradient: core.RadialGradientFill(50, 25, 20, core.Stop(0, "#ffffff"), core.Stop(0.5, "#eb6834"), core.Stop(1, "#4a3aa7"))},
 			{Path: core.Rect(0, 0, 10, 10), FillGradient: core.LinearGradientFill(1, 1, 1, 1, core.Stop(0, "#000000"), core.Stop(1, "#123456"))},
 		}, core.CanvasStretch)),
+		// Stroke gradients: one alone on a dashed line, one beside a fill
+		// gradient on the same shape (two servers, fill first), and a
+		// degenerate one sent as a flat stroke.
+		build("stroke gradients, alone, with a fill gradient, degenerate", core.Canvas(100, 50, []core.Shape{
+			{Path: core.Line(0, 45, 100, 5), StrokeWidth: 3, Cap: core.CapRound, Dash: []float64{6, 3}, StrokeGradient: core.LinearGradientFill(0, 0, 100, 0, core.Stop(0, "#2a78d6"), core.Stop(1, "#eb6834"))},
+			{Path: core.Circle(50, 25, 20), FillGradient: core.RadialGradientFill(50, 25, 20, core.Stop(0, "#ffffff"), core.Stop(1, "#1baf7a")), StrokeGradient: core.RadialGradientFill(50, 25, 22, core.Stop(0, "#4a3aa7"), core.Stop(1, "#e34948")), StrokeWidth: 2},
+			{Path: core.Rect(0, 0, 10, 10), StrokeGradient: core.RadialGradientFill(5, 5, 0, core.Stop(0, "#000000"), core.Stop(1, "#654321"))},
+		})),
 	}
 }
 

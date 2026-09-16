@@ -18,6 +18,8 @@ Package htmlout exports a rendered core.Node tree as a standalone HTML document.
 - [`func CanvasGradient`](#func-canvasgradient)
 - [`func CanvasGradientID`](#func-canvasgradientid)
 - [`func CanvasShapeAttrs`](#func-canvasshapeattrs)
+- [`func CanvasStrokeGradient`](#func-canvasstrokegradient)
+- [`func CanvasStrokeGradientID`](#func-canvasstrokegradientid)
 - [`func CarriesOwnRole`](#func-carriesownrole)
 - [`func CrossAxisAlignFor`](#func-crossaxisalignfor)
 - [`func CrossAxisAligns`](#func-crossaxisaligns)
@@ -142,7 +144,7 @@ CanvasGradient is the paint-server element for a shape's gradient props (see cor
 
 gradientUnits="userSpaceOnUse" puts the geometry in viewBox units, which is the contract core.Gradient states; SVG's default, objectBoundingBox, would read (0, 0)–(1, 1) as the shape's own bounds.
 
-<small>[htmlout/canvas.go:143](https://github.com/rohanthewiz/grmob/blob/master/htmlout/canvas.go#L143)</small>
+<small>[htmlout/canvas.go:180](https://github.com/rohanthewiz/grmob/blob/master/htmlout/canvas.go#L180)</small>
 
 ### func CanvasGradientID
 
@@ -152,21 +154,43 @@ func CanvasGradientID(canvasPath string, i int) string
 
 CanvasGradientID is the document id of the gradient shape i of the canvas at canvasPath fills with: the canvas's tab-style scope plus "-fill-i", so "root/0" shape 2 is "grmob-root-0-fill-2". Scoped by node path because a path is unique in the document, which an id must be, and because it is the one name both web targets can derive without talking to each other. The runtime restates it as canvasGradientId.
 
-<small>[htmlout/canvas.go:130](https://github.com/rohanthewiz/grmob/blob/master/htmlout/canvas.go#L130)</small>
+<small>[htmlout/canvas.go:160](https://github.com/rohanthewiz/grmob/blob/master/htmlout/canvas.go#L160)</small>
 
 ### func CanvasShapeAttrs
 
 ```go
-func CanvasShapeAttrs(props map[string]any, gradientID string) []string
+func CanvasShapeAttrs(props map[string]any, fillID, strokeID string) []string
 ```
 
 CanvasShapeAttrs is the SVG attribute list for one CanvasShape's props, as name/value pairs in a fixed order. Exported so wasm/verify can hold the runtime's copy to it.
 
 fill="none" is written for a shape with no fill because SVG's default fill is black — the one place the two vocabularies disagree about "unset".
 
-gradientID is the id CanvasGradient's element carries for this shape (see CanvasGradientID); a shape with a well-formed gradient fills with a reference to it. A malformed one falls to fill="none", as CanvasGradient writes no element for it and a reference to nothing would paint black in some engines rather than nothing.
+fillID and strokeID are the ids CanvasGradient's and CanvasStrokeGradient's elements carry for this shape (see CanvasGradientID and CanvasStrokeGradientID); a shape with a well-formed gradient paints with a reference to it. A malformed one falls to fill="none" (or no stroke), as no element is written for it and a reference to nothing would paint black in some engines rather than nothing.
 
-<small>[htmlout/canvas.go:201](https://github.com/rohanthewiz/grmob/blob/master/htmlout/canvas.go#L201)</small>
+<small>[htmlout/canvas.go:257](https://github.com/rohanthewiz/grmob/blob/master/htmlout/canvas.go#L257)</small>
+
+### func CanvasStrokeGradient
+
+```go
+func CanvasStrokeGradient(props map[string]any, id string) (tag string, attrs []string, stops [][]string)
+```
+
+CanvasStrokeGradient is CanvasGradient for the shape's stroke gradient keys (strokeGradient, strokeGradientAt, ...), with the same malformed-keys rule: no element, and the stroke falls to none.
+
+userSpaceOnUse holds for a stroke under vector-effect="non-scaling-stroke" too: Chrome maps the gradient in the viewBox's space while keeping the stroke's width unscaled (checked headless, including a radial under preserveAspectRatio="none"), which is the split core.Shape documents.
+
+<small>[htmlout/canvas.go:192](https://github.com/rohanthewiz/grmob/blob/master/htmlout/canvas.go#L192)</small>
+
+### func CanvasStrokeGradientID
+
+```go
+func CanvasStrokeGradientID(canvasPath string, i int) string
+```
+
+CanvasStrokeGradientID is CanvasGradientID's twin for the shape's stroke gradient: "-stroke-i" in place of "-fill-i", so one shape can carry both. The runtime restates it as canvasGradientId with the "stroke" kind.
+
+<small>[htmlout/canvas.go:167](https://github.com/rohanthewiz/grmob/blob/master/htmlout/canvas.go#L167)</small>
 
 ### func CarriesOwnRole
 
@@ -377,7 +401,7 @@ func PathData(ops []float64) string
 
 PathData turns core's flat path opcodes into an SVG path string. The opcodes are core.PathMove, PathLine, PathCubic and PathClose, and SVG has a command letter for each with the same operands in the same order, so this is a spelling change and nothing else. A truncated or unknown operation ends the path there: a renderer must not fail a drawing over one bad shape.
 
-<small>[htmlout/canvas.go:246](https://github.com/rohanthewiz/grmob/blob/master/htmlout/canvas.go#L246)</small>
+<small>[htmlout/canvas.go:305](https://github.com/rohanthewiz/grmob/blob/master/htmlout/canvas.go#L305)</small>
 
 ### func ResetsUABorder
 

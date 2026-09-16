@@ -3,6 +3,7 @@ package comps
 import (
 	"math"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -149,41 +150,74 @@ func columnWeights(row *core.Node) (weights []float64, texts []string) {
 }
 
 // Labels under a line chart sit on their points: interior boxes are centred on
-// the point, the ends hug the edges, and the weights tile the whole axis.
+// the point, the ends hug the edges, every labelled box is two thirds of a
+// stride wide, and the weights (fillers included) tile the whole axis.
 func TestPointLabelsTileTheAxis(t *testing.T) {
 	th := core.DefaultTheme
 	labels := []string{"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
 	row := renderView(t, pointLabels(th, labels, 12))
 	weights, texts := columnWeights(row)
-	// 11 intervals, stride ceil(11/4) = 3: Jan, Apr, Jul, Oct, then a filler.
-	wantW := []float64{1.5, 3, 3, 3, 0.5}
-	wantT := []string{"Jan", "Apr", "Jul", "Oct", ""}
+	// 11 intervals, stride ceil(11/4) = 3, r = 1: Jan [0,2], Apr [2,4], a gap,
+	// Jul [5,7], a gap, Oct [8,10], then a filler to 11.
+	wantW := []float64{2, 2, 1, 2, 1, 2, 1}
+	wantT := []string{"Jan", "Apr", "", "Jul", "", "Oct", ""}
 	if len(weights) != len(wantW) {
 		t.Fatalf("weights %v texts %v, want %v %v", weights, texts, wantW, wantT)
 	}
 	sum, pos := 0.0, 0.0
 	for i := range wantW {
-		if weights[i] != wantW[i] || texts[i] != wantT[i] {
+		if math.Abs(weights[i]-wantW[i]) > 1e-9 || texts[i] != wantT[i] {
 			t.Errorf("box %d = %v %q, want %v %q", i, weights[i], texts[i], wantW[i], wantT[i])
 		}
 		// A centred box's middle must be its point's index.
-		if i > 0 && i < 4 {
-			if mid := pos + weights[i]/2; mid != float64(i*3) {
-				t.Errorf("box %d centred at %v, want point %d", i, mid, i*3)
+		if want := map[string]float64{"Apr": 3, "Jul": 6, "Oct": 9}[texts[i]]; want != 0 {
+			if mid := pos + weights[i]/2; math.Abs(mid-want) > 1e-9 {
+				t.Errorf("%s centred at %v, want point %v", texts[i], mid, want)
 			}
 		}
 		pos += weights[i]
 		sum += weights[i]
 	}
-	if sum != 11 {
+	if math.Abs(sum-11) > 1e-9 {
 		t.Errorf("weights sum to %v, want 11 (the point span)", sum)
 	}
 
-	// When the stride lands on the last point it is labelled, end-aligned.
+	// When the stride lands on the last point it is labelled, end-aligned,
+	// in a box as wide as the first one's.
 	row = renderView(t, pointLabels(th, labels[:9], 9))
 	weights, texts = columnWeights(row)
-	if texts[len(texts)-1] != "Sep" || row.Children[len(row.Children)-1].Children[0].Style.Align != core.AlignEnd {
+	lastBox := row.Children[len(row.Children)-1]
+	if texts[len(texts)-1] != "Sep" || lastBox.Children[0].Style.Align != core.AlignEnd {
 		t.Errorf("last label = %q (weights %v); want Sep, end-aligned", texts[len(texts)-1], weights)
+	}
+	if math.Abs(weights[0]-4.0/3) > 1e-9 || math.Abs(weights[len(weights)-1]-4.0/3) > 1e-9 {
+		t.Errorf("end boxes %v and %v, want both 2/3 of the stride of 2", weights[0], weights[len(weights)-1])
+	}
+
+	// Two labels and nothing between: they meet at the midpoint.
+	row = renderView(t, pointLabels(th, []string{"a", "b"}, 2))
+	if weights, _ = columnWeights(row); len(weights) != 2 || weights[0] != 0.5 || weights[1] != 0.5 {
+		t.Errorf("two-label row weights %v, want [0.5 0.5]", weights)
+	}
+}
+
+// A five-tick value axis: every label, the end ticks included, has two thirds
+// of an interval, where the midpoint split gave the ends half of one.
+func TestPointLabelsGiveEndTicksTwoThirds(t *testing.T) {
+	row := renderView(t, pointLabels(core.DefaultTheme, []string{"$0", "$500", "$1000", "$1500", "$2000"}, 5))
+	weights, texts := columnWeights(row)
+	labelled := 0
+	for i, text := range texts {
+		if text == "" {
+			continue
+		}
+		labelled++
+		if math.Abs(weights[i]-2.0/3) > 1e-9 {
+			t.Errorf("%s box = %v, want 2/3", text, weights[i])
+		}
+	}
+	if labelled != 5 {
+		t.Errorf("%d ticks labelled, want 5: %q", labelled, texts)
 	}
 }
 
@@ -691,5 +725,133 @@ func TestXLabelsAreCappedInTheirSlots(t *testing.T) {
 		if slot.Children[0].Style.MaxLines != 1 {
 			t.Error("an x label should be capped at one line")
 		}
+	}
+}
+
+// A value's tip is its bar's far end, cell for cell with barValueCells: the
+// top of a positive vertical bar, the bottom of a negative one, a stack's
+// positive total (or its negative one when it has no positive part), and the
+// colour of the segment the label touches.
+func TestBarValueTipsMeetTheBars(t *testing.T) {
+	s := valueScale{-10, 40, 10}
+	colors := []string{"#111111", "#222222"}
+	c := BarChart{Series: []ChartSeries{{Values: []float64{30, -5}}, {Values: []float64{10, math.NaN()}}}}
+	texts, _ := c.barValueCells(2, 0.6, formatValue)
+	tips := c.barValueTips(2, s, colors)
+	if len(tips) != len(texts) {
+		t.Fatalf("%d tips for %d cells", len(tips), len(texts))
+	}
+	rects := c.barRects(2, 0.6, s)
+	if tip := tips[1]; !tip.ok || tip.negative || math.Abs(tip.at-rects[0][0].b0) > 1e-9 || tip.color != "#111111" {
+		t.Errorf("30: tip %+v, bar top %v", tip, rects[0][0].b0)
+	}
+	if tip := tips[5]; !tip.ok || !tip.negative || math.Abs(tip.at-rects[0][1].b1) > 1e-9 {
+		t.Errorf("-5: tip %+v, want the bar's bottom %v", tip, rects[0][1].b1)
+	}
+	if tips[6].ok || tips[0].ok {
+		t.Error("a missing value and a pad cell have no tip")
+	}
+
+	stacked := BarChart{Stacked: true, Series: []ChartSeries{{Values: []float64{30, -5}}, {Values: []float64{10, -2}}}}
+	tips = stacked.barValueTips(2, s, colors)
+	if tip := tips[1]; math.Abs(tip.at-s.y(40)) > 1e-9 || tip.color != "#222222" || tip.negative {
+		t.Errorf("stack 30+10: tip %+v, want y(40) in the outer segment's colour", tip)
+	}
+	if tip := tips[4]; math.Abs(tip.at-s.y(-7)) > 1e-9 || !tip.negative || tip.color != "#222222" {
+		t.Errorf("stack -5-2: tip %+v, want y(-7), negative", tip)
+	}
+}
+
+// Vertical values are a layer over the plot: each label's spacer drops it to
+// a line above its bar's tip (or to the tip of a negative bar), the layer is
+// as tall as the plot with its headroom and foot, and a negative value adds
+// half a line of foot.
+func TestVerticalValuesSitAtTheTips(t *testing.T) {
+	th := core.DefaultTheme
+	c := BarChart{Series: []ChartSeries{{Values: []float64{40, 20, -10}}}}
+	s := niceScale(-10, 40, chartMaxTicks(160), true)
+	layer, extra := c.valueLayer(th, 3, 0.7, s, 160, []string{"#2A78D6"}, formatValue)
+	if extra != chartLabelLine/2 {
+		t.Errorf("bottomExtra = %v, want half a line for the negative bar", extra)
+	}
+	row := renderView(t, layer)
+	if want := px(chartLabelLine*2 + 160 + extra); row.Style.Height != want {
+		t.Errorf("layer height %q, want %q", row.Style.Height, want)
+	}
+	spacer := func(text string) float64 {
+		for _, cell := range row.Children {
+			label := cell.Children[1].Children[0]
+			if label.Props["content"] == text {
+				// Not Sscanf's %g, which reads the "p" of "px" as a hex
+				// float's exponent.
+				v, _ := strconv.ParseFloat(strings.TrimSuffix(cell.Children[0].Style.Height, "px"), 64)
+				return v
+			}
+		}
+		t.Fatalf("no cell reads %q", text)
+		return 0
+	}
+	headroom := chartLabelLine * 1.5
+	for text, want := range map[string]float64{
+		"40":  headroom + s.y(40)/chartView*160 - chartLabelLine,
+		"20":  headroom + s.y(20)/chartView*160 - chartLabelLine,
+		"-10": headroom + s.y(-10)/chartView*160,
+	} {
+		if got := spacer(text); math.Abs(got-want) > 0.01 {
+			t.Errorf("%s: label top %v, want %v", text, got, want)
+		}
+	}
+
+	n := renderView(t, BarChart{ShowValues: true, Labels: []string{"a"}, Series: []ChartSeries{{Values: []float64{5}}}})
+	stacks := 0
+	walk(n, func(node *core.Node) {
+		if node.Type == "ZStack" {
+			stacks++
+		}
+	})
+	if stacks != 1 {
+		t.Error("a vertical chart with values should lay them over the plot in a ZStack")
+	}
+}
+
+// Horizontal values: a short bar's label follows its tip in the text ink, a
+// bar leaving under barValueRoom of the plot carries it inside in the ink
+// that contrasts with the bar, and every band's weights span the plot.
+func TestHorizontalValuesFollowOrEnterTheBar(t *testing.T) {
+	th := core.DefaultTheme
+	c := BarChart{Horizontal: true, Series: []ChartSeries{{Values: []float64{1900, 400}}}}
+	s := niceScale(0, 1900, chartMaxXLabels, true)
+	col := renderView(t, c.bandValueLayer(th, 2, 0.7, s, 56, []string{"#4A3AA7"}, formatValue))
+	var long, short *core.Node
+	for _, band := range col.Children {
+		sum := 0.0
+		for _, seg := range band.Children {
+			sum += seg.Style.FlexGrow
+			if len(seg.Children) == 0 {
+				continue
+			}
+			switch seg.Children[0].Props["content"] {
+			case "1900":
+				long = seg
+			case "400":
+				short = seg
+			}
+		}
+		if len(band.Children) > 0 && math.Abs(sum-1) > 1e-9 {
+			t.Errorf("a band's weights sum to %v, want the whole plot", sum)
+		}
+	}
+	if long == nil || short == nil {
+		t.Fatal("both values should be drawn")
+	}
+	if want := contrastInk("#4A3AA7", th.Colors.TextPrimary, th.Colors.Background); long.Children[0].Style.TextColor != want ||
+		long.Children[0].Style.Align != core.AlignEnd {
+		t.Errorf("1900 of %v should sit inside, end-aligned in %s: %+v", s.hi, want, long.Children[0].Style)
+	}
+	if short.Children[0].Style.TextColor != th.Colors.TextSecondary || short.Children[0].Style.Align != core.AlignStart {
+		t.Errorf("400 should follow its tip in the secondary ink: %+v", short.Children[0].Style)
+	}
+	if want := 1 - 400/s.hi; math.Abs(short.Style.FlexGrow-want) > 1e-9 {
+		t.Errorf("400's label box = %v of the plot, want the %v past its tip", short.Style.FlexGrow, want)
 	}
 }

@@ -51,16 +51,17 @@ import UserNotifications
 ///
 ///     schedule ──▶ record[id] = at (Unix ms)      cancel / post now ──▶ remove
 ///     sweep(prefix) ──▶ every recorded id under prefix:
-///                         remove pending + delivered; at ≤ now ──▶ fired; remove
+///                         remove pending; at ≤ now ──▶ fired; remove
 ///
 /// The ids to remove come from the record, read synchronously on the main
 /// thread where every command arrives, rather than from
 /// getPendingNotificationRequests: that answers on a later turn, by which time
 /// the app may have scheduled new requests under the same prefix that a sweep
-/// taken from its answer would wrongly remove. Delivered banners posted
-/// immediately (never recorded) are looked up asynchronously and removed only
-/// if they were delivered before the sweep began. Entries more than a week
-/// past their time are pruned whenever the record is written.
+/// taken from its answer would wrongly remove. Delivered banners stay: a
+/// banner the OS drew for an alarm that went off while the app was closed is
+/// the user's record of it, theirs to dismiss (core.SweepNotifications).
+/// Entries more than a week past their time are pruned whenever the record is
+/// written.
 ///
 /// Authorization is the permission package's (Permissions.swift). A post the
 /// user has not allowed is dropped by the system without an error, which is
@@ -158,26 +159,17 @@ final class Notifications: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
-    /// Cancels everything under `prefix` and reports the recorded ids whose
-    /// time had come. See "The scheduled record, and sweeping".
+    /// Cancels what is still pending under `prefix` and reports the recorded
+    /// ids whose time had come; delivered banners stay. See "The scheduled
+    /// record, and sweeping".
     private func sweep(prefix: String, request: String) {
-        let started = Date()
         let now = Self.nowMs()
         let all = record
         let matched = all.filter { $0.key.hasPrefix(prefix) }
         let fired = matched.filter { $0.value <= now }.map(\.key).sorted()
-        let center = UNUserNotificationCenter.current()
         if !matched.isEmpty {
-            let ids = Array(matched.keys)
-            center.removePendingNotificationRequests(withIdentifiers: ids)
-            center.removeDeliveredNotifications(withIdentifiers: ids)
+            UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: Array(matched.keys))
             record = all.filter { !$0.key.hasPrefix(prefix) }
-        }
-        center.getDeliveredNotifications { delivered in
-            let stale = delivered
-                .filter { $0.request.identifier.hasPrefix(prefix) && $0.date <= started }
-                .map(\.request.identifier)
-            if !stale.isEmpty { center.removeDeliveredNotifications(withIdentifiers: stale) }
         }
         guard let data = try? JSONSerialization.data(withJSONObject: ["request": request, "fired": fired]),
               let payload = String(data: data, encoding: .utf8)

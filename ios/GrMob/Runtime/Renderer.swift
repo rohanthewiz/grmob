@@ -577,6 +577,10 @@ private struct FlexChildren: View {
                 .layoutValue(key: GrMobFlexShrink.self,
                              value: child.style?.shrinkFactor ?? 1)
                 .layoutValue(key: GrMobFlexHugs.self, value: hugs)
+                // A zero flex-basis, carried as the child's padding along
+                // this axis (its whole CSS base size), or -1 for the default
+                // content-sized basis. See GrMobFlexZeroBasis.
+                .layoutValue(key: GrMobFlexZeroBasis.self, value: zeroBasisPadding(child.style))
                 // The CSS `min-width: auto` floor, measured off the node
                 // because no view on this host will report it.
                 //
@@ -595,6 +599,17 @@ private struct FlexChildren: View {
                                  ? GrMobMinContent.width(of: child)
                                  : (GrMobMinContent.floorsHeightAtContent(child) ? .infinity : 0))
         }
+    }
+
+    /// The GrMobFlexZeroBasis value for a child: its padding along this
+    /// stack's axis when it declares a zero flex-basis, -1 otherwise. A
+    /// function rather than inline, where the conditional arithmetic took the
+    /// type-checker past its time limit.
+    private func zeroBasisPadding(_ style: GrMobStyle?) -> CGFloat {
+        guard let style, style.zeroBasis else { return -1 }
+        let edges = axis == .horizontal ? style.padding.left + style.padding.right
+                                        : style.padding.top + style.padding.bottom
+        return CGFloat(edges)
     }
 
     /// `floored` is a percentage floor on the main axis: like a grower, such a
@@ -681,6 +696,36 @@ private struct GrMobFlexMin: LayoutValueKey {
     static let defaultValue: CGFloat = 0
 }
 
+/// A child's core.FlexBasis("0"), as its padding along the main axis, or -1
+/// for the default basis (its content size).
+///
+/// # Why a zero basis has to be read
+///
+/// This host modelled every item as `flex-basis: auto`, and for most rows that
+/// is the same picture. It is not for the rows core's widgets divide by
+/// weight — a chart's label slots, its bar-value segments, a StatTile's
+/// columns — which write FlexGrow(w) with FlexBasis("0") precisely so the
+/// line is shared in proportion to the weights whatever each box holds:
+///
+///                      base          size = base + free · w/Σw
+///   basis auto (was)   text width    off by (text − mean text) · …
+///   basis 0    (CSS)   padding       exactly w/Σw of the line, less padding
+///
+/// With auto bases a label's box grew by its own text's width, so a bar's
+/// value written just past its tip sat a few points inside the bar or clear
+/// of it, by an amount that changed with the digits. Chrome and Compose
+/// (whose weight() ignores content) divide exactly.
+///
+/// CSS still clamps the hypothetical size by the automatic minimum
+/// (`min-width: auto`), so a zero-basis item with unbreakable content keeps
+/// that content's width; GrMobFlexLayout.baseMains applies the same clamp
+/// with the GrMobFlexMin floor. A Column's verdict (.infinity, "floor at your
+/// content") cannot be clamped against without a measurement, so a
+/// zero-basis Column child with that verdict keeps its measured base.
+private struct GrMobFlexZeroBasis: LayoutValueKey {
+    static let defaultValue: CGFloat = -1
+}
+
 /// The flex containers' layout: a SwiftUI `Layout` running the CSS algorithm.
 ///
 /// SwiftUI's own stacks cannot express three things GrMob's Go DSL declares,
@@ -747,7 +792,8 @@ private struct GrMobFlexLayout: Layout {
         let crossBound = GrMobFlexSolver.definite(crossOf(proposal))
         let offered = mainOf(proposal)
         let floors = percentFloors(subviews, extent: offered)
-        let bases = baseMains(subviews, crossBound: crossBound, floors: floors)
+        let bases = baseMains(subviews, crossBound: crossBound, floors: floors,
+                              definite: GrMobFlexSolver.definite(offered) != nil)
         let weights = subviews.map { $0[GrMobFlexWeight.self] }
         let main = solver.containerMain(offered: offered, bases: bases, weights: weights)
         // The container's own size is unchanged by the floor, and that is the
@@ -781,7 +827,7 @@ private struct GrMobFlexLayout: Layout {
         // hugged size; the bounds stand in only when no offer was made.
         let floors = percentFloors(subviews,
                                    extent: GrMobFlexSolver.definite(mainOf(proposal)) ?? mainOf(bounds.size))
-        let bases = baseMains(subviews, crossBound: containerCross, floors: floors)
+        let bases = baseMains(subviews, crossBound: containerCross, floors: floors, definite: true)
         let weights = subviews.map { $0[GrMobFlexWeight.self] }
         let resolved = solver.resolve(
             main: mainOf(bounds.size), bases: bases, weights: weights,
@@ -842,9 +888,24 @@ private struct GrMobFlexLayout: Layout {
     /// ```
     ///
     /// A child's percentage floor (see percentFloors) raises its base.
-    private func baseMains(_ subviews: Subviews, crossBound: CGFloat?, floors: [CGFloat]) -> [CGFloat] {
+    ///
+    /// A zero flex-basis child (GrMobFlexZeroBasis) starts from its padding
+    /// instead of its content, raised to its automatic minimum — but only when
+    /// the container's main extent is `definite`. Asked for an ideal size, a
+    /// row of zero-basis boxes would otherwise report the sum of their
+    /// paddings and be laid out at nearly nothing; CSS sizes such a container
+    /// from its items' content contributions, which is the measured base.
+    /// placeSubviews always has definite bounds, and sharing those bounds out
+    /// by weight from zero bases fills them exactly as the measured ones did.
+    private func baseMains(_ subviews: Subviews, crossBound: CGFloat?, floors: [CGFloat],
+                           definite: Bool) -> [CGFloat] {
         subviews.enumerated().map { i, subview in
-            max(mainOf(subview.sizeThatFits(proposed(main: nil, cross: crossBound))), floors[i])
+            let padding = subview[GrMobFlexZeroBasis.self]
+            let automatic = subview[GrMobFlexMin.self]
+            if definite, padding >= 0, automatic.isFinite {
+                return max(padding, automatic, floors[i])
+            }
+            return max(mainOf(subview.sizeThatFits(proposed(main: nil, cross: crossBound))), floors[i])
         }
     }
 
@@ -1955,7 +2016,7 @@ private struct GrMobCanvas: View {
         // Layout, hit-testing and the viewport arithmetic all still see the
         // unpadded box.
         let outset = CGFloat(shapes.reduce(0.0) { acc, props in
-            guard props["stroke"] != nil else { return acc }
+            guard props["stroke"] != nil || props["strokeGradient"] != nil else { return acc }
             let w = (props["strokeWidth"] as? NSNumber)?.doubleValue ?? 1
             let join = props["join"] as? String
             let reach = (join == "round" || join == "bevel") ? w : w * Double(grMobCanvasMiterLimit) / 2
@@ -1991,7 +2052,10 @@ private struct GrMobCanvas: View {
                 } else if let fill = GrMobStyle.parseColor(props["fill"] as? String) {
                     ctx.fill(path, with: .color(fill), style: fillStyle)
                 }
-                guard let stroke = GrMobStyle.parseColor(props["stroke"] as? String) else { continue }
+                // Go writes "stroke" or the strokeGradient keys, never both.
+                let strokeGradient = grMobCanvasGradient(props, prefix: "stroke")
+                let strokeColor = GrMobStyle.parseColor(props["stroke"] as? String)
+                guard strokeGradient != nil || strokeColor != nil else { continue }
                 let width = (props["strokeWidth"] as? NSNumber)?.doubleValue ?? 1
                 var dash = ((props["dash"] as? [Any]) ?? []).compactMap { ($0 as? NSNumber)?.doubleValue }
                 // SVG repeats an odd dash list to make it even; do the same.
@@ -2006,10 +2070,23 @@ private struct GrMobCanvas: View {
                 case "bevel": .bevel
                 default: .miter
                 }
-                ctx.stroke(path, with: .color(stroke),
-                           style: StrokeStyle(lineWidth: width, lineCap: cap, lineJoin: join,
+                let strokeStyle = StrokeStyle(lineWidth: width, lineCap: cap, lineJoin: join,
                                               miterLimit: grMobCanvasMiterLimit,
-                                              dash: dash.map { CGFloat($0) }))
+                                              dash: dash.map { CGFloat($0) })
+                if let gradient = strokeGradient {
+                    // A gradient stroke is the stroke's outline, taken in box
+                    // points so its width is untransformed, then filled with
+                    // the gradient in viewBox space like a gradient fill.
+                    // Stroking inside grMobFillGradient's transformed context
+                    // instead would scale the width with the viewport, and
+                    // unequally on the two axes under stretch. The outline is
+                    // filled nonzero: a stroke's self-overlaps (a loop, a
+                    // round join) must all paint, as ctx.stroke paints them.
+                    grMobFillGradient(in: ctx, path: path.strokedPath(strokeStyle), gradient: gradient,
+                                      viewport: vp, style: FillStyle())
+                } else if let stroke = strokeColor {
+                    ctx.stroke(path, with: .color(stroke), style: strokeStyle)
+                }
             }
         }
         .padding(-outset)
@@ -2043,12 +2120,17 @@ struct GrMobCanvasGradientSpec {
 }
 
 /// Reads a shape's gradient keys, or nil when it has none or they are
-/// malformed (which paints no fill, as the web targets do).
-func grMobCanvasGradient(_ props: [String: Any]) -> GrMobCanvasGradientSpec? {
-    guard let kind = props["gradient"] as? String,
-          let rawAt = props["gradientAt"] as? [Any],
-          let rawStops = props["gradientStops"] as? [Any],
-          let rawColors = props["gradientColors"] as? [Any],
+/// malformed (which paints nothing, as the web targets do). `prefix` picks the
+/// paint: "" for the fill's keys (gradient, gradientAt, ...), "stroke" for the
+/// stroke's (strokeGradient, strokeGradientAt, ...); see core.GradientKey.
+func grMobCanvasGradient(_ props: [String: Any], prefix: String = "") -> GrMobCanvasGradientSpec? {
+    func key(_ name: String) -> String {
+        prefix.isEmpty ? name : prefix + name.prefix(1).uppercased() + name.dropFirst()
+    }
+    guard let kind = props[key("gradient")] as? String,
+          let rawAt = props[key("gradientAt")] as? [Any],
+          let rawStops = props[key("gradientStops")] as? [Any],
+          let rawColors = props[key("gradientColors")] as? [Any],
           !rawStops.isEmpty, rawStops.count == rawColors.count else { return nil }
     let at = rawAt.compactMap { ($0 as? NSNumber)?.doubleValue }
     guard at.count == rawAt.count else { return nil }

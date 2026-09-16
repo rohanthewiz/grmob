@@ -201,10 +201,16 @@ func OnNotificationTap(fn func(id string)) (cancel func()) {
 //	app ──SendSystemEvent("notification", {command: "sweep", prefix, request})──▶ host
 //	app ◀──ReceiveHostEvent("notification_swept", {request, fired: [ids]})────── host
 //
-// The host cancels every notification it scheduled or shows under the prefix
-// and answers with the ids among the scheduled ones whose time has come — the
+// The host cancels every notification still scheduled under the prefix and
+// answers with the ids among the scheduled ones whose time has come — the
 // ones the OS has drawn, or will draw late — which is how a relaunched app
-// learns what rang while it was not running. `request` is a correlation id in
+// learns what rang while it was not running.
+//
+// Banners already on screen are left there. A sweep runs as an app starts,
+// which on Android after a force stop is moments after the host posted the
+// missed ones late; a sweep that closed them took down a missed-alarm notice,
+// sound and all, before anyone could read it. What the OS drew is the user's
+// to dismiss. `request` is a correlation id in
 // ReadClipboard's mould (see clipboard.go for why one is needed).
 //
 // Each host answers from a record of its own, because no platform lists what
@@ -228,9 +234,10 @@ var (
 	sweepNext    uint64
 )
 
-// SweepNotifications cancels every notification posted or scheduled under an
-// ID beginning with prefix, and calls fn once with the IDs among the scheduled
-// ones whose time had arrived (see "Sweeping by prefix"). fn may be nil.
+// SweepNotifications cancels every notification still scheduled under an ID
+// beginning with prefix, and calls fn once with the IDs among the scheduled
+// ones whose time had arrived (see "Sweeping by prefix"). Banners already
+// shown stay. fn may be nil.
 //
 // An empty prefix is refused (fn runs with no ids and nothing is sent):
 // sweeping everything would take down notifications this caller never

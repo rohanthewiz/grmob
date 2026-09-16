@@ -169,3 +169,45 @@ test("gradient <defs> follows add, update and loss of the gradient", () => {
     assert.equal(shapes()[0].getAttribute("fill"), "#123456");
     assert.equal(shapes()[1].getAttribute("fill"), "none");
 });
+
+// A stroke gradient's server is named -stroke-i, sits after the same shape's
+// fill server, and follows its slot like a fill's; losing it rewrites the
+// stroke to the flat colour the new props carry.
+test("a stroke gradient's server follows its slot and goes with it", () => {
+    const grad = { strokeGradient: "linear", strokeGradientAt: [0, 0, 10, 0], strokeGradientStops: [0, 1], strokeGradientColors: ["#000000", "#ffffff"] };
+    const fillGrad = { gradient: "linear", gradientAt: [0, 0, 0, 10], gradientStops: [0, 1], gradientColors: ["#000000", "#ffffff"] };
+    const tree = JSON.stringify({
+        Type: "Canvas",
+        Props: { vw: 10, vh: 10, scale: "fit" },
+        Children: [{ Type: "CanvasShape", Props: { d: [0, 0, 0, 1, 10, 10], strokeWidth: 2, ...grad } }],
+    });
+    const { rt, svg } = mount(tree);
+    const defs = () => [...svg.children].filter((el) => el.getAttribute("data-grmob-chrome") === "gradients");
+    const ids = () => [...defs()[0].children].map((g) => g.getAttribute("id"));
+    const shapes = () => [...svg.children].filter((el) => el.getAttribute("data-node-path") !== null);
+    assert.deepEqual(ids(), ["grmob-root-0-stroke-0"]);
+    assert.equal(shapes()[0].getAttribute("stroke"), "url(#grmob-root-0-stroke-0)");
+    assert.equal(shapes()[0].getAttribute("fill"), "none");
+
+    // A second shape with both gradients: its fill server, then its stroke's.
+    rt.GrMob.patch(JSON.stringify([{
+        Type: "add",
+        TargetID: "root/0/1",
+        Changes: { Type: "CanvasShape", Props: { d: [0, 0, 0], strokeWidth: 1, ...fillGrad, ...grad } },
+    }]));
+    rt.drainFrames();
+    assert.deepEqual(ids(), ["grmob-root-0-stroke-0", "grmob-root-0-fill-1", "grmob-root-0-stroke-1"]);
+    assert.equal(shapes()[1].getAttribute("fill"), "url(#grmob-root-0-fill-1)");
+    assert.equal(shapes()[1].getAttribute("stroke"), "url(#grmob-root-0-stroke-1)");
+
+    // Both lose their stroke gradients to flat strokes; only the fill server
+    // is left.
+    rt.GrMob.patch(JSON.stringify([
+        { Type: "update-props", TargetID: "root/0/0", Changes: { d: [0, 0, 0], stroke: "#123456", strokeWidth: 2 } },
+        { Type: "update-props", TargetID: "root/0/1", Changes: { d: [0, 0, 0], ...fillGrad } },
+    ]));
+    rt.drainFrames();
+    assert.deepEqual(ids(), ["grmob-root-0-fill-1"]);
+    assert.equal(shapes()[0].getAttribute("stroke"), "#123456");
+    assert.equal(shapes()[1].getAttribute("stroke"), null);
+});

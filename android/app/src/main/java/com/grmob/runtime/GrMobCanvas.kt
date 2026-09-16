@@ -95,39 +95,51 @@ internal fun GrMobCanvas(node: GrMobNode, modifier: Modifier) {
                 GrMobStyle.parseColor(props["fill"] as? String)?.let { drawPath(path, it) }
             }
 
-            val stroke = GrMobStyle.parseColor(props["stroke"] as? String) ?: continue
+            // Go writes "stroke" or the strokeGradient keys, never both. The
+            // brush's shader carries the viewport matrix, so it colours the
+            // stroke in viewBox space while Stroke's width stays in dp: the
+            // same split SVG makes under vector-effect="non-scaling-stroke".
+            val strokeBrush = canvasGradientBrush(props, vp, prefix = "stroke")
+            val strokeColor = GrMobStyle.parseColor(props["stroke"] as? String)
+            if (strokeBrush == null && strokeColor == null) continue
             val widthDp = (props["strokeWidth"] as? Number)?.toFloat() ?: 1f
             val dash = (props["dash"] as? List<*>)
                 ?.mapNotNull { (it as? Number)?.toFloat()?.times(density) }
                 ?.takeIf { it.isNotEmpty() }
-            drawPath(
-                path, stroke,
-                style = Stroke(
-                    width = widthDp * density,
-                    cap = when (props["cap"]) {
-                        "round" -> StrokeCap.Round
-                        "square" -> StrokeCap.Square
-                        else -> StrokeCap.Butt
-                    },
-                    join = when (props["join"]) {
-                        "round" -> StrokeJoin.Round
-                        "bevel" -> StrokeJoin.Bevel
-                        else -> StrokeJoin.Miter
-                    },
-                    // Android's dash effect wants an even count; SVG repeats an
-                    // odd list to make one, so do the same.
-                    pathEffect = dash?.let {
-                        PathEffect.dashPathEffect((if (it.size % 2 == 1) it + it else it).toFloatArray())
-                    },
-                ),
+            val strokeStyle = Stroke(
+                width = widthDp * density,
+                cap = when (props["cap"]) {
+                    "round" -> StrokeCap.Round
+                    "square" -> StrokeCap.Square
+                    else -> StrokeCap.Butt
+                },
+                join = when (props["join"]) {
+                    "round" -> StrokeJoin.Round
+                    "bevel" -> StrokeJoin.Bevel
+                    else -> StrokeJoin.Miter
+                },
+                // Android's dash effect wants an even count; SVG repeats an
+                // odd list to make one, so do the same.
+                pathEffect = dash?.let {
+                    PathEffect.dashPathEffect((if (it.size % 2 == 1) it + it else it).toFloatArray())
+                },
             )
+            if (strokeBrush != null) {
+                drawPath(path, strokeBrush, style = strokeStyle)
+            } else if (strokeColor != null) {
+                drawPath(path, strokeColor, style = strokeStyle)
+            }
         }
     }
 }
 
 /**
- * A core.Gradient fill as a Compose brush, or null when the shape has none
- * (or its keys are malformed, which paints no fill, as the web targets do).
+ * A core.Gradient paint as a Compose brush, or null when the shape has none
+ * (or its keys are malformed, which paints nothing, as the web targets do).
+ *
+ * `prefix` picks the paint: "" reads the fill's keys (gradient, gradientAt,
+ * ...), "stroke" the stroke's (strokeGradient, strokeGradientAt, ...); see
+ * core.GradientKey.
  *
  * # The shader is built in viewBox units and carries the viewport as its matrix
  *
@@ -149,11 +161,12 @@ internal fun GrMobCanvas(node: GrMobNode, modifier: Modifier) {
  * Compose's Shader is android.graphics.Shader on this platform, which is what
  * makes setLocalMatrix available.
  */
-internal fun canvasGradientBrush(props: Map<String, Any?>, vp: CanvasViewport): Brush? {
-    val kind = props["gradient"] as? String ?: return null
-    val at = (props["gradientAt"] as? List<*>)?.map { (it as? Number)?.toFloat() ?: return null } ?: return null
-    val offsets = (props["gradientStops"] as? List<*>)?.map { (it as? Number)?.toFloat() ?: return null } ?: return null
-    val colors = (props["gradientColors"] as? List<*>)?.map { GrMobStyle.parseColor(it as? String) ?: return null } ?: return null
+internal fun canvasGradientBrush(props: Map<String, Any?>, vp: CanvasViewport, prefix: String = ""): Brush? {
+    fun key(name: String) = if (prefix.isEmpty()) name else prefix + name.replaceFirstChar { it.uppercaseChar() }
+    val kind = props[key("gradient")] as? String ?: return null
+    val at = (props[key("gradientAt")] as? List<*>)?.map { (it as? Number)?.toFloat() ?: return null } ?: return null
+    val offsets = (props[key("gradientStops")] as? List<*>)?.map { (it as? Number)?.toFloat() ?: return null } ?: return null
+    val colors = (props[key("gradientColors")] as? List<*>)?.map { GrMobStyle.parseColor(it as? String) ?: return null } ?: return null
     if (offsets.isEmpty() || offsets.size != colors.size) return null
     val matrix = android.graphics.Matrix().apply {
         setScale(vp.scaleX.toFloat(), vp.scaleY.toFloat())

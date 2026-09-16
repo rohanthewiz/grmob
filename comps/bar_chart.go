@@ -49,32 +49,48 @@ import (
 // axis, which is the arrangement for category names too long to sit under a
 // bar:
 //
-//	┌──────────┬──────────────────────────┬─────┐
-//	│  Rent    │██████████████████████    │ 1200│  one band per category,
-//	│  Food    │█████████                 │  450│  Height/n px each
-//	│ Transpo… │████                      │  200│
-//	└──────────┼──────────────────────────┼─────┘
+//	┌──────────┬────────────────────────────────┐
+//	│  Rent    │██████████████████ 1200         │  one band per category,
+//	│  Food    │█████████ 450                   │  Height/n px each
+//	│ Transpo… │████ 200                        │
+//	└──────────┼────────────────────────────────┘
 //	           0      500     1000   1500         ticks on a point axis
 //	 names: MaxLines(1), at most LabelWidth wide; values: ShowValues
 //
 // The name column is sized by its widest name, up to LabelWidth, and a longer
 // name is cut with an ellipsis (core.MaxLines). So is a tick label wider than
-// its box, and the end ticks' boxes are half an interval wide (they cannot
-// extend past the plot's edges), so a Format that writes "$1500" where
-// "$1.5k" would do is the likeliest thing to be cut. The bands are fixed px boxes
-// rather than flex weights, since Go knows the plot's height exactly; the
-// tick labels use LineChart's point arithmetic, because ticks, like points,
-// run edge to edge.
+// its box. Every tick's box is two thirds of an interval wide (see
+// pointLabels; the end ones cannot extend past the plot's edges), so a Format
+// that writes "$1500" where "$1.5k" would do can still be cut on a narrow
+// plot. The bands are fixed px boxes rather than flex weights, since Go knows
+// the plot's height exactly; the tick labels use LineChart's point
+// arithmetic, because ticks, like points, run edge to edge.
 //
 // # Values
 //
-// ShowValues writes each bar's value beside its end of the plot: in a row
-// along the top edge, above its bar, for vertical bars, and in a column along
-// the right edge, level with its bar, for horizontal ones. Text cannot be
-// placed inside core.Canvas, and a label that followed each bar's tip would
-// need the drawn size of the plot, which no target reports to Go; a row and a
-// column placed by the same flex arithmetic as the axes stay exact. A stacked
-// chart shows each category's total, and a grouped one a value per bar.
+// ShowValues writes each bar's value at its tip: just above a vertical bar
+// (below one that hangs negative), just past a horizontal one's end. A stacked
+// chart shows each category's total at the end of its stack, and a grouped
+// one a value per bar.
+//
+// Text cannot be placed inside core.Canvas, so the values are a layer of
+// ordinary Text over it (core.ZStack), and each is placed by arithmetic Go can
+// do without knowing the drawn size of the plot:
+//
+//	vertical     across: the bar's share of the width, as flex weights —
+//	             the cells barValueCells centres on the bars
+//	             along:  px, because the plot is Height px tall and a
+//	             stretched viewBox maps y linearly onto it
+//	horizontal   along:  flex weights again, a spacer as long as the bar's
+//	             share of the width before the label
+//	             across: px bands, as the names column has
+//
+// A vertical chart keeps a label line of headroom above the plot (and one
+// below, when a value is negative), so a bar reaching the end of the axis
+// still has room for its label. A horizontal one cannot reserve room it
+// cannot measure, so a bar leaving less than a quarter of the plot past its
+// tip (barValueRoom) carries its value inside, against its end, in whichever
+// of the theme's inks contrasts with the bar.
 type BarChart struct {
 	// Series are the groups' members, in order within each group. Value i of
 	// each series belongs to category i.
@@ -111,8 +127,8 @@ type BarChart struct {
 	// 0 means 96. Unused by vertical bars.
 	LabelWidth float64
 
-	// ShowValues writes each bar's value (a stack's total) along the plot's
-	// edge. See "Values" above.
+	// ShowValues writes each bar's value (a stack's total) at the bar's tip.
+	// See "Values" above.
 	ShowValues bool
 
 	// Format writes a tick label, a shown value and a spoken value.
@@ -218,14 +234,15 @@ func (c BarChart) Render(ctx *core.Context) *core.Node {
 		format = formatValue
 	}
 	if c.Horizontal {
-		return c.horizontalFrame(ctx, scale, h, n, fill, canvas, legendView, format)
+		return c.horizontalFrame(ctx, scale, h, n, fill, canvas, legendView, colors, format)
 	}
 	var values core.View
+	bottomExtra := 0.0
 	if c.ShowValues {
-		values = c.valueRow(t, n, fill, format)
+		values, bottomExtra = c.valueLayer(t, n, fill, scale, h, colors, format)
 	}
-	return cartesianFrameWithTop(ctx, scale, h, c.Format, canvas, bandLabels(t, c.Labels, n),
-		legendView, c.label(n), c.Style, values)
+	return cartesianFrameWithValues(ctx, scale, h, c.Format, canvas, bandLabels(t, c.Labels, n),
+		legendView, c.label(n), c.Style, values, bottomExtra)
 }
 
 // barRect is one bar in band-and-value coordinates: a runs across the
@@ -365,26 +382,244 @@ func (c BarChart) barValueCells(n int, fill float64, format func(float64) string
 	return texts, weights
 }
 
-// valueRow is ShowValues for vertical bars: one weighted cell per bar, in a
-// row as tall as a label line, placed over the plot by
-// cartesianFrameWithTop.
-func (c BarChart) valueRow(t *core.Theme, n int, fill float64, format func(float64) string) core.View {
-	texts, weights := c.barValueCells(n, fill, format)
-	if len(texts) == 0 {
+// barValueRoom is the least share of a horizontal plot's width a bar must
+// leave past its tip for its value to be written outside it. A quarter of a
+// phone's plot is some 55 px, room for "$1.5k" or "10400" at the label size
+// with the gap before it; a bar longer than that carries its value inside.
+const barValueRoom = 0.25
+
+// barTip is where a ShowValues cell's label goes, along the value axis in
+// viewBox drawing coordinates (y down for vertical bars, x rightwards for
+// horizontal ones): the bar's far end, its zero end, whether the bar runs
+// towards negative values, and the colour of the bar the label ends. ok is
+// false for the pad cells and for a missing value.
+type barTip struct {
+	ok       bool
+	at, zero float64
+	negative bool
+	color    string
+}
+
+// barValueTips is barValueCells's geometry, cell for cell in the same order:
+// where each value's bar ends. A stack ends at its positive total when it has
+// one and at its negative total otherwise, and its colour is the outermost
+// segment's, the one the label touches.
+func (c BarChart) barValueTips(n int, scale valueScale, colors []string) []barTip {
+	if n == 0 {
 		return nil
 	}
-	items := make([]core.PropsAndChildren, 0, len(texts)+4)
-	items = append(items, core.Padding(0), core.Gap(0), core.Height(px(chartLabelLine)), core.AccessibilityHidden())
-	for k, text := range texts {
-		items = append(items, weightedLabel(t, text, weights[k], core.AlignCenter))
+	at := scale.y
+	if c.Horizontal {
+		at = func(v float64) float64 { return chartView - scale.y(v) }
 	}
-	return core.Row(items...)
+	m := max(1, len(c.Series))
+	value := func(j, i int) (float64, bool) {
+		if j >= len(c.Series) || i >= len(c.Series[j].Values) {
+			return 0, false
+		}
+		v := c.Series[j].Values[i]
+		return v, !math.IsNaN(v) && !math.IsInf(v, 0)
+	}
+	color := func(j int) string {
+		if j < len(colors) {
+			return colors[j]
+		}
+		return ""
+	}
+	var out []barTip
+	for i := range n {
+		out = append(out, barTip{})
+		if c.Stacked {
+			up, down, upColor, downColor, any := 0.0, 0.0, "", "", false
+			for j := range c.Series {
+				v, ok := value(j, i)
+				if !ok {
+					continue
+				}
+				any = true
+				if v > 0 {
+					up, upColor = up+v, color(j)
+				} else if v < 0 {
+					down, downColor = down+v, color(j)
+				}
+			}
+			tip := barTip{ok: any, at: at(up), zero: at(0), color: upColor}
+			if up == 0 && down < 0 {
+				tip = barTip{ok: true, at: at(down), zero: at(0), negative: true, color: downColor}
+			}
+			out = append(out, tip)
+		} else {
+			for j := range m {
+				v, ok := value(j, i)
+				out = append(out, barTip{ok: ok, at: at(v), zero: at(0), negative: v < 0, color: color(j)})
+			}
+		}
+		out = append(out, barTip{})
+	}
+	return out
+}
+
+// valueLayer is ShowValues for vertical bars: a row of cells as wide as the
+// ones barValueCells weighs, laid over the plot's headroom, the plot and its
+// foot, each dropping its label to its bar's tip by a px spacer.
+//
+//	┌ headroom: a label line, and the half line every plot has ┐
+//	│        1200                                              │
+//	│        ▐██▌   450                                        │  label top =
+//	│        ▐██▌  ▐██▌                                        │  headroom + tip·h/100 − line
+//	├────────────────────── zero ──────────────────────────────┤
+//	│                     ▐██▌                                 │  a negative bar's label
+//	│                      −80                                 │  starts at its tip
+//	└ foot: the half line, and another half when a value is negative ┘
+//
+// bottomExtra is that other half line, which cartesianFrameWithValues adds
+// under the canvas so the lowest label clears the category names.
+func (c BarChart) valueLayer(t *core.Theme, n int, fill float64, scale valueScale, h float64,
+	colors []string, format func(float64) string) (layer core.View, bottomExtra float64) {
+	texts, weights := c.barValueCells(n, fill, format)
+	tips := c.barValueTips(n, scale, colors)
+	if len(texts) == 0 || len(tips) != len(texts) {
+		return nil, 0
+	}
+	for k, tip := range tips {
+		if tip.ok && tip.negative && texts[k] != "" {
+			bottomExtra = chartLabelLine / 2
+		}
+	}
+	headroom := chartLabelLine * 1.5
+	total := headroom + h + chartLabelLine/2 + bottomExtra
+
+	items := make([]core.PropsAndChildren, 0, len(texts)+5)
+	items = append(items, core.Padding(0), core.Gap(0), core.Width("100%"), core.Height(px(total)),
+		core.AccessibilityHidden())
+	for k, text := range texts {
+		top := 0.0
+		if tip := tips[k]; tip.ok && text != "" {
+			top = headroom + tip.at/chartView*h
+			if !tip.negative {
+				top -= chartLabelLine
+			}
+		} else {
+			text = ""
+		}
+		items = append(items, core.Column(
+			core.Padding(0),
+			core.Gap(0),
+			core.FlexGrow(weights[k]),
+			core.FlexBasis("0"),
+			core.MinWidth("0px"),
+			core.Box(core.Padding(0), core.Height(px(math.Max(0, top)))),
+			core.Column(
+				core.Padding(0),
+				core.Height(px(chartLabelLine)),
+				core.Justify(core.JustifyCenter),
+				chartLabelText(t, text, core.AlignCenter, t.Colors.TextSecondary),
+			),
+		))
+	}
+	return core.Row(items...), bottomExtra
+}
+
+// bandValueLayer is ShowValues for horizontal bars: a column h px tall of the
+// bands barValueCells weighs, each a row that puts its label past its bar's
+// tip, or inside the bar against its end when too little of the plot is left
+// (see barValueRoom). The three weights of a row always sum to the plot's
+// width, so a label's edge is the bar's end on every target.
+//
+//	outside, positive   [ spacer: tip ][ label → ]
+//	inside,  positive   [ spacer: zero ][ ← label: zero..tip ][ rest ]
+//	outside, negative   [ ← label: tip ][ spacer: rest ]
+//	inside,  negative   [ spacer: tip ][ label → : tip..zero ][ rest ]
+func (c BarChart) bandValueLayer(t *core.Theme, n int, fill float64, scale valueScale, h float64,
+	colors []string, format func(float64) string) core.View {
+	texts, weights := c.barValueCells(n, fill, format)
+	tips := c.barValueTips(n, scale, colors)
+	total := 0.0
+	for _, w := range weights {
+		total += w
+	}
+	if len(texts) == 0 || len(tips) != len(texts) || total <= 0 {
+		return nil
+	}
+	const gap = 4
+	segment := func(weight float64, text string, align core.Alignment, ink string, side core.StyleProp) core.View {
+		if weight <= 1e-9 {
+			return nil
+		}
+		props := []core.PropsAndChildren{
+			core.Padding(0),
+			core.FlexGrow(weight),
+			core.FlexBasis("0"),
+			core.MinWidth("0px"),
+		}
+		if side != nil {
+			props = append(props, side)
+		}
+		if text != "" {
+			props = append(props, chartLabelText(t, text, align, ink))
+		}
+		return core.Column(props...)
+	}
+
+	items := make([]core.PropsAndChildren, 0, len(texts)+5)
+	items = append(items, core.Padding(0), core.Gap(0), core.Width("100%"), core.Height(px(h)),
+		core.AccessibilityHidden())
+	for k, text := range texts {
+		row := []core.PropsAndChildren{
+			core.Padding(0),
+			core.Gap(0),
+			core.Height(px(h * weights[k] / total)),
+			core.AlignItemsProp(core.AlignItemsCenter),
+		}
+		tip := tips[k]
+		if !tip.ok || text == "" {
+			items = append(items, core.Row(row...))
+			continue
+		}
+		p, z := tip.at/chartView, tip.zero/chartView
+		outside, inside := t.Colors.TextSecondary, contrastInk(tip.color, t.Colors.TextPrimary, t.Colors.Background)
+		switch {
+		case !tip.negative && (1-p >= barValueRoom || p-z < barValueRoom):
+			row = append(row,
+				segment(p, "", core.AlignStart, "", nil),
+				segment(1-p, text, core.AlignStart, outside, core.PaddingLeft(gap)))
+		case !tip.negative:
+			row = append(row,
+				segment(z, "", core.AlignStart, "", nil),
+				segment(p-z, text, core.AlignEnd, inside, core.PaddingRight(gap)),
+				segment(1-p, "", core.AlignStart, "", nil))
+		case p >= barValueRoom || z-p < barValueRoom:
+			row = append(row,
+				segment(p, text, core.AlignEnd, outside, core.PaddingRight(gap)),
+				segment(1-p, "", core.AlignStart, "", nil))
+		default:
+			row = append(row,
+				segment(p, "", core.AlignStart, "", nil),
+				segment(z-p, text, core.AlignStart, inside, core.PaddingLeft(gap)),
+				segment(1-z, "", core.AlignStart, "", nil))
+		}
+		items = append(items, core.Row(row...))
+	}
+	return core.Column(items...)
+}
+
+// chartLabelText is one line of chart label text: the label size, cut with an
+// ellipsis when its box is narrower, and hidden from readers, who get the
+// summary instead.
+func chartLabelText(t *core.Theme, text string, align core.Alignment, ink string) core.View {
+	return core.Text(text,
+		core.FontSize(chartLabelSize),
+		core.TextColor(ink),
+		core.Align(align),
+		core.MaxLines(1),
+		core.AccessibilityHidden(),
+	)
 }
 
 // horizontalFrame lays out a horizontal bar chart: the name column, the plot
 // over its tick labels, and the value column. See "Horizontal" above.
 func (c BarChart) horizontalFrame(ctx *core.Context, scale valueScale, h float64, n int, fill float64,
-	canvas, legendView core.View, format func(float64) string) *core.Node {
+	canvas, legendView core.View, colors []string, format func(float64) string) *core.Node {
 	t := ctx.Theme()
 
 	labelWidth := c.LabelWidth
@@ -408,6 +643,14 @@ func (c BarChart) horizontalFrame(ctx *core.Context, scale valueScale, h float64
 		}
 	}
 
+	// The plot, with the values laid over it when shown. The stack is pinned
+	// to the canvas's own size so neither layer decides it (see core.ZStack).
+	plot := canvas
+	if c.ShowValues {
+		if layer := c.bandValueLayer(t, n, fill, scale, h, colors, format); layer != nil {
+			plot = core.ZStack(core.Padding(0), core.Width("100%"), core.Height(px(h)), canvas, layer)
+		}
+	}
 	row := []core.PropsAndChildren{
 		core.Padding(0),
 		core.Gap(6),
@@ -420,13 +663,9 @@ func (c BarChart) horizontalFrame(ctx *core.Context, scale valueScale, h float64
 			core.FlexGrow(1),
 			core.FlexBasis("0"),
 			core.MinWidth("0px"),
-			canvas,
+			plot,
 			pointLabels(t, tickText, len(ticks)),
 		),
-	}
-	if c.ShowValues {
-		texts, weights := c.barValueCells(n, fill, format)
-		row = append(row, bandColumn(t, texts, weights, h, core.AlignStart))
 	}
 
 	items := make([]core.PropsAndChildren, 0, 8+len(c.Style))

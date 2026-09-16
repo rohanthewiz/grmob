@@ -1,6 +1,7 @@
 package hooks
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -113,7 +114,8 @@ func notificationHost(t *testing.T) *[]map[string]any {
 
 // Going to the background with Notify schedules the week's occurrences, soonest
 // first, a one-time alarm once and a snooze by its own time; coming back
-// cancels exactly those.
+// cancels exactly the ones still to come, leaving what the OS already rang on
+// screen.
 func TestAlarmsNotifyScheduleWhileAwayAndCancelOnReturn(t *testing.T) {
 	seen := notificationHost(t)
 	// 2026-09-16 is a Wednesday.
@@ -163,15 +165,18 @@ func TestAlarmsNotifyScheduleWhileAwayAndCancelOnReturn(t *testing.T) {
 
 	*seen = nil
 	rang = r.setAway(false, at(13, 30, 0))
-	cancels := 0
+	var cancelled []string
 	for _, e := range *seen {
 		if e["command"] != "cancel" {
 			t.Errorf("unexpected %v on return", e)
 		}
-		cancels++
+		id, _ := e["id"].(string)
+		cancelled = append(cancelled, id)
 	}
-	if cancels != len(want) {
-		t.Errorf("cancelled %d, want %d", cancels, len(want))
+	// The 12:05 snooze and the 13:00 alarm fired while away: their banners
+	// are the user's. The five weekday occurrences are still to come.
+	if !slices.Equal(cancelled, want[2:]) {
+		t.Errorf("cancelled %v, want the five still to come %v", cancelled, want[2:])
 	}
 	// The one-time alarm came due while away and is reported, so the app can
 	// switch it off; nothing is rung again by the next check.
@@ -282,5 +287,55 @@ func TestAlarmsMountedAwaySweepOnFirstReturn(t *testing.T) {
 	r.setAway(false, at(12, 3, 0))
 	if len(*prefixes) != 1 {
 		t.Errorf("swept again on a later return: %v", *prefixes)
+	}
+}
+
+// A NotifyGroup moves every id under its own prefix, which no other group's
+// prefix (the default's included) begins, a dot in a name cannot make one
+// group's prefix begin another's, and a group's sweep and its reading of the
+// fired ids use that prefix.
+func TestAlarmNotifyGroupsKeepTheirOwnIDs(t *testing.T) {
+	prefixes := map[string]string{}
+	for _, g := range []string{"", "work", "workday", "a", "a.b", "a%2Eb", "a_b"} {
+		prefixes[g] = AlarmOptions{NotifyGroup: g}.notifyPrefix()
+	}
+	if prefixes[""] != "grmob.alarm." || prefixes["work"] != "grmob.alarms.work." {
+		t.Errorf("prefixes = %v", prefixes)
+	}
+	for g, p := range prefixes {
+		for h, q := range prefixes {
+			if g != h && strings.HasPrefix(q, p) {
+				t.Errorf("group %q's prefix %q begins group %q's %q; its sweep would take them", g, p, h, q)
+			}
+		}
+	}
+
+	seen := notificationHost(t)
+	wake := alarm.Alarm{ID: "wake", Hour: 13, Enabled: true}
+	r := newRecord(at(12, 0, 0), wake)
+	r.opts.Notify = true
+	r.opts.NotifyGroup = "work"
+	r.setAway(true, at(12, 0, 0))
+	if len(*seen) != 1 || (*seen)[0]["id"] != "grmob.alarms.work.wake."+itoa(at(13, 0, 0)) {
+		t.Fatalf("posted %v", *seen)
+	}
+
+	fired := r.firedAlarms(r.opts.notifyPrefix(), []string{
+		"grmob.alarm.wake." + itoa(at(13, 0, 0)), // the default group's: not this one's
+		"grmob.alarms.work.wake." + itoa(at(13, 0, 0)),
+	})
+	if len(fired) != 1 || fired[0].ID != "wake" {
+		t.Errorf("fired = %v, want wake once, from its own group", fired)
+	}
+}
+
+// The sweep a record sends at mount uses its group's prefix.
+func TestUseAlarmsSweepsItsOwnGroup(t *testing.T) {
+	prefixes := sweepHost(t)
+	ctx := core.NewContext()
+	defer ctx.Close()
+	UseAlarms(ctx, nil, AlarmOptions{Notify: true, NotifyGroup: "work"})
+	if len(*prefixes) != 1 || (*prefixes)[0] != "grmob.alarms.work." {
+		t.Errorf("sweeps = %v, want one of grmob.alarms.work.", *prefixes)
 	}
 }
