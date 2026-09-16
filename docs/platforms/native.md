@@ -1542,6 +1542,28 @@ fields) already measure to their content and are not asked; a subtree holding a
 `List` or a vertical `Scroll`, which cannot answer intrinsics, keeps the old
 reading, and so does a child with a `Width` or a percentage `MaxWidth`.
 
+Starving a sibling is not the only thing a filling child does, and the second
+shape has no siblings at all. A Row holding *one* container child places it
+with `Arrangement` — `core.Justify(JustifyEnd)` maps to `Arrangement.End` —
+and a child as wide as the offer is at both ends of the row at once, so the
+packing has nothing left to place:
+
+```
+   Row( Justify(End), Column(bubble) )
+
+   Compose, measured at the offer   [ bubble ....................... ]
+   CSS, flex-basis: auto            [ ....................... bubble ]
+```
+
+That is `examples/chat`'s outgoing message: the bubble ran the full width and
+sat on the left, where the browser drew it hugging its text on the right. It
+came out of a census of the other example apps (todoapp, mobileapp, fintechapp,
+social, chat, counter, signup and layout), which found nothing at all in six of
+them — every `Row` child there is a leaf or carries a `FlexGrow` — one lone
+`Column` in `examples/layout`'s body section, whose grey panel now measures the
+way the browser's always has, and chat's three bubbles. No app outside the
+tutorial had the starvation shape.
+
 What this does not add is CSS's `min-width: auto`. A Row whose children's
 contents together exceed it still gives the last ones what is left, and a Text
 there breaks mid-word where a browser would overflow at the word: 1.1's third
