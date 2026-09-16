@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -760,3 +761,308 @@ func TestOrderingTwoClaudeVersions(t *testing.T) {
 // A version and not a word: digits and dots, with an optional pre-release tail
 // that a nightly or a release candidate would carry.
 var versionish = regexp.MustCompile(`^[0-9]+(\.[0-9]+)*([-+][0-9A-Za-z.-]+)?$`)
+
+// --------------------------------------------------------------------------
+// The SessionStart hook that turns this repository's git hooks on
+// --------------------------------------------------------------------------
+
+// The path of the enabling script, relative to this package.
+var enableGitHooksScript = filepath.Join("..", "..", ".claude", "hooks", "enable-githooks.sh")
+
+// .claude/settings.json runs .claude/hooks/enable-githooks.sh at SessionStart.
+//
+// # The gap this closes
+//
+// .githooks/pre-push is a real check with a real test beside it
+// (prepush_test.go), and for its whole life it ran in ONE checkout. git reads
+// .git/hooks and nothing else unless core.hooksPath says otherwise, that
+// setting lives in the untracked .git/config, and so the guard was on wherever
+// somebody had typed the line and off everywhere else — including the checkout
+// this test was written in, where `git config --get core.hooksPath` came back
+// empty with the hook sitting there tracked and executable.
+//
+// Nothing in the repository could have said so. prepush_test.go proves what
+// the hook DOES; it has never had an opinion about whether git would run it.
+//
+// # Why the config and the behaviour are two tests
+//
+// This one is the wiring: the file says the script runs. The one below is the
+// script: given a repository in each of the four states it can find, it leaves
+// the right one behind. Either half can be right while the other is wrong —
+// a correct script nobody invokes is the state this repository was already in.
+func TestTheSessionStartHookEnablesThisRepositorysGitHooks(t *testing.T) {
+	root := filepath.Join("..", "..")
+	raw, err := os.ReadFile(filepath.Join(root, ".claude", "settings.json"))
+	if err != nil {
+		t.Fatalf("reading .claude/settings.json: %v", err)
+	}
+	var settings struct {
+		Hooks map[string][]struct {
+			Matcher string `json:"matcher"`
+			Hooks   []struct {
+				Type    string `json:"type"`
+				Command string `json:"command"`
+			} `json:"hooks"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal(raw, &settings); err != nil {
+		t.Fatalf(".claude/settings.json is not JSON: %v", err)
+	}
+
+	// The whole-file schema check above is the one that reads every key; this
+	// only asks whether one command is reachable from SessionStart.
+	const want = "enable-githooks.sh"
+	found := false
+	for _, group := range settings.Hooks["SessionStart"] {
+		for _, h := range group.Hooks {
+			if h.Type == "command" && strings.Contains(h.Command, want) {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Errorf(".claude/settings.json has no SessionStart command hook naming %s.\n\n"+
+			"Without it core.hooksPath is set in whichever clone somebody "+
+			"typed the line in, and .githooks/pre-push — the gofmt guard CI "+
+			"opens with — does not run in any other. The entry is:\n\n"+
+			"  \"SessionStart\": [{\"hooks\": [{\"type\": \"command\",\n"+
+			"    \"command\": \"\\\"$CLAUDE_PROJECT_DIR\\\"/.claude/hooks/%s\",\n"+
+			"    \"timeout\": 10}]}]\n\n"+
+			"If the hook was removed on purpose, remove this check with it and "+
+			"say in the commit message that a fresh clone no longer gets the "+
+			"push guard — that is a decision, not a cleanup.", want, want)
+	}
+}
+
+// The script itself, run against throwaway repositories in each state it can
+// find one in.
+//
+// # Why a live run and not a lexer check
+//
+// The same reason prepush_test.go gives: every claim the script makes is
+// about what git does. Which scope `git config --get` reads, that a relative
+// hooksPath is resolved against the working tree, that `--local` writes where
+// a later `--get` will find it — none of that is visible in the text, and the
+// one bug worth fearing here is the script cheerfully overwriting a setting
+// that belongs to another tool.
+//
+//	repository state            after            output
+//	────────────────            ─────            ──────
+//	hooksPath unset             .githooks        one sentence, it switched on
+//	hooksPath .githooks         unchanged        silence
+//	hooksPath <abs>/.githooks   unchanged        silence (same directory)
+//	hooksPath somewhere else    UNCHANGED        one sentence, left alone
+//	no .githooks directory      unset            silence
+//	not a git repository        --               silence
+//
+// Every row exits 0: a session does not fail to start over a convenience.
+func TestEnableGitHooksLeavesEachRepositoryInTheRightState(t *testing.T) {
+	script, err := filepath.Abs(enableGitHooksScript)
+	if err != nil {
+		t.Fatalf("resolving %s: %v", enableGitHooksScript, err)
+	}
+	if _, err := os.Stat(script); err != nil {
+		t.Fatalf("%s is not there: %v", enableGitHooksScript, err)
+	}
+
+	t.Run("an unset hooksPath is switched on", func(t *testing.T) {
+		repo := throwawayRepo(t, true)
+		out := runEnableGitHooks(t, script, repo)
+		if got := hooksPathOf(t, repo); got != ".githooks" {
+			t.Errorf("core.hooksPath is %q, want %q — the push guard is still "+
+				"off in a fresh clone, which is the whole point of the hook.",
+				got, ".githooks")
+		}
+		ctx := additionalContextOf(t, out)
+		if !strings.Contains(ctx, "core.hooksPath") {
+			t.Errorf("the session was told %q, which does not name the setting "+
+				"that changed; a hook that changes a clone's git config says "+
+				"which one.", ctx)
+		}
+	})
+
+	t.Run("a hooksPath already ours is silent", func(t *testing.T) {
+		repo := throwawayRepo(t, true)
+		setHooksPath(t, repo, ".githooks")
+		if out := runEnableGitHooks(t, script, repo); out != "" {
+			t.Errorf("wrote %q on a repository that was already set up. This "+
+				"runs at the top of every session, so the common path has to "+
+				"be silent or it is a sentence nobody reads, every time.", out)
+		}
+		if got := hooksPathOf(t, repo); got != ".githooks" {
+			t.Errorf("core.hooksPath became %q; it was already right.", got)
+		}
+	})
+
+	t.Run("an absolute spelling of the same directory is ours", func(t *testing.T) {
+		repo := throwawayRepo(t, true)
+		abs := filepath.Join(repo, ".githooks")
+		setHooksPath(t, repo, abs)
+		if out := runEnableGitHooks(t, script, repo); out != "" {
+			t.Errorf("wrote %q for core.hooksPath=%s, which IS .githooks under "+
+				"another spelling. Reporting it as somebody else's setting "+
+				"would put that sentence in front of the reader every session.",
+				out, abs)
+		}
+		if got := hooksPathOf(t, repo); got != abs {
+			t.Errorf("core.hooksPath became %q, want the absolute spelling %q "+
+				"left as it was.", got, abs)
+		}
+	})
+
+	t.Run("somebody else's hooksPath is left alone", func(t *testing.T) {
+		repo := throwawayRepo(t, true)
+		other := filepath.Join(t.TempDir(), "shared-hooks")
+		if err := os.MkdirAll(other, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		setHooksPath(t, repo, other)
+		out := runEnableGitHooks(t, script, repo)
+		if got := hooksPathOf(t, repo); got != other {
+			t.Errorf("core.hooksPath became %q and was %q.\n\nA hooksPath "+
+				"somebody set is usually another tool's — pre-commit, a shared "+
+				"directory across repositories — and replacing it disables "+
+				"THEIR checks to enable this one, in a process they did not "+
+				"run on purpose.", got, other)
+		}
+		ctx := additionalContextOf(t, out)
+		if !strings.Contains(ctx, other) {
+			t.Errorf("the session was told %q, which does not name the value "+
+				"that is in the way; the reader has to run the command "+
+				"themselves to find out what it is.", ctx)
+		}
+	})
+
+	t.Run("no .githooks directory means nothing to point at", func(t *testing.T) {
+		repo := throwawayRepo(t, false)
+		if out := runEnableGitHooks(t, script, repo); out != "" {
+			t.Errorf("wrote %q for a repository with no .githooks.", out)
+		}
+		if got := hooksPathOf(t, repo); got != "" {
+			t.Errorf("core.hooksPath became %q with no .githooks directory to "+
+				"point at; that shadows .git/hooks with nothing, which is "+
+				"worse than leaving it alone.", got)
+		}
+	})
+
+	t.Run("a directory that is not a repository is silent", func(t *testing.T) {
+		dir := t.TempDir()
+		if out := runEnableGitHooks(t, script, dir); out != "" {
+			t.Errorf("wrote %q outside a working tree.", out)
+		}
+	})
+}
+
+// runEnableGitHooks executes the script with CLAUDE_PROJECT_DIR pointed at
+// repo and returns its stdout, holding it to exiting 0 and saying nothing on
+// stderr.
+//
+// The script is executed directly rather than handed to `sh`, so the shebang
+// and the execute bit are exercised the way Claude Code will exercise them.
+//
+// GIT_CONFIG_GLOBAL and GIT_CONFIG_SYSTEM are emptied for the reason the
+// script reads the EFFECTIVE hooksPath: a developer with a global
+// core.hooksPath would otherwise send the "unset" case down the foreign-value
+// branch, and the test would fail on their machine over their own config.
+func runEnableGitHooks(t *testing.T, script, repo string) string {
+	t.Helper()
+	cmd := exec.Command(script)
+	cmd.Dir = repo
+	cmd.Env = append(os.Environ(),
+		"CLAUDE_PROJECT_DIR="+repo,
+		"GIT_CONFIG_GLOBAL="+os.DevNull,
+		"GIT_CONFIG_SYSTEM="+os.DevNull,
+	)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("%s exited %v (stderr: %s).\n\nEvery path in it exits 0: a "+
+			"SessionStart hook that fails is noise at the top of every "+
+			"session, over a convenience.", enableGitHooksScript, err, stderr.String())
+	}
+	if s := strings.TrimSpace(stderr.String()); s != "" {
+		t.Errorf("%s wrote to stderr: %s", enableGitHooksScript, s)
+	}
+	return strings.TrimSpace(stdout.String())
+}
+
+// additionalContextOf reads the one sentence out of a SessionStart hook
+// payload, holding the payload to being the JSON Claude Code will parse.
+//
+// Worth checking rather than assuming: the script builds this with printf and
+// an unescaped substitution, so a message someone later writes with a quote in
+// it produces a line that parses as nothing and a sentence that never arrives.
+func additionalContextOf(t *testing.T, out string) string {
+	t.Helper()
+	if out == "" {
+		t.Fatalf("%s said nothing where a sentence was expected.", enableGitHooksScript)
+	}
+	var payload struct {
+		Specific struct {
+			Event   string `json:"hookEventName"`
+			Context string `json:"additionalContext"`
+		} `json:"hookSpecificOutput"`
+	}
+	if err := json.Unmarshal([]byte(out), &payload); err != nil {
+		t.Fatalf("%s wrote %q, which is not JSON: %v.\n\nThe script builds "+
+			"this with printf, so a message carrying a double quote or a "+
+			"backslash breaks the payload and the sentence silently never "+
+			"reaches the session.", enableGitHooksScript, out, err)
+	}
+	if payload.Specific.Event != "SessionStart" {
+		t.Errorf("hookEventName is %q, want SessionStart.", payload.Specific.Event)
+	}
+	if payload.Specific.Context == "" {
+		t.Errorf("the payload %q carries no additionalContext.", out)
+	}
+	return payload.Specific.Context
+}
+
+// throwawayRepo is `git init` plus, optionally, a tracked-looking .githooks
+// holding an executable pre-push. The hook's contents do not matter here —
+// nothing in this test pushes — only that the file is there and executable,
+// which is the state the script checks before it reports success.
+func throwawayRepo(t *testing.T, withHooks bool) string {
+	t.Helper()
+	dir := t.TempDir()
+	gitIn(t, dir, "init", "-q")
+	if withHooks {
+		hooks := filepath.Join(dir, ".githooks")
+		if err := os.MkdirAll(hooks, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(hooks, "pre-push"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
+func setHooksPath(t *testing.T, repo, value string) {
+	t.Helper()
+	gitIn(t, repo, "config", "--local", "core.hooksPath", value)
+}
+
+func hooksPathOf(t *testing.T, repo string) string {
+	t.Helper()
+	cmd := exec.Command("git", "-C", repo, "config", "--local", "--get", "core.hooksPath")
+	out, err := cmd.Output()
+	if err != nil {
+		// `--get` exits 1 when the key is absent, which is an answer.
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func gitIn(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	cmd.Env = append(os.Environ(),
+		"GIT_CONFIG_GLOBAL="+os.DevNull,
+		"GIT_CONFIG_SYSTEM="+os.DevNull,
+	)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %s in %s: %v\n%s", strings.Join(args, " "), dir, err, out)
+	}
+}
