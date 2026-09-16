@@ -198,26 +198,94 @@ struct GrMobFlexSolver {
         let n = bases.count
         guard n > 0 else { return Resolved(mains: [], leading: 0, gap: 0) }
 
-        let free = main - natural(bases: bases)
-        var mains = bases
+        // CSS's hypothetical main size: the base clamped to the child's
+        // minimum. For almost every child the two are the same number — a
+        // content-sized base is never below the content's floor, and the
+        // layout hands such a child a min already clamped to its base. They
+        // part only for a zero flex-basis child, whose base is its padding
+        // and whose min is still its content (GrMobFlexZeroBasis). CSS
+        // decides grow-or-shrink on the hypothetical sizes, so a line of
+        // zero-basis children whose contents overflow shrinks rather than
+        // grows from nothing.
+        let hypothetical = (0..<n).map { max(bases[$0], at(mins, $0, 0)) }
+        let free = main - natural(bases: hypothetical)
 
         let totalWeight = weights.reduce(0, +)
         if free > 0, totalWeight > 0 {
-            for i in 0..<n {
-                mains[i] += free * weights[i] / totalWeight
-            }
-            return Resolved(mains: mains, leading: 0, gap: 0)
+            return Resolved(mains: grow(main: main, bases: bases, hypothetical: hypothetical,
+                                        weights: weights),
+                            leading: 0, gap: 0)
         }
         if free < 0 {
-            return Resolved(mains: shrink(main: main, bases: bases,
+            // Shrinking from the hypothetical sizes is the spec's "freeze an
+            // item whose base is below its hypothetical size": such a child's
+            // floor (min, clamped to the hypothetical) equals its starting
+            // size, so the loop below can never take anything from it.
+            return Resolved(mains: shrink(main: main, bases: hypothetical,
                                           shrinks: shrinks, mins: mins),
                             leading: 0, gap: 0)
         }
 
         // Nothing grew: the leftover becomes position, per justify-content.
-        return Resolved(mains: mains,
+        return Resolved(mains: hypothetical,
                         leading: leading(free: free, count: n),
                         gap: gap(free: free, count: n))
+    }
+
+    /// CSS 9.7 "Resolving Flexible Lengths", grow half, with min violations.
+    ///
+    /// Free space is shared out by weight on top of each child's BASE, not
+    /// its hypothetical size — that is the whole point of a zero basis: seven
+    /// day cells with zero bases and weight 1 each get exactly a seventh of
+    /// the line, whatever their numerals are. Sharing on top of the content
+    /// width instead gives "10" more room than "8".
+    ///
+    /// A child the share leaves under its minimum is frozen at the minimum and
+    /// the rest share again, the same loop shape as `shrink`:
+    ///
+    /// ```
+    ///   freeze every child with no weight, at its hypothetical size
+    ///   repeat:
+    ///     free = main - gaps - sum(frozen sizes) - sum(unfrozen bases)
+    ///     share it over the unfrozen, by weight, on top of their bases
+    ///     raise each to its minimum
+    ///     if nothing was raised -> done
+    ///     freeze the ones that were, and go round again
+    /// ```
+    ///
+    /// Only a zero-basis child can be raised (every other base is already at
+    /// or above its minimum), so for any line without one this is the single
+    /// division it replaced. Every pass freezes a child or exits.
+    private func grow(main: CGFloat, bases: [CGFloat], hypothetical: [CGFloat],
+                      weights: [CGFloat]) -> [CGFloat] {
+        let n = bases.count
+        let gaps = spacing * CGFloat(max(n - 1, 0))
+        var sizes = hypothetical
+        var frozen = (0..<n).map { weights[$0] <= 0 }
+
+        while true {
+            let thawed = (0..<n).filter { !frozen[$0] }
+            if thawed.isEmpty { break }
+
+            let used = (0..<n).reduce(gaps) { $0 + (frozen[$1] ? sizes[$1] : bases[$1]) }
+            // Frozen minima can eat the whole line; the thawed then keep their
+            // bases and are raised to their minima below, overflowing as CSS
+            // does rather than being handed negative room.
+            let free = max(main - used, 0)
+            let totalWeight = thawed.reduce(0) { $0 + weights[$1] }
+            for i in thawed {
+                sizes[i] = bases[i] + free * weights[i] / totalWeight
+            }
+
+            var raised = false
+            for i in thawed where sizes[i] < hypothetical[i] {
+                sizes[i] = hypothetical[i]
+                frozen[i] = true
+                raised = true
+            }
+            if !raised { break }
+        }
+        return sizes
     }
 
     /// CSS 9.7 "Resolving Flexible Lengths", shrink half, with the min

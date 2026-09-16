@@ -61,6 +61,57 @@ func checkFlexSolver() -> [String] {
               .resolve(main: 200, bases: [40, 0], weights: [0, 1]).mains,
           [40, 150], into: &problems)
 
+    // --- Grow with minimums (zero flex-basis) -----------------------------
+    //
+    // A zero-basis child's base is its padding and its min is its content,
+    // so a min can exceed a base here and nowhere else. Seven day cells of a
+    // calendar week, bases 0, weight 1, numerals 8 to 18 wide, in 350: the
+    // share (50 each) clears every floor, so the floors change nothing and
+    // the columns are equal. Folding the floors into the bases gave
+    // [50-ish ± 5] instead, which is the bug lesson 4.9 showed.
+    check("zero bases share the line by weight whatever their minimums",
+          plain.resolve(main: 350, bases: [0, 0, 0, 0, 0, 0, 0], weights: [1, 1, 1, 1, 1, 1, 1],
+                        mins: [8, 8, 18, 18, 18, 18, 18]).mains,
+          [50, 50, 50, 50, 50, 50, 50], into: &problems)
+
+    // A share below a floor: 100 by weight 1:1 gives 50 each, the first
+    // child's content needs 70, so it is frozen there and the other takes
+    // the remaining 30. CSS 9.7's min violation, the grow half.
+    check("a grower short of its minimum is raised and the rest share again",
+          plain.resolve(main: 100, bases: [0, 0], weights: [1, 1],
+                        mins: [70, 0]).mains,
+          [70, 30], into: &problems)
+
+    // A padded zero-basis child (base 10) shares on top of its padding:
+    // 110 free gives [65, 55], clear of a floor of 60, so nothing moves.
+    check("a padded zero-basis child grows from its padding",
+          plain.resolve(main: 120, bases: [10, 0], weights: [1, 1],
+                        mins: [60, 0]).mains,
+          [65, 55], into: &problems)
+
+    // With a floor of 80 the same share falls short, and the raise lands on
+    // the floor exactly, not on base plus share: frozen at 80, the other
+    // absorbs everything left, 120 - 80 = 40.
+    check("a raised child keeps its floor, not its base plus a share",
+          plain.resolve(main: 120, bases: [10, 0], weights: [1, 1],
+                        mins: [80, 0]).mains,
+          [80, 40], into: &problems)
+
+    // Minima that fill the line decide grow-or-shrink: 90 + 60 > 120 is a
+    // shrink, from the hypothetical sizes, whose floors are those same
+    // sizes, so nothing gives and the line overflows as CSS does.
+    check("zero-basis minima that overflow overflow",
+          plain.resolve(main: 120, bases: [0, 0], weights: [1, 1],
+                        mins: [90, 60]).mains,
+          [90, 60], into: &problems)
+
+    // A zero-basis child that does not grow is its content: hypothetical
+    // size, and the leftover becomes position.
+    check("a zero-basis child with no weight is its minimum",
+          plain.resolve(main: 200, bases: [0, 40], weights: [0, 0],
+                        mins: [30, 40]).mains,
+          [30, 40], into: &problems)
+
     // --- Shrink -----------------------------------------------------------
     //
     // Overflow shrinks in proportion to base size (flex-shrink: 1, the CSS

@@ -376,9 +376,12 @@ func TestEveryNativeReadNamesItsQuestion(t *testing.T) {
 
 // core.FlexBasis("0") on iOS: the style decodes it, FlexChildren hands it to
 // the layout as the child's main-axis padding, and baseMains starts such a
-// child from that padding (raised to its automatic minimum) when the extent
-// is definite. Without it a weighted row sized each box by its content, and
-// a bar's value label sat off its bar's tip by its own text's width.
+// child from that padding when the extent is definite. Its automatic minimum
+// goes to the solver unclamped (minMains) and is applied after the share, in
+// GrMobFlexSolver.grow. Without the basis a weighted row sized each box by
+// its content, and a bar's value label sat off its bar's tip by its own
+// text's width; with the minimum folded into the base, a calendar's "10"
+// column came out wider than its "8" column.
 func TestIOSFlexHonoursAZeroBasis(t *testing.T) {
 	style := valuesIn(t, nativeFile("ios", "GrMob", "Runtime", "GrMobStyle.swift"))
 	if !strings.Contains(style, `s.flexBasis = str("FlexBasis")`) {
@@ -388,10 +391,22 @@ func TestIOSFlexHonoursAZeroBasis(t *testing.T) {
 	for _, want := range []string{
 		".layoutValue(key: GrMobFlexZeroBasis.self, value: zeroBasisPadding(child.style))",
 		"if definite, padding >= 0, automatic.isFinite {",
-		"return max(padding, automatic, floors[i])",
+		"return max(zeroBasis ? automatic : min(automatic, bases[i]), floors[i])",
 	} {
 		if !strings.Contains(renderer, want) {
 			t.Errorf("Renderer.swift: missing %q", want)
+		}
+	}
+	if strings.Contains(renderer, "return max(padding, automatic, floors[i])") {
+		t.Errorf("Renderer.swift: a zero-basis base folds in its minimum again, which re-biases a weighted row by content")
+	}
+	solver := valuesIn(t, nativeFile("ios", "GrMob", "Runtime", "GrMobFlex.swift"))
+	for _, want := range []string{
+		"let hypothetical = (0..<n).map { max(bases[$0], at(mins, $0, 0)) }",
+		"sizes[i] = bases[i] + free * weights[i] / totalWeight",
+	} {
+		if !strings.Contains(solver, want) {
+			t.Errorf("GrMobFlex.swift: missing %q", want)
 		}
 	}
 }

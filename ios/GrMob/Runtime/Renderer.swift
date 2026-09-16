@@ -716,10 +716,14 @@ private struct GrMobFlexMin: LayoutValueKey {
 /// of it, by an amount that changed with the digits. Chrome and Compose
 /// (whose weight() ignores content) divide exactly.
 ///
-/// CSS still clamps the hypothetical size by the automatic minimum
-/// (`min-width: auto`), so a zero-basis item with unbreakable content keeps
-/// that content's width; GrMobFlexLayout.baseMains applies the same clamp
-/// with the GrMobFlexMin floor. A Column's verdict (.infinity, "floor at your
+/// CSS still clamps the item by its automatic minimum (`min-width: auto`), so
+/// a zero-basis item with unbreakable content keeps that content's width.
+/// The clamp comes AFTER the free space is shared, not in the base:
+/// GrMobFlexLayout.minMains passes the GrMobFlexMin floor to the solver
+/// unclamped for such a child, and GrMobFlexSolver.grow raises and freezes
+/// only a child whose share falls short of it. (A first version folded the
+/// floor into the base, which is the content width again; lesson 4.9's
+/// calendar showed it, with "10" and "31" in wider columns than "8".) A Column's verdict (.infinity, "floor at your
 /// content") cannot be clamped against without a measurement, so a
 /// zero-basis Column child with that verdict keeps its measured base.
 private struct GrMobFlexZeroBasis: LayoutValueKey {
@@ -890,8 +894,12 @@ private struct GrMobFlexLayout: Layout {
     /// A child's percentage floor (see percentFloors) raises its base.
     ///
     /// A zero flex-basis child (GrMobFlexZeroBasis) starts from its padding
-    /// instead of its content, raised to its automatic minimum — but only when
-    /// the container's main extent is `definite`. Asked for an ideal size, a
+    /// instead of its content — but only when the container's main extent is
+    /// `definite`. Its automatic minimum and percentage floor are NOT folded
+    /// into the base: minMains hands them to the solver as a minimum, which
+    /// applies them after the free space is shared (GrMobFlexSolver.grow).
+    /// Folding them in made the base the content width again, and the day
+    /// columns of a calendar came out wider for "10" than for "8". Asked for an ideal size, a
     /// row of zero-basis boxes would otherwise report the sum of their
     /// paddings and be laid out at nearly nothing; CSS sizes such a container
     /// from its items' content contributions, which is the measured base.
@@ -903,7 +911,7 @@ private struct GrMobFlexLayout: Layout {
             let padding = subview[GrMobFlexZeroBasis.self]
             let automatic = subview[GrMobFlexMin.self]
             if definite, padding >= 0, automatic.isFinite {
-                return max(padding, automatic, floors[i])
+                return padding
             }
             return max(mainOf(subview.sizeThatFits(proposed(main: nil, cross: crossBound))), floors[i])
         }
@@ -934,8 +942,20 @@ private struct GrMobFlexLayout: Layout {
     ///
     /// A percentage floor outranks the automatic one: CSS's min-width is the
     /// declared minimum, and it is at most the base, which it already raised.
+    ///
+    /// A zero-basis child is the exception to the clamp: its base is its
+    /// padding, below its content, and the content floor is exactly what the
+    /// solver must still honour once the free space is shared. So its min is
+    /// passed whole (when finite; a Column's `.infinity` verdict keeps its
+    /// measured base in baseMains and takes the clamp like any other child).
+    /// When the extent is not definite baseMains measured the base, which is
+    /// at or above the floor, and the clamp is a no-op either way.
     private func minMains(_ subviews: Subviews, bases: [CGFloat], floors: [CGFloat]) -> [CGFloat] {
-        subviews.enumerated().map { i, subview in max(min(subview[GrMobFlexMin.self], bases[i]), floors[i]) }
+        subviews.enumerated().map { i, subview in
+            let automatic = subview[GrMobFlexMin.self]
+            let zeroBasis = subview[GrMobFlexZeroBasis.self] >= 0 && automatic.isFinite
+            return max(zeroBasis ? automatic : min(automatic, bases[i]), floors[i])
+        }
     }
 
     // -- axis-agnostic helpers ---------------------------------------------

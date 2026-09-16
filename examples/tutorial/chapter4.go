@@ -3717,6 +3717,25 @@ comps.DigitalClock{Time: now, ShowSeconds: true, ShowDate: true}`),
 							core.AccessibilityLabel("A shaded sphere beside a square fading blue to orange to green")),
 						caption("FillGradient: RadialGradientFill and LinearGradientFill, in the drawing's own units."),
 					),
+					core.Row(
+						core.Gap(16),
+						core.AlignItemsProp(core.AlignItemsCenter),
+						// The same gradients on strokes. A dashed zigzag
+						// fades left to right, so the colour follows x in
+						// viewBox units while the dashes and width stay in
+						// layout units; a ring's outline takes a radial
+						// gradient whose centre is off the ring, so its
+						// colour turns from one side to the other.
+						core.Canvas(100, 50, []core.Shape{
+							{Path: core.NewPath().MoveTo(4, 40).LineTo(16, 10).LineTo(28, 40).LineTo(40, 10).LineTo(50, 36),
+								StrokeWidth: 3, Cap: core.CapRound, Join: core.JoinRound, Dash: []float64{7, 4},
+								StrokeGradient: core.LinearGradientFill(4, 0, 50, 0, core.Stop(0, hue(0)), core.Stop(1, hue(2)))},
+							{Path: core.Circle(76, 25, 19), StrokeWidth: 4,
+								StrokeGradient: core.RadialGradientFill(58, 8, 44, core.Stop(0, hue(1)), core.Stop(1, hue(7)))},
+						}, core.Width("110px"),
+							core.AccessibilityLabel("A dashed zigzag fading blue to aqua beside a ring shading orange to red")),
+						caption("StrokeGradient: the same constructors on an outline; the width stays in layout units."),
+					),
 				),
 				prose("An alarm is the time arithmetic in package alarm, a hook that checks it every second, "+
 					"and two widgets. The hook asks whether each alarm fell due since the last check, not "+
