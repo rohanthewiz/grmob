@@ -8457,8 +8457,33 @@ const GrMob = (() => {
     // "notifications" descriptor above — and a post without it is dropped,
     // as every host drops it. Payload keys are quoted so mobile/verify's
     // spelling scan can see them.
+    //
+    // A post with "at" (Unix ms, future only) waits on a timer in this page:
+    // a page has no way to ask the browser to post for it later, so a
+    // scheduled notification fires only while the tab stays open. One timer
+    // per id, so a re-post reschedules and a cancel stops it. setTimeout
+    // overflows past 2^31−1 ms (about 24.8 days) and fires at once, so a
+    // longer wait sleeps in capped steps.
     const notifications = (() => {
         const open = new Map();
+        const timers = new Map();
+        const maxDelay = 2147483647;
+
+        function clearTimer(id) {
+            const timer = timers.get(id);
+            if (timer !== undefined) clearTimeout(timer);
+            timers.delete(id);
+        }
+
+        function scheduleAt(id, at, data) {
+            const wait = at - Date.now();
+            if (wait <= 0) {
+                timers.delete(id);
+                show(id, data);
+                return;
+            }
+            timers.set(id, setTimeout(() => scheduleAt(id, at, data), Math.min(wait, maxDelay)));
+        }
 
         function tapped(id, n) {
             n.close();
@@ -8471,13 +8496,27 @@ const GrMob = (() => {
         function handle(data) {
             const id = data["id"];
             if (!id || typeof Notification !== "function") return;
+            // Any command under an id supersedes that id's pending timer.
+            clearTimer(id);
             if (data.command === "cancel") {
                 const n = open.get(id);
                 if (n) n.close();
                 open.delete(id);
                 return;
             }
-            if (data.command !== "post" || Notification.permission !== "granted") return;
+            if (data.command !== "post") return;
+            const at = Number(data["at"]);
+            if (at > Date.now()) {
+                scheduleAt(id, at, data);
+                return;
+            }
+            show(id, data);
+        }
+
+        // Permission is read when the banner is due, not when it was
+        // scheduled: a grant given in between counts, a revocation too.
+        function show(id, data) {
+            if (Notification.permission !== "granted") return;
             const previous = open.get(id);
             if (previous) previous.close();
             let n;

@@ -3557,6 +3557,10 @@ func lessonClocksAndDrawing() Lesson {
 
 			ringer := hooks.UseAlarms(ctx, alarms.Get(), hooks.AlarmOptions{
 				Haptics: true,
+				// Off screen, the OS rings instead: each alarm becomes a
+				// scheduled notification when the app leaves the foreground,
+				// and is taken back when it returns.
+				Notify: true,
 				// A short snooze, so a reader trying it waits a minute rather
 				// than nine.
 				Snooze: time.Minute,
@@ -3568,6 +3572,8 @@ func lessonClocksAndDrawing() Lesson {
 					}
 				},
 			})
+			// Checks, never prompts; the prompt is the button's, from a tap.
+			notifyStatus := hooks.UsePermission(ctx, permission.Notifications)
 
 			// The chart: a line over an area, both built from the same points.
 			series := slices.Clone(tutorialSeries)
@@ -3663,9 +3669,11 @@ comps.DigitalClock{Time: now, ShowSeconds: true, ShowDate: true}`),
 				),
 				prose("An alarm is the time arithmetic in package alarm, a hook that checks it every second, "+
 					"and two widgets. The hook asks whether each alarm fell due since the last check, not "+
-					"whether it is due now, so a late tick cannot miss one. It rings only while the app is "+
-					"open: nothing here asks the operating system to wake the app."),
-				codeBlock(`ringer := hooks.UseAlarms(ctx, alarms.Get(), hooks.AlarmOptions{Haptics: true})
+					"whether it is due now, so a late tick cannot miss one. On screen it rings in the app. "+
+					"With Notify, leaving the screen hands every upcoming alarm to the operating system as "+
+					"a scheduled notification, so it still goes off with the app closed, and coming back "+
+					"takes them back."),
+				codeBlock(`ringer := hooks.UseAlarms(ctx, alarms.Get(), hooks.AlarmOptions{Haptics: true, Notify: true})
 if a, ok := ringer.Ringing(); ok {
     return comps.AlarmRinging{Alarm: a, OnSnooze: ringer.Snooze, OnDismiss: ringer.Dismiss}
 }`),
@@ -3683,13 +3691,25 @@ if a, ok := ringer.Ringing(); ok {
 					}},
 					core.Column(append([]core.PropsAndChildren{core.Gap(0)}, rows...)...),
 					ringPanel,
+					core.If(notifyStatus != permission.Granted,
+						core.Row(
+							core.Gap(12),
+							core.AlignItemsProp(core.AlignItemsCenter),
+							comps.Button{
+								Label:    "Allow notifications",
+								Emphasis: comps.EmphasisOutlined,
+								OnTap:    func() { permission.Request(permission.Notifications) },
+							},
+							caption("Needed to ring with the app closed."),
+						)),
 				),
 				keyPoints(
 					"Clock widgets take a time.Time; hooks.UseNow ticks on the wall clock's boundary.",
 					"AnalogClock is built from rotated full-dial layers, so it needs no drawing primitive.",
 					"core.Canvas maps a viewBox onto its box; CanvasFit keeps the shape, CanvasStretch fills the box.",
 					"Paths flatten to move, line, cubic and close in Go, so every target draws the same curve.",
-					"hooks.UseAlarms rings alarms that fell due since its last check, in the app only; switch one-time alarms off in OnRing.",
+					"hooks.UseAlarms rings alarms that fell due since its last check; with Notify the OS rings them while the app is away.",
+					"Switch one-time alarms off in OnRing, which also hears about alarms the OS rang while the app was away.",
 				),
 			)
 		},

@@ -1,6 +1,8 @@
 package hooks
 
 import (
+	"slices"
+	"strconv"
 	"sync"
 	"time"
 
@@ -11,7 +13,8 @@ import (
 // AlarmOptions configures UseAlarms. Every field has a usable zero value.
 type AlarmOptions struct {
 	// OnRing is called once when an alarm starts ringing, including a snoozed
-	// one coming back. It runs on the alarm goroutine, not in a render: write
+	// one coming back. With Notify, an alarm the OS rang while the app was in
+	// the background is reported here when the app returns to the foreground. It runs on the alarm goroutine, not in a render: write
 	// state with State.Set (which is goroutine-safe) rather than touching
 	// anything a render owns. A one-time alarm (alarm.Alarm.Once) is the
 	// app's to switch off here — the hook reports rings and never edits the
@@ -36,7 +39,39 @@ type AlarmOptions struct {
 	// 0 means 10 minutes. An alarm that stops this way is dismissed, not
 	// snoozed.
 	RingFor time.Duration
+
+	// Notify hands alarms to the OS while the app is off screen, so they ring
+	// as notifications with the app suspended or closed. See "Off screen"
+	// on UseAlarms. The app asks for permission.Notifications itself; without
+	// it the OS drops the notifications silently.
+	Notify bool
+
+	// NotifyText writes a scheduled notification's title and body. Nil uses
+	// the alarm's Label (or "Alarm") and its 12-hour time.
+	NotifyText func(a alarm.Alarm) (title, body string)
 }
+
+// notifyText resolves NotifyText.
+func (o AlarmOptions) notifyText(a alarm.Alarm) (title, body string) {
+	if o.NotifyText != nil {
+		return o.NotifyText(a)
+	}
+	title = a.Label
+	if title == "" {
+		title = "Alarm"
+	}
+	return title, a.TimeLabel(false)
+}
+
+// Limits on what Notify schedules at once. iOS keeps at most 64 pending
+// notification requests per app and silently drops the rest, so the total
+// stays under that with room for the app's own. A week ahead covers every
+// repeat pattern alarm.Alarm can express at least once, and an app that
+// stays closed longer than that is rescheduled the next time it runs.
+const (
+	alarmNotifyMax     = 60
+	alarmNotifyHorizon = 7 * 24 * time.Hour
+)
 
 // AlarmRinger is what UseAlarms returns: the ringing alarm, if any, and the two
 // things a person can do about it.
@@ -128,6 +163,16 @@ type alarmsRecord struct {
 	// dropped: two alarms set a minute apart are two things to wake for.
 	queue   []alarm.Alarm
 	snoozes []snoozedAlarm
+
+	// away is true while the host reports the app in the background. With
+	// Notify set, the OS rings for the app then, so check neither rings nor
+	// queues anything (see "Off screen" on UseAlarms).
+	away bool
+	// scheduled holds the ids of the notifications handed to the OS on the
+	// last move to the background, for cancelling on the way back, and
+	// awaySince is when that move happened, for reporting what they rang.
+	scheduled []string
+	awaySince time.Time
 }
 
 func (o AlarmOptions) snooze() time.Duration {
@@ -156,14 +201,35 @@ func (o AlarmOptions) ringFor() time.Duration {
 //	    return comps.AlarmRinging{Alarm: a, OnSnooze: ringer.Snooze, OnDismiss: ringer.Dismiss}
 //	}
 //
-// # In-app only
+// # Off screen
 //
-// This rings while the app is running and in the foreground, and not
-// otherwise. iOS suspends a backgrounded app within seconds and Android cuts
-// its network and may stop it (see core/notifications.go), and nothing here
-// asks the OS to wake the app at a time. An alarm that must ring with the app
-// closed needs a scheduled OS notification or the platform's alarm API, which
-// core does not have yet.
+// Without Notify this rings while the app is running and in the foreground,
+// and not otherwise: iOS suspends a backgrounded app within seconds and
+// Android may stop it (see core/notifications.go).
+//
+// With Notify the OS takes over while the app is away:
+//
+//	host reports     the hook
+//	───────────────  ─────────────────────────────────────────────────────
+//	background       schedules a core.LocalNotification{At} for every
+//	                 enabled alarm's occurrences in the next week, and for
+//	                 each pending snooze; the in-app ringer stands down
+//	active           cancels them all, and skips whatever came due while
+//	                 away — the OS already rang it, and ringing it again on
+//	                 return would wake the user for an alarm they answered
+//
+// Standing down while away matters on Android, where the process (and this
+// goroutine) keeps running in the background: without it the alarm would
+// ring twice at once, as a notification and as a sound from a hidden app.
+//
+// A notification is one banner with the platform's notification sound, not
+// a ringing screen with Snooze: tapping it opens the app, which is not
+// ringing. OnRing hears about each alarm the OS rang when the app returns,
+// so a one-time alarm is switched off the same way as one rung in the app.
+// An app that was closed rather than backgrounded has lost that record with
+// its process, and learns nothing. Occurrences are scheduled a week ahead and
+// capped at 60 in all (iOS's pending limit is 64); an app away for longer is
+// rescheduled the next time it runs and leaves the screen.
 //
 // # What a check does
 //
@@ -204,9 +270,20 @@ func UseAlarms(ctx *core.Context, alarms []alarm.Alarm, opts AlarmOptions) Alarm
 		return ringer
 	}
 
+	// The lifecycle subscription is taken whether or not Notify is set now,
+	// because opts is re-read every render and Notify may be switched on
+	// later. With it off, awayChanged only records the state.
+	rec.mu.Lock()
+	rec.away = core.CurrentLifecycle() == core.LifecycleBackground
+	rec.mu.Unlock()
+	stopLifecycle := core.OnLifecycle(func(state core.LifecycleState) {
+		rec.awayChanged(state == core.LifecycleBackground, time.Now())
+	})
+
 	done := make(chan struct{})
 	ctx.OnClose(func() {
 		close(done)
+		stopLifecycle()
 		rec.mu.Lock()
 		rec.started = false
 		rec.silence()
@@ -252,6 +329,21 @@ func (r *alarmsRecord) check(now time.Time) (rang *alarm.Alarm, changed bool) {
 	defer r.mu.Unlock()
 	from := r.last
 	r.last = now
+
+	// Away with Notify on: the OS notifications scheduled on the way out ring
+	// for everything due now, so nothing here rings or queues. Snoozes that
+	// have come due are dropped for the same reason. `last` still advances,
+	// so the return to the foreground has nothing stale to catch up on.
+	if r.away && r.opts.Notify {
+		kept := r.snoozes[:0]
+		for _, s := range r.snoozes {
+			if s.at.After(now) {
+				kept = append(kept, s)
+			}
+		}
+		r.snoozes = kept
+		return nil, false
+	}
 
 	// Collect everything that came due in (from, now]: snoozes first, since a
 	// snoozed alarm has already been waited for once.
@@ -320,4 +412,156 @@ func (r *alarmsRecord) silence() {
 	if r.opts.Sound.URL != "" {
 		core.AudioStop()
 	}
+}
+
+// awayChanged records a move into or out of the background and, with Notify
+// set, hands the alarms to the OS or takes them back. See "Off screen" on
+// UseAlarms.
+//
+// The OS calls happen outside mu: core's system events call into the host,
+// and nothing about the host should be able to wait on this hook's lock.
+func (r *alarmsRecord) awayChanged(away bool, now time.Time) {
+	rang := r.setAway(away, now)
+	if len(rang) == 0 {
+		return
+	}
+	// opts is written by every render, so it is read under mu like the
+	// goroutine reads it.
+	r.mu.Lock()
+	onRing := r.opts.OnRing
+	r.mu.Unlock()
+	if onRing == nil {
+		return
+	}
+	for _, a := range rang {
+		onRing(a)
+	}
+}
+
+// setAway is awayChanged without the OnRing calls, which it returns instead:
+// the alarms the OS rang while the app was away, in the order they came due.
+// Separate so tests can see the list, and so OnRing (app code, which may
+// write State) runs with no lock of this hook's held.
+func (r *alarmsRecord) setAway(away bool, now time.Time) (rangAway []alarm.Alarm) {
+	r.mu.Lock()
+	if r.away == away {
+		r.mu.Unlock()
+		return nil
+	}
+	r.away = away
+	if !r.opts.Notify && len(r.scheduled) == 0 {
+		r.mu.Unlock()
+		return nil
+	}
+	cancel := r.scheduled
+	r.scheduled = nil
+	var post []core.LocalNotification
+	if away {
+		// A ringing alarm is silenced on the way out: its sound would play
+		// from a hidden app (Android) or freeze mid-ring (iOS). Its
+		// notification was the OS's to post and the app was on screen, so it
+		// is simply answered.
+		r.silence()
+		r.queue = nil
+		post = r.notifications(now)
+		for _, n := range post {
+			r.scheduled = append(r.scheduled, n.ID)
+		}
+		r.awaySince = now
+	} else {
+		// Back on screen: anything that came due while away was rung by the
+		// OS. A frozen goroutine (iOS) would otherwise ring it on its first
+		// tick after resuming.
+		r.last = now
+		kept := r.snoozes[:0]
+		for _, s := range r.snoozes {
+			if s.at.After(now) {
+				kept = append(kept, s)
+			}
+		}
+		r.snoozes = kept
+		// Only what was actually handed to the OS counts as rung: an app
+		// that switched Notify on while away scheduled nothing.
+		if len(cancel) > 0 && !r.awaySince.IsZero() {
+			rangAway = r.dueBetween(r.awaySince, now)
+		}
+	}
+	r.mu.Unlock()
+
+	for _, id := range cancel {
+		core.CancelNotification(id)
+	}
+	for _, n := range post {
+		core.PostNotification(n)
+	}
+	return rangAway
+}
+
+// dueBetween lists the alarms whose notifications fired in (from, to]: each
+// alarm once however many times it came due, soonest first. Snoozes dropped
+// by check while away are not in it — a snooze is an alarm that has already
+// been reported. Called with mu held.
+func (r *alarmsRecord) dueBetween(from, to time.Time) []alarm.Alarm {
+	type hit struct {
+		a  alarm.Alarm
+		at time.Time
+	}
+	var hits []hit
+	for _, a := range r.alarms {
+		if next := a.Next(from); !next.IsZero() && !next.After(to) {
+			hits = append(hits, hit{a, next})
+		}
+	}
+	slices.SortStableFunc(hits, func(x, y hit) int { return x.at.Compare(y.at) })
+	out := make([]alarm.Alarm, len(hits))
+	for i, h := range hits {
+		out[i] = h.a
+	}
+	return out
+}
+
+// notifications lists what Notify schedules at now: each pending snooze, then
+// every enabled alarm's occurrences within alarmNotifyHorizon, soonest first
+// and at most alarmNotifyMax in all. Called with mu held.
+//
+// An id names the alarm and the instant, so two occurrences of one alarm are
+// two requests and a reschedule of the same instant replaces rather than
+// duplicates.
+func (r *alarmsRecord) notifications(now time.Time) []core.LocalNotification {
+	type due struct {
+		a  alarm.Alarm
+		at time.Time
+	}
+	var all []due
+	for _, s := range r.snoozes {
+		if s.at.After(now) {
+			all = append(all, due{s.alarm, s.at})
+		}
+	}
+	end := now.Add(alarmNotifyHorizon)
+	for _, a := range r.alarms {
+		for next := a.Next(now); !next.IsZero() && !next.After(end); next = a.Next(next) {
+			all = append(all, due{a, next})
+			// A one-time alarm rings at its next occurrence only; Next
+			// would otherwise find the same time tomorrow, and the day after.
+			if a.Once() {
+				break
+			}
+		}
+	}
+	slices.SortStableFunc(all, func(x, y due) int { return x.at.Compare(y.at) })
+	if len(all) > alarmNotifyMax {
+		all = all[:alarmNotifyMax]
+	}
+	out := make([]core.LocalNotification, 0, len(all))
+	for _, d := range all {
+		title, body := r.opts.notifyText(d.a)
+		out = append(out, core.LocalNotification{
+			ID:    "grmob.alarm." + d.a.ID + "." + strconv.FormatInt(d.at.Unix(), 10),
+			Title: title,
+			Body:  body,
+			At:    d.at,
+		})
+	}
+	return out
 }

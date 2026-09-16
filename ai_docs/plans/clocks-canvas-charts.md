@@ -3,8 +3,9 @@
 **Date:** 2026-09-16
 **Status:** Tiers A, B and C landed 2026-09-16, with tutorial lesson 4.19
 ("Clocks, drawing and alarms") exercising all three. Tier D (charts) landed
-the same day with lesson 4.20 ("Charts"). Tier E (scheduled/system alarms) is
-not started.
+the same day with lesson 4.20 ("Charts"). Tier E (scheduled/system alarms)
+landed later on 2026-09-16 as `LocalNotification.At` plus
+`hooks.AlarmOptions.Notify`, used by lesson 4.19.
 
 What landed, and where it differs from the sketches below:
 
@@ -44,6 +45,21 @@ What landed, and where it differs from the sketches below:
   hidden data table yet. Checked in Chrome through htmlout and live in the
   WASM tutorial (Shift and "Use 12%" re-render and re-summarise). Not seen on
   a simulator or emulator.
+- **E** — `core.LocalNotification.At` (wire key "at", Unix ms, future only):
+  Android `AlarmManager` → `NotificationAlarmReceiver` (exact when
+  `canScheduleExactAlarms`, else `setAndAllowWhileIdle`; `SCHEDULE_EXACT_ALARM`
+  declared), iOS `UNCalendarNotificationTrigger`, browser a per-id timer while
+  the tab is open. `hooks.AlarmOptions.Notify` schedules a week of occurrences
+  (≤60, one-time alarms once, snoozes too) on the move to background, stands
+  the in-app ringer down while away, cancels on return and reports what the OS
+  rang through `OnRing`. AlarmKit / `AlarmClock` were not used: a notification
+  is one banner with the system sound, not a ringing screen. Seen: banner with
+  the app killed on an API 36 emulator (inexact, +36 s) and on the iPhone 17
+  Pro simulator (`TutorialAlarmNotifyUITests`). Found on the way: Go ran in UTC
+  on Android — `mobile.SetTimeZone` now called by both shells.
+- Canvas, 4.19 and 4.20 on the emulator and simulator (2026-09-16): geometry
+  matched; SwiftUI's Canvas clipped strokes centred on its edge (fixed with an
+  outset), and Compose dropped `Gap` under a non-start `Justify` (fixed).
 - Adding lesson 4.19 moved the lesson count to 58 in every copy (README,
   site page, docs, shotclaims) and re-took `docs/images/tutorial-contents.png`.
 

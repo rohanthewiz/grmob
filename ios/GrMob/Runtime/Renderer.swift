@@ -1916,7 +1916,32 @@ private struct GrMobCanvas: View {
         let keepRatio = (node.style?.height ?? "").isEmpty
         let shapes = node.children.map(\.props)
 
-        let drawing = Canvas { ctx, size in
+        // A SwiftUI Canvas clips to its frame, but the other three targets do
+        // not: htmlout's <svg> is overflow:visible and Compose's drawBehind has
+        // no clip. So a stroke centred on the box's edge (a chart's baseline,
+        // a round-capped dot on the last point at x = vw) drew half of itself
+        // on the web and Android and was cut in half here.
+        //
+        //   ┌ outset ─────────────────┐   the Canvas is laid out `outset`
+        //   │ ┌ layout box ─────────┐ │   larger on every side by a negative
+        //   │ │ viewBox maps here   │ │   padding, which reports the original
+        //   │ └─────────────────────┘ │   size to the parent; the drawing is
+        //   └─────────────────────────┘   translated back by `outset`
+        //
+        // The outset is the widest stroke in the canvas: a round or square cap
+        // reaches w/2 past the end point (w/2·√2 on a diagonal square cap), and
+        // a miter join can reach further, so a full width covers every cap and
+        // the common joins without measuring paths. Layout, hit-testing and the
+        // viewport arithmetic all still see the unpadded box.
+        let outset = CGFloat(shapes.reduce(0.0) { acc, props in
+            guard props["stroke"] != nil else { return acc }
+            return max(acc, (props["strokeWidth"] as? NSNumber)?.doubleValue ?? 1)
+        })
+
+        let drawing = Canvas { ctx, outer in
+            let size = CGSize(width: max(0, outer.width - 2 * outset),
+                              height: max(0, outer.height - 2 * outset))
+            ctx.translateBy(x: outset, y: outset)
             let vp = GrMobCanvasViewport(vw: vw, vh: vh, width: Double(size.width),
                                          height: Double(size.height), stretch: stretch)
             for props in shapes {
@@ -1957,6 +1982,9 @@ private struct GrMobCanvas: View {
                                               dash: dash.map { CGFloat($0) }))
             }
         }
+        .padding(-outset)
+        // The outset area must not take taps meant for a neighbour.
+        .allowsHitTesting(false)
 
         // Conditional rather than aspectRatio(nil, ...): a nil ratio is not
         // "no ratio" but "the child's ideal size's ratio", and a Canvas's ideal

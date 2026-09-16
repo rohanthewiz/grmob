@@ -107,7 +107,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -2703,36 +2705,39 @@ private fun flattenFragments(children: List<GrMobNode>): List<GrMobNode> {
  * unlisted value here does not fall back to some neutral arrangement, it packs
  * to the start, which is a rendering and not an abstention.
  *
- * Known divergence, deliberately left alone: the five distributing
- * arrangements drop the container's gap (Style.Gap and its RowGap/ColumnGap
- * longhands alike). CSS treats gap as a minimum that
+ * The gap survives every value. CSS treats gap as a minimum that
  * justify-content then adds to, and the iOS solver does the same (it carries
- * `spacing` separately from `justify`), but Compose's Arrangement.Center and
- * friends take no spacing argument, so a Row with both a Gap and a
- * JustifyContent loses the gap here alone. Arrangement.spacedBy(gap, alignment)
- * would fix the three packing values; nothing expresses gap-plus-distribution
- * for the space-* three without a custom Arrangement. Not attempted because it
- * is a rendering change on the one target this repo cannot build.
+ * `spacing` separately from `justify`). Compose's Arrangement.Center and
+ * friends take no spacing argument, so each arm picks a gapped form when the
+ * container has a gap:
+ *
+ *   center / flex-end            Arrangement.spacedBy(gap, alignment)
+ *   space-between/around/evenly  GappedDistribution (below): gap first, then
+ *                                the free space shared out as CSS shares it
+ *
+ * Until 2026-09-16 those five dropped the gap on this target alone — lesson
+ * 4.20's centred donut and gauge touched on Android and sat 16 px apart on the
+ * web and iOS.
  */
 private fun horizontalArrangement(s: GrMobStyle?): Arrangement.Horizontal =
     when (s?.justifyContent) {
         "flex-start" -> packedHorizontally(s)
-        "center" -> Arrangement.Center
-        "flex-end" -> Arrangement.End
-        "space-between" -> Arrangement.SpaceBetween
-        "space-around" -> Arrangement.SpaceAround
-        "space-evenly" -> Arrangement.SpaceEvenly
+        "center" -> if (hGap(s) > 0f) Arrangement.spacedBy(hGap(s).dp, Alignment.CenterHorizontally) else Arrangement.Center
+        "flex-end" -> if (hGap(s) > 0f) Arrangement.spacedBy(hGap(s).dp, Alignment.End) else Arrangement.End
+        "space-between" -> if (hGap(s) > 0f) GappedDistribution(hGap(s).dp, Distribute.Between) else Arrangement.SpaceBetween
+        "space-around" -> if (hGap(s) > 0f) GappedDistribution(hGap(s).dp, Distribute.Around) else Arrangement.SpaceAround
+        "space-evenly" -> if (hGap(s) > 0f) GappedDistribution(hGap(s).dp, Distribute.Evenly) else Arrangement.SpaceEvenly
         else -> packedHorizontally(s)
     }
 
 private fun verticalArrangement(s: GrMobStyle?): Arrangement.Vertical =
     when (s?.justifyContent) {
         "flex-start" -> packedVertically(s)
-        "center" -> Arrangement.Center
-        "flex-end" -> Arrangement.Bottom
-        "space-between" -> Arrangement.SpaceBetween
-        "space-around" -> Arrangement.SpaceAround
-        "space-evenly" -> Arrangement.SpaceEvenly
+        "center" -> if (vGap(s) > 0f) Arrangement.spacedBy(vGap(s).dp, Alignment.CenterVertically) else Arrangement.Center
+        "flex-end" -> if (vGap(s) > 0f) Arrangement.spacedBy(vGap(s).dp, Alignment.Bottom) else Arrangement.Bottom
+        "space-between" -> if (vGap(s) > 0f) GappedDistribution(vGap(s).dp, Distribute.Between) else Arrangement.SpaceBetween
+        "space-around" -> if (vGap(s) > 0f) GappedDistribution(vGap(s).dp, Distribute.Around) else Arrangement.SpaceAround
+        "space-evenly" -> if (vGap(s) > 0f) GappedDistribution(vGap(s).dp, Distribute.Evenly) else Arrangement.SpaceEvenly
         else -> packedVertically(s)
     }
 
@@ -2751,6 +2756,72 @@ private fun packedHorizontally(s: GrMobStyle?): Arrangement.Horizontal =
 
 private fun packedVertically(s: GrMobStyle?): Arrangement.Vertical =
     if ((s?.verticalGap ?: 0f) > 0f) Arrangement.spacedBy(s!!.verticalGap.dp) else Arrangement.Top
+
+private fun hGap(s: GrMobStyle?): Float = s?.horizontalGap ?: 0f
+
+private fun vGap(s: GrMobStyle?): Float = s?.verticalGap ?: 0f
+
+/** How [GappedDistribution] shares the free space, named for justify-content. */
+private enum class Distribute { Between, Around, Evenly }
+
+/**
+ * space-between / space-around / space-evenly with a minimum gap, which no
+ * built-in Arrangement expresses. The gap is laid down first; whatever main
+ * axis is still free is then shared out exactly as CSS does:
+ *
+ *   free  = total − Σ sizes − gap·(n−1)        (never negative)
+ *   Between  lead 0,        each gap + free/(n−1)   (n = 1 → packed to start)
+ *   Around   lead free/2n,  each gap + free/n
+ *   Evenly   lead free/(n+1), each gap + free/(n+1)
+ *
+ *   Evenly, n = 3:  │·e·[a]·gap+e·[b]·gap+e·[c]·e·│
+ *
+ * Positions accumulate as floats and are rounded once each, so rounding does
+ * not drift the last child off the end edge. `spacing` reports the gap, which
+ * is what FlowRow and intrinsic measurement use to size the minimum line.
+ *
+ * Right-to-left mirrors the left-to-right placement (a child's start becomes
+ * total − start − size), which is what the built-in horizontal arrangements do
+ * and keeps the first child at the start edge, now the right one.
+ */
+private class GappedDistribution(
+    private val gap: Dp,
+    private val mode: Distribute,
+) : Arrangement.HorizontalOrVertical {
+    override val spacing: Dp get() = gap
+
+    override fun Density.arrange(
+        totalSize: Int,
+        sizes: IntArray,
+        layoutDirection: LayoutDirection,
+        outPositions: IntArray,
+    ) {
+        place(gap.toPx(), totalSize, sizes, outPositions)
+        if (layoutDirection == LayoutDirection.Rtl) {
+            for (i in sizes.indices) outPositions[i] = totalSize - outPositions[i] - sizes[i]
+        }
+    }
+
+    override fun Density.arrange(totalSize: Int, sizes: IntArray, outPositions: IntArray) {
+        place(gap.toPx(), totalSize, sizes, outPositions)
+    }
+
+    private fun place(gapPx: Float, totalSize: Int, sizes: IntArray, out: IntArray) {
+        val n = sizes.size
+        if (n == 0) return
+        val free = (totalSize - sizes.sum() - gapPx * (n - 1)).coerceAtLeast(0f)
+        val (lead, extra) = when (mode) {
+            Distribute.Between -> 0f to (if (n > 1) free / (n - 1) else 0f)
+            Distribute.Around -> free / (2 * n) to free / n
+            Distribute.Evenly -> free / (n + 1) to free / (n + 1)
+        }
+        var at = lead
+        for (i in 0 until n) {
+            out[i] = Math.round(at)
+            at += sizes[i] + gapPx + extra
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Composite components

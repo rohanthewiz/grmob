@@ -15,7 +15,7 @@ import (
 // commands and the three payload keys.
 func TestNotificationEventSpellingsAgree(t *testing.T) {
 	want := []string{`"notification"`, `"notification_tap"`, `"post"`, `"cancel"`,
-		`"id"`, `"title"`, `"body"`}
+		`"id"`, `"title"`, `"body"`, `"at"`}
 	for _, shell := range []struct {
 		name  string
 		files []string

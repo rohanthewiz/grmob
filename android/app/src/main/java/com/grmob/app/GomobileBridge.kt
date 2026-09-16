@@ -28,6 +28,10 @@ import mobile.SystemEventListener
 class GomobileBridge(dataDir: String) : GrMobBridge {
     init {
         Mobile.setDataDir(dataDir)
+        // Go cannot find the device's zone on Android (no $TZ, no
+        // /etc/localtime) and would run in UTC; see mobile/timezone.go.
+        val zone = java.util.TimeZone.getDefault()
+        Mobile.setTimeZone(zone.id, (zone.getOffset(System.currentTimeMillis()) / 1000).toLong())
     }
 
     override fun renderInitial(): String = Mobile.renderInitial()

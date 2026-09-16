@@ -1,6 +1,7 @@
 package hooks
 
 import (
+	"strconv"
 	"testing"
 	"time"
 
@@ -94,3 +95,105 @@ func TestUseAlarmsRereadsTheListEachRender(t *testing.T) {
 		t.Error("the second render's list did not replace the first")
 	}
 }
+
+// notificationHost records the notification system events core sends.
+func notificationHost(t *testing.T) *[]map[string]any {
+	t.Helper()
+	var seen []map[string]any
+	core.SetSystemEventHandler(func(name string, data map[string]any) {
+		if name == "notification" {
+			seen = append(seen, data)
+		}
+	})
+	t.Cleanup(func() { core.SetSystemEventHandler(nil) })
+	return &seen
+}
+
+// Going to the background with Notify schedules the week's occurrences, soonest
+// first, a one-time alarm once and a snooze by its own time; coming back
+// cancels exactly those.
+func TestAlarmsNotifyScheduleWhileAwayAndCancelOnReturn(t *testing.T) {
+	seen := notificationHost(t)
+	// 2026-09-16 is a Wednesday.
+	weekdays := alarm.Alarm{ID: "wake", Hour: 6, Minute: 30, Days: alarm.Weekdays, Enabled: true, Label: "Wake up"}
+	once := alarm.Alarm{ID: "once", Hour: 13, Enabled: true}
+	off := alarm.Alarm{ID: "off", Hour: 14}
+	r := newRecord(at(12, 0, 0), weekdays, once, off)
+	r.opts.Notify = true
+	r.snoozes = []snoozedAlarm{{alarm: weekdays, at: at(12, 5, 0)}}
+
+	rang := r.setAway(true, at(12, 0, 0))
+	if len(rang) != 0 {
+		t.Errorf("reported %v on the way out", rang)
+	}
+	var posts []map[string]any
+	for _, e := range *seen {
+		if e["command"] == "post" {
+			posts = append(posts, e)
+		}
+	}
+	// Snooze 12:05, once 13:00, then wake on Thu, Fri, Mon, Tue, Wed (the
+	// week ends at next Wednesday 12:00, after its 06:30).
+	want := []string{
+		"grmob.alarm.wake." + itoa(at(12, 5, 0)),
+		"grmob.alarm.once." + itoa(at(13, 0, 0)),
+	}
+	for _, d := range []int{17, 18, 21, 22, 23} {
+		want = append(want, "grmob.alarm.wake."+itoa(time.Date(2026, 9, d, 6, 30, 0, 0, time.UTC)))
+	}
+	if len(posts) != len(want) {
+		t.Fatalf("posted %d, want %d: %v", len(posts), len(want), posts)
+	}
+	for i, p := range posts {
+		if p["id"] != want[i] {
+			t.Errorf("post %d id = %v, want %v", i, p["id"], want[i])
+		}
+	}
+	if posts[0]["title"] != "Wake up" || posts[0]["body"] != "6:30 AM" || posts[1]["title"] != "Alarm" {
+		t.Errorf("text: %v / %v", posts[0], posts[1])
+	}
+
+	// While away nothing rings in the app, and the snooze that came due is
+	// dropped (the OS rang it).
+	if rang, changed := r.check(at(13, 0, 1)); rang != nil || changed || len(r.snoozes) != 0 {
+		t.Errorf("rang %v in the background; snoozes %v", rang, r.snoozes)
+	}
+
+	*seen = nil
+	rang = r.setAway(false, at(13, 30, 0))
+	cancels := 0
+	for _, e := range *seen {
+		if e["command"] != "cancel" {
+			t.Errorf("unexpected %v on return", e)
+		}
+		cancels++
+	}
+	if cancels != len(want) {
+		t.Errorf("cancelled %d, want %d", cancels, len(want))
+	}
+	// The one-time alarm came due while away and is reported, so the app can
+	// switch it off; nothing is rung again by the next check.
+	if len(rang) != 1 || rang[0].ID != "once" {
+		t.Errorf("reported %v, want the one-time alarm", rang)
+	}
+	if rang, _ := r.check(at(13, 30, 1)); rang != nil {
+		t.Errorf("rang %v again after returning", rang)
+	}
+}
+
+// Without Notify, the background changes nothing: no OS calls, and the in-app
+// ringer keeps its old behaviour.
+func TestAlarmsWithoutNotifyIgnoreTheBackground(t *testing.T) {
+	seen := notificationHost(t)
+	r := newRecord(at(6, 59, 59), alarm.Alarm{ID: "wake", Hour: 7, Enabled: true})
+	r.setAway(true, at(6, 59, 59))
+	if rang, _ := r.check(at(7, 0, 0)); rang == nil {
+		t.Error("did not ring in the background without Notify")
+	}
+	r.setAway(false, at(7, 0, 1))
+	if len(*seen) != 0 {
+		t.Errorf("sent %v without Notify", *seen)
+	}
+}
+
+func itoa(t time.Time) string { return strconv.FormatInt(t.Unix(), 10) }

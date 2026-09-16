@@ -56,6 +56,14 @@
          releases have no such permission and ignore the line, so it is
          declared unconditionally rather than with a minSdkVersion. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- A core.LocalNotification with At is an AlarmManager alarm
+         (app/Notifications.kt). Exact alarms need this on Android 12+, and
+         Android 14+ does not grant it to new installs by default, so the shell
+         checks canScheduleExactAlarms() and falls back to an inexact alarm
+         rather than failing. USE_EXACT_ALARM, which is granted, is reserved by
+         Play policy for apps whose core function is an alarm clock or
+         calendar — that is the adopting app's call, not the framework's. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 
     <!-- enableOnBackInvokedCallback opts in to predictive back: on Android 13+
          a back gesture previews its destination (the home screen, from the
@@ -139,6 +147,13 @@
                 <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>
         </service>
+
+        <!-- Posts a scheduled core.LocalNotification when its alarm fires,
+             including into a process the system started for it. Not exported:
+             only this app's own PendingIntents reach it. -->
+        <receiver
+            android:name=".NotificationAlarmReceiver"
+            android:exported="false" />
     </application>
 
 </manifest>

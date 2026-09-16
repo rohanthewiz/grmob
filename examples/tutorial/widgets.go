@@ -116,7 +116,11 @@ func demoPanel(hint string, children ...core.View) core.View {
 			core.Row(
 				core.Gap(8),
 				core.AlignItemsProp(core.AlignItemsCenter),
-				comps.Badge{Text: "TRY IT"},
+				// FlexShrink(0): a long hint is the one child here that should
+				// give up width. Left shrinkable, the badge took its share of
+				// the squeeze and "TRY IT" wrapped onto two lines under any
+				// hint past about 25 characters.
+				comps.Badge{Text: "TRY IT", Style: []core.StyleProp{core.FlexShrink(0)}},
 				caption(hint),
 			),
 		}

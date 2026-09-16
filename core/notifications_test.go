@@ -1,6 +1,9 @@
 package core
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func notificationHost(t *testing.T) *[]map[string]any {
 	t.Helper()
@@ -70,5 +73,31 @@ func TestOnNotificationTapDeliversTheID(t *testing.T) {
 	ReceiveHostEvent(hostEventNotificationTap, map[string]any{"id": "late"})
 	if len(got) != 1 {
 		t.Errorf("a cancelled subscriber heard %v", got)
+	}
+}
+
+// A future At travels as Unix milliseconds; a zero or past one is left off,
+// which every host reads as "post now".
+func TestPostNotificationSendsAFutureAtOnly(t *testing.T) {
+	now := time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)
+	notificationNow = func() time.Time { return now }
+	t.Cleanup(func() { notificationNow = time.Now })
+	seen := notificationHost(t)
+
+	PostNotification(LocalNotification{ID: "later", Title: "t", At: now.Add(90 * time.Second)})
+	PostNotification(LocalNotification{ID: "past", Title: "t", At: now.Add(-time.Second)})
+	PostNotification(LocalNotification{ID: "exactly", Title: "t", At: now})
+	PostNotification(LocalNotification{ID: "zero", Title: "t"})
+
+	if len(*seen) != 4 {
+		t.Fatalf("got %d events, want 4", len(*seen))
+	}
+	if got, want := (*seen)[0][notificationAt], now.Add(90*time.Second).UnixMilli(); got != want {
+		t.Errorf("future at = %v, want %v", got, want)
+	}
+	for _, post := range (*seen)[1:] {
+		if _, has := post[notificationAt]; has {
+			t.Errorf("post %v carries at, want it posted now", post["id"])
+		}
 	}
 }

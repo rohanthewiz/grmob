@@ -1,5 +1,7 @@
 package core
 
+import "time"
+
 // Local notifications: a banner the OS draws outside the app, posted by the
 // app itself rather than pushed from a server.
 //
@@ -65,14 +67,45 @@ package core
 // not a replacement for server push. An app that must alert from the
 // background needs push (APNs/FCM) or, on Android, a foreground service.
 
+// # Scheduled notifications
+//
+// LocalNotification.At hands the OS a time instead of asking for the banner
+// now, and that is the one way around the paragraph above: the OS holds the
+// request, so it is drawn at At whether the app is on screen, suspended or
+// closed.
+//
+//	              wire: "at" = Unix milliseconds, absent for "now"
+//	Android   AlarmManager → NotificationAlarmReceiver, which posts it.
+//	          Exact (setExactAndAllowWhileIdle) where the app may schedule
+//	          exact alarms — SCHEDULE_EXACT_ALARM, which Android 14+ does not
+//	          grant new installs by default — and otherwise inexact
+//	          (setAndAllowWhileIdle), which Doze may defer by minutes.
+//	          Pending alarms do not survive a reboot or a force stop.
+//	iOS       UNCalendarNotificationTrigger on the local wall clock; iOS
+//	          keeps at most 64 pending requests per app.
+//	Browser   a timer in the page, so only while the tab is open — a page
+//	          cannot ask the browser to post for it later.
+//	Headless  nothing.
+//
+// A time that has already passed posts now, as a zero At does. Cancel takes a
+// scheduled notification down before it fires, and posting again under the
+// same ID replaces the pending request with the new time.
+
 // LocalNotification is one banner to post. ID is required; Title and Body may
 // each be empty but not both.
 type LocalNotification struct {
 	// ID identifies the notification for replacement, cancellation and taps.
-	// Posting a second notification with the same ID replaces the first.
+	// Posting a second notification with the same ID replaces the first,
+	// scheduled or shown.
 	ID    string
 	Title string
 	Body  string
+
+	// At schedules the notification for a moment instead of posting it now.
+	// The zero value, or any time not after the moment of posting, posts
+	// immediately. See "Scheduled notifications" above for what each host
+	// promises.
+	At time.Time
 }
 
 // The two event names and the two commands, which are the whole wire
@@ -83,22 +116,35 @@ const (
 	hostEventNotificationTap = "notification_tap"
 	notificationPost         = "post"
 	notificationCancel       = "cancel"
+	notificationAt           = "at"
 )
 
-// PostNotification asks the host to show n, replacing any notification already
-// showing under the same ID. Dropped without an ID or without any text; see
+// PostNotification asks the host to show n — now, or at n.At — replacing any
+// notification already showing or scheduled under the same ID. Dropped without an ID or without any text; see
 // the file comment for why the ID is required and for permissions.
 func PostNotification(n LocalNotification) {
 	if n.ID == "" || (n.Title == "" && n.Body == "") {
 		return
 	}
-	SendSystemEvent(systemEventNotification, map[string]any{
+	payload := map[string]any{
 		"command": notificationPost,
 		"id":      n.ID,
 		"title":   n.Title,
 		"body":    n.Body,
-	})
+	}
+	// Milliseconds since the epoch, the one time representation all three
+	// hosts construct a date from without a parser (Date(ms), Date(timeInterval
+	// SinceReferenceDate…), System.currentTimeMillis). A past time is sent as
+	// "now" by leaving the key out, so no host has to decide what a stale
+	// schedule means.
+	if !n.At.IsZero() && n.At.After(notificationNow()) {
+		payload[notificationAt] = n.At.UnixMilli()
+	}
+	SendSystemEvent(systemEventNotification, payload)
 }
+
+// notificationNow is time.Now, replaceable by tests that need a fixed instant.
+var notificationNow = time.Now
 
 // CancelNotification takes down the notification posted under id, whether it
 // is still on screen or already in the notification list. Cancelling one that

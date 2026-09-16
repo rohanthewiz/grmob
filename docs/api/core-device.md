@@ -210,7 +210,7 @@ func CancelNotification(id string)
 
 CancelNotification takes down the notification posted under id, whether it is still on screen or already in the notification list. Cancelling one that is not there is harmless on every host.
 
-<small>[core/notifications.go:106](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L106)</small>
+<small>[core/notifications.go:152](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L152)</small>
 
 ### func Cardinal
 
@@ -509,7 +509,7 @@ OnNotificationTap subscribes fn to taps on the app's notifications; fn receives 
 
 Like OnDeepLink, a typed wrapper over OnHostEvent and nothing more: core keeps no record of taps, because a tap is an instruction ("show me this") rather than a state anyone reads later. fn runs on the goroutine that delivered the host event and must not block. An empty or absent id is dropped — a subscriber cannot route a tap it cannot identify.
 
-<small>[core/notifications.go:125](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L125)</small>
+<small>[core/notifications.go:171](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L171)</small>
 
 ### func OnRegionChange
 
@@ -541,9 +541,9 @@ ParseLatLng reads a host's "lat,lng" payload, for OnMapTap. Same contract as Par
 func PostNotification(n LocalNotification)
 ```
 
-PostNotification asks the host to show n, replacing any notification already showing under the same ID. Dropped without an ID or without any text; see the file comment for why the ID is required and for permissions.
+PostNotification asks the host to show n — now, or at n.At — replacing any notification already showing or scheduled under the same ID. Dropped without an ID or without any text; see the file comment for why the ID is required and for permissions.
 
-<small>[core/notifications.go:91](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L91)</small>
+<small>[core/notifications.go:125](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L125)</small>
 
 ### func ReadClipboard
 
@@ -1039,16 +1039,23 @@ CurrentLifecycle reports the last state the host announced; active until it has 
 ```go
 type LocalNotification struct {
 	// ID identifies the notification for replacement, cancellation and taps.
-	// Posting a second notification with the same ID replaces the first.
+	// Posting a second notification with the same ID replaces the first,
+	// scheduled or shown.
 	ID    string
 	Title string
 	Body  string
+
+	// At schedules the notification for a moment instead of posting it now.
+	// The zero value, or any time not after the moment of posting, posts
+	// immediately. See "Scheduled notifications" above for what each host
+	// promises.
+	At time.Time
 }
 ```
 
 LocalNotification is one banner to post. ID is required; Title and Body may each be empty but not both.
 
-<small>[core/notifications.go:70](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L70)</small>
+<small>[core/notifications.go:96](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L96)</small>
 
 ### type Location
 

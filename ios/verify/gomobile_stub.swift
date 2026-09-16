@@ -158,6 +158,7 @@ public func MobileRenderInitial() -> String { "" }
 public func MobileRenderAgain() -> String { "" }
 public func MobileReportHostEvent(_ name: String?, _ payload: String?) -> String { "" }
 public func MobileSetDataDir(_ path: String?) {}
+public func MobileSetTimeZone(_ name: String?, _ offsetSeconds: Int) {}
 public func MobileSetListener(_ l: MobilePatchListenerProtocol?) {}
 public func MobileSetSystemEventListener(_ l: MobileSystemEventListenerProtocol?) {}
 public func MobileTriggerCallback(_ id: String?) -> String { "" }

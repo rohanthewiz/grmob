@@ -36,6 +36,10 @@ final class GomobileBridge: GrMobBridge, @unchecked Sendable {
         let dir = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
         MobileSetDataDir(dir.path)
+        // The device's zone as Go's local one, on the same rule as Android
+        // (which cannot find it at all); see mobile/timezone.go.
+        let zone = TimeZone.current
+        MobileSetTimeZone(zone.identifier, zone.secondsFromGMT())
     }
 
     func renderInitial() -> String { MobileRenderInitial() }

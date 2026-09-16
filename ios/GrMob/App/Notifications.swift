@@ -3,7 +3,7 @@ import UserNotifications
 
 /// The iOS half of core's local notifications (core/notifications.go).
 ///
-///     core.PostNotification   ──▶ "notification" {command: "post", id, title, body}
+///     core.PostNotification   ──▶ "notification" {command: "post", id, title, body, at?}
 ///     core.CancelNotification ──▶ "notification" {command: "cancel", id}
 ///     core.OnNotificationTap  ◀── "notification_tap" {id}   (the delegate, below)
 ///
@@ -28,6 +28,17 @@ import UserNotifications
 /// used directly: re-adding under the same identifier replaces the banner, and
 /// cancel removes exactly it, pending and delivered alike.
 ///
+/// # Scheduled posts ("at")
+///
+/// A post carrying `at` (Unix milliseconds, sent only when it is in the
+/// future) gets a UNCalendarNotificationTrigger instead of a nil trigger, and
+/// the notification center holds the request: it fires with the app
+/// suspended or terminated, which is the point. The trigger matches the local
+/// wall-clock date down to the second rather than counting an interval, so a
+/// clock or time-zone change between scheduling and firing moves it the way
+/// an alarm clock would move. iOS keeps at most 64 pending requests per app
+/// and drops the rest without an error; hooks.UseAlarms caps itself at 60.
+///
 /// Authorization is the permission package's (Permissions.swift). A post the
 /// user has not allowed is dropped by the system without an error, which is
 /// the contract core documents.
@@ -49,7 +60,10 @@ final class Notifications: NSObject, UNUserNotificationCenterDelegate {
         guard let id = data["id"] as? String, !id.isEmpty else { return }
         switch data["command"] as? String {
         case "post":
-            post(id: id, title: data["title"] as? String ?? "", body: data["body"] as? String ?? "")
+            // JSONSerialization hands a number back as NSNumber whatever its
+            // Go type was.
+            let at = (data["at"] as? NSNumber).map { Date(timeIntervalSince1970: $0.doubleValue / 1000) }
+            post(id: id, title: data["title"] as? String ?? "", body: data["body"] as? String ?? "", at: at)
         case "cancel":
             let center = UNUserNotificationCenter.current()
             center.removePendingNotificationRequests(withIdentifiers: [id])
@@ -59,14 +73,27 @@ final class Notifications: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
-    private func post(id: String, title: String, body: String) {
+    private func post(id: String, title: String, body: String, at: Date?) {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
         content.sound = .default
-        // A nil trigger delivers now. Scheduling is a different feature with
-        // its own vocabulary (dates, repeats) that core does not have.
-        let request = UNNotificationRequest(identifier: id, content: content, trigger: nil)
+        // A nil trigger delivers now. A date that has passed by the time it
+        // arrives here is posted now too: a calendar trigger for a moment
+        // already gone would never fire.
+        var trigger: UNNotificationTrigger?
+        if let at, at > Date() {
+            let parts = Calendar.current.dateComponents(
+                [.year, .month, .day, .hour, .minute, .second], from: at)
+            trigger = UNCalendarNotificationTrigger(dateMatching: parts, repeats: false)
+        }
+        // A banner already delivered under this id is taken down, so a
+        // re-post that schedules replaces what is showing as it would on the
+        // other hosts; adding under the same identifier replaces a pending one.
+        if trigger != nil {
+            UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [id])
+        }
+        let request = UNNotificationRequest(identifier: id, content: content, trigger: trigger)
         UNUserNotificationCenter.current().add(request) { error in
             if let error { NSLog("GrMob: notification \(id) not posted: \(error)") }
         }
