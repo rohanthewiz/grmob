@@ -158,6 +158,10 @@ struct GrMobStyle: Equatable {
     /// frame, so that ios/verify could measure it.)
     var stackAlign: String = ""
     var lineHeight: Int = 0
+    /// core.MaxLines: the most lines a Text draws, truncated at the tail; 0
+    /// for no limit. Read by GrMobText, and by GrMobMinContent, which floors
+    /// a capped Text at zero as CSS's overflow:hidden does.
+    var maxLines: Int = 0
     var accessibilityLabel: String = ""
     var accessibilityHint: String = ""
     var accessibilityHidden: Bool = false
@@ -273,6 +277,7 @@ struct GrMobStyle: Equatable {
         s.position = str("Position")
         s.stackAlign = str("StackAlign")
         s.lineHeight = int("LineHeight")
+        s.maxLines = max(int("MaxLines"), 0)
         s.accessibilityLabel = str("AccessibilityLabel")
         s.accessibilityHint = str("AccessibilityHint")
         s.accessibilityHidden = obj["AccessibilityHidden"] as? Bool ?? false

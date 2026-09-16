@@ -195,5 +195,5 @@ if [ "${verdict%%:*}" = "run" ]; then
     ../GrMob/App/*.swift
   echo "OK: app layer type-checks against the iOS SDK"
 else
-  echo "SKIP: app layer (${verdict#*:})"
+  skipped "app layer (${verdict#*:})"
 fi

@@ -53,7 +53,8 @@ import SwiftUI
 ///                           `Box(Width("60px"))` therefore floors at 0 in a
 ///                           browser, which is the column internal/pinfixture
 ///                           records and wasm/verify has watched Chrome
-///                           produce.
+///                           produce. A Canvas is the exception, being a
+///                           replaced element on the web; see width(of:).
 ///
 ///   a border                not added. It is drawn as an overlay here
 ///                           (grMobBorder strokes the shape rather than
@@ -92,11 +93,30 @@ enum GrMobMinContent {
         // A declared width caps the minimum rather than raising it; see the
         // under-estimate table above. A percentage is a declaration too — it
         // resolves against the container, which is the thing being sized.
-        if !(node.style?.width ?? "").isEmpty { return 0 }
+        //
+        // Except a Canvas with a px width. On the web a canvas is an <svg>, a
+        // replaced element, and a replaced element's content size suggestion
+        // is its natural size — 300px for an <svg> with no width attribute,
+        // which htmlout's never has — so its minimum is min(declared, 300)
+        // rather than 0. Chrome keeps a Canvas(Width("110px")) at 110 beside
+        // a long caption, Compose keeps it too, and flooring it at 0 here let
+        // the row squeeze the box while the drawing kept its size and spilled
+        // over the caption.
+        if let s = node.style, !s.width.isEmpty {
+            if node.type == "Canvas", let w = GrMobMaxWidth.fixedLimit(s.width) {
+                return min(w, 300) + CGFloat(s.margin.left + s.margin.right)
+            }
+            return 0
+        }
 
         let inner: CGFloat
         switch node.type {
         case "Text":
+            // A capped Text truncates instead of overflowing, and CSS gives
+            // the box that does it (overflow:hidden) an automatic minimum of
+            // zero. Flooring it at its widest word here would widen the very
+            // slot core.MaxLines exists to keep a label inside.
+            if (node.style?.maxLines ?? 0) > 0 { return 0 }
             inner = textWidth(node.stringProp("content"), style: node.style)
         // A row lays its children out on one line, so its minimum is all of
         // theirs plus the gaps, which do not shrink. `horizontalGap` is the

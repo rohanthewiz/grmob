@@ -48,14 +48,14 @@ Package core's reference is split into 11 topic pages by source file. The index 
 | [Views & state](core-views.md) | View, Node, Context and state slots; conditionals, caching, error boundaries and debug-mode concerns. | 11 types, 58 functions and methods |
 | [Layout](core-layout.md) | Rows, columns, stacks, scrolls and lists, and the alignment vocabulary they are placed with. | 2 types, 25 functions and methods |
 | [Styling: the Style struct](core-style.md) | Style and the value types its fields take: alignment, flex, position, weights and edge insets. | 11 types, 10 functions and methods |
-| [Styling: style props](core-style-props.md) | The StyleProp constructors: spacing and per-side insets, flex, typography, colour, borders and animation. | 1 types, 68 functions and methods |
+| [Styling: style props](core-style-props.md) | The StyleProp constructors: spacing and per-side insets, flex, typography, colour, borders and animation. | 1 types, 69 functions and methods |
 | [Theming](core-theme.md) | Themes, palettes, typography and spacing scales, and per-component defaults. | 5 types, 11 functions and methods |
-| [Controls](core-controls.md) | Buttons, text inputs, switches, sliders, selects, images, tab views, text grids and vector canvases. | 14 types, 41 functions and methods |
+| [Controls](core-controls.md) | Buttons, text inputs, switches, sliders, selects, images, tab views, text grids and vector canvases. | 15 types, 41 functions and methods |
 | [Editors](core-editors.md) | The code editor and the rich text editor, and the refs and commands that drive them. | 2 types, 15 functions and methods |
 | [Events & focus](core-events.md) | Event props, host and system events, focus refs and focus order. | 2 types, 19 functions and methods |
 | [Navigation & overlays](core-navigation.md) | The navigator stack, modals, toasts, deep links and opening URLs. | 4 types, 19 functions and methods |
 | [Accessibility](core-accessibility.md) | Roles, selected, expanded and current states, value ranges and the accessibility audit. | 9 types, 19 functions and methods |
-| [Device services](core-device.md) | Audio, camera, clipboard, haptics, local notifications, compass heading, location, maps and the app lifecycle. | 12 types, 62 functions and methods |
+| [Device services](core-device.md) | Audio, camera, clipboard, haptics, local notifications, compass heading, location, maps and the app lifecycle. | 12 types, 63 functions and methods |
 
 ## Index
 
@@ -197,6 +197,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
     - [`func MarginTop`](core-style-props.md#func-margintop)
     - [`func MarginVertical`](core-style-props.md#func-marginvertical)
     - [`func MaxHeight`](core-style-props.md#func-maxheight)
+    - [`func MaxLines`](core-style-props.md#func-maxlines)
     - [`func MaxWidth`](core-style-props.md#func-maxwidth)
     - [`func MinHeight`](core-style-props.md#func-minheight)
     - [`func MinWidth`](core-style-props.md#func-minwidth)
@@ -254,6 +255,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
     - [`type CanvasScale`](core-controls.md#type-canvasscale)
     - [`type ContentMode`](core-controls.md#type-contentmode)
         - [`func ContentModes`](core-controls.md#func-contentmodes)
+    - [`type FillRule`](core-controls.md#type-fillrule)
     - [`type GridRow`](core-controls.md#type-gridrow)
     - [`type GridRun`](core-controls.md#type-gridrun)
     - [`type LineCap`](core-controls.md#type-linecap)
@@ -412,6 +414,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
     - [`func StartLocation`](core-device.md#func-startlocation)
     - [`func StopHeading`](core-device.md#func-stopheading)
     - [`func StopLocation`](core-device.md#func-stoplocation)
+    - [`func SweepNotifications`](core-device.md#func-sweepnotifications)
     - [`func WrapLongitude`](core-device.md#func-wraplongitude)
     - [`func WriteClipboard`](core-device.md#func-writeclipboard)
     - [`type AudioOpt`](core-device.md#type-audioopt)

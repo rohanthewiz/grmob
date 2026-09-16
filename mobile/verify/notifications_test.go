@@ -11,11 +11,13 @@ import (
 // the tap), the Swift delegate and the browser runtime. A misspelled command
 // is a post that never draws; a misspelled tap event is a banner that opens
 // the app at its front door with the id thrown away. Neither logs anything a
-// person would see, so this holds every shell to the two event names, both
-// commands and the three payload keys.
+// person would see, so this holds every shell to the three event names, the
+// three commands and the payload keys — the sweep's included, whose reply a
+// misspelling would leave a caller waiting on forever.
 func TestNotificationEventSpellingsAgree(t *testing.T) {
 	want := []string{`"notification"`, `"notification_tap"`, `"post"`, `"cancel"`,
-		`"id"`, `"title"`, `"body"`, `"at"`}
+		`"id"`, `"title"`, `"body"`, `"at"`,
+		`"sweep"`, `"notification_swept"`, `"prefix"`, `"request"`, `"fired"`}
 	for _, shell := range []struct {
 		name  string
 		files []string

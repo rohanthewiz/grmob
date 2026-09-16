@@ -78,8 +78,8 @@ import "math"
 // # Not in v1
 //
 // Text inside the drawing (lay labels out around it as Text nodes), gradients,
-// clipping, per-shape hit-testing, and the even-odd fill rule. Fills use the
-// nonzero rule, which is every target's default.
+// clipping and per-shape hit-testing. Fills use the nonzero rule, every
+// target's default, unless a shape asks for FillEvenOdd.
 func Canvas(w, h float64, shapes []Shape, props ...PropsAndChildren) View {
 	return ComponentFunc(func(ctx *Context) *Node {
 		if w <= 0 {
@@ -197,6 +197,10 @@ type Shape struct {
 	Fill   string
 	Stroke string
 
+	// FillRule decides which regions of a self-overlapping path Fill paints;
+	// the zero value is FillNonZero. See FillRule.
+	FillRule FillRule
+
 	// StrokeWidth is in layout units, not viewBox units; 0 means 1.
 	StrokeWidth float64
 
@@ -225,6 +229,11 @@ func (s Shape) node(places int) *Node {
 	props["d"] = d
 	if s.Fill != "" {
 		props["fill"] = s.Fill
+		// Only the non-default rule is written, like cap and join, and only
+		// with a fill: a rule on an unfilled shape paints nothing.
+		if s.FillRule == FillEvenOdd {
+			props["fillRule"] = string(FillEvenOdd)
+		}
 	}
 	if s.Stroke != "" {
 		props["stroke"] = s.Stroke
@@ -245,6 +254,30 @@ func (s Shape) node(places int) *Node {
 	}
 	return &Node{Type: "CanvasShape", Props: props}
 }
+
+// FillRule is how a fill decides whether a point is inside a path whose
+// subpaths overlap or wind around each other.
+//
+//	nonzero   inside when the path winds around the point a nonzero number
+//	          of times, counting direction: a ring whose two circles run the
+//	          same way fills solid, and one whose inner circle runs backwards
+//	          has a hole
+//	evenodd   inside when a ray from the point crosses the path an odd number
+//	          of times, ignoring direction: any inner subpath is a hole
+//
+// Even-odd is the one to reach for when a shape has holes and its subpaths
+// come from code that does not track direction, as core.Path's Arc and a
+// data-built outline do not. Every target has both:
+//
+//	SVG       fill-rule="nonzero" | "evenodd"
+//	Compose   PathFillType.NonZero | PathFillType.EvenOdd
+//	SwiftUI   FillStyle(eoFill: false | true)
+type FillRule string
+
+const (
+	FillNonZero FillRule = "nonzero"
+	FillEvenOdd FillRule = "evenodd"
+)
 
 // Wire opcodes. The numbers after each are its operands:
 //

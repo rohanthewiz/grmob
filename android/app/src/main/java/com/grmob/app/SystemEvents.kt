@@ -63,7 +63,7 @@ object SystemEvents {
         Haptics.attach(appContext)
         // Creates the notification channel. The tap comes back through
         // MainActivity, which is the component the notification launches.
-        Notifications.attach(appContext)
+        Notifications.attach(appContext, runtime::hostEvent)
         // The callback runs on the Go goroutine that emitted the event. Both
         // actions below touch the UI (a Toast must be shown from a Looper
         // thread; startActivity from an arbitrary thread is unreliable), so

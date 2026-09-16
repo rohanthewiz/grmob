@@ -458,3 +458,33 @@ func TestDataTableWithoutRowsClaimsNoRowGroup(t *testing.T) {
 		}
 	}
 }
+
+// Width fixes a column's content width on an inner, unpadded box: exact and
+// unshrinking without a weight, a floor with one, and Align moves the content
+// inside the fixed width.
+func TestDataTableColumnWidth(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+	cols := []Column[sermon]{
+		{Title: "Title", Text: func(s sermon) string { return s.Title }, Weight: 1, Width: 80},
+		{Title: "Month", Text: func(s sermon) string { return s.Month }, Width: 48, Align: core.JustifyEnd},
+	}
+	n := DataTable[sermon]{Columns: cols, Rows: sermons, Key: sermonKey}.Render(ctx)
+	_, body := tableParts(t, n)
+	for _, row := range body.Children {
+		grown, fixed := row.Children[0], row.Children[1]
+		if _, declared := grown.Style.ShrinkFactor(); grown.Style.FlexGrow != 1 || declared {
+			t.Errorf("weighted cell: grow %v, shrink declared %v; want 1 and the default", grown.Style.FlexGrow, declared)
+		}
+		if in := grown.Children[0]; in.Style.MinWidth != "80px" || in.Style.Width != "" || in.Style.FlexGrow != 1 {
+			t.Errorf("weighted inner box = %+v, want MinWidth 80px growing", in.Style)
+		}
+		if f, declared := fixed.Style.ShrinkFactor(); !declared || f != 0 {
+			t.Error("a fixed-width column without a weight should not shrink")
+		}
+		in := fixed.Children[0]
+		if in.Style.Width != "48px" || in.Style.JustifyContent != core.JustifyEnd || in.Style.Padding != (core.EdgeInsets{}) {
+			t.Errorf("fixed inner box = %+v, want Width 48px, JustifyEnd, no padding", in.Style)
+		}
+	}
+}

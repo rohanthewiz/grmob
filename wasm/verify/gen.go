@@ -425,6 +425,14 @@ func canvasCases() []canvasCase {
 		build("a stretched line with a quadratic, fractional viewBox", core.Canvas(7.5, 3, []core.Shape{
 			{Path: core.NewPath().MoveTo(0, 3).QuadTo(1.25, 0, 2.5, 1.5).LineTo(7.5, 0.333333), Stroke: "#123456", StrokeWidth: 2, Cap: core.CapRound, Join: core.JoinBevel},
 		}, core.CanvasStretch)),
+		// A ring as two same-direction circles: solid under nonzero, a hole
+		// under even-odd, and the rule written only on the shape that has
+		// both a fill and the non-default rule.
+		build("an even-odd ring beside a nonzero one, and a rule with no fill", core.Canvas(100, 50, []core.Shape{
+			{Path: core.NewPath().Arc(25, 25, 20, 0, 360).Close().Arc(25, 25, 10, 0, 360).Close(), Fill: "#4e79a7", FillRule: core.FillEvenOdd},
+			{Path: core.NewPath().Arc(75, 25, 20, 0, 360).Close().Arc(75, 25, 10, 0, 360).Close(), Fill: "#4e79a7"},
+			{Path: core.Line(0, 49, 100, 49), Stroke: "#000000", FillRule: core.FillEvenOdd},
+		})),
 	}
 }
 

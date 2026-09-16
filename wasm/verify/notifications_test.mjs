@@ -109,3 +109,42 @@ test("permission is read when the banner is due", () => {
     h.fire();
     assert.deepEqual(h.shown.map((n) => n.tag), ["p"]);
 });
+
+// A sweep stops every timer and closes every banner under its prefix, leaves
+// other ids alone, and answers with the scheduled ids whose time came — once:
+// a second sweep, or a cancel or re-post in between, reports nothing more.
+test("a sweep cancels by prefix and reports what fired", () => {
+    const h = harness();
+    const replies = [];
+    h.rt.window.GrMobWASM = {
+        HostEvent: (name, json) => replies.push({ name, ...JSON.parse(json) }),
+    };
+    const closed = [];
+    const Base = h.rt.sandbox.Notification;
+    function Tracking(title, options) {
+        Base.call(this, title, options);
+        this.close = () => closed.push(options.tag);
+    }
+    Tracking.permission = "granted";
+    h.rt.sandbox.Notification = Tracking;
+
+    h.post("a.1", { at: h.clock.now + 1_000 }); // fires, then is swept
+    h.post("a.2", { at: h.clock.now + 1_000 }); // fires, then is re-posted now
+    h.post("a.3", { at: h.clock.now + 60_000 }); // still pending at the sweep
+    h.post("b.1", { at: h.clock.now + 60_000 }); // another prefix
+    h.clock.now += 1_000;
+    h.fire();
+    h.post("a.2");
+
+    h.rt.GrMob.notifications.handle({ command: "sweep", prefix: "a.", request: "7" });
+    assert.deepEqual(replies, [{ name: "notification_swept", request: "7", fired: ["a.1"] }]);
+    assert.deepEqual(closed.filter((t) => t.startsWith("a.")).sort(), ["a.1", "a.2", "a.2"],
+        "a.1 and the re-posted a.2 closed (a.2's first banner closed by its re-post)");
+
+    h.clock.now += 60_000;
+    h.fire();
+    assert.deepEqual(h.shown.map((n) => n.tag), ["a.1", "a.2", "a.2", "b.1"], "a swept timer still fired");
+
+    h.rt.GrMob.notifications.handle({ command: "sweep", prefix: "a.", request: "8" });
+    assert.deepEqual(replies[1], { name: "notification_swept", request: "8", fired: [] });
+});

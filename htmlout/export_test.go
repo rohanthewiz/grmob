@@ -2205,3 +2205,46 @@ func TestInertIsWrittenBesideAriaHidden(t *testing.T) {
 		t.Errorf("a node that is not inert must not carry the attribute:\n%s", plain)
 	}
 }
+
+// --- MaxLines ---------------------------------------------------------------
+
+// The declarations match the WASM runtime's: nowrap + ellipsis for one line,
+// the -webkit-box clamp for more, overflow and white-space only where the
+// author set none, and a display only where nothing else decided one.
+func TestMaxLinesExportsTruncation(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		style core.Style
+		want  []string
+		never []string
+	}{
+		{"one line", core.Style{MaxLines: 1},
+			[]string{"overflow:hidden", "white-space:nowrap", "text-overflow:ellipsis", "display:block"},
+			[]string{"line-clamp"}},
+		{"three lines", core.Style{MaxLines: 3},
+			[]string{"overflow:hidden", "-webkit-box-orient:vertical", "-webkit-line-clamp:3", "display:-webkit-box"},
+			[]string{"text-overflow"}},
+		{"author's overflow", core.Style{MaxLines: 1, Overflow: "clip", WhiteSpace: "pre"},
+			[]string{"overflow:clip", "white-space:pre"},
+			[]string{"overflow:hidden", "white-space:nowrap"}},
+		{"hidden stays hidden", core.Style{MaxLines: 1, Display: core.DisplayNone},
+			[]string{"display:none"},
+			[]string{"display:block"}},
+		{"no cap", core.Style{},
+			nil,
+			[]string{"text-overflow", "line-clamp", "overflow:hidden"}},
+	} {
+		style := c.style
+		out := ExportHTML(&core.Node{Type: "Text", Props: map[string]any{"content": "x"}, Style: &style})
+		for _, w := range c.want {
+			if !strings.Contains(out, w) {
+				t.Errorf("%s: missing %q in:\n%s", c.name, w, out)
+			}
+		}
+		for _, n := range c.never {
+			if strings.Contains(out, n) {
+				t.Errorf("%s: unexpected %q in:\n%s", c.name, n, out)
+			}
+		}
+	}
+}

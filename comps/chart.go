@@ -83,8 +83,8 @@ const (
 	chartLabelLine = 14.0
 
 	// chartMaxXLabels caps the labels under a chart. Beyond about five a
-	// phone-width axis crowds, and a label wider than its slot would widen it
-	// and pull its neighbours off their points.
+	// phone-width axis crowds, and each label's slot narrows until most
+	// labels are cut to an ellipsis (see weightedLabel).
 	chartMaxXLabels = 5
 )
 
@@ -400,15 +400,56 @@ func gridShapes(t *core.Theme, s valueScale) []core.Shape {
 	return out
 }
 
+// verticalGridShapes are gridShapes for a value axis that runs left to right
+// (a horizontal bar chart or a scatter's x): a vertical hairline at each tick.
+func verticalGridShapes(t *core.Theme, s valueScale) []core.Shape {
+	ticks := s.ticks()
+	out := make([]core.Shape, 0, len(ticks))
+	for _, v := range ticks {
+		x := chartView - s.y(v)
+		out = append(out, core.Shape{
+			Path:        core.Line(x, 0, x, chartView),
+			Stroke:      t.Colors.BorderColor(),
+			StrokeWidth: 1,
+		})
+	}
+	return out
+}
+
 // weightedLabel is one label box in an x-axis row: FlexGrow(weight) with a zero
 // basis, so the row is divided in proportion to the weights on every target
 // (see StatTile.Fill for why both props are needed).
+//
+// # A label wider than its slot
+//
+// It is cut with an ellipsis rather than allowed to widen the slot, which
+// would pull every label after it off its point. Two props, one per half of
+// the problem:
+//
+//	Text  MaxLines(1)     truncates, and gives the text itself a zero
+//	                      minimum on every target (see core.MaxLines)
+//	slot  MinWidth(0px)   CSS only: a flex item's automatic minimum is its
+//	                      content's min-content contribution, which for a
+//	                      nowrap run is the whole run however the run
+//	                      clips, so the slot needs its own zero floor. The
+//	                      natives already give a weighted slot exactly its
+//	                      share.
+//
+// A truncated label is still whole in the spoken summary, which reads the
+// Labels slice rather than the drawing.
 func weightedLabel(t *core.Theme, text string, weight float64, align core.Alignment) core.View {
 	return core.Column(
 		core.Padding(0),
 		core.FlexGrow(weight),
 		core.FlexBasis("0"),
-		axisText(t, text, align),
+		core.MinWidth("0px"),
+		core.Text(text,
+			core.FontSize(chartLabelSize),
+			core.TextColor(t.Colors.TextSecondary),
+			core.Align(align),
+			core.MaxLines(1),
+			core.AccessibilityHidden(),
+		),
 	)
 }
 
@@ -527,6 +568,15 @@ func swatch(color string) core.View {
 // announcing label. xLabels may be nil.
 func cartesianFrame(ctx *core.Context, s valueScale, h float64, format func(float64) string,
 	canvas core.View, xLabels core.View, legendView core.View, label string, style []core.StyleProp) *core.Node {
+	return cartesianFrameWithTop(ctx, s, h, format, canvas, xLabels, legendView, label, style, nil)
+}
+
+// cartesianFrameWithTop is cartesianFrame with an optional row over the plot,
+// one label line (chartLabelLine) tall — BarChart's values. The y axis gets a
+// spacer of the same height, so its labels stay level with the gridlines.
+func cartesianFrameWithTop(ctx *core.Context, s valueScale, h float64, format func(float64) string,
+	canvas core.View, xLabels core.View, legendView core.View, label string, style []core.StyleProp,
+	top core.View) *core.Node {
 	t := ctx.Theme()
 
 	plot := []core.PropsAndChildren{
@@ -534,12 +584,26 @@ func cartesianFrame(ctx *core.Context, s valueScale, h float64, format func(floa
 		core.Gap(0),
 		core.FlexGrow(1),
 		core.FlexBasis("0"),
+		core.MinWidth("0px"),
+	}
+	axis := yAxis(t, s, h, format)
+	if top != nil {
+		plot = append(plot, top)
+		axis = core.Column(
+			core.Padding(0),
+			core.Gap(0),
+			core.AccessibilityHidden(),
+			core.Box(core.Padding(0), core.Height(px(chartLabelLine))),
+			axis,
+		)
+	}
+	plot = append(plot,
 		// Half a label line above and below, so the top and bottom gridlines
 		// meet the centres of the top and bottom labels.
 		core.Box(core.Padding(0), core.Height(px(chartLabelLine/2))),
 		canvas,
 		core.Box(core.Padding(0), core.Height(px(chartLabelLine/2))),
-	}
+	)
 	if xLabels != nil {
 		plot = append(plot, xLabels)
 	}
@@ -558,7 +622,7 @@ func cartesianFrame(ctx *core.Context, s valueScale, h float64, format func(floa
 		core.Padding(0),
 		core.Gap(6),
 		core.AlignItemsProp(core.AlignItemsStart),
-		yAxis(t, s, h, format),
+		axis,
 		core.Column(plot...),
 	))
 	if legendView != nil {

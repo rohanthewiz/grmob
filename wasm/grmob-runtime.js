@@ -3768,7 +3768,7 @@ const GrMob = (() => {
     // The attributes a shape manages, so a patch that drops one (a shape that
     // loses its stroke) can remove it rather than leave the old paint behind.
     const CANVAS_SHAPE_ATTRS = [
-        "d", "fill", "stroke", "stroke-width", "vector-effect",
+        "d", "fill", "fill-rule", "stroke", "stroke-width", "vector-effect",
         "stroke-linecap", "stroke-linejoin", "stroke-dasharray",
     ];
 
@@ -3797,6 +3797,8 @@ const GrMob = (() => {
     function canvasShapeAttrs(props) {
         const out = [["d", canvasPathData(props.d)]];
         out.push(["fill", props.fill ? String(props.fill) : "none"]);
+        // core.FillEvenOdd, only with a fill, in htmlout's position.
+        if (props.fill && props.fillRule === "evenodd") out.push(["fill-rule", "evenodd"]);
         if (!props.stroke) return out;
         out.push(["stroke", String(props.stroke)]);
         out.push(["stroke-width", String(props.strokeWidth)]);
@@ -6355,6 +6357,39 @@ const GrMob = (() => {
         out.maxHeight = style.MaxHeight || "";
         out.overflow = style.Overflow || "";
         out.whiteSpace = style.WhiteSpace || "";
+        // core.MaxLines. After overflow and white-space, which it fills in
+        // where the author left them empty, and before the chassis blocks
+        // below. One line is nowrap + ellipsis, which cuts inside a word too
+        // wide for the box; more is the -webkit-box line clamp, which is the
+        // only multi-line truncation CSS has (and which every engine this
+        // runtime targets supports under that prefix). overflow:hidden is
+        // also what zeroes the box's automatic minimum as a flex item, so a
+        // capped label can shrink inside its slot rather than widen it.
+        // Total, like everything here: the three properties only this block
+        // writes are cleared when the cap is gone. htmlout's styleValue
+        // emits the same declarations.
+        const maxLines = style.MaxLines > 0 ? style.MaxLines : 0;
+        if (maxLines > 0) {
+            out.overflow = out.overflow || "hidden";
+            if (maxLines === 1) {
+                out.whiteSpace = out.whiteSpace || "nowrap";
+                out.textOverflow = "ellipsis";
+                out.webkitLineClamp = "";
+                out.webkitBoxOrient = "";
+                // An ellipsis needs a block container; a Text is a <span>,
+                // which a flex parent blockifies but a block parent does not.
+                out.display = out.display || "block";
+            } else {
+                out.textOverflow = "";
+                out.webkitLineClamp = `${maxLines}`;
+                out.webkitBoxOrient = "vertical";
+                out.display = out.display || "-webkit-box";
+            }
+        } else {
+            out.textOverflow = "";
+            out.webkitLineClamp = "";
+            out.webkitBoxOrient = "";
+        }
 
         // The grid chassis (core.TextGrid): the fixed rules of a grid and its
         // rows, applied here rather than once at creation because every
@@ -8469,9 +8504,19 @@ const GrMob = (() => {
     // per id, so a re-post reschedules and a cancel stops it. setTimeout
     // overflows past 2^31−1 ms (about 24.8 days) and fires at once, so a
     // longer wait sleeps in capped steps.
+    //
+    // A sweep (core.SweepNotifications: {"command": "sweep", "prefix",
+    // "request"}) closes and stops everything under the prefix and answers
+    // "notification_swept" with the ids whose scheduled time had come. The
+    // natives answer from a record that outlives the process; a page's record
+    // is `fired` below and dies with the tab, which is also when its timers
+    // die, so a fresh page correctly has nothing to cancel or report.
     const notifications = (() => {
         const open = new Map();
         const timers = new Map();
+        // id → at (Unix ms) for scheduled posts whose timer has run out and
+        // that no cancel or re-post has superseded since.
+        const fired = new Map();
         const maxDelay = 2147483647;
 
         function clearTimer(id) {
@@ -8484,10 +8529,32 @@ const GrMob = (() => {
             const wait = at - Date.now();
             if (wait <= 0) {
                 timers.delete(id);
+                fired.set(id, at);
                 show(id, data);
                 return;
             }
             timers.set(id, setTimeout(() => scheduleAt(id, at, data), Math.min(wait, maxDelay)));
+        }
+
+        function sweep(prefix, request) {
+            const ids = [];
+            for (const id of fired.keys()) {
+                if (id.startsWith(prefix)) ids.push(id);
+            }
+            for (const id of [...timers.keys()]) {
+                if (id.startsWith(prefix)) clearTimer(id);
+            }
+            for (const [id, n] of [...open]) {
+                if (id.startsWith(prefix)) {
+                    n.close();
+                    open.delete(id);
+                }
+            }
+            for (const id of ids) fired.delete(id);
+            ids.sort();
+            const host = window.GrMobWASM;
+            if (!host || typeof host.HostEvent !== "function") return;
+            host.HostEvent("notification_swept", JSON.stringify({ "request": request, "fired": ids }));
         }
 
         function tapped(id, n) {
@@ -8499,10 +8566,18 @@ const GrMob = (() => {
         }
 
         function handle(data) {
+            // Addressed by prefix, and answered even where Notification does
+            // not exist, so a sweeping caller is never left waiting.
+            if (data.command === "sweep") {
+                if (data["prefix"] && data["request"]) sweep(data["prefix"], data["request"]);
+                return;
+            }
             const id = data["id"];
             if (!id || typeof Notification !== "function") return;
-            // Any command under an id supersedes that id's pending timer.
+            // Any command under an id supersedes that id's pending timer, and
+            // its fired record: a cancel or re-post is not something to report.
             clearTimer(id);
+            fired.delete(id);
             if (data.command === "cancel") {
                 const n = open.get(id);
                 if (n) n.close();

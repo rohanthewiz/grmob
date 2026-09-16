@@ -217,6 +217,18 @@ object Permissions {
         }
     }
 
+    /**
+     * Re-sends the exact-alarm status after the system broadcast that it was
+     * granted (Notifications.kt's NotificationBootReceiver). Nothing is sent
+     * without an attached Activity: the receiver may be running in a process
+     * the system started for it, where [status] could only say "unavailable",
+     * and the next launch checks afresh anyway.
+     */
+    fun recheckExactAlarms() {
+        if (activity == null) return
+        send("exact_alarms", status("exact_alarms"))
+    }
+
     private fun request(kind: String) {
         val host = activity
         val launch = launcher

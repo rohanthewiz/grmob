@@ -111,6 +111,9 @@ func ReceiveHostEvent(name string, data map[string]any) {
 	case hostEventClipboard:
 		receiveClipboard(data)
 		consumed = true
+	case hostEventNotificationSwept:
+		receiveNotificationSwept(data)
+		consumed = true
 	}
 
 	hostEventsMu.RLock()

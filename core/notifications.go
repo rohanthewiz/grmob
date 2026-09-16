@@ -1,6 +1,10 @@
 package core
 
-import "time"
+import (
+	"strconv"
+	"sync"
+	"time"
+)
 
 // Local notifications: a banner the OS draws outside the app, posted by the
 // app itself rather than pushed from a server.
@@ -120,6 +124,9 @@ const (
 	notificationPost         = "post"
 	notificationCancel       = "cancel"
 	notificationAt           = "at"
+
+	notificationSweep          = "sweep"
+	hostEventNotificationSwept = "notification_swept"
 )
 
 // PostNotification asks the host to show n — now, or at n.At — replacing any
@@ -179,4 +186,121 @@ func OnNotificationTap(fn func(id string)) (cancel func()) {
 		}
 		fn(id)
 	})
+}
+
+// # Sweeping by prefix
+//
+// CancelNotification needs the id, and an id is only as durable as the memory
+// holding it. hooks.UseAlarms names every notification it schedules
+// "grmob.alarm.<alarm id>.<unix seconds>" and keeps that list in memory, so a
+// process that dies with notifications pending leaves them in the OS with
+// nobody left who can name them: an alarm switched off after a relaunch would
+// still ring. A sweep asks the host instead, because the host is the one
+// thing that still knows.
+//
+//	app ──SendSystemEvent("notification", {command: "sweep", prefix, request})──▶ host
+//	app ◀──ReceiveHostEvent("notification_swept", {request, fired: [ids]})────── host
+//
+// The host cancels every notification it scheduled or shows under the prefix
+// and answers with the ids among the scheduled ones whose time has come — the
+// ones the OS has drawn, or will draw late — which is how a relaunched app
+// learns what rang while it was not running. `request` is a correlation id in
+// ReadClipboard's mould (see clipboard.go for why one is needed).
+//
+// Each host answers from a record of its own, because no platform lists what
+// it has already delivered in a form that survives the user clearing it:
+//
+//	Android   the scheduled-post store Notifications.kt already keeps for
+//	          re-arming; a fired entry is marked rather than removed, so the
+//	          sweep can report it
+//	iOS       a UserDefaults map of id → time, written when a post is scheduled
+//	Browser   the page's own timers; a closed tab took them with it, so a
+//	          fresh page has nothing to report, and nothing to cancel either
+//	Headless  nothing: fn runs at once with no ids
+//
+// A host keeps fired entries for a week (the horizon UseAlarms schedules
+// within) and prunes them after that, so an app that never sweeps does not
+// grow the record without bound.
+
+var (
+	sweepMu      sync.Mutex
+	sweepPending = map[string]func(fired []string){}
+	sweepNext    uint64
+)
+
+// SweepNotifications cancels every notification posted or scheduled under an
+// ID beginning with prefix, and calls fn once with the IDs among the scheduled
+// ones whose time had arrived (see "Sweeping by prefix"). fn may be nil.
+//
+// An empty prefix is refused (fn runs with no ids and nothing is sent):
+// sweeping everything would take down notifications this caller never
+// posted. With no host registered fn runs at once on the caller's goroutine,
+// as ReadClipboard's does; otherwise on the goroutine that delivers the reply.
+func SweepNotifications(prefix string, fn func(fired []string)) {
+	if fn == nil {
+		fn = func([]string) {}
+	}
+	if prefix == "" || !HasSystemEventHandler() {
+		fn(nil)
+		return
+	}
+	sweepMu.Lock()
+	sweepNext++
+	request := strconv.FormatUint(sweepNext, 10)
+	// Registered before sending: a native host may answer inside the call.
+	sweepPending[request] = fn
+	sweepMu.Unlock()
+
+	SendSystemEvent(systemEventNotification, map[string]any{
+		"command": notificationSweep,
+		"prefix":  prefix,
+		"request": request,
+	})
+}
+
+// receiveNotificationSwept decodes the reply to one sweep. The payload every
+// host writes:
+//
+//	request  string    the request id from the sweep, echoed
+//	fired    []string  ids whose scheduled time had arrived; absent means none
+//
+// An unknown request is dropped, as a duplicate clipboard reply is. Ids that
+// are not strings are skipped rather than failing the whole reply.
+func receiveNotificationSwept(data map[string]any) {
+	request, _ := data["request"].(string)
+	if request == "" {
+		return
+	}
+	sweepMu.Lock()
+	fn := sweepPending[request]
+	delete(sweepPending, request)
+	sweepMu.Unlock()
+	if fn == nil {
+		return
+	}
+	var fired []string
+	// A decoded JSON array is []any; a payload built in Go may be []string.
+	switch list := data["fired"].(type) {
+	case []any:
+		for _, v := range list {
+			if id, ok := v.(string); ok && id != "" {
+				fired = append(fired, id)
+			}
+		}
+	case []string:
+		for _, id := range list {
+			if id != "" {
+				fired = append(fired, id)
+			}
+		}
+	}
+	fn(fired)
+}
+
+// resetSweepsForTest drops every pending sweep, for the reason
+// resetClipboardForTest exists.
+func resetSweepsForTest() {
+	sweepMu.Lock()
+	defer sweepMu.Unlock()
+	sweepPending = map[string]func([]string){}
 }

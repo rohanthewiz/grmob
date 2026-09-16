@@ -44,3 +44,7 @@ app_layer_verdict() {
     fi
     echo "run:"
 }
+
+# skipped prints the SKIP line and honours GRMOB_VERIFY_STRICT (exit 3); shared
+# with android/verify so "strict" means one thing across both passes.
+. ../../internal/gateharness/skip.sh

@@ -186,3 +186,22 @@ func TestCanvasMapping(t *testing.T) {
 		t.Errorf("stretch = %g %g %g %g", sx, sy, ox, oy)
 	}
 }
+
+// FillEvenOdd crosses the wire only with a fill; the nonzero default and a
+// rule on an unfilled shape write nothing.
+func TestFillRuleIsWrittenOnlyWhenItPaints(t *testing.T) {
+	ring := NewPath().Arc(5, 5, 4, 0, 360).Close().Arc(5, 5, 2, 0, 360).Close()
+	n := renderCanvas(Canvas(10, 10, []Shape{
+		{Path: ring, Fill: "#000", FillRule: FillEvenOdd},
+		{Path: ring, Fill: "#000", FillRule: FillNonZero},
+		{Path: ring, Stroke: "#000", FillRule: FillEvenOdd},
+	}))
+	if got := n.Children[0].Props["fillRule"]; got != "evenodd" {
+		t.Errorf("even-odd fill: fillRule = %v", got)
+	}
+	for i, c := range n.Children[1:] {
+		if _, ok := c.Props["fillRule"]; ok {
+			t.Errorf("shape %d carries fillRule %v; only a filled even-odd shape should", i+1, c.Props["fillRule"])
+		}
+	}
+}

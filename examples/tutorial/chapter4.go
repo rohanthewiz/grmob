@@ -888,7 +888,9 @@ func lessonCollections() Lesson {
 					{Title: "Speaker", Weight: 1, Narrow: true,
 						Text: func(e archiveEntry) string { return e.speaker },
 						Less: func(a, b archiveEntry) bool { return a.speaker < b.speaker }},
-					{Title: "Date", Align: core.JustifyEnd,
+					// A fixed width, so "Mar 1" and "Mar 22" line up down the
+					// column instead of each row's date hugging its own text.
+					{Title: "Date", Align: core.JustifyEnd, Width: 56,
 						Text: func(e archiveEntry) string { return e.date.Format("Jan 2") },
 						Less: func(a, b archiveEntry) bool { return a.date.Before(b.date) }},
 				},
@@ -3573,7 +3575,10 @@ func lessonClocksAndDrawing() Lesson {
 				},
 			})
 			// Checks, never prompts; the prompt is the button's, from a tap.
-			notifyStatus := hooks.UsePermission(ctx, permission.Notifications)
+			// Live, like the exact-alarm check below: a user who allows
+			// notifications from the Settings app rather than the dialog comes
+			// back to a screen that has already dropped the button.
+			notifyStatus := hooks.UsePermissionLive(ctx, permission.Notifications)
 			// Android's second switch: without "Alarms & reminders" a banner is
 			// scheduled inexactly and can come a minute late. Only Denied shows
 			// the button — iOS and the browser answer Granted, and the moment
@@ -3674,6 +3679,22 @@ comps.DigitalClock{Time: now, ShowSeconds: true, ShowDate: true}`),
 							core.AccessibilityLabel("Donut chart: 45%, 30% and 25%")),
 						caption("core.Sector(cx, cy, inner, outer, start, sweep) — a pie wedge when inner is 0."),
 					),
+					core.Row(
+						core.Gap(16),
+						core.AlignItemsProp(core.AlignItemsCenter),
+						// Two circles drawn the same way round. Nonzero counts
+						// the inner one as more inside, so the ring is solid;
+						// even-odd counts it as a second crossing, so it is a
+						// hole.
+						core.Canvas(100, 50, []core.Shape{
+							{Path: core.NewPath().Arc(25, 25, 22, 0, 360).Close().Arc(25, 25, 12, 0, 360).Close(),
+								Fill: t.Colors.Primary, FillRule: core.FillEvenOdd},
+							{Path: core.NewPath().Arc(75, 25, 22, 0, 360).Close().Arc(75, 25, 12, 0, 360).Close(),
+								Fill: t.Colors.Primary},
+						}, core.Width("110px"),
+							core.AccessibilityLabel("A ring with a hole beside a solid disc")),
+						caption("Two circles, one path: FillEvenOdd cuts the inner one out; the default rule does not."),
+					),
 				),
 				prose("An alarm is the time arithmetic in package alarm, a hook that checks it every second, "+
 					"and two widgets. The hook asks whether each alarm fell due since the last check, not "+
@@ -3759,7 +3780,7 @@ func rotated[T any](xs []T, k int) []T {
 func lessonCharts() Lesson {
 	return Lesson{
 		Title:   "Charts",
-		Summary: "comps.Sparkline, LineChart, AreaChart, BarChart, DonutChart, PieChart and Gauge: charts drawn on core.Canvas with axes as Text.",
+		Summary: "comps.Sparkline, LineChart, AreaChart, BarChart, ScatterChart, DonutChart, PieChart and Gauge: charts drawn on core.Canvas with axes as Text.",
 		Body: func(ctx *core.Context) core.View {
 			shift := core.NewState(ctx, 0)
 			battery := core.NewState(ctx, 72.0)
@@ -3820,6 +3841,63 @@ func lessonCharts() Lesson {
 						core.Column(core.FlexGrow(1), core.FlexBasis("0"),
 							comps.Sparkline{Values: visits, Subject: "Visits by month", ShowLast: true, Area: true}),
 					),
+				),
+				prose("The same widgets bend to other questions. Smooth draws a monotone curve, which "+
+					"never overshoots a point, Stacked puts series on top of each other so the top line "+
+					"is the whole, and Horizontal turns a bar chart on its side for names too long to "+
+					"sit under a bar. A label longer than its slot is cut with an ellipsis rather than "+
+					"pushing its neighbours along. A scatter plots two measures against each other."),
+				codeBlock(`comps.AreaChart{Stacked: true, Smooth: true, Series: parts}
+comps.BarChart{Horizontal: true, ShowValues: true, Labels: names, Series: spend}
+comps.ScatterChart{Series: []comps.ScatterSeries{{Points: points}}}`),
+				demoPanel("Stacks, sideways bars and a scatter.",
+					comps.AreaChart{
+						Subject: "Visits by source",
+						Labels:  rotated(chartMonths, k),
+						Stacked: true,
+						Smooth:  true,
+						Series: []comps.ChartSeries{
+							{Name: "Search", Values: rotated([]float64{12, 18, 16, 22, 28, 26, 30, 34, 31, 36, 40, 44}, k)},
+							{Name: "Direct", Values: rotated([]float64{8, 9, 12, 10, 11, 14, 13, 15, 18, 16, 17, 19}, k)},
+							{Name: "Social", Values: rotated([]float64{3, 4, 6, 9, 7, 8, 12, 10, 9, 13, 15, 14}, k)},
+						},
+						Height: 120,
+					},
+					comps.BarChart{
+						Subject:    "Monthly spend",
+						Horizontal: true,
+						ShowValues: true,
+						Labels:     []string{"Rent", "Groceries and household", "Transport", "Subscriptions and memberships"},
+						Series:     []comps.ChartSeries{{Name: "Spend", Values: rotated([]float64{1200, 450, 200, 85}, k)}},
+						// Compact, because the end ticks have half an interval
+						// each and a wider label is cut ("$15…").
+						Format: func(v float64) string {
+							if v >= 1000 {
+								return fmt.Sprintf("$%.1fk", v/1000)
+							}
+							return fmt.Sprintf("$%.0f", v)
+						},
+					},
+					comps.BarChart{
+						Subject:    "Tickets by quarter",
+						Labels:     []string{"First quarter", "Second quarter", "Third quarter", "Fourth quarter"},
+						Stacked:    true,
+						ShowValues: true,
+						Series: []comps.ChartSeries{
+							{Name: "Opened", Values: rotated([]float64{40, 52, 47, 60}, k)},
+							{Name: "Reopened", Values: rotated([]float64{6, 9, 4, 8}, k)},
+						},
+						Height: 110,
+					},
+					comps.ScatterChart{
+						Subject: "Distance and pace",
+						Series: []comps.ScatterSeries{{Name: "Runs", Points: []comps.ChartPoint{
+							{X: 3, Y: 5.2}, {X: 5, Y: 5.5}, {X: 8, Y: 5.9}, {X: 10, Y: 6.1}, {X: 4, Y: 5.0},
+							{X: 12, Y: 6.4}, {X: 6, Y: 5.6}, {X: 15, Y: 6.8}, {X: 21, Y: 7.2}, {X: 7, Y: 5.4},
+						}}},
+						XFormat: func(v float64) string { return fmt.Sprintf("%.0f km", v) },
+						Height:  110,
+					},
 				),
 				prose("Donuts, pies and gauges keep their shape in any box. The donut's legend rounds its "+
 					"percentages so they add up to 100, and a gauge's arc is a stroke, so its thickness "+

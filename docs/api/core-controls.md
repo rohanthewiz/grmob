@@ -34,6 +34,7 @@ One of 11 topic pages of [package core](core.md), which has the package overview
     - [`func (CanvasScale) Apply`](#func-canvasscale-apply)
 - [`type ContentMode`](#type-contentmode)
     - [`func ContentModes`](#func-contentmodes)
+- [`type FillRule`](#type-fillrule)
 - [`type GridRow`](#type-gridrow)
 - [`type GridRun`](#type-gridrun)
 - [`type LineCap`](#type-linecap)
@@ -87,7 +88,7 @@ const (
 )
 ```
 
-<small>[core/canvas.go:257](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L257)</small>
+<small>[core/canvas.go:290](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L290)</small>
 
 GridRun attribute bits. A renderer without a native spelling for one may drop it (there is no dim on the web's font-weight scale, say, so the DOM targets fake it with opacity), but must never fail the row.
 
@@ -190,7 +191,7 @@ A drawing has no text a reader could find in it. A Canvas without an Accessibili
 
 #### Not in v1
 
-Text inside the drawing (lay labels out around it as Text nodes), gradients, clipping, per-shape hit-testing, and the even-odd fill rule. Fills use the nonzero rule, which is every target's default.
+Text inside the drawing (lay labels out around it as Text nodes), gradients, clipping and per-shape hit-testing. Fills use the nonzero rule, every target's default, unless a shape asks for FillEvenOdd.
 
 <small>[core/canvas.go:83](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L83)</small>
 
@@ -555,6 +556,36 @@ A fresh slice per call rather than a package-level var: a var of slice type is w
 
 <small>[core/image.go:81](https://github.com/rohanthewiz/grmob/blob/master/core/image.go#L81)</small>
 
+### type FillRule
+
+```go
+type FillRule string
+```
+
+FillRule is how a fill decides whether a point is inside a path whose subpaths overlap or wind around each other.
+
+	nonzero   inside when the path winds around the point a nonzero number
+	          of times, counting direction: a ring whose two circles run the
+	          same way fills solid, and one whose inner circle runs backwards
+	          has a hole
+	evenodd   inside when a ray from the point crosses the path an odd number
+	          of times, ignoring direction: any inner subpath is a hole
+
+Even-odd is the one to reach for when a shape has holes and its subpaths come from code that does not track direction, as core.Path's Arc and a data-built outline do not. Every target has both:
+
+	SVG       fill-rule="nonzero" | "evenodd"
+	Compose   PathFillType.NonZero | PathFillType.EvenOdd
+	SwiftUI   FillStyle(eoFill: false | true)
+
+<small>[core/canvas.go:275](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L275)</small>
+
+```go
+const (
+	FillNonZero FillRule = "nonzero"
+	FillEvenOdd FillRule = "evenodd"
+)
+```
+
 ### type GridRow
 
 ```go
@@ -628,7 +659,7 @@ type Path struct {
 
 Path is a sequence of subpaths built by chained calls. The builder methods mutate and return the receiver, so a Path should be finished before it is handed to a Shape: the node takes a copy when the Canvas renders, and a change after that is invisible (see Node immutability).
 
-<small>[core/canvas.go:268](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L268)</small>
+<small>[core/canvas.go:301](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L301)</small>
 
 #### func Circle
 
@@ -638,7 +669,7 @@ func Circle(cx, cy, r float64) *Path
 
 Circle is a closed circle, drawn clockwise from three o'clock.
 
-<small>[core/canvas.go:435](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L435)</small>
+<small>[core/canvas.go:468](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L468)</small>
 
 #### func Line
 
@@ -648,7 +679,7 @@ func Line(x1, y1, x2, y2 float64) *Path
 
 Line is a single straight segment.
 
-<small>[core/canvas.go:415](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L415)</small>
+<small>[core/canvas.go:448](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L448)</small>
 
 #### func NewPath
 
@@ -658,7 +689,7 @@ func NewPath() *Path
 
 NewPath returns an empty path.
 
-<small>[core/canvas.go:279](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L279)</small>
+<small>[core/canvas.go:312](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L312)</small>
 
 #### func Polyline
 
@@ -668,7 +699,7 @@ func Polyline(xy ...float64) *Path
 
 Polyline joins the points (x0, y0, x1, y1, ...) with straight segments. An odd trailing coordinate is ignored.
 
-<small>[core/canvas.go:421](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L421)</small>
+<small>[core/canvas.go:454](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L454)</small>
 
 #### func Rect
 
@@ -678,7 +709,7 @@ func Rect(x, y, w, h float64) *Path
 
 Rect is a closed rectangle with its top-left corner at (x, y).
 
-<small>[core/canvas.go:430](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L430)</small>
+<small>[core/canvas.go:463](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L463)</small>
 
 #### func Sector
 
@@ -688,7 +719,7 @@ func Sector(cx, cy, inner, outer, startDeg, sweepDeg float64) *Path
 
 Sector is a closed ring segment between radii inner and outer — a pie wedge when inner is 0, a donut segment otherwise. Angles are as for Path.Arc.
 
-<small>[core/canvas.go:442](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L442)</small>
+<small>[core/canvas.go:475](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L475)</small>
 
 #### func (*Path) Arc
 
@@ -710,7 +741,7 @@ The sweep is split into segments of at most 90°, and each becomes the cubic who
 	             │
 	             P2
 
-<small>[core/canvas.go:345](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L345)</small>
+<small>[core/canvas.go:378](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L378)</small>
 
 #### func (*Path) Close
 
@@ -720,7 +751,7 @@ func (p *Path) Close() *Path
 
 Close joins the current point back to the start of the subpath. A later LineTo continues from that start, as it does on every platform.
 
-<small>[core/canvas.go:383](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L383)</small>
+<small>[core/canvas.go:416](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L416)</small>
 
 #### func (*Path) CubicTo
 
@@ -730,7 +761,7 @@ func (p *Path) CubicTo(x1, y1, x2, y2, x, y float64) *Path
 
 CubicTo draws a cubic Bézier to (x, y) via control points (x1, y1) and (x2, y2).
 
-<small>[core/canvas.go:302](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L302)</small>
+<small>[core/canvas.go:335](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L335)</small>
 
 #### func (*Path) LineTo
 
@@ -740,7 +771,7 @@ func (p *Path) LineTo(x, y float64) *Path
 
 LineTo draws a straight segment to (x, y). With no current point it moves there instead, which is what every platform's API does and what makes a polyline a single loop body.
 
-<small>[core/canvas.go:291](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L291)</small>
+<small>[core/canvas.go:324](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L324)</small>
 
 #### func (*Path) MoveTo
 
@@ -750,7 +781,7 @@ func (p *Path) MoveTo(x, y float64) *Path
 
 MoveTo starts a new subpath at (x, y).
 
-<small>[core/canvas.go:282](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L282)</small>
+<small>[core/canvas.go:315](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L315)</small>
 
 #### func (*Path) QuadTo
 
@@ -760,7 +791,7 @@ func (p *Path) QuadTo(qx, qy, x, y float64) *Path
 
 QuadTo draws a quadratic Bézier to (x, y) via control point (qx, qy). It is sent as the cubic that traces the identical curve: each cubic control point sits two thirds of the way from an end point to the quadratic one.
 
-<small>[core/canvas.go:314](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L314)</small>
+<small>[core/canvas.go:347](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L347)</small>
 
 ### type SelectMenuItem
 
@@ -983,6 +1014,10 @@ type Shape struct {
 	// Fill and Stroke are CSS colours ("#rrggbb", "#rrggbbaa"); "" for none.
 	Fill   string
 	Stroke string
+
+	// FillRule decides which regions of a self-overlapping path Fill paints;
+	// the zero value is FillNonZero. See FillRule.
+	FillRule FillRule
 
 	// StrokeWidth is in layout units, not viewBox units; 0 means 1.
 	StrokeWidth float64

@@ -1925,6 +1925,34 @@ func styleValue(s *core.Style, nodeType string) string {
 	if s.WhiteSpace != "" {
 		styles = append(styles, "white-space:"+s.WhiteSpace)
 	}
+	// core.MaxLines, the declarations the WASM runtime's styleFromGrMob
+	// writes: nowrap + ellipsis for one line, the -webkit-box clamp for more.
+	// overflow and white-space only where the author set none, which here
+	// means only when the lines above emitted none.
+	if s.MaxLines > 0 {
+		if s.Overflow == "" {
+			styles = append(styles, "overflow:hidden")
+		}
+		if s.MaxLines == 1 {
+			if s.WhiteSpace == "" {
+				styles = append(styles, "white-space:nowrap")
+			}
+			styles = append(styles, "text-overflow:ellipsis")
+		} else {
+			styles = append(styles, "-webkit-box-orient:vertical",
+				"-webkit-line-clamp:"+strconv.Itoa(s.MaxLines))
+		}
+		// The box the truncation needs, only where nothing above decided the
+		// display: a flex or grid container keeps its own, and an explicit
+		// Display (none above all) is the author's.
+		if !isFlex && !isOverlay && s.Display == "" {
+			if s.MaxLines == 1 {
+				styles = append(styles, "display:block")
+			} else {
+				styles = append(styles, "display:-webkit-box")
+			}
+		}
+	}
 	// Out-of-flow placement. The offsets are emitted whether or not Position
 	// is set, matching how CSS itself treats them: they are inert on a static
 	// box rather than an error, and a node can inherit a positioned ancestor's

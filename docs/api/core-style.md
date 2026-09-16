@@ -56,7 +56,7 @@ const (
 )
 ```
 
-<small>[core/style.go:1336](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1336)</small>
+<small>[core/style.go:1340](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1340)</small>
 
 ShrinkNone is what core.FlexShrink(0) stores, and what every renderer must read as a shrink factor of zero.
 
@@ -94,7 +94,7 @@ The Compose arm is the one that needed an argument, and it is worth having here 
 const ShrinkNone = -1
 ```
 
-<small>[core/style.go:1435](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1435)</small>
+<small>[core/style.go:1439](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1439)</small>
 
 ## Variables
 
@@ -109,7 +109,7 @@ var TextInputStyle = UseStyle(Style{
 })
 ```
 
-<small>[core/style.go:1281](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1281)</small>
+<small>[core/style.go:1285](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1285)</small>
 
 ## Functions
 
@@ -119,7 +119,7 @@ var TextInputStyle = UseStyle(Style{
 func DangerColor() string
 ```
 
-<small>[core/style.go:1272](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1272)</small>
+<small>[core/style.go:1276](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1276)</small>
 
 ### func PrimaryColor
 
@@ -131,7 +131,7 @@ PrimaryColor and DangerColor are the theme-blind convenience accessors that pred
 
 They read DefaultTheme rather than repeating its literals. Both used to be hard-coded, and the copy was not free: when Colors.Primary moved to Apple's accessible blue (white over systemBlue was 4.02:1, under WCAG AA, and the theme's own Button base declares white), this function kept the old hex — so examples/chat, its one caller, went on painting white on a fill nobody could read it on, in the one place the fix could not reach.
 
-<small>[core/style.go:1271](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1271)</small>
+<small>[core/style.go:1275](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1275)</small>
 
 ## Types
 
@@ -141,7 +141,7 @@ They read DefaultTheme rather than repeating its literals. Both used to be hard-
 type AlignItems string
 ```
 
-<small>[core/style.go:1334](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1334)</small>
+<small>[core/style.go:1338](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1338)</small>
 
 #### func (AlignItems) Apply
 
@@ -155,7 +155,7 @@ The three named flex-container types are StyleProps in their own right, so the s
 
 Without these methods that expression is a type conversion producing a bare string value, which containerNode's PropsAndChildren dispatch cannot recognize and drops — silently outside debug mode. It was the most natural thing to write and it compiled, so an app shipped with every one of its AlignItems lost and its columns left-packed on both natives. Making the value itself apply removes the trap rather than documenting it.
 
-<small>[core/style_props.go:327](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L327)</small>
+<small>[core/style_props.go:360](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L360)</small>
 
 ### type Alignment
 
@@ -163,7 +163,7 @@ Without these methods that expression is a type conversion producing a bare stri
 type Alignment string
 ```
 
-<small>[core/style.go:1311](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1311)</small>
+<small>[core/style.go:1315](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1315)</small>
 
 ```go
 const (
@@ -182,7 +182,7 @@ const (
 type DisplayMode string
 ```
 
-<small>[core/style.go:1322](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1322)</small>
+<small>[core/style.go:1326](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1326)</small>
 
 ```go
 const (
@@ -240,7 +240,7 @@ Six untagged ints wrote all six every time. On the tutorial's contents screen, 7
 
 Small next to the 370KB the Style-level tags took off, and free in a way that one was not: no renderer changed, because none of them could tell the difference.
 
-<small>[core/style.go:898](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L898)</small>
+<small>[core/style.go:899](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L899)</small>
 
 ### type FlexDirection
 
@@ -248,7 +248,7 @@ Small next to the 370KB the Style-level tags took off, and free in a way that on
 type FlexDirection string
 ```
 
-<small>[core/style.go:1333](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1333)</small>
+<small>[core/style.go:1337](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1337)</small>
 
 #### func (FlexDirection) Apply
 
@@ -256,7 +256,7 @@ type FlexDirection string
 func (d FlexDirection) Apply(s *Style)
 ```
 
-<small>[core/style_props.go:329](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L329)</small>
+<small>[core/style_props.go:362](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L362)</small>
 
 ### type JustifyContent
 
@@ -264,7 +264,7 @@ func (d FlexDirection) Apply(s *Style)
 type JustifyContent string
 ```
 
-<small>[core/style.go:1332](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1332)</small>
+<small>[core/style.go:1336](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1336)</small>
 
 #### func (JustifyContent) Apply
 
@@ -272,7 +272,7 @@ type JustifyContent string
 func (j JustifyContent) Apply(s *Style)
 ```
 
-<small>[core/style_props.go:328](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L328)</small>
+<small>[core/style_props.go:361](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L361)</small>
 
 ### type Position
 
@@ -280,7 +280,7 @@ func (j JustifyContent) Apply(s *Style)
 type Position string
 ```
 
-<small>[core/style.go:1354](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1354)</small>
+<small>[core/style.go:1358](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1358)</small>
 
 ```go
 const (
@@ -297,7 +297,7 @@ const (
 type ResponsiveStyle map[string]Style
 ```
 
-<small>[core/style.go:1309](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1309)</small>
+<small>[core/style.go:1313](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1313)</small>
 
 ### type Style
 
@@ -326,6 +326,7 @@ type Style struct {
 	Overflow     string      `json:",omitzero"` // "hidden", "scroll", "visible"
 	WhiteSpace   string      `json:",omitzero"` // "nowrap", "normal", "pre-line"
 	LineHeight   int         `json:",omitzero"`
+	MaxLines     int         `json:",omitzero"` // a Text's line cap; see core.MaxLines
 	MaxWidth     string      `json:",omitzero"`
 	MaxHeight    string      `json:",omitzero"`
 	Gap          float64     `json:",omitzero"`
@@ -1117,7 +1118,7 @@ The two returns are the two questions a renderer has, and they are separate beca
 
 It exists so the ShrinkNone rule is stated once rather than in each renderer. The two DOM renderers spell their guards independently — that is deliberate elsewhere in this framework — but the mapping from a stored number to a meaning is not a spelling, it is the contract, and three copies of it is how this field got into trouble in the first place.
 
-<small>[core/style.go:1452](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1452)</small>
+<small>[core/style.go:1456](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1456)</small>
 
 #### func (Style) With
 
@@ -1125,7 +1126,7 @@ It exists so the ShrinkNone rule is stated once rather than in each renderer. Th
 func (s Style) With(other Style) Style
 ```
 
-<small>[core/style_props.go:699](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L699)</small>
+<small>[core/style_props.go:732](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L732)</small>
 
 ### type StyleProp
 
@@ -1135,7 +1136,7 @@ type StyleProp interface {
 }
 ```
 
-<small>[core/style.go:913](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L913)</small>
+<small>[core/style.go:914](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L914)</small>
 
 #### func PaddingHorizontal
 
@@ -1147,7 +1148,7 @@ PaddingHorizontal sets the left and right insets.
 
 It writes the explicit Left/Right sides as well as the Horizontal shorthand. The renderers resolve a side as "the explicit value if non-zero, otherwise the axis shorthand" (see htmlout.EdgeCSS), so a prop that wrote only the shorthand could never override a side that was already set: a theme Column carries Left/Right 16, and PaddingHorizontal(0) after it used to leave the 16 in place — and PaddingHorizontal(24) used to render as 16. Writing the sides too gives this prop the same last-one-wins ordering every other StyleProp has, and a zero clears the theme value in all four renderers without any of them changing their resolution rule.
 
-<small>[core/style.go:1301](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1301)</small>
+<small>[core/style.go:1305](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1305)</small>
 
 #### func RoundedShadowBox
 
@@ -1155,7 +1156,7 @@ It writes the explicit Left/Right sides as well as the Horizontal shorthand. The
 func RoundedShadowBox() StyleProp
 ```
 
-<small>[core/style.go:1273](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1273)</small>
+<small>[core/style.go:1277](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1277)</small>
 
 #### func UseStyle
 
@@ -1171,7 +1172,7 @@ The rule's one unavoidable edge is that a zero value is indistinguishable from "
 
 This merges every field of Style. It previously covered only fourteen of them, which meant Width, Height, the whole flex group, and the accessibility fields were silently dropped — a style value carrying them applied cleanly and did nothing. Any field added to Style must be added here too; TestUseStyleMergesEveryField walks the struct reflectively and fails if one is missed.
 
-<small>[core/style.go:945](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L945)</small>
+<small>[core/style.go:946](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L946)</small>
 
 ### type Weight
 
@@ -1179,7 +1180,7 @@ This merges every field of Style. It previously covered only fourteen of them, w
 type Weight int
 ```
 
-<small>[core/style.go:845](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L845)</small>
+<small>[core/style.go:846](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L846)</small>
 
 ```go
 const (

@@ -4,9 +4,9 @@
 import "github.com/rohanthewiz/grmob/comps"
 ```
 
-Sparklines, line, area and bar charts, donuts and pies, and gauges, drawn on core.Canvas.
+Sparklines, line, area, bar and scatter charts, donuts and pies, and gauges, drawn on core.Canvas.
 
-One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/chart.go`, `comps/sparkline.go`, `comps/line_chart.go`, `comps/bar_chart.go`, `comps/donut_chart.go`, `comps/gauge.go`.
+One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/chart.go`, `comps/sparkline.go`, `comps/line_chart.go`, `comps/bar_chart.go`, `comps/scatter_chart.go`, `comps/donut_chart.go`, `comps/gauge.go`.
 
 ## Index
 
@@ -14,6 +14,7 @@ One of 7 topic pages of [package comps](comps.md), which has the package overvie
     - [`func (AreaChart) Render`](#func-areachart-render)
 - [`type BarChart`](#type-barchart)
     - [`func (BarChart) Render`](#func-barchart-render)
+- [`type ChartPoint`](#type-chartpoint)
 - [`type ChartSeries`](#type-chartseries)
 - [`type ChartSlice`](#type-chartslice)
 - [`type DonutChart`](#type-donutchart)
@@ -24,6 +25,9 @@ One of 7 topic pages of [package comps](comps.md), which has the package overvie
     - [`func (LineChart) Render`](#func-linechart-render)
 - [`type PieChart`](#type-piechart)
     - [`func (PieChart) Render`](#func-piechart-render)
+- [`type ScatterChart`](#type-scatterchart)
+    - [`func (ScatterChart) Render`](#func-scatterchart-render)
+- [`type ScatterSeries`](#type-scatterseries)
 - [`type Sparkline`](#type-sparkline)
     - [`func (Sparkline) Render`](#func-sparkline-render)
 
@@ -37,7 +41,7 @@ type AreaChart LineChart
 
 AreaChart is a LineChart with Area set: each series filled down to zero. Several series overlap translucently rather than stacking.
 
-<small>[comps/line_chart.go:90](https://github.com/rohanthewiz/grmob/blob/master/comps/line_chart.go#L90)</small>
+<small>[comps/line_chart.go:129](https://github.com/rohanthewiz/grmob/blob/master/comps/line_chart.go#L129)</small>
 
 #### func (AreaChart) Render
 
@@ -45,7 +49,7 @@ AreaChart is a LineChart with Area set: each series filled down to zero. Several
 func (a AreaChart) Render(ctx *core.Context) *core.Node
 ```
 
-<small>[comps/line_chart.go:92](https://github.com/rohanthewiz/grmob/blob/master/comps/line_chart.go#L92)</small>
+<small>[comps/line_chart.go:131](https://github.com/rohanthewiz/grmob/blob/master/comps/line_chart.go#L131)</small>
 
 ### type BarChart
 
@@ -73,7 +77,24 @@ type BarChart struct {
 	// Colors overrides the theme palette for series without their own Color.
 	Colors []string
 
-	// Format writes a y tick label and a spoken value.
+	// Stacked draws a category's series as one bar, end to end. See
+	// "Stacked" above.
+	Stacked bool
+
+	// Horizontal lays the bars along the value axis, categories top to
+	// bottom. See "Horizontal" above. Height is then the whole plot's height,
+	// and 0 means 28 px a category (at least 56).
+	Horizontal bool
+
+	// LabelWidth caps the category name column of a horizontal chart, in px;
+	// 0 means 96. Unused by vertical bars.
+	LabelWidth float64
+
+	// ShowValues writes each bar's value (a stack's total) along the plot's
+	// edge. See "Values" above.
+	ShowValues bool
+
+	// Format writes a tick label, a shown value and a spoken value.
 	Format func(float64) string
 
 	// Style is applied last, to the outer column.
@@ -106,7 +127,29 @@ Equal slots are what make the labels exact: the label row is the same number of 
 
 The axis always includes zero, and bars grow from it — up for positive values, down for negative ones. A bar's length is only proportional to its value when it starts at zero, which is why this is not optional as it is on LineChart.
 
-<small>[comps/bar_chart.go:38](https://github.com/rohanthewiz/grmob/blob/master/comps/bar_chart.go#L38)</small>
+#### Stacked
+
+Stacked puts a category's series in one bar, end to end, instead of side by side. Positive values stack up from zero and negative ones down from it, each in its own running total, so a negative part never hides a positive one (the convention spreadsheet charts use). The axis spans the totals.
+
+#### Horizontal
+
+Horizontal lays the categories top to bottom and the bars along the value axis, which is the arrangement for category names too long to sit under a bar:
+
+	┌──────────┬──────────────────────────┬─────┐
+	│  Rent    │██████████████████████    │ 1200│  one band per category,
+	│  Food    │█████████                 │  450│  Height/n px each
+	│ Transpo… │████                      │  200│
+	└──────────┼──────────────────────────┼─────┘
+	           0      500     1000   1500         ticks on a point axis
+	 names: MaxLines(1), at most LabelWidth wide; values: ShowValues
+
+The name column is sized by its widest name, up to LabelWidth, and a longer name is cut with an ellipsis (core.MaxLines). So is a tick label wider than its box, and the end ticks' boxes are half an interval wide (they cannot extend past the plot's edges), so a Format that writes "$1500" where "$1.5k" would do is the likeliest thing to be cut. The bands are fixed px boxes rather than flex weights, since Go knows the plot's height exactly; the tick labels use LineChart's point arithmetic, because ticks, like points, run edge to edge.
+
+#### Values
+
+ShowValues writes each bar's value beside its end of the plot: in a row along the top edge, above its bar, for vertical bars, and in a column along the right edge, level with its bar, for horizontal ones. Text cannot be placed inside core.Canvas, and a label that followed each bar's tip would need the drawn size of the plot, which no target reports to Go; a row and a column placed by the same flex arithmetic as the axes stay exact. A stacked chart shows each category's total, and a grouped one a value per bar.
+
+<small>[comps/bar_chart.go:78](https://github.com/rohanthewiz/grmob/blob/master/comps/bar_chart.go#L78)</small>
 
 #### func (BarChart) Render
 
@@ -114,7 +157,19 @@ The axis always includes zero, and bars grow from it — up for positive values,
 func (c BarChart) Render(ctx *core.Context) *core.Node
 ```
 
-<small>[comps/bar_chart.go:75](https://github.com/rohanthewiz/grmob/blob/master/comps/bar_chart.go#L75)</small>
+<small>[comps/bar_chart.go:132](https://github.com/rohanthewiz/grmob/blob/master/comps/bar_chart.go#L132)</small>
+
+### type ChartPoint
+
+```go
+type ChartPoint struct {
+	X, Y float64
+}
+```
+
+ChartPoint is one (x, y) observation in a ScatterChart. A NaN or infinite coordinate leaves the point out.
+
+<small>[comps/scatter_chart.go:13](https://github.com/rohanthewiz/grmob/blob/master/comps/scatter_chart.go#L13)</small>
 
 ### type ChartSeries
 
@@ -347,6 +402,14 @@ type LineChart struct {
 	// Points marks each value with a dot.
 	Points bool
 
+	// Smooth draws each line as a monotone cubic curve through its points
+	// rather than straight segments. See "Smooth" above.
+	Smooth bool
+
+	// Stacked draws each series on top of the running total of the ones
+	// before it. See "Stacked" above. With Area it is a stacked area chart.
+	Stacked bool
+
 	// Colors overrides the theme palette for series without their own Color.
 	Colors []string
 
@@ -376,11 +439,27 @@ The layout — y labels, gridlines, x labels, legend — is described at the top
 
 A NaN value leaves a gap: the line stops at the point before it and starts again at the point after. A value on its own between two gaps is drawn as a dot, since a line of one point has no length.
 
+#### Smooth
+
+Smooth draws each run of values as a monotone cubic (Fritsch and Carlson, "Monotone Piecewise Cubic Interpolation", 1980) instead of straight segments. Monotone is the property that matters for data: the curve never rises above the higher of two neighbouring values or dips below the lower, so a smoothed line invents no peak the data does not have, which a Catmull-Rom or plain cubic spline does at every sharp turn. It survives the stretch, too: CanvasStretch scales each axis by its own factor, and a curve monotone between its points stays monotone under any per-axis scale.
+
+#### Stacked
+
+Stacked (an area chart's, usually) draws each series on top of the ones before it: series i's line is the running total of series 0..i, and its area fills from the previous total up to its own, so the top line is the whole and each band a part of it.
+
+	total ─────╮        series 2's band: between total₁ and total₂
+	      ░░░░░╰──╮
+	total₁ ────────╰─   series 1's band
+	      ▒▒▒▒▒▒▒▒▒▒▒
+	total₀ ───────────  series 0's band, down to zero
+
+A missing value counts as zero in a stack — a gap in one band would tear a hole through every band above it — and the axis spans the totals. The spoken summary still reads each series' own values, not the running totals, since those are what a listener asked about. Negative values stack like any other, downwards through the band below; a stack is for parts of a whole, which are not negative.
+
 #### Points and dots
 
 Points (and the lone-value dot above) are zero-length strokes with round caps, which every target draws as a circle StrokeWidth wide. A Circle path would not do: under CanvasStretch the viewBox is scaled differently on each axis, so a circle drawn in it comes out as an ellipse, while a stroke's width is never scaled.
 
-<small>[comps/line_chart.go:37](https://github.com/rohanthewiz/grmob/blob/master/comps/line_chart.go#L37)</small>
+<small>[comps/line_chart.go:68](https://github.com/rohanthewiz/grmob/blob/master/comps/line_chart.go#L68)</small>
 
 #### func (LineChart) Render
 
@@ -388,7 +467,7 @@ Points (and the lone-value dot above) are zero-length strokes with round caps, w
 func (c LineChart) Render(ctx *core.Context) *core.Node
 ```
 
-<small>[comps/line_chart.go:98](https://github.com/rohanthewiz/grmob/blob/master/comps/line_chart.go#L98)</small>
+<small>[comps/line_chart.go:137](https://github.com/rohanthewiz/grmob/blob/master/comps/line_chart.go#L137)</small>
 
 ### type PieChart
 
@@ -407,6 +486,95 @@ func (p PieChart) Render(ctx *core.Context) *core.Node
 ```
 
 <small>[comps/donut_chart.go:102](https://github.com/rohanthewiz/grmob/blob/master/comps/donut_chart.go#L102)</small>
+
+### type ScatterChart
+
+```go
+type ScatterChart struct {
+	// Series are the point sets, drawn in order (a later series paints over an
+	// earlier one).
+	Series []ScatterSeries
+
+	// Subject says what the chart shows. It leads the spoken summary and is
+	// not drawn.
+	Subject string
+
+	// Height is the plot's height in px, excluding labels; 0 means 160.
+	Height float64
+
+	// DotSize is each point's diameter in px; 0 means 6.
+	DotSize float64
+
+	// ZeroBased and XZeroBased include zero in the y and x axes.
+	ZeroBased, XZeroBased bool
+
+	// Colors overrides the theme palette for series without their own Color.
+	Colors []string
+
+	// Format writes a y tick label and a spoken y value; XFormat the same for
+	// x. Nil uses the tick's own precision on an axis and up to two decimals
+	// when spoken.
+	Format, XFormat func(float64) string
+
+	// Style is applied last, to the outer column.
+	Style []core.StyleProp
+
+	// AccessibilityLabel replaces the generated summary.
+	AccessibilityLabel string
+}
+```
+
+ScatterChart plots points against two value axes.
+
+	comps.ScatterChart{
+	    Subject: "Height and weight",
+	    Series:  []comps.ScatterSeries{{Name: "Players", Points: points}},
+	    XFormat: func(v float64) string { return fmt.Sprintf("%.0f cm", v) },
+	}
+
+#### Two value axes, one layout
+
+The y axis is LineChart's: nice ticks down the left, gridlines behind the data. The x axis is nice ticks too, and they run edge to edge exactly as a line chart's points do, so the tick labels under the plot are placed by the same point arithmetic (pointLabels, in chart.go): the first label aligned to the start edge, the last to the end, the rest centred on their ticks. No width is measured.
+
+	20 ┤ ·    ·         ·
+	10 ┤    ·     ·  ·
+	 0 ┼──────────────────
+	   0     50     100
+
+Neither axis is pulled to zero unless asked (XZeroBased, ZeroBased): a scatter's question is how two quantities move together, and an origin far from the data squeezes the cloud into a corner.
+
+#### Dots
+
+Each point is a zero-length stroke with round caps, LineChart's dot, for the same reason: under CanvasStretch a circle path would come out as an ellipse, and a stroke's width is never scaled. Every point of a series is one subpath of one shape, so a thousand points are one canvas node.
+
+<small>[comps/scatter_chart.go:61](https://github.com/rohanthewiz/grmob/blob/master/comps/scatter_chart.go#L61)</small>
+
+#### func (ScatterChart) Render
+
+```go
+func (c ScatterChart) Render(ctx *core.Context) *core.Node
+```
+
+<small>[comps/scatter_chart.go:94](https://github.com/rohanthewiz/grmob/blob/master/comps/scatter_chart.go#L94)</small>
+
+### type ScatterSeries
+
+```go
+type ScatterSeries struct {
+	// Name labels the series in the legend (drawn when there is more than one
+	// series) and in the spoken summary.
+	Name string
+
+	Points []ChartPoint
+
+	// Color overrides the series' palette colour.
+	Color string
+}
+```
+
+ScatterSeries is one colour of points in a ScatterChart.
+
+<small>[comps/scatter_chart.go:18](https://github.com/rohanthewiz/grmob/blob/master/comps/scatter_chart.go#L18)</small>
 
 ### type Sparkline
 

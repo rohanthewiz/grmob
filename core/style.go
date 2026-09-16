@@ -114,6 +114,7 @@ type Style struct {
 	Overflow     string      `json:",omitzero"` // "hidden", "scroll", "visible"
 	WhiteSpace   string      `json:",omitzero"` // "nowrap", "normal", "pre-line"
 	LineHeight   int         `json:",omitzero"`
+	MaxLines     int         `json:",omitzero"` // a Text's line cap; see core.MaxLines
 	MaxWidth     string      `json:",omitzero"`
 	MaxHeight    string      `json:",omitzero"`
 	Gap          float64     `json:",omitzero"`
@@ -968,6 +969,9 @@ func (s Style) applyTo(target *Style) {
 	}
 	if s.WhiteSpace != "" {
 		target.WhiteSpace = s.WhiteSpace
+	}
+	if s.MaxLines != 0 {
+		target.MaxLines = s.MaxLines
 	}
 	if s.Align != "" {
 		target.Align = s.Align

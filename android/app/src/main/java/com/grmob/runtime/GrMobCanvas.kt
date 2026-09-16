@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -71,6 +72,10 @@ internal fun GrMobCanvas(node: GrMobNode, modifier: Modifier) {
                     path.cubicTo(x1.toFloat(), y1.toFloat(), x2.toFloat(), y2.toFloat(), x.toFloat(), y.toFloat())
                 override fun close() = path.close()
             })
+
+            // core.FillEvenOdd. Set on the path before either paint; a stroke
+            // ignores the fill type, so it is safe for both.
+            if (props["fillRule"] == "evenodd") path.fillType = PathFillType.EvenOdd
 
             // Fill first, then the stroke over it: SVG's paint order, and
             // core.Shape's documented one.

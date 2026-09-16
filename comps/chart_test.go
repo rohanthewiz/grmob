@@ -436,3 +436,236 @@ func TestSparklineStaysInsideItsBox(t *testing.T) {
 		t.Errorf("last-value dot = %v, want a zero-length stroke at x=100", last)
 	}
 }
+
+// bezierAt evaluates one cubic segment at u.
+func bezierAt(p0, c1, c2, p1, u float64) float64 {
+	v := 1 - u
+	return v*v*v*p0 + 3*v*v*u*c1 + 3*v*u*u*c2 + u*u*u*p1
+}
+
+// A smoothed line is a monotone cubic: every segment stays between its two
+// end values (no invented peak), a flat run stays flat, and it still passes
+// through every point.
+func TestSmoothLineIsMonotone(t *testing.T) {
+	xs := []float64{0, 20, 40, 60, 80, 100}
+	ys := []float64{90, 10, 12, 12, 80, 20}
+	p := core.NewPath().MoveTo(xs[0], ys[0])
+	traceRun(p, xs, ys, true, false)
+	n := renderView(t, core.Canvas(100, 100, []core.Shape{{Path: p, Stroke: "#000"}}))
+	d := n.Children[0].Props["d"].([]float64)
+
+	seg := 0
+	for i := 3; i < len(d); i += 7 {
+		if d[i] != core.PathCubic {
+			t.Fatalf("op %v at %d, want a cubic", d[i], i)
+		}
+		y0, y1 := ys[seg], ys[seg+1]
+		c1, c2, end := d[i+2], d[i+4], d[i+6]
+		if math.Abs(end-y1) > 0.01 || math.Abs(d[i+5]-xs[seg+1]) > 0.01 {
+			t.Errorf("segment %d ends at (%v, %v), want point (%v, %v)", seg, d[i+5], end, xs[seg+1], y1)
+		}
+		lo, hi := math.Min(y0, y1), math.Max(y0, y1)
+		for u := 0.0; u <= 1; u += 0.05 {
+			if y := bezierAt(y0, c1, c2, y1, u); y < lo-0.01 || y > hi+0.01 {
+				t.Errorf("segment %d leaves [%v, %v] at u=%.2f: %v", seg, lo, hi, u, y)
+				break
+			}
+		}
+		seg++
+	}
+	if seg != len(xs)-1 {
+		t.Errorf("%d segments, want %d", seg, len(xs)-1)
+	}
+
+	// Reversed, it is the same curve: the segment from point 1 back to 0 has
+	// the forward segment's controls swapped.
+	r := core.NewPath().MoveTo(xs[len(xs)-1], ys[len(ys)-1])
+	traceRun(r, xs, ys, true, true)
+	rd := renderView(t, core.Canvas(100, 100, []core.Shape{{Path: r, Stroke: "#000"}})).Children[0].Props["d"].([]float64)
+	last := len(rd) - 7 // the final reversed segment runs from point 1 to point 0
+	if math.Abs(rd[last+1]-d[3+3]) > 0.01 || math.Abs(rd[last+2]-d[3+4]) > 0.01 ||
+		math.Abs(rd[last+3]-d[3+1]) > 0.01 || math.Abs(rd[last+4]-d[3+2]) > 0.01 {
+		t.Errorf("reversed segment controls %v, want forward %v swapped", rd[last+1:last+5], d[4:8])
+	}
+}
+
+// Stacked series draw running totals, the axis spans the totals, and the
+// summary still reads each series' own values.
+func TestStackedAreaDrawsTotals(t *testing.T) {
+	nan := math.NaN()
+	series := []ChartSeries{
+		{Name: "A", Values: []float64{10, 20, nan}},
+		{Name: "B", Values: []float64{5, 5, 5}},
+	}
+	got := stackSeries(series, 3)
+	if want := []float64{15, 25, 5}; !slicesEqual(got[1].Values, want) {
+		t.Errorf("totals = %v, want %v", got[1].Values, want)
+	}
+	if want := []float64{10, 20, 0}; !slicesEqual(got[0].Values, want) {
+		t.Errorf("first band = %v, want a missing value as 0: %v", got[0].Values, want)
+	}
+	n := renderView(t, AreaChart{Subject: "Mix", Stacked: true, Series: series})
+	if findText(n, "25") == nil && findText(n, "30") == nil {
+		t.Error("the axis should reach the highest total (25)")
+	}
+	if !strings.Contains(n.Style.AccessibilityLabel, "B, 3 points, from 5") {
+		t.Errorf("summary should read B's own values: %q", n.Style.AccessibilityLabel)
+	}
+}
+
+func slicesEqual(a, b []float64) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// A stacked bar puts positives above zero end to end and negatives below it,
+// each series one segment of the category's single bar.
+func TestStackedBarsRunEndToEnd(t *testing.T) {
+	c := BarChart{Stacked: true, Series: []ChartSeries{
+		{Values: []float64{10, -4}},
+		{Values: []float64{30, 6}},
+	}}
+	lo, hi := stackRange(c.Series, 2)
+	if lo != -4 || hi != 40 {
+		t.Errorf("stackRange = %v..%v, want -4..40", lo, hi)
+	}
+	s := valueScale{-10, 40, 10}
+	r := c.barRects(2, 0.5, s)
+	// Category 0: series 0 from 0 to 10, series 1 from 10 to 40, same band.
+	a, b := r[0][0], r[1][0]
+	if a.a0 != b.a0 || a.a1 != b.a1 {
+		t.Errorf("stacked segments in different bands: %+v %+v", a, b)
+	}
+	if math.Abs(a.b1-s.y(0)) > 1e-9 || math.Abs(a.b0-s.y(10)) > 1e-9 || math.Abs(b.b1-s.y(10)) > 1e-9 || math.Abs(b.b0-s.y(40)) > 1e-9 {
+		t.Errorf("segments %+v %+v do not run 0→10→40", a, b)
+	}
+	// Category 1: -4 hangs below zero, 6 stands on zero, not on -4.
+	neg, pos := r[0][1], r[1][1]
+	if math.Abs(neg.b0-s.y(0)) > 1e-9 || math.Abs(pos.b1-s.y(0)) > 1e-9 {
+		t.Errorf("category 1: negative %+v and positive %+v should both start at zero", neg, pos)
+	}
+}
+
+// Horizontal bars run along x from the zero line, one band per category from
+// the top, with names in a column and every x tick labelled.
+func TestHorizontalBarsLieAlongX(t *testing.T) {
+	c := BarChart{Horizontal: true, Labels: []string{"Rent", "Food"},
+		Series: []ChartSeries{{Values: []float64{1200, 450}}}}
+	s := niceScale(0, 1200, chartMaxXLabels, true)
+	r := c.barRects(2, 0.7, s)
+	if want := 1200 / s.hi * chartView; r[0][0].b0 != 0 || math.Abs(r[0][0].b1-want) > 1e-9 {
+		t.Errorf("the 1200 bar should run from x=0 to %v: %+v (scale %+v)", want, r[0][0], s)
+	}
+	if r[0][0].a0 >= r[0][1].a0 {
+		t.Error("the first category should be the top band")
+	}
+	n := renderView(t, c)
+	if findText(n, "Rent") == nil || findText(n, "Food") == nil {
+		t.Error("names missing")
+	}
+	for _, tick := range s.ticks() {
+		if findText(n, formatTick(tick, s.step, 1200)) == nil {
+			t.Errorf("tick %v unlabelled", tick)
+		}
+	}
+	name := findText(n, "Rent")
+	if name.Style.MaxLines != 1 {
+		t.Error("a category name should be one line, cut when long")
+	}
+}
+
+// ShowValues cells centre on their bars: the running weight at a cell's middle
+// is its bar's middle, in slot units.
+func TestBarValueCellsCentreOnBars(t *testing.T) {
+	c := BarChart{Series: []ChartSeries{{Values: []float64{1, 2}}, {Values: []float64{3, math.NaN()}}}}
+	texts, weights := c.barValueCells(2, 0.6, formatValue)
+	// Per category: pad, two bars, pad.
+	if len(texts) != 8 {
+		t.Fatalf("texts %v", texts)
+	}
+	if texts[1] != "1" || texts[2] != "3" || texts[5] != "2" || texts[6] != "" {
+		t.Errorf("texts = %q", texts)
+	}
+	s := valueScale{0, 3, 1}
+	rects := c.barRects(2, 0.6, s)
+	pos := 0.0
+	for k, w := range weights {
+		mid := (pos + w/2) * chartView / 2 // two slots across the viewBox
+		pos += w
+		var r barRect
+		switch k {
+		case 1:
+			r = rects[0][0]
+		case 2:
+			r = rects[1][0]
+		case 5:
+			r = rects[0][1]
+		default:
+			continue
+		}
+		if barMid := (r.a0 + r.a1) / 2; math.Abs(mid-barMid) > 1e-9 {
+			t.Errorf("cell %d centred at %v, bar at %v", k, mid, barMid)
+		}
+	}
+	if math.Abs(pos-2) > 1e-9 {
+		t.Errorf("weights sum to %v, want 2 slots", pos)
+	}
+
+	stacked := BarChart{Stacked: true, Series: c.Series}
+	texts, _ = stacked.barValueCells(2, 0.6, formatValue)
+	if len(texts) != 6 || texts[1] != "4" || texts[4] != "2" {
+		t.Errorf("stacked totals = %q", texts)
+	}
+}
+
+// A scatter draws every finite point as a dot in one path, labels its x ticks,
+// and summarises extents rather than points.
+func TestScatterChart(t *testing.T) {
+	n := renderView(t, ScatterChart{
+		Subject: "Fit",
+		Series: []ScatterSeries{{Name: "Runs", Points: []ChartPoint{
+			{1, 10}, {2, 30}, {math.NaN(), 5}, {4, 20},
+		}}},
+	})
+	want := "Fit: Runs, 3 points, x from 1 to 4, y from 10 to 30."
+	if n.Style.AccessibilityLabel != want {
+		t.Errorf("label = %q\n want %q", n.Style.AccessibilityLabel, want)
+	}
+	c := canvasOf(n)
+	var dots *core.Node
+	for _, s := range c.Children {
+		if s.Props["cap"] == string(core.CapRound) {
+			dots = s
+		}
+	}
+	if dots == nil {
+		t.Fatal("no dot shape")
+	}
+	if d := dots.Props["d"].([]float64); len(d) != 3*6 {
+		t.Errorf("dot path has %d numbers, want three zero-length strokes (18)", len(d))
+	}
+	if findText(n, "1") == nil || findText(n, "4") == nil {
+		t.Error("x ticks 1 and 4 should be labelled")
+	}
+}
+
+// An x label is one line in a slot with no minimum width, so a long label is
+// cut rather than widening its slot.
+func TestXLabelsAreCappedInTheirSlots(t *testing.T) {
+	row := renderView(t, bandLabels(core.DefaultTheme, []string{"A very long category name", "B"}, 2))
+	for _, slot := range row.Children {
+		if slot.Style.MinWidth != "0px" {
+			t.Errorf("slot MinWidth = %q, want 0px", slot.Style.MinWidth)
+		}
+		if slot.Children[0].Style.MaxLines != 1 {
+			t.Error("an x label should be capped at one line")
+		}
+	}
+}

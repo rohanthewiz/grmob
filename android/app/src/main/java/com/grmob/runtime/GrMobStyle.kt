@@ -177,6 +177,11 @@ data class GrMobStyle(
      */
     val stackAlign: String,
     val lineHeight: Int,
+    /**
+     * core.MaxLines: the most lines a Text draws, ending in an ellipsis where
+     * it is cut; 0 for no limit. Read by GrMobText alone (Renderer.kt).
+     */
+    val maxLines: Int,
     val accessibilityLabel: String,
     val accessibilityHint: String,
     val accessibilityHidden: Boolean,
@@ -360,6 +365,7 @@ data class GrMobStyle(
                 position = obj.optString("Position"),
                 stackAlign = obj.optString("StackAlign"),
                 lineHeight = obj.optInt("LineHeight", 0),
+                maxLines = obj.optInt("MaxLines", 0).coerceAtLeast(0),
                 accessibilityLabel = obj.optString("AccessibilityLabel"),
                 accessibilityHint = obj.optString("AccessibilityHint"),
                 accessibilityHidden = obj.optBoolean("AccessibilityHidden", false),

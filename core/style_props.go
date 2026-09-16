@@ -90,6 +90,39 @@ func WhiteSpace(value string) StyleProp {
 	})
 }
 
+// MaxLines caps a Text at n lines and ends the last one with an ellipsis ("…")
+// where the text is cut; n ≤ 0 removes the cap. It is the one portable way to
+// keep a label to its box: WhiteSpace("nowrap") is web-only, and without a cap
+// a label wider than a flex slot widens the slot.
+//
+//	CSS (both web targets)
+//	  n = 1   white-space:nowrap; overflow:hidden; text-overflow:ellipsis
+//	  n > 1   display:-webkit-box; -webkit-box-orient:vertical;
+//	          -webkit-line-clamp:n; overflow:hidden
+//	Compose   Text(maxLines = n, overflow = TextOverflow.Ellipsis)
+//	SwiftUI   .lineLimit(n).truncationMode(.tail)
+//
+// One line uses the nowrap spelling rather than line-clamp:1 because a clamp
+// only cuts between lines: a single word wider than the box would overflow it
+// uncut, where nowrap + ellipsis cuts inside the word as the natives do.
+//
+// # The minimum it leaves a flex item
+//
+// A capped Text can be squeezed to nothing on every target, which is what
+// lets it sit in a weighted slot without widening it. On the web that falls
+// out of overflow:hidden (CSS's automatic minimum of a box that clips is 0);
+// Compose's weighted children take the width they are given and truncate in
+// it; and iOS's min-content floor (GrMobMinContent) floors a capped Text at 0
+// to match the web rather than at its widest word.
+//
+// Only Text reads it. The web targets write the declarations on any node, as
+// they do every CSS-shaped field, but the natives apply it to Text alone.
+func MaxLines(n int) StyleProp {
+	return styleFunc(func(s *Style) {
+		s.MaxLines = max(n, 0)
+	})
+}
+
 // Responsive registers a style variant under a named key in PseudoStates
 // (":hover", ":focus", or a breakpoint name).
 //

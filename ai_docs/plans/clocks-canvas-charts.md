@@ -66,6 +66,17 @@ What landed, and where it differs from the sketches below:
   MY_PACKAGE_REPLACED and by `attach` after a force stop — seen: five alarms
   back after a reboot (the broadcast came ~2 min after boot) and after a force
   stop, and a post due during the reboot delivered late.
+  Then `core.SweepNotifications(prefix, fn)` ("sweep" → "notification_swept"
+  {request, fired}): each host cancels by prefix from its own record (Android's
+  store, now marking entries fired instead of removing them; a UserDefaults map
+  on iOS; the page's timers) and reports what fired. `UseAlarms` sweeps
+  "grmob.alarm." at mount (or first return, if mounted away) and hands fired
+  alarms still in the list to OnRing. Seen: Android `am kill` then relaunch
+  before the minute → 0 alarms left; after the minute → `fired=[…soon-1…]`;
+  iOS `testRelaunchSweepsWhatTheDeadProcessScheduled`, which fails with the
+  sweep disabled. Also Android re-arms on
+  SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED (seen: `window=+23s` →
+  `window=0 exactAllowReason=permission`).
 - Canvas, 4.19 and 4.20 on the emulator and simulator (2026-09-16): geometry
   matched; SwiftUI's Canvas clipped strokes centred on its edge (fixed with an
   outset), and Compose dropped `Gap` under a non-start `Justify` (fixed).
@@ -212,7 +223,9 @@ always label it and may add a hidden data table.
 
 Text inside a canvas (labels and legends are ordinary `Text` around it —
 platform text rendering in a canvas is where the three targets disagree most),
-gradients, clipping, hit-testing individual shapes, even-odd fill rule.
+gradients, clipping, hit-testing individual shapes. (The even-odd fill rule
+was added as `Shape.FillRule` / `core.FillEvenOdd`, 2026-09-16, and seen on
+the emulator, simulator and Chrome in 4.19's ring pair.)
 
 ### Verification
 
@@ -241,6 +254,16 @@ gradients, clipping, hit-testing individual shapes, even-odd fill rule.
 `Gauge`. Pure Go in `comps`: scales and "nice" axis ticks computed in Go,
 axes/legends as `Text` around a `Canvas`, series colours from theme roles, one
 spoken summary per chart.
+
+Second round (2026-09-16): `LineChart.Smooth` (Fritsch–Carlson monotone
+cubic) and `Stacked` (running totals; bands floor on the band below),
+`BarChart.Stacked` (positives up, negatives down), `Horizontal` (px bands, a
+name column capped at `LabelWidth`, ticks on the point axis) and `ShowValues`
+(a value row over vertical bars, a value column beside horizontal ones),
+`ScatterChart`. Axis labels are cut with `core.MaxLines(1)` in slots with
+`MinWidth(0px)`, so a long label no longer widens its slot — `core.MaxLines`
+is new on all four targets, and iOS's min-content floor treats a capped Text
+as 0. Seen on the emulator, simulator and Chrome in 4.20's third panel.
 
 ## Tier E — later
 

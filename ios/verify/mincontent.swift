@@ -119,6 +119,43 @@ func checkMinContent() -> [String] {
             + "got \(GrMobMinContent.width(of: row)), want \(wA + wB + 8)")
     }
 
+    // core.MaxLines: a capped Text truncates rather than overflowing, so it
+    // floors at zero as a CSS box with overflow:hidden does — and a row
+    // holding one keeps only its siblings' minimum. Without this a chart's
+    // x label widens its slot however it is capped.
+    var oneLine = GrMobStyle()
+    oneLine.maxLines = 1
+    let cappedText = text("Columns", style: oneLine)
+    if GrMobMinContent.width(of: cappedText) != 0 {
+        problems.append("a Text with MaxLines should floor at 0, got \(GrMobMinContent.width(of: cappedText))")
+    }
+    let cappedRow = node("Row", children: [cappedText, b])
+    if abs(GrMobMinContent.width(of: cappedRow) - wB) > 0.01 {
+        problems.append("a row's minimum should not count a capped Text")
+    }
+
+    // A Canvas with a px width is a replaced element on the web and floors at
+    // min(width, 300), the <svg>'s natural width; a percentage, or any other
+    // node with a declared width, still floors at 0.
+    var fixed110 = GrMobStyle()
+    fixed110.width = "110px"
+    if GrMobMinContent.width(of: node("Canvas", style: fixed110)) != 110 {
+        problems.append("a 110px Canvas should floor at 110, got \(GrMobMinContent.width(of: node("Canvas", style: fixed110)))")
+    }
+    var fixed500 = GrMobStyle()
+    fixed500.width = "500px"
+    if GrMobMinContent.width(of: node("Canvas", style: fixed500)) != 300 {
+        problems.append("a 500px Canvas should floor at its natural 300")
+    }
+    var percent = GrMobStyle()
+    percent.width = "50%"
+    if GrMobMinContent.width(of: node("Canvas", style: percent)) != 0 {
+        problems.append("a percentage-width Canvas should floor at 0")
+    }
+    if GrMobMinContent.width(of: node("Box", style: fixed110)) != 0 {
+        problems.append("a 110px Box should still floor at 0")
+    }
+
     let column = node("Column", children: [a, b])
     if abs(GrMobMinContent.width(of: column) - max(wA, wB)) > 0.01 {
         problems.append("a column's minimum should be its widest child")

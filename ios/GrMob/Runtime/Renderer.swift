@@ -1486,8 +1486,14 @@ private struct GrMobText: View {
     let grow: GrMobGrow
 
     var body: some View {
+        // core.MaxLines: nil is SwiftUI's "no limit". Tail truncation is
+        // Text's default already; it is stated so the pairing with the other
+        // targets' trailing ellipsis is visible here.
+        let cap = node.style?.maxLines ?? 0
         Text(node.stringProp("content"))
             .grMobTextStyle(node.style)
+            .lineLimit(cap > 0 ? cap : nil)
+            .truncationMode(.tail)
             .grMobBox(node.style, grow: grow,
                         onTap: node.stringProp("onClick"),
                         onLongPress: node.stringProp("onLongPress"))
@@ -1978,7 +1984,9 @@ private struct GrMobCanvas: View {
                 }
                 // Fill first, then the stroke over it: SVG's paint order.
                 if let fill = GrMobStyle.parseColor(props["fill"] as? String) {
-                    ctx.fill(path, with: .color(fill))
+                    // core.FillEvenOdd; nonzero is FillStyle's default.
+                    ctx.fill(path, with: .color(fill),
+                             style: FillStyle(eoFill: props["fillRule"] as? String == "evenodd"))
                 }
                 guard let stroke = GrMobStyle.parseColor(props["stroke"] as? String) else { continue }
                 let width = (props["strokeWidth"] as? NSNumber)?.doubleValue ?? 1

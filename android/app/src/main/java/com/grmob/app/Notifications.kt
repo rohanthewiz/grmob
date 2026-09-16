@@ -11,6 +11,7 @@ import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import org.json.JSONArray
 import org.json.JSONObject
 
 /**
@@ -18,6 +19,8 @@ import org.json.JSONObject
  *
  *   core.PostNotification   ──▶ "notification" {command: "post", id, title, body, at?}
  *   core.CancelNotification ──▶ "notification" {command: "cancel", id}
+ *   core.SweepNotifications ──▶ "notification" {command: "sweep", prefix, request}
+ *                           ◀── "notification_swept" {request, fired: [ids]}
  *   core.OnNotificationTap  ◀── "notification_tap" {id}   (from MainActivity)
  *
  * # One channel
@@ -83,6 +86,47 @@ import org.json.JSONObject
  * dropped, matching the inexact fallback's stance above. The store only ever
  * holds what Go scheduled (UseAlarms keeps it to at most 60 entries a week
  * out), so this is never an unbounded replay.
+ *
+ * # Fired entries, and posting each one exactly once
+ *
+ * An entry is marked fired when it posts rather than removed, for two
+ * readers:
+ *
+ * ```
+ *   entry: {title, body, at, fired}
+ *
+ *   alarm fires ──┐                    ┌─ fired already ─▶ nothing (the other path posted)
+ *   rearm, due  ──┴─▶ [lock] claim() ──┤
+ *                                      └─ not fired ─────▶ mark fired, post
+ *
+ *   sweep(prefix) ──▶ [lock] for each entry under prefix:
+ *                       cancel alarm + banner; at ≤ now ─▶ reported as fired; remove
+ * ```
+ *
+ * - The sweep (core.SweepNotifications) reports what fired while the app was
+ *   not running, which a removed entry could not tell it.
+ * - The claim closes a double post: [attach] re-arms at launch, and an entry
+ *   due at that moment could otherwise be posted by rearm and again by its own
+ *   alarm arriving a moment later. Both paths claim under one lock, and only
+ *   the first posts. An entry that is not in the store at all is not claimed
+ *   either: it was cancelled or swept, and its alarm with it.
+ *
+ * Fired entries are pruned by [rearm] a week after their time (the horizon
+ * UseAlarms schedules within), so an app that never sweeps keeps a bounded
+ * store. SharedPreferences updates its in-memory map synchronously on
+ * `apply()`, so the lock plus the map is the whole consistency story within
+ * the one process an app has.
+ *
+ * # An exact-alarm grant
+ *
+ * A post scheduled while exact alarms were refused was set inexactly, and
+ * stays that way after the user allows them unless something reschedules it.
+ * [NotificationBootReceiver] also hears
+ * ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED (sent on a grant; a
+ * revocation kills the process instead) and re-arms, which re-sets every
+ * pending alarm through [schedule]'s exact branch. It also asks Permissions
+ * to re-check, so a screen using hooks.UsePermissionLive hears the grant
+ * without waiting for the app to come to the foreground.
  */
 object Notifications {
     /** The intent extra that carries a tapped notification's Go id. */
@@ -101,11 +145,19 @@ object Notifications {
      */
     private const val STORE_NAME = "grmob-scheduled-notifications"
 
-    private var appContext: Context? = null
+    /** How long a fired entry is kept for a sweep to report; see "Fired entries". */
+    private const val FIRED_KEEP_MS = 7L * 24 * 60 * 60 * 1000
 
-    fun attach(context: Context) {
+    private var appContext: Context? = null
+    private var report: ((String, String) -> Unit)? = null
+
+    /** Guards the store's read-modify-write sequences; see "Fired entries". */
+    private val lock = Any()
+
+    fun attach(context: Context, out: (String, String) -> Unit) {
         val app = context.applicationContext
         appContext = app
+        report = out
         ensureChannel(app)
         // A force stop cleared the alarms without telling anyone; see
         // "What outlives a reboot or a force stop".
@@ -116,41 +168,125 @@ object Notifications {
         context.applicationContext.getSharedPreferences(STORE_NAME, Context.MODE_PRIVATE)
 
     private fun remember(context: Context, id: String, title: String, body: String, at: Long) {
-        val entry = JSONObject().put("title", title).put("body", body).put("at", at)
-        store(context).edit().putString(id, entry.toString()).apply()
+        val entry = JSONObject().put("title", title).put("body", body).put("at", at).put("fired", false)
+        synchronized(lock) {
+            store(context).edit().putString(id, entry.toString()).apply()
+        }
+    }
+
+    /** The stored entry for [id], or null when there is none or it does not parse. */
+    private fun entry(context: Context, id: String): JSONObject? {
+        val raw = store(context).getString(id, null) ?: return null
+        return try {
+            JSONObject(raw)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Marks [id] fired and returns true if this caller should post it: the
+     * entry exists and no other path has posted it. Called with [lock] held.
+     */
+    private fun claim(context: Context, id: String): Boolean {
+        val entry = entry(context, id) ?: return false
+        if (entry.optBoolean("fired", false)) return false
+        store(context).edit().putString(id, entry.put("fired", true).toString()).apply()
+        return true
     }
 
     private fun forget(context: Context, id: String) {
-        store(context).edit().remove(id).apply()
+        synchronized(lock) {
+            store(context).edit().remove(id).apply()
+        }
     }
 
     /**
      * Re-arms every stored post: the future ones through [schedule], which
      * replaces any alarm still pending under the id, and the ones whose time
-     * passed while nothing could fire them posted now. An entry that does not
-     * parse is dropped rather than retried at every boot.
+     * passed while nothing could fire them posted now (once; see "Fired
+     * entries"). Fired entries older than [FIRED_KEEP_MS] are pruned. An
+     * entry that does not parse is dropped rather than retried at every boot.
+     *
+     * The due posts are collected under the lock and posted after it, so
+     * NotificationManager is never called with the store locked.
      */
     internal fun rearm(context: Context) {
         val app = context.applicationContext
         val now = System.currentTimeMillis()
-        for ((id, raw) in store(app).all) {
-            val entry = try {
-                JSONObject(raw as? String ?: "")
-            } catch (e: Exception) {
-                Log.w(TAG, "dropping unreadable scheduled notification $id", e)
-                forget(app, id)
-                continue
-            }
-            val title = entry.optString("title")
-            val body = entry.optString("body")
-            val at = entry.optLong("at", 0L)
-            if (at > now) {
-                schedule(app, id, title, body, at)
-            } else {
-                forget(app, id)
-                post(app, id, title, body)
+        val future = mutableListOf<Pair<String, JSONObject>>()
+        val due = mutableListOf<Pair<String, JSONObject>>()
+        synchronized(lock) {
+            for ((id, raw) in store(app).all) {
+                val entry = try {
+                    JSONObject(raw as? String ?: "")
+                } catch (e: Exception) {
+                    Log.w(TAG, "dropping unreadable scheduled notification $id", e)
+                    store(app).edit().remove(id).apply()
+                    continue
+                }
+                val at = entry.optLong("at", 0L)
+                when {
+                    entry.optBoolean("fired", false) ->
+                        if (now - at > FIRED_KEEP_MS) store(app).edit().remove(id).apply()
+                    at > now -> future += id to entry
+                    claim(app, id) -> due += id to entry
+                }
             }
         }
+        for ((id, entry) in future) {
+            schedule(app, id, entry.optString("title"), entry.optString("body"), entry.optLong("at"))
+        }
+        for ((id, entry) in due) {
+            post(app, id, entry.optString("title"), entry.optString("body"))
+        }
+    }
+
+    /**
+     * Cancels everything under [prefix] — pending alarms, stored entries and
+     * banners on screen — and reports the stored ones whose time had come.
+     * See core.SweepNotifications.
+     *
+     * Banners are found through getActiveNotifications as well as the store,
+     * because an immediate post under the prefix never entered the store.
+     */
+    private fun sweep(context: Context, prefix: String, request: String) {
+        val now = System.currentTimeMillis()
+        val fired = JSONArray()
+        val ids = mutableListOf<String>()
+        synchronized(lock) {
+            val editor = store(context).edit()
+            for ((id, raw) in store(context).all) {
+                if (!id.startsWith(prefix)) continue
+                ids += id
+                val at = try {
+                    JSONObject(raw as? String ?: "").optLong("at", 0L)
+                } catch (e: Exception) {
+                    0L
+                }
+                if (at in 1..now) fired.put(id)
+                editor.remove(id)
+            }
+            editor.apply()
+        }
+        val alarms = alarmManager(context)
+        val manager = NotificationManagerCompat.from(context)
+        for (id in ids) {
+            alarms?.cancel(alarmIntent(context, id, "", ""))
+            manager.cancel(id, NOTIFY_ID)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val shown = context.getSystemService(NotificationManager::class.java)?.activeNotifications.orEmpty()
+            for (n in shown) {
+                val tag = n.tag ?: continue
+                if (tag.startsWith(prefix)) manager.cancel(tag, NOTIFY_ID)
+            }
+        }
+        // One line per sweep: they are rare (a mount, a first return), and the
+        // log is the only place a person can see what a relaunch reported.
+        Log.i(TAG, "swept ${ids.size} under $prefix; fired=$fired")
+        val payload = JSONObject().put("request", request).put("fired", fired)
+        report?.invoke("notification_swept", payload.toString())
     }
 
     private fun ensureChannel(app: Context) {
@@ -167,9 +303,16 @@ object Notifications {
     }
 
     fun handle(data: JSONObject) {
+        val context = appContext ?: return
+        // The one command addressed by prefix rather than id.
+        if (data.optString("command") == "sweep") {
+            val prefix = data.optString("prefix")
+            val request = data.optString("request")
+            if (prefix.isNotEmpty() && request.isNotEmpty()) sweep(context, prefix, request)
+            return
+        }
         val id = data.optString("id")
         if (id.isEmpty()) return
-        val context = appContext ?: return
         when (data.optString("command")) {
             "post" -> {
                 val title = data.optString("title")
@@ -248,7 +391,8 @@ object Notifications {
     /** Called by [NotificationAlarmReceiver] when a scheduled post is due. */
     internal fun postScheduled(context: Context, intent: Intent) {
         val id = intent.getStringExtra(EXTRA_ID)?.takeIf { it.isNotEmpty() } ?: return
-        forget(context, id)
+        // Claimed rather than forgotten: see "Fired entries".
+        if (!synchronized(lock) { claim(context, id) }) return
         post(
             context.applicationContext,
             id,
@@ -344,6 +488,14 @@ class NotificationBootReceiver : BroadcastReceiver() {
         when (intent.action) {
             Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED ->
                 Notifications.rearm(context)
+            // A grant of exact alarms (see "An exact-alarm grant"): inexact
+            // alarms set before it become exact, and a running app's
+            // permission record hears it. The literal rather than
+            // AlarmManager's constant, which only exists from API 31.
+            "android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" -> {
+                Notifications.rearm(context)
+                Permissions.recheckExactAlarms()
+            }
         }
     }
 }

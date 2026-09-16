@@ -2,6 +2,8 @@ package hooks
 
 import (
 	"strconv"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -197,3 +199,88 @@ func TestAlarmsWithoutNotifyIgnoreTheBackground(t *testing.T) {
 }
 
 func itoa(t time.Time) string { return strconv.FormatInt(t.Unix(), 10) }
+
+// sweepHost answers every notification sweep inline with fired, the way a
+// native host may answer inside SendSystemEvent's call, and counts the sweeps.
+func sweepHost(t *testing.T, fired ...string) *[]string {
+	t.Helper()
+	var prefixes []string
+	core.SetSystemEventHandler(func(name string, data map[string]any) {
+		if name != "notification" || data["command"] != "sweep" {
+			return
+		}
+		prefixes = append(prefixes, data["prefix"].(string))
+		core.ReceiveHostEvent("notification_swept", map[string]any{
+			"request": data["request"],
+			"fired":   fired,
+		})
+	})
+	t.Cleanup(func() { core.SetSystemEventHandler(nil) })
+	return &prefixes
+}
+
+// Mounting in the foreground sweeps the previous process's alarm
+// notifications, and what the host says fired reaches OnRing: each alarm still
+// in the list once, soonest first. Ids for deleted alarms or of another shape
+// are skipped, and an alarm id containing dots still parses.
+func TestUseAlarmsSweepsAndReportsWhatFiredWhileClosed(t *testing.T) {
+	prefixes := sweepHost(t,
+		"grmob.alarm.wake.200",
+		"grmob.alarm.wake.100", // the same alarm, earlier: reported once, at 100
+		"grmob.alarm.nap.v2.150",
+		"grmob.alarm.deleted.50",
+		"grmob.alarm.nodot",
+		"grmob.alarm.wake.notanumber",
+		"someone.else.10",
+	)
+	ctx := core.NewContext()
+	defer ctx.Close()
+
+	var mu sync.Mutex
+	var rang []string
+	UseAlarms(ctx, []alarm.Alarm{
+		{ID: "wake", Hour: 6, Enabled: true},
+		{ID: "nap.v2", Hour: 14, Enabled: true},
+	}, AlarmOptions{Notify: true, OnRing: func(a alarm.Alarm) {
+		mu.Lock()
+		rang = append(rang, a.ID)
+		mu.Unlock()
+	}})
+
+	if len(*prefixes) != 1 || (*prefixes)[0] != "grmob.alarm." {
+		t.Fatalf("sweeps = %v, want one of grmob.alarm.", *prefixes)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if strings.Join(rang, ",") != "wake,nap.v2" {
+		t.Errorf("OnRing heard %v, want [wake nap.v2]", rang)
+	}
+
+	// A later render does not sweep again.
+	ctx.Reset()
+	UseAlarms(ctx, nil, AlarmOptions{Notify: true})
+	if len(*prefixes) != 1 {
+		t.Errorf("a second render swept again: %v", *prefixes)
+	}
+}
+
+// A record that mounted in the background leaves the OS's alarms alone until
+// the first return to the foreground, and sweeps then, once.
+func TestAlarmsMountedAwaySweepOnFirstReturn(t *testing.T) {
+	prefixes := sweepHost(t, "grmob.alarm.wake.100")
+	wake := alarm.Alarm{ID: "wake", Hour: 6, Enabled: true}
+	var rang []string
+	r := newRecord(at(12, 0, 0), wake)
+	r.opts = AlarmOptions{Notify: true, OnRing: func(a alarm.Alarm) { rang = append(rang, a.ID) }}
+	r.away, r.sweepOnReturn = true, true
+
+	r.setAway(false, at(12, 1, 0))
+	if len(*prefixes) != 1 || len(rang) != 1 || rang[0] != "wake" {
+		t.Fatalf("first return: sweeps %v, rang %v", *prefixes, rang)
+	}
+	r.setAway(true, at(12, 2, 0))
+	r.setAway(false, at(12, 3, 0))
+	if len(*prefixes) != 1 {
+		t.Errorf("swept again on a later return: %v", *prefixes)
+	}
+}

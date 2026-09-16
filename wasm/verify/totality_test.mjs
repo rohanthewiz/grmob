@@ -108,6 +108,7 @@ const FULL_STYLE = {
     Transition: "200ms ease", Animation: "pulse 2s infinite", Spin: 1000,
     TranslateX: "-100%", TranslateY: "3px",
     MinWidth: "1px", MinHeight: "2px", MaxWidth: "300px", MaxHeight: "400px", WhiteSpace: "nowrap",
+    MaxLines: 2,
 };
 
 // Every node type the runtime draws.

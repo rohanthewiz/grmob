@@ -40,7 +40,7 @@ Package comps's reference is split into 7 topic pages by source file. The index 
 | [Buttons & choices](comps-actions.md) | Buttons and their variants, chips, segmented controls, steppers, ratings and badges. | 10 types, 10 functions and methods |
 | [Overlays & feedback](comps-overlays.md) | Dialogs, action sheets, menus, snackbars, banners, progress, spinners, skeletons and empty states. | 12 types, 9 functions and methods |
 | [Data display & maps](comps-display.md) | Avatars, stat tiles, the compass, clocks and alarms, map panels and static maps. | 13 types, 16 functions and methods |
-| [Charts](comps-charts.md) | Sparklines, line, area and bar charts, donuts and pies, and gauges, drawn on core.Canvas. | 9 types, 7 functions and methods |
+| [Charts](comps-charts.md) | Sparklines, line, area, bar and scatter charts, donuts and pies, and gauges, drawn on core.Canvas. | 12 types, 8 functions and methods |
 
 ## Index
 
@@ -139,11 +139,14 @@ Package comps's reference is split into 7 topic pages by source file. The index 
 - [Charts](comps-charts.md)
     - [`type AreaChart`](comps-charts.md#type-areachart)
     - [`type BarChart`](comps-charts.md#type-barchart)
+    - [`type ChartPoint`](comps-charts.md#type-chartpoint)
     - [`type ChartSeries`](comps-charts.md#type-chartseries)
     - [`type ChartSlice`](comps-charts.md#type-chartslice)
     - [`type DonutChart`](comps-charts.md#type-donutchart)
     - [`type Gauge`](comps-charts.md#type-gauge)
     - [`type LineChart`](comps-charts.md#type-linechart)
     - [`type PieChart`](comps-charts.md#type-piechart)
+    - [`type ScatterChart`](comps-charts.md#type-scatterchart)
+    - [`type ScatterSeries`](comps-charts.md#type-scatterseries)
     - [`type Sparkline`](comps-charts.md#type-sparkline)
 

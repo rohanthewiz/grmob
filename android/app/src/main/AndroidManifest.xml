@@ -159,7 +159,8 @@
             android:exported="false" />
 
         <!-- Re-arms scheduled notifications after a reboot or an update, both
-             of which clear AlarmManager (Notifications.kt keeps the list).
+             of which clear AlarmManager (Notifications.kt keeps the list), and
+             after exact alarms are granted, which turns inexact ones exact.
              Exported because the system sends these broadcasts from outside
              the app; the receiver ignores every other action. -->
         <receiver
@@ -168,6 +169,7 @@
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
             </intent-filter>
         </receiver>
     </application>

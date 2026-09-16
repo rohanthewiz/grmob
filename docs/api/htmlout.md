@@ -351,7 +351,7 @@ func PathData(ops []float64) string
 
 PathData turns core's flat path opcodes into an SVG path string. The opcodes are core.PathMove, PathLine, PathCubic and PathClose, and SVG has a command letter for each with the same operands in the same order, so this is a spelling change and nothing else. A truncated or unknown operation ends the path there: a renderer must not fail a drawing over one bad shape.
 
-<small>[htmlout/canvas.go:121](https://github.com/rohanthewiz/grmob/blob/master/htmlout/canvas.go#L121)</small>
+<small>[htmlout/canvas.go:124](https://github.com/rohanthewiz/grmob/blob/master/htmlout/canvas.go#L124)</small>
 
 ### func ResetsUABorder
 

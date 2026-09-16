@@ -24,6 +24,22 @@ type Column[T any] struct {
 	// what the fixed ones leave.
 	Weight float64
 
+	// Width fixes the column's content width in px, the same on every row, so
+	// a column of short values ("Mar 1", "Mar 22") stays aligned rather than
+	// hugging each row's own text. The cell's padding is outside it. 0 leaves
+	// the column to Weight or to its content.
+	//
+	// With Weight also set, Width is the least the column takes and the
+	// weight shares out the slack above it. A weightless column with a Width
+	// does not shrink either, so a narrow row keeps every fixed column whole
+	// and squeezes the weighted ones.
+	//
+	// It is a width on an inner, unpadded box rather than on the cell, because
+	// the cell carries padding and the targets do not agree on whether a
+	// padded box's width includes it (CSS's content-box default says no); an
+	// unpadded box has one width on all four.
+	Width float64
+
 	// Align positions the cell's content on the row axis; the zero value is
 	// the leading edge. Numbers want JustifyEnd.
 	Align core.JustifyContent
@@ -502,6 +518,31 @@ func (d DataTable[T]) cell(t *core.Theme, c Column[T], role core.Role, content .
 	)
 	if c.Weight > 0 {
 		items = append(items, core.FlexGrow(c.Weight))
+	}
+	if c.Width > 0 {
+		if c.Weight == 0 {
+			items = append(items, core.FlexShrink(0))
+		}
+		// The inner box carries the width and the justification, so Align
+		// places the content inside the fixed width, not the fixed box
+		// inside a cell that has grown past it.
+		inner := make([]core.PropsAndChildren, 0, len(content)+5)
+		inner = append(inner,
+			core.Padding(0),
+			core.MinWidth(px(c.Width)),
+			core.AlignItemsProp(core.AlignItemsCenter),
+		)
+		if c.Weight == 0 {
+			inner = append(inner, core.Width(px(c.Width)))
+		} else {
+			inner = append(inner, core.FlexGrow(1))
+		}
+		if c.Align != "" {
+			inner = append(inner, core.Justify(c.Align))
+		}
+		inner = append(inner, content...)
+		items = append(items, core.Row(inner...))
+		return core.Row(items...)
 	}
 	if c.Align != "" {
 		items = append(items, core.Justify(c.Align))

@@ -101,4 +101,61 @@ final class TutorialAlarmNotifyUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(due), -1,
                                     "the banner came before the alarm's minute")
     }
+
+    // # The relaunch sweep (core.SweepNotifications)
+    //
+    //   tap "Ring at the next minute", Home   the request is scheduled, as above
+    //   terminate                             the record of its id dies with Go
+    //   launch, open 4.19                     UseAlarms mounts in the foreground
+    //                                         and sweeps "grmob.alarm."
+    //   Home, wait past the minute            no banner: the request was removed
+    //
+    // Without the sweep the dead process's request survives and the banner
+    // arrives on time. The second Home matters: it is the app leaving the
+    // screen with a fresh alarm list (nothing enabled), so it schedules
+    // nothing new that could be mistaken for, or hide, the old request.
+    func testRelaunchSweepsWhatTheDeadProcessScheduled() throws {
+        let app = XCUIApplication()
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+
+        app.launch()
+        app.open(URL(string: "grmob://lesson/4.19")!)
+        let ring = app.buttons["Ring at the next minute"]
+        XCTAssertTrue(ring.waitForExistence(timeout: 10), "lesson 4.19 did not open")
+        var swipes = 0
+        while !ring.isHittable && swipes < 20 {
+            app.swipeUp(velocity: .slow)
+            swipes += 1
+        }
+        // The Allow branch is the other test's; this one needs it granted.
+        XCTAssertFalse(app.buttons["Allow notifications"].exists,
+                       "notifications not granted; run testAlarmRingsAsANotificationWithTheAppClosed first")
+
+        // Room for the relaunch before the minute turns.
+        let second = Calendar.current.component(.second, from: Date())
+        if second > 30 {
+            Thread.sleep(forTimeInterval: TimeInterval(62 - second))
+        }
+        ring.tap()
+        let due = Calendar.current.date(
+            byAdding: .minute, value: 1,
+            to: Calendar.current.dateInterval(of: .minute, for: Date())!.start)!
+
+        XCUIDevice.shared.press(.home)
+        Thread.sleep(forTimeInterval: 3)
+        app.terminate()
+
+        app.launch()
+        app.open(URL(string: "grmob://lesson/4.19")!)
+        XCTAssertTrue(ring.waitForExistence(timeout: 10), "lesson 4.19 did not reopen")
+        XCTAssertLessThan(Date(), due, "the relaunch took past the alarm's minute; the test proves nothing")
+        Thread.sleep(forTimeInterval: 2)
+        XCUIDevice.shared.press(.home)
+
+        let banner = springboard.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@", "Try it")).firstMatch
+        let wait = max(5, due.timeIntervalSinceNow + 15)
+        XCTAssertFalse(banner.waitForExistence(timeout: wait),
+                       "the dead process's alarm still rang after a relaunch swept it")
+    }
 }

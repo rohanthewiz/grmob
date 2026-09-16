@@ -101,3 +101,54 @@ func TestPostNotificationSendsAFutureAtOnly(t *testing.T) {
 		}
 	}
 }
+
+// A sweep sends its prefix with a correlation id, and the reply runs exactly
+// the callback that asked, with the fired ids whatever list type they came in.
+func TestSweepNotificationsCorrelatesTheReply(t *testing.T) {
+	t.Cleanup(resetSweepsForTest)
+	seen := notificationHost(t)
+
+	var first, second []string
+	firstDone, secondDone := false, false
+	SweepNotifications("grmob.alarm.", func(f []string) { first, firstDone = f, true })
+	SweepNotifications("other.", func(f []string) { second, secondDone = f, true })
+	if len(*seen) != 2 {
+		t.Fatalf("got %d events, want 2", len(*seen))
+	}
+	a, b := (*seen)[0], (*seen)[1]
+	if a["command"] != notificationSweep || a["prefix"] != "grmob.alarm." || a["request"] == b["request"] {
+		t.Fatalf("sweeps = %v, %v", a, b)
+	}
+
+	// Answered out of order, one as decoded JSON and one as a Go slice.
+	ReceiveHostEvent(hostEventNotificationSwept, map[string]any{"request": b["request"], "fired": []string{"other.1"}})
+	ReceiveHostEvent(hostEventNotificationSwept, map[string]any{"request": a["request"], "fired": []any{"grmob.alarm.w.1", 7, ""}})
+	if !firstDone || len(first) != 1 || first[0] != "grmob.alarm.w.1" {
+		t.Errorf("first = %v (done %v)", first, firstDone)
+	}
+	if !secondDone || len(second) != 1 || second[0] != "other.1" {
+		t.Errorf("second = %v (done %v)", second, secondDone)
+	}
+
+	// A duplicate reply finds nothing waiting.
+	firstDone = false
+	ReceiveHostEvent(hostEventNotificationSwept, map[string]any{"request": a["request"]})
+	if firstDone {
+		t.Error("a duplicate reply ran the callback twice")
+	}
+}
+
+// An empty prefix, or no host, answers at once with nothing and sends nothing.
+func TestSweepNotificationsWithoutAPrefixOrHost(t *testing.T) {
+	ran := false
+	SweepNotifications("x.", func(f []string) { ran = f == nil })
+	if !ran {
+		t.Error("no host: callback did not run at once with no ids")
+	}
+	seen := notificationHost(t)
+	ran = false
+	SweepNotifications("", func(f []string) { ran = f == nil })
+	if !ran || len(*seen) != 0 {
+		t.Errorf("empty prefix: ran=%v sent=%v", ran, *seen)
+	}
+}

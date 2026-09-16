@@ -1,8 +1,10 @@
 package hooks
 
 import (
+	"cmp"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,7 +16,10 @@ import (
 type AlarmOptions struct {
 	// OnRing is called once when an alarm starts ringing, including a snoozed
 	// one coming back. With Notify, an alarm the OS rang while the app was in
-	// the background is reported here when the app returns to the foreground. It runs on the alarm goroutine, not in a render: write
+	// the background is reported here when the app returns to the foreground,
+	// and one it rang while the app was closed shortly after the app next
+	// starts (see "Off screen" on UseAlarms). It runs on the alarm goroutine
+	// or the host-event goroutine, never in a render: write
 	// state with State.Set (which is goroutine-safe) rather than touching
 	// anything a render owns. A one-time alarm (alarm.Alarm.Once) is the
 	// app's to switch off here — the hook reports rings and never edits the
@@ -173,7 +178,17 @@ type alarmsRecord struct {
 	// awaySince is when that move happened, for reporting what they rang.
 	scheduled []string
 	awaySince time.Time
+
+	// sweepOnReturn is set when the hook mounted in the background: the
+	// sweep of a previous process's notifications waits for the first return
+	// to the foreground, because sweeping while away would cancel the alarms
+	// the OS is meant to ring right now (see "Off screen").
+	sweepOnReturn bool
 }
+
+// alarmNotifyPrefix begins every notification id UseAlarms schedules; see
+// notifications for the whole spelling and UseAlarms for the sweep.
+const alarmNotifyPrefix = "grmob.alarm."
 
 func (o AlarmOptions) snooze() time.Duration {
 	if o.Snooze > 0 {
@@ -226,8 +241,18 @@ func (o AlarmOptions) ringFor() time.Duration {
 // a ringing screen with Snooze: tapping it opens the app, which is not
 // ringing. OnRing hears about each alarm the OS rang when the app returns,
 // so a one-time alarm is switched off the same way as one rung in the app.
-// An app that was closed rather than backgrounded has lost that record with
-// its process, and learns nothing. Occurrences are scheduled a week ahead and
+//
+// An app that was closed rather than backgrounded lost that record with its
+// process, so the hook asks the host instead: when it mounts (or, if it
+// mounts in the background, when the app first comes forward) it sweeps every
+// "grmob.alarm." notification with core.SweepNotifications. That cancels what
+// the dead process left scheduled — an alarm switched off after a relaunch
+// must not still ring — and the host's reply names the ones that already
+// fired, which reach OnRing for every alarm still in the list, soonest first,
+// once each. The reply is asynchronous, so those calls arrive shortly after
+// the first render rather than during it. Only one UseAlarms with Notify per
+// app: the prefix is the hook's, not the call's, so a second one would sweep
+// the first one's notifications. Occurrences are scheduled a week ahead and
 // capped at 60 in all (iOS's pending limit is 64); an app away for longer is
 // rescheduled the next time it runs and leaves the screen.
 //
@@ -275,7 +300,15 @@ func UseAlarms(ctx *core.Context, alarms []alarm.Alarm, opts AlarmOptions) Alarm
 	// later. With it off, awayChanged only records the state.
 	rec.mu.Lock()
 	rec.away = core.CurrentLifecycle() == core.LifecycleBackground
+	rec.sweepOnReturn = rec.away
+	sweepNow := !rec.away
 	rec.mu.Unlock()
+	// Before the lifecycle subscription, so the sweep reaches the host ahead
+	// of anything this record schedules: hosts handle commands in order, and
+	// a sweep that ran after this record's own posts would cancel them.
+	if sweepNow {
+		rec.sweepPrevious()
+	}
 	stopLifecycle := core.OnLifecycle(func(state core.LifecycleState) {
 		rec.awayChanged(state == core.LifecycleBackground, time.Now())
 	})
@@ -449,8 +482,18 @@ func (r *alarmsRecord) setAway(away bool, now time.Time) (rangAway []alarm.Alarm
 		return nil
 	}
 	r.away = away
+	// Read before the early return below: a record that mounted away sweeps
+	// on its first return whether or not Notify is on now, because the
+	// notifications it is sweeping belong to a process that may have had it on.
+	sweep := !away && r.sweepOnReturn
+	if sweep {
+		r.sweepOnReturn = false
+	}
 	if !r.opts.Notify && len(r.scheduled) == 0 {
 		r.mu.Unlock()
+		if sweep {
+			r.sweepPrevious()
+		}
 		return nil
 	}
 	cancel := r.scheduled
@@ -487,6 +530,13 @@ func (r *alarmsRecord) setAway(away bool, now time.Time) (rangAway []alarm.Alarm
 		}
 	}
 	r.mu.Unlock()
+
+	if sweep {
+		// Ahead of the cancels below only by convention: this record
+		// scheduled nothing before its first return, so there is nothing of
+		// its own under the prefix for the sweep to take.
+		r.sweepPrevious()
+	}
 
 	for _, id := range cancel {
 		core.CancelNotification(id)
@@ -557,11 +607,86 @@ func (r *alarmsRecord) notifications(now time.Time) []core.LocalNotification {
 	for _, d := range all {
 		title, body := r.opts.notifyText(d.a)
 		out = append(out, core.LocalNotification{
-			ID:    "grmob.alarm." + d.a.ID + "." + strconv.FormatInt(d.at.Unix(), 10),
+			ID:    alarmNotifyPrefix + d.a.ID + "." + strconv.FormatInt(d.at.Unix(), 10),
 			Title: title,
 			Body:  body,
 			At:    d.at,
 		})
+	}
+	return out
+}
+
+// sweepPrevious cancels every alarm notification a previous process left with
+// the OS and reports the ones that fired to OnRing. Called without mu held:
+// the host may answer inside the call, and the answer takes mu.
+func (r *alarmsRecord) sweepPrevious() {
+	core.SweepNotifications(alarmNotifyPrefix, func(fired []string) {
+		r.mu.Lock()
+		rang := r.firedAlarms(fired)
+		onRing := r.opts.OnRing
+		r.mu.Unlock()
+		if onRing == nil {
+			return
+		}
+		for _, a := range rang {
+			onRing(a)
+		}
+	})
+}
+
+// firedAlarms maps the ids a sweep reported back to alarms in the current
+// list: each alarm once, soonest ring first. An id whose alarm is no longer
+// in the list is skipped (OnRing takes an alarm.Alarm, and there is none to
+// hand over), as is one that does not parse — it was not this hook's.
+// Called with mu held.
+//
+// The id is "grmob.alarm.<alarm id>.<unix seconds>". An alarm id may itself
+// contain dots, so the time is split off at the last one.
+func (r *alarmsRecord) firedAlarms(fired []string) []alarm.Alarm {
+	type hit struct {
+		a  alarm.Alarm
+		at int64
+	}
+	byID := map[string]alarm.Alarm{}
+	for _, a := range r.alarms {
+		byID[a.ID] = a
+	}
+	first := map[string]int64{}
+	for _, id := range fired {
+		rest, ok := strings.CutPrefix(id, alarmNotifyPrefix)
+		if !ok {
+			continue
+		}
+		dot := strings.LastIndexByte(rest, '.')
+		if dot <= 0 {
+			continue
+		}
+		at, err := strconv.ParseInt(rest[dot+1:], 10, 64)
+		if err != nil {
+			continue
+		}
+		alarmID := rest[:dot]
+		if _, known := byID[alarmID]; !known {
+			continue
+		}
+		if prev, seen := first[alarmID]; !seen || at < prev {
+			first[alarmID] = at
+		}
+	}
+	hits := make([]hit, 0, len(first))
+	for id, at := range first {
+		hits = append(hits, hit{byID[id], at})
+	}
+	// Ties broken by id so the order does not depend on map iteration.
+	slices.SortFunc(hits, func(x, y hit) int {
+		if x.at != y.at {
+			return cmp.Compare(x.at, y.at)
+		}
+		return strings.Compare(x.a.ID, y.a.ID)
+	})
+	out := make([]alarm.Alarm, len(hits))
+	for i, h := range hits {
+		out[i] = h.a
 	}
 	return out
 }

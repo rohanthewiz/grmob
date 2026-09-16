@@ -84,6 +84,9 @@ func CanvasShapeAttrs(props map[string]any) []string {
 	out := []string{"d", PathData(floats(props["d"]))}
 	if fill := getStr(props["fill"]); fill != "" {
 		out = append(out, "fill", fill)
+		if rule := getStr(props["fillRule"]); rule == "evenodd" {
+			out = append(out, "fill-rule", rule)
+		}
 	} else {
 		out = append(out, "fill", "none")
 	}

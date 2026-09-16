@@ -99,6 +99,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -834,10 +835,16 @@ private fun contentScaleFor(mode: String): ContentScale = when (mode) {
 @Composable
 private fun GrMobText(node: GrMobNode, extra: Modifier) {
     val s = animatedStyle(node.style)
+    // core.MaxLines. Ellipsis only when capped: Clip, Text's default, is what
+    // an uncapped Text has always drawn, and an ellipsis policy on text that
+    // is never cut would change nothing but read as if it might.
+    val cap = s?.maxLines ?: 0
     Text(
         text = node.stringProp("content"),
         modifier = s.boxModifier(extra, gestureModifier(node)),
         style = textStyle(s),
+        maxLines = if (cap > 0) cap else Int.MAX_VALUE,
+        overflow = if (cap > 0) TextOverflow.Ellipsis else TextOverflow.Clip,
     )
 }
 

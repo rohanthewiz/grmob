@@ -88,6 +88,20 @@ final class TutorialChartsUITests: XCTestCase {
         scroll(app, to: bars, shotPrefix: "charts-bars")
         XCTAssertTrue(bars.exists, "the bar chart's summary is missing")
 
+        // The second panel: a stacked smooth area, horizontal bars whose long
+        // names are cut with an ellipsis (core.MaxLines, and the min-content
+        // floor that lets the cut happen), stacked bars and a scatter. Each
+        // is still one element, and the screenshots are for the cuts.
+        let scatter = element(app, beginningWith: "Distance and pace: ")
+        scroll(app, to: scatter, shotPrefix: "charts-more")
+        XCTAssertTrue(scatter.exists, "the scatter chart's summary is missing")
+        for subject in ["Visits by source: ", "Monthly spend: ", "Tickets by quarter: "] {
+            XCTAssertTrue(element(app, beginningWith: subject).exists, "\(subject)summary is missing")
+        }
+        // A cut name is drawn cut and spoken whole: the summary reads Labels.
+        XCTAssertTrue(element(app, beginningWith: "Monthly spend: ").label
+            .contains("Subscriptions and memberships"), "the summary should name the category in full")
+
         // The gauge: "Battery, 72%" until "Use 12%" is tapped.
         let use = app.buttons["Use 12%"]
         scroll(app, to: use, shotPrefix: "charts-gauge")
