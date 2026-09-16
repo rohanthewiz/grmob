@@ -1564,10 +1564,55 @@ them — every `Row` child there is a leaf or carries a `FlexGrow` — one lone
 way the browser's always has, and chat's three bubbles. No app outside the
 tutorial had the starvation shape.
 
-What this does not add is CSS's `min-width: auto`. A Row whose children's
-contents together exceed it still gives the last ones what is left, and a Text
-there breaks mid-word where a browser would overflow at the word: 1.1's third
-stat and 8.2's "Repair" button.
+The same measure now also floors a Row child at its **min-content** width,
+which is CSS's `min-width: auto` for a flex item. Compose treats the space a
+child's predecessors left as binding, so a Text there breaks *inside a word* —
+lesson 1.1's third stat read "Fo llo wi ng" and 8.2's "Repair (set B = A)"
+button the same way. A browser never does that:
+
+```
+   offer 60px, content "Following"
+
+   Compose, before   Fo | llo | wi | ng      four lines, inside the word
+   CSS               Following                one line, overflowing the row
+```
+
+min-content is the longest unbreakable run, so a Text with spaces still wraps
+at them and the floor binds only where a browser would overflow too. It is
+asked of *every* unweighted child rather than only the containers the content
+cap applies to, because 8.2's button is a leaf. Where it binds, the child
+reports its real width and the Row overflows, which is `pinMainAxis`'s rule
+and is there for `pinMainAxis`'s reason: a width coerced back inside the
+incoming maximum tells the Row that everything fits, and the next sibling is
+then laid out on top of a child drawn wider than the parent believes.
+
+Two children the hug used to skip are in now.
+
+A **percentage `MaxWidth`** was skipped because `widthModifier` resolves it
+against whatever maximum it receives, and under the hug that maximum is the
+content width — so the cap became a share of the content instead of the Row.
+Capping here as well would apply the share twice. Instead the maximum handed
+down is `content ÷ N%`, chosen so that `widthModifier`'s own arithmetic lands
+on CSS's `min(content, N% × offer)`:
+
+```
+   hand it M           it reports   N% × M
+   M = offer           N% × offer                    content ≥ N% × offer
+   M = content ÷ N%    N% × content ÷ N% = content   content < N% × offer
+   M = min(the two)    both cases, in one line
+```
+
+A **horizontal `Scroll`** is admitted when it holds no grower. With one it
+renders through `GrMobGrowStrip`, whose measure policy reads a viewport width
+that a layout modifier records during the same pass, and an intrinsic query
+would run that capture unbounded; without one it is a plain `Row` under
+`horizontalScrollWhenBounded`, which forwards intrinsics to its own content.
+`RowOfferFillers` therefore still refuses `"Scroll"` — `isPlainStrip` is the
+narrower door.
+
+None of this paragraph has been seen on a device yet: it compiles
+(`android/verify/sources.sh`) and `mobile/verify` holds each half in source,
+but the measure itself runs only on an emulator.
 
 ### `core.FlexShrink(0)` on a target with no proportional shrink
 

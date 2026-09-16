@@ -850,8 +850,9 @@ private fun heightModifier(height: String, minHeight: String): Modifier {
  * would collapse the box instead of leaving it uncapped. A percentage above
  * 100 is kept; it never binds, as in CSS.
  */
-// Internal rather than private: Renderer.kt's hugRowOffer resolves a
-// percentage MinWidth against a Row's offer with the same parse.
+// Internal rather than private: Renderer.kt's rowChildWidth resolves a
+// percentage MinWidth, and divides by a percentage MaxWidth, against a Row's
+// offer with the same parse.
 internal class WidthCap(val amount: Float, val isFraction: Boolean)
 
 internal fun parseWidthCap(value: String): WidthCap? {
