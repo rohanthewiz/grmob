@@ -57,9 +57,32 @@ import org.json.JSONObject
  * 12), via setExactAndAllowWhileIdle, which fires in Doze too. Otherwise
  * setAndAllowWhileIdle, which Doze may push back by minutes — late rather
  * than never. Cancel removes the pending alarm as well as a shown banner.
- * Alarms are forgotten across a reboot and a force stop; re-arming them needs
- * a BOOT_COMPLETED receiver and a store of what was scheduled, which the shell
- * does not keep (core/notifications.go documents the loss).
+ *
+ * # What outlives a reboot or a force stop
+ *
+ * AlarmManager forgets every alarm at a reboot, and a force stop cancels them
+ * too (and blocks the app's receivers until it is next launched). The OS keeps
+ * no list to re-arm from, so the shell keeps one: each scheduled post is
+ * written to its own SharedPreferences file, keyed by the Go id, and removed
+ * when it fires, is cancelled, or is replaced by an immediate post.
+ *
+ * ```
+ *   schedule ──▶ store[id] = {title, body, at}     fire / cancel / post-now ──▶ remove
+ *
+ *   BOOT_COMPLETED ─┐
+ *   package update ─┼─▶ rearm(context): at > now ─▶ schedule again (same PendingIntent)
+ *   attach (launch) ┘                   at ≤ now ─▶ post now, remove  ("late, not never")
+ * ```
+ *
+ * Why [attach] re-arms too: a force stop delivers nothing — no broadcast says
+ * the alarms are gone — and the next launch is the first moment this code runs
+ * again. Re-scheduling an alarm that did survive is harmless, because the
+ * PendingIntent is keyed by id and replaces itself.
+ *
+ * A post that came due while the device was off is posted at once rather than
+ * dropped, matching the inexact fallback's stance above. The store only ever
+ * holds what Go scheduled (UseAlarms keeps it to at most 60 entries a week
+ * out), so this is never an unbounded replay.
  */
 object Notifications {
     /** The intent extra that carries a tapped notification's Go id. */
@@ -71,12 +94,63 @@ object Notifications {
     private const val CHANNEL_ID = "grmob"
     private const val NOTIFY_ID = 1
 
+    /**
+     * The file the pending-post store lives in. Its own file, like
+     * Permissions.kt's, so an app's own preferences can neither collide with an
+     * id nor be cleared from here.
+     */
+    private const val STORE_NAME = "grmob-scheduled-notifications"
+
     private var appContext: Context? = null
 
     fun attach(context: Context) {
         val app = context.applicationContext
         appContext = app
         ensureChannel(app)
+        // A force stop cleared the alarms without telling anyone; see
+        // "What outlives a reboot or a force stop".
+        rearm(app)
+    }
+
+    private fun store(context: Context) =
+        context.applicationContext.getSharedPreferences(STORE_NAME, Context.MODE_PRIVATE)
+
+    private fun remember(context: Context, id: String, title: String, body: String, at: Long) {
+        val entry = JSONObject().put("title", title).put("body", body).put("at", at)
+        store(context).edit().putString(id, entry.toString()).apply()
+    }
+
+    private fun forget(context: Context, id: String) {
+        store(context).edit().remove(id).apply()
+    }
+
+    /**
+     * Re-arms every stored post: the future ones through [schedule], which
+     * replaces any alarm still pending under the id, and the ones whose time
+     * passed while nothing could fire them posted now. An entry that does not
+     * parse is dropped rather than retried at every boot.
+     */
+    internal fun rearm(context: Context) {
+        val app = context.applicationContext
+        val now = System.currentTimeMillis()
+        for ((id, raw) in store(app).all) {
+            val entry = try {
+                JSONObject(raw as? String ?: "")
+            } catch (e: Exception) {
+                Log.w(TAG, "dropping unreadable scheduled notification $id", e)
+                forget(app, id)
+                continue
+            }
+            val title = entry.optString("title")
+            val body = entry.optString("body")
+            val at = entry.optLong("at", 0L)
+            if (at > now) {
+                schedule(app, id, title, body, at)
+            } else {
+                forget(app, id)
+                post(app, id, title, body)
+            }
+        }
     }
 
     private fun ensureChannel(app: Context) {
@@ -105,11 +179,19 @@ object Notifications {
                 if (at > System.currentTimeMillis()) {
                     schedule(context, id, title, body, at)
                 } else {
+                    // "Posting again under the same ID replaces the pending
+                    // request" (core/notifications.go): an immediate post takes
+                    // down an alarm still waiting under the id, as iOS's
+                    // same-identifier add does, instead of letting it fire a
+                    // second banner later.
+                    alarmManager(context)?.cancel(alarmIntent(context, id, "", ""))
+                    forget(context, id)
                     post(context, id, title, body)
                 }
             }
             "cancel" -> {
                 alarmManager(context)?.cancel(alarmIntent(context, id, "", ""))
+                forget(context, id)
                 NotificationManagerCompat.from(context).cancel(id, NOTIFY_ID)
             }
         }
@@ -145,6 +227,10 @@ object Notifications {
         // A banner already showing under this id is replaced by the scheduled
         // one, as a re-post replaces it on the other hosts.
         NotificationManagerCompat.from(context).cancel(id, NOTIFY_ID)
+        // Written before the alarm is set, so a process killed between the two
+        // leaves an entry the next rearm schedules rather than an alarm the
+        // store does not know about.
+        remember(context, id, title, body, at)
         val exact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarms.canScheduleExactAlarms()
         try {
             if (exact) {
@@ -162,6 +248,7 @@ object Notifications {
     /** Called by [NotificationAlarmReceiver] when a scheduled post is due. */
     internal fun postScheduled(context: Context, intent: Intent) {
         val id = intent.getStringExtra(EXTRA_ID)?.takeIf { it.isNotEmpty() } ?: return
+        forget(context, id)
         post(
             context.applicationContext,
             id,
@@ -241,5 +328,22 @@ object Notifications {
 class NotificationAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         Notifications.postScheduled(context, intent)
+    }
+}
+
+/**
+ * Re-arms scheduled notifications after the events that clear AlarmManager
+ * without the app running: a reboot (BOOT_COMPLETED, delivered once the user
+ * has unlocked, when the app's credential-protected preferences are readable)
+ * and an update of this app (MY_PACKAGE_REPLACED). See "What outlives a reboot
+ * or a force stop" on [Notifications]. The action is checked because a
+ * manifest receiver can be sent an explicit intent with any action at all.
+ */
+class NotificationBootReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        when (intent.action) {
+            Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED ->
+                Notifications.rearm(context)
+        }
     }
 }

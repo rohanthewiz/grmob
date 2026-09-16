@@ -39,3 +39,14 @@ gomobile bind -target=android -androidapi 24 \
   -o android/app/libs/grmob.aar \
   ${LDFLAGS:+-ldflags "$LDFLAGS"} \
   ./mobile "$APP_PKG"
+
+# The export above lives and dies with this script's process, so the usual next
+# step — `cd android && ./gradlew assembleDebug` in the caller's shell — ran
+# without it and stopped at "SDK location not found". AGP's own per-checkout
+# answer is sdk.dir in local.properties (gitignored, and what Android Studio
+# writes), so record the SDK this script just used there. An existing file is
+# left alone: it is the developer's, and may point at an SDK on purpose.
+if [ ! -f android/local.properties ] && [ -d "$ANDROID_HOME/platforms" ]; then
+  printf 'sdk.dir=%s\n' "$ANDROID_HOME" > android/local.properties
+  echo "wrote android/local.properties (sdk.dir=$ANDROID_HOME) so ./gradlew finds the SDK"
+fi

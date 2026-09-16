@@ -1,10 +1,14 @@
 package com.grmob.app
 
 import android.Manifest
+import android.app.AlarmManager
 import android.content.Context
+import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher
@@ -139,6 +143,12 @@ object Permissions {
         } else {
             emptyArray()
         },
+        // Empty on every release: "Alarms & reminders" is a special app
+        // access, granted on a Settings page rather than through
+        // requestPermissions, so there is no runtime permission to launch.
+        // status() and request() answer it by their own arm — see
+        // [exactAlarmStatus].
+        "exact_alarms" to emptyArray(),
     )
 
     private var activity: ComponentActivity? = null
@@ -225,6 +235,29 @@ object Permissions {
         // class doc. The flag that produced it may be stale, and the launcher
         // is the only thing that can say so.
         val current = status(kind)
+        // Exact alarms: the remedy is a Settings page, not a dialog. The page
+        // is opened and the current answer sent at once, so a screen is never
+        // left waiting on a result no launcher will deliver; the grant, if the
+        // user gives one, is read when the app comes back to the foreground
+        // (Go's permission.WatchForeground re-checks there). Nothing is opened
+        // when already granted, or below 31 where the page does not exist.
+        if (kind == "exact_alarms") {
+            if (current != "granted" && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                try {
+                    host.startActivity(
+                        Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                            Uri.parse("package:" + host.packageName)),
+                    )
+                } catch (e: Exception) {
+                    // A device whose Settings app has no such page (some
+                    // vendor builds). The status is still true; only the
+                    // shortcut to changing it is missing.
+                    Log.w(TAG, "cannot open the exact-alarm settings page", e)
+                }
+            }
+            send(kind, current)
+            return
+        }
         // A kind with no runtime permission (notifications below 13) has no
         // dialog either: launching an empty request would answer "denied"
         // whatever the switch says, so the current status is the answer.
@@ -254,6 +287,7 @@ object Permissions {
         if (wanted.isEmpty() && kind == "notifications") {
             return if (NotificationManagerCompat.from(host).areNotificationsEnabled()) "granted" else "denied"
         }
+        if (kind == "exact_alarms") return exactAlarmStatus(host)
         if (wanted.isEmpty() || !declared(host, wanted)) return "unavailable"
 
         val allGranted = wanted.all {
@@ -264,6 +298,25 @@ object Permissions {
         val rationale = wanted.any { host.shouldShowRequestPermissionRationale(it) }
         if (rationale || kind in asked) return "denied"
         return "prompt"
+    }
+
+    /**
+     * Whether AlarmManager will honour an exact alarm for this app — the
+     * question Notifications.kt asks before choosing setExactAndAllowWhileIdle
+     * over its inexact fallback, so a screen and the scheduler never disagree.
+     *
+     *     API < 31                       -> granted (no such access existed)
+     *     canScheduleExactAlarms() true  -> granted
+     *     otherwise                      -> denied
+     *
+     * Never "prompt": there is no dialog that could change it, only the
+     * Settings page. Never "unavailable" either — the manifest declares
+     * SCHEDULE_EXACT_ALARM, and a user can always switch it on.
+     */
+    private fun exactAlarmStatus(context: Context): String {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return "granted"
+        val alarms = context.getSystemService(AlarmManager::class.java) ?: return "denied"
+        return if (alarms.canScheduleExactAlarms()) "granted" else "denied"
     }
 
     /**

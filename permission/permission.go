@@ -135,6 +135,34 @@ const (
 	//	Browser   Notification.permission, and Notification.requestPermission
 	//	          to ask ("default" is Prompt)
 	Notifications Permission = "notifications"
+
+	// ExactAlarms is whether a scheduled notification (core.LocalNotification
+	// with an At) arrives at its time rather than somewhere after it — the
+	// difference between an alarm and a reminder.
+	//
+	// Only Android draws the line, and it is why this is a constant at all:
+	// from API 31 an app must hold "Alarms & reminders" to schedule exactly,
+	// and from API 34 a new install does not hold it. Without it the shell
+	// falls back to an inexact alarm that can land a minute or more late. The
+	// grant is a Settings page, not a dialog, so there is never a Prompt: the
+	// answer is Granted or Denied, Request opens that page, and the answer
+	// changes when the user comes back — which hooks.UsePermissionLive
+	// re-checks on its own (see WatchForeground). Plain UsePermission checks
+	// once, on mount, and would keep showing Denied after the switch is on.
+	//
+	//	iOS       Always Granted: a calendar trigger fires at its second, and
+	//	          no permission governs it beyond Notifications.
+	//	Android   Below 31, Granted. From 31, AlarmManager.canScheduleExactAlarms();
+	//	          Request opens ACTION_REQUEST_SCHEDULE_EXACT_ALARM.
+	//	Browser   Granted: a scheduled banner is a timer in the open tab, exact
+	//	          while the tab lives. That it does not survive the tab is
+	//	          core.LocalNotification's caveat, not a permission's.
+	//
+	// It is not folded into Notifications because the two are answered by
+	// different switches on Android and either can be off while the other is
+	// on; an exact alarm with banners refused rings nothing, and a banner
+	// without exact alarms rings late.
+	ExactAlarms Permission = "exact_alarms"
 )
 
 // Permissions returns every declared Permission, in declaration order.
@@ -144,7 +172,7 @@ const (
 // has no arm for a permission drops it silently, which on this bridge is
 // indistinguishable from a user who has not answered yet.
 func Permissions() []Permission {
-	return []Permission{Camera, Location, Storage, Microphone, Notifications}
+	return []Permission{Camera, Location, Storage, Microphone, Notifications, ExactAlarms}
 }
 
 // Status is what the platform says about one Permission.

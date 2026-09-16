@@ -210,7 +210,7 @@ func CancelNotification(id string)
 
 CancelNotification takes down the notification posted under id, whether it is still on screen or already in the notification list. Cancelling one that is not there is harmless on every host.
 
-<small>[core/notifications.go:152](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L152)</small>
+<small>[core/notifications.go:155](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L155)</small>
 
 ### func Cardinal
 
@@ -509,7 +509,7 @@ OnNotificationTap subscribes fn to taps on the app's notifications; fn receives 
 
 Like OnDeepLink, a typed wrapper over OnHostEvent and nothing more: core keeps no record of taps, because a tap is an instruction ("show me this") rather than a state anyone reads later. fn runs on the goroutine that delivered the host event and must not block. An empty or absent id is dropped — a subscriber cannot route a tap it cannot identify.
 
-<small>[core/notifications.go:171](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L171)</small>
+<small>[core/notifications.go:174](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L174)</small>
 
 ### func OnRegionChange
 
@@ -543,7 +543,7 @@ func PostNotification(n LocalNotification)
 
 PostNotification asks the host to show n — now, or at n.At — replacing any notification already showing or scheduled under the same ID. Dropped without an ID or without any text; see the file comment for why the ID is required and for permissions.
 
-<small>[core/notifications.go:125](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L125)</small>
+<small>[core/notifications.go:128](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L128)</small>
 
 ### func ReadClipboard
 
@@ -1055,7 +1055,7 @@ type LocalNotification struct {
 
 LocalNotification is one banner to post. ID is required; Title and Body may each be empty but not both.
 
-<small>[core/notifications.go:96](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L96)</small>
+<small>[core/notifications.go:99](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L99)</small>
 
 ### type Location
 

@@ -57,6 +57,15 @@ What landed, and where it differs from the sketches below:
   the app killed on an API 36 emulator (inexact, +36 s) and on the iPhone 17
   Pro simulator (`TutorialAlarmNotifyUITests`). Found on the way: Go ran in UTC
   on Android — `mobile.SetTimeZone` now called by both shells.
+  Follow-ups the same day: `permission.ExactAlarms` ("exact_alarms"; Android
+  `canScheduleExactAlarms`, Request opens the Settings page, iOS and browser
+  always Granted) with a Live-checked button in 4.19 — seen granting on the
+  emulator, after which a banner fired at :00.050 with `window=0`; and the
+  Android shell's store of scheduled posts (`grmob-scheduled-notifications`
+  preferences) re-armed by `NotificationBootReceiver` on BOOT_COMPLETED /
+  MY_PACKAGE_REPLACED and by `attach` after a force stop — seen: five alarms
+  back after a reboot (the broadcast came ~2 min after boot) and after a force
+  stop, and a post due during the reboot delivered late.
 - Canvas, 4.19 and 4.20 on the emulator and simulator (2026-09-16): geometry
   matched; SwiftUI's Canvas clipped strokes centred on its edge (fixed with an
   outset), and Compose dropped `Gap` under a non-start `Justify` (fixed).

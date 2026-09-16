@@ -8179,6 +8179,10 @@ const GrMob = (() => {
             // Permissions API (see query): Safari has the one and not the
             // other, and the two always agree where both exist.
             notifications: "notifications",
+            // No descriptor exists, and none is needed: a scheduled banner is
+            // a timer in this tab, exact for as long as the tab is open, so
+            // query answers "granted" without asking the browser anything.
+            exact_alarms: null,
         };
 
         function report(kind, status) {
@@ -8193,6 +8197,7 @@ const GrMob = (() => {
         // for a name it does not know rather than resolving to a state, so
         // the catch is the common path on some browsers and not an edge case.
         function query(kind) {
+            if (kind === "exact_alarms") return Promise.resolve("granted");
             // Notifications answer from the Notification object: it is present
             // wherever notifications are (Safari included, which has no
             // "notifications" descriptor to query), and its three words map

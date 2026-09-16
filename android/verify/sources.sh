@@ -100,8 +100,9 @@ fi
 verdict="$(kotlin_source_verdict "$(have java)" "$have_sdk" "$have_cp" \
   "$have_compiler" "$have_plugin")"
 if [ "${verdict%%:*}" = skip ]; then
-  echo "SKIP: the Kotlin source compile (${verdict#*:})"
+  # gradle's own complaint first, so strict mode's exit does not swallow it.
   [ -s "$out/cp.err" ] && sed 's/^/      /' "$out/cp.err" | head -5
+  skipped "the Kotlin source compile (${verdict#*:})"
   exit 0
 fi
 
@@ -154,5 +155,5 @@ java -cp "$KOTLIN_COMPILER_CP" org.jetbrains.kotlin.cli.jvm.K2JVMCompiler \
 
 echo "OK: $stage compile against the classpath gradle resolves, with the Compose compiler plugin"
 if [ ! -f ../app/libs/grmob.aar ]; then
-  echo "SKIP: com.grmob.app (no android/app/libs/grmob.aar; run android/build.sh to make one)"
+  skipped "com.grmob.app (no android/app/libs/grmob.aar; run android/build.sh to make one)"
 fi

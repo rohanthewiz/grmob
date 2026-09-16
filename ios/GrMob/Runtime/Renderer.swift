@@ -1877,6 +1877,12 @@ private struct GrMobSlider: View {
     }
 }
 
+/// The miter limit every target draws with. SVG's `stroke-miterlimit` and
+/// Compose's `Stroke.DefaultMiter` are both 4; SwiftUI's `StrokeStyle` defaults
+/// to 10, which would draw a sharp corner's spike up to 2.5× longer here than on
+/// the web and Android. Pinning it also bounds GrMobCanvas's outset.
+let grMobCanvasMiterLimit: CGFloat = 4
+
 /// A core.Canvas: a SwiftUI Canvas that draws each CanvasShape child as a Path.
 ///
 ///     core.Canvas(100, 50, shapes, core.CanvasStretch)
@@ -1902,8 +1908,8 @@ private struct GrMobSlider: View {
 /// core's defaults go inside the box modifier, so an author's Width and
 /// Height (applied by grMobBox, outside) win: fill the proposed width when no
 /// Width was given, and take the viewBox's aspect ratio when no Height was.
-/// SwiftUI's Canvas draws unclipped by default, matching the web's
-/// overflow:visible for a stroke on the viewBox's edge.
+/// SwiftUI's Canvas clips to its frame, unlike the web's overflow:visible, so
+/// the drawing is laid out over an outset and translated back (see body).
 private struct GrMobCanvas: View {
     let node: GrMobNode
     let grow: GrMobGrow
@@ -1928,14 +1934,26 @@ private struct GrMobCanvas: View {
         //   │ └─────────────────────┘ │   size to the parent; the drawing is
         //   └─────────────────────────┘   translated back by `outset`
         //
-        // The outset is the widest stroke in the canvas: a round or square cap
-        // reaches w/2 past the end point (w/2·√2 on a diagonal square cap), and
-        // a miter join can reach further, so a full width covers every cap and
-        // the common joins without measuring paths. Layout, hit-testing and the
-        // viewport arithmetic all still see the unpadded box.
+        // The outset is the furthest any stroke can reach past its path, taken
+        // over every shape without measuring paths:
+        //
+        //   round / square cap    w/2 (w/2·√2 on a diagonal square cap)  ≤ w
+        //   round / bevel join    w/2                                     ≤ w
+        //   miter join            (w/2)/sin(θ/2) for a corner of angle θ,
+        //                         cut to a bevel once that passes
+        //                         miterLimit·w/2 — so at most 2w at limit 4
+        //
+        // A miter is the default join, so a stroked shape without a round or
+        // bevel join gets 2w and every other stroked shape w. The limit is
+        // pinned to 4 below, which is what bounds the miter case at all.
+        // Layout, hit-testing and the viewport arithmetic all still see the
+        // unpadded box.
         let outset = CGFloat(shapes.reduce(0.0) { acc, props in
             guard props["stroke"] != nil else { return acc }
-            return max(acc, (props["strokeWidth"] as? NSNumber)?.doubleValue ?? 1)
+            let w = (props["strokeWidth"] as? NSNumber)?.doubleValue ?? 1
+            let join = props["join"] as? String
+            let reach = (join == "round" || join == "bevel") ? w : w * Double(grMobCanvasMiterLimit) / 2
+            return max(acc, reach)
         })
 
         let drawing = Canvas { ctx, outer in
@@ -1979,6 +1997,7 @@ private struct GrMobCanvas: View {
                 }
                 ctx.stroke(path, with: .color(stroke),
                            style: StrokeStyle(lineWidth: width, lineCap: cap, lineJoin: join,
+                                              miterLimit: grMobCanvasMiterLimit,
                                               dash: dash.map { CGFloat($0) }))
             }
         }

@@ -175,7 +175,9 @@ const (
 	CapSquare LineCap = "square"
 )
 
-// LineJoin is how a stroke turns a corner.
+// LineJoin is how a stroke turns a corner. A miter longer than 4× half the
+// stroke width is cut to a bevel on every target — SVG's and Compose's default
+// miter limit, pinned explicitly on iOS, whose own default is 10.
 type LineJoin string
 
 const (

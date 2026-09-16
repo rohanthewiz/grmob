@@ -87,7 +87,7 @@ const (
 )
 ```
 
-<small>[core/canvas.go:255](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L255)</small>
+<small>[core/canvas.go:257](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L257)</small>
 
 GridRun attribute bits. A renderer without a native spelling for one may drop it (there is no dim on the web's font-weight scale, say, so the DOM targets fake it with opacity), but must never fail the row.
 
@@ -606,9 +606,9 @@ const (
 type LineJoin string
 ```
 
-LineJoin is how a stroke turns a corner.
+LineJoin is how a stroke turns a corner. A miter longer than 4× half the stroke width is cut to a bevel on every target — SVG's and Compose's default miter limit, pinned explicitly on iOS, whose own default is 10.
 
-<small>[core/canvas.go:179](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L179)</small>
+<small>[core/canvas.go:181](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L181)</small>
 
 ```go
 const (
@@ -628,7 +628,7 @@ type Path struct {
 
 Path is a sequence of subpaths built by chained calls. The builder methods mutate and return the receiver, so a Path should be finished before it is handed to a Shape: the node takes a copy when the Canvas renders, and a change after that is invisible (see Node immutability).
 
-<small>[core/canvas.go:266](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L266)</small>
+<small>[core/canvas.go:268](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L268)</small>
 
 #### func Circle
 
@@ -638,7 +638,7 @@ func Circle(cx, cy, r float64) *Path
 
 Circle is a closed circle, drawn clockwise from three o'clock.
 
-<small>[core/canvas.go:433](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L433)</small>
+<small>[core/canvas.go:435](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L435)</small>
 
 #### func Line
 
@@ -648,7 +648,7 @@ func Line(x1, y1, x2, y2 float64) *Path
 
 Line is a single straight segment.
 
-<small>[core/canvas.go:413](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L413)</small>
+<small>[core/canvas.go:415](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L415)</small>
 
 #### func NewPath
 
@@ -658,7 +658,7 @@ func NewPath() *Path
 
 NewPath returns an empty path.
 
-<small>[core/canvas.go:277](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L277)</small>
+<small>[core/canvas.go:279](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L279)</small>
 
 #### func Polyline
 
@@ -668,7 +668,7 @@ func Polyline(xy ...float64) *Path
 
 Polyline joins the points (x0, y0, x1, y1, ...) with straight segments. An odd trailing coordinate is ignored.
 
-<small>[core/canvas.go:419](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L419)</small>
+<small>[core/canvas.go:421](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L421)</small>
 
 #### func Rect
 
@@ -678,7 +678,7 @@ func Rect(x, y, w, h float64) *Path
 
 Rect is a closed rectangle with its top-left corner at (x, y).
 
-<small>[core/canvas.go:428](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L428)</small>
+<small>[core/canvas.go:430](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L430)</small>
 
 #### func Sector
 
@@ -688,7 +688,7 @@ func Sector(cx, cy, inner, outer, startDeg, sweepDeg float64) *Path
 
 Sector is a closed ring segment between radii inner and outer — a pie wedge when inner is 0, a donut segment otherwise. Angles are as for Path.Arc.
 
-<small>[core/canvas.go:440](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L440)</small>
+<small>[core/canvas.go:442](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L442)</small>
 
 #### func (*Path) Arc
 
@@ -710,7 +710,7 @@ The sweep is split into segments of at most 90°, and each becomes the cubic who
 	             │
 	             P2
 
-<small>[core/canvas.go:343](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L343)</small>
+<small>[core/canvas.go:345](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L345)</small>
 
 #### func (*Path) Close
 
@@ -720,7 +720,7 @@ func (p *Path) Close() *Path
 
 Close joins the current point back to the start of the subpath. A later LineTo continues from that start, as it does on every platform.
 
-<small>[core/canvas.go:381](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L381)</small>
+<small>[core/canvas.go:383](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L383)</small>
 
 #### func (*Path) CubicTo
 
@@ -730,7 +730,7 @@ func (p *Path) CubicTo(x1, y1, x2, y2, x, y float64) *Path
 
 CubicTo draws a cubic Bézier to (x, y) via control points (x1, y1) and (x2, y2).
 
-<small>[core/canvas.go:300](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L300)</small>
+<small>[core/canvas.go:302](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L302)</small>
 
 #### func (*Path) LineTo
 
@@ -740,7 +740,7 @@ func (p *Path) LineTo(x, y float64) *Path
 
 LineTo draws a straight segment to (x, y). With no current point it moves there instead, which is what every platform's API does and what makes a polyline a single loop body.
 
-<small>[core/canvas.go:289](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L289)</small>
+<small>[core/canvas.go:291](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L291)</small>
 
 #### func (*Path) MoveTo
 
@@ -750,7 +750,7 @@ func (p *Path) MoveTo(x, y float64) *Path
 
 MoveTo starts a new subpath at (x, y).
 
-<small>[core/canvas.go:280](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L280)</small>
+<small>[core/canvas.go:282](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L282)</small>
 
 #### func (*Path) QuadTo
 
@@ -760,7 +760,7 @@ func (p *Path) QuadTo(qx, qy, x, y float64) *Path
 
 QuadTo draws a quadratic Bézier to (x, y) via control point (qx, qy). It is sent as the cubic that traces the identical curve: each cubic control point sits two thirds of the way from an end point to the quadratic one.
 
-<small>[core/canvas.go:312](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L312)</small>
+<small>[core/canvas.go:314](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L314)</small>
 
 ### type SelectMenuItem
 
@@ -998,7 +998,7 @@ type Shape struct {
 
 Shape is one path drawn once: filled, stroked, or both (fill first, then the stroke over it, on every target). A shape with neither colour draws nothing and still occupies its child slot, which keeps the slots of the shapes after it stable while it comes and goes.
 
-<small>[core/canvas.go:191](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L191)</small>
+<small>[core/canvas.go:193](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L193)</small>
 
 ### type TabItem
 

@@ -3574,6 +3574,14 @@ func lessonClocksAndDrawing() Lesson {
 			})
 			// Checks, never prompts; the prompt is the button's, from a tap.
 			notifyStatus := hooks.UsePermission(ctx, permission.Notifications)
+			// Android's second switch: without "Alarms & reminders" a banner is
+			// scheduled inexactly and can come a minute late. Only Denied shows
+			// the button — iOS and the browser answer Granted, and the moment
+			// before any answer (Unknown) should not flash a button that then
+			// vanishes. The Live variant because the grant happens on a
+			// Settings page: it re-checks when the app comes back to the
+			// foreground, which a mount-only check would never see.
+			exactStatus := hooks.UsePermissionLive(ctx, permission.ExactAlarms)
 
 			// The chart: a line over an area, both built from the same points.
 			series := slices.Clone(tutorialSeries)
@@ -3701,6 +3709,17 @@ if a, ok := ringer.Ringing(); ok {
 								OnTap:    func() { permission.Request(permission.Notifications) },
 							},
 							caption("Needed to ring with the app closed."),
+						)),
+					core.If(exactStatus == permission.Denied,
+						core.Row(
+							core.Gap(12),
+							core.AlignItemsProp(core.AlignItemsCenter),
+							comps.Button{
+								Label:    "Allow exact alarms",
+								Emphasis: comps.EmphasisOutlined,
+								OnTap:    func() { permission.Request(permission.ExactAlarms) },
+							},
+							caption("Without it Android may ring a minute late."),
 						)),
 				),
 				keyPoints(

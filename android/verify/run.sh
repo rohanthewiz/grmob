@@ -86,9 +86,9 @@ if command -v go >/dev/null; then
   if census=$( (cd ../.. && go test ./mobile/verify/ -run "^$census_test\$" -v) 2>&1 ); then
     case "$census" in
       *"--- SKIP"*)
-        echo "SKIP: the Compose census's source half — foundation-layout's sources are"
-        echo "      not cached, so androidx's own arithmetic is unread on this machine."
-        echo "      ./gradlew :app:fetchComposeLayoutSources  (once; it is a network call)"
+        skipped "the Compose census's source half — foundation-layout's sources are
+      not cached, so androidx's own arithmetic is unread on this machine.
+      ./gradlew :app:fetchComposeLayoutSources  (once; it is a network call)"
         ;;
       *)
         echo "OK: the Compose census's claims were read out of foundation-layout's sources"
@@ -100,7 +100,7 @@ if command -v go >/dev/null; then
     exit 1
   fi
 else
-  echo "SKIP: the Compose census's source half (no go on PATH to run it with)"
+  skipped "the Compose census's source half (no go on PATH to run it with)"
 fi
 
 # Does the Kotlin that imports Compose and the Android SDK compile at all.
@@ -137,7 +137,7 @@ case "${verdict%%:*}" in
     # condition this guard lets fall through.
     if [ "$(have go)" != yes ] || [ "$(have java)" != yes ] || \
        [ "$(have kotlinc)" = yes ]; then
-      echo "SKIP: JVM harness (${verdict#*:})"
+      skipped "JVM harness (${verdict#*:})"
       exit 0
     fi
     ;;
@@ -174,7 +174,7 @@ fi
 # decides is the cache-versus-skip half.
 verdict="$(jvm_harness_verdict "$(have go)" "$(have java)" no "$jars")"
 if [ "${verdict%%:*}" = skip ]; then
-  echo "SKIP: JVM harness (${verdict#*:})"
+  skipped "JVM harness (${verdict#*:})"
   exit 0
 fi
 

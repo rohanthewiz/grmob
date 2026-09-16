@@ -80,7 +80,10 @@ import "time"
 //	          exact alarms — SCHEDULE_EXACT_ALARM, which Android 14+ does not
 //	          grant new installs by default — and otherwise inexact
 //	          (setAndAllowWhileIdle), which Doze may defer by minutes.
-//	          Pending alarms do not survive a reboot or a force stop.
+//	          The shell keeps a list of what it scheduled and re-arms it
+//	          after a reboot or an app update (a boot receiver) and at the
+//	          next launch after a force stop; one whose time passed while it
+//	          could not fire is posted then, late rather than never.
 //	iOS       UNCalendarNotificationTrigger on the local wall clock; iOS
 //	          keeps at most 64 pending requests per app.
 //	Browser   a timer in the page, so only while the tab is open — a page

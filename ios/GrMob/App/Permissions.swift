@@ -21,6 +21,7 @@ import UserNotifications
 ///     location     CLLocationManager.authorizationStatus  (delegate callback)
 ///     storage      PHPhotoLibrary.authorizationStatus(for: .readWrite)
 ///     notifications UNUserNotificationCenter.getNotificationSettings  (async)
+///     exact_alarms  always "granted" — iOS has no such gate (see check)
 ///
 /// Notifications need no usage-description key: the system prompt carries the
 /// app's name and nothing the app writes.
@@ -106,6 +107,11 @@ final class Permissions: NSObject, CLLocationManagerDelegate {
                 guard let self else { return }
                 self.send(kind, self.map(settings.authorizationStatus))
             }
+        case "exact_alarms":
+            // Nothing on iOS governs when a scheduled notification fires: a
+            // UNCalendarNotificationTrigger fires at its second. Whether it
+            // may show at all is the "notifications" kind's question.
+            send(kind, "granted")
         default: break
         }
     }
@@ -150,6 +156,9 @@ final class Permissions: NSObject, CLLocationManagerDelegate {
                     self.send(kind, self.map(settings.authorizationStatus))
                 }
             }
+        case "exact_alarms":
+            // Always granted here (see check), so there is nothing to ask.
+            send(kind, "granted")
         default:
             break
         }

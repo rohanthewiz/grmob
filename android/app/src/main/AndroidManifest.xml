@@ -64,6 +64,9 @@
          Play policy for apps whose core function is an alarm clock or
          calendar — that is the adopting app's call, not the framework's. -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <!-- Lets NotificationBootReceiver re-arm scheduled notifications after a
+         reboot. A normal permission: granted at install, never prompted. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <!-- enableOnBackInvokedCallback opts in to predictive back: on Android 13+
          a back gesture previews its destination (the home screen, from the
@@ -154,6 +157,19 @@
         <receiver
             android:name=".NotificationAlarmReceiver"
             android:exported="false" />
+
+        <!-- Re-arms scheduled notifications after a reboot or an update, both
+             of which clear AlarmManager (Notifications.kt keeps the list).
+             Exported because the system sends these broadcasts from outside
+             the app; the receiver ignores every other action. -->
+        <receiver
+            android:name=".NotificationBootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>
