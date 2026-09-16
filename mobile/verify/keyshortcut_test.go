@@ -60,7 +60,10 @@ func TestBothNativesPressADeclaredPageGlobalChord(t *testing.T) {
 			"a hidden subtree is not a candidate for an F-key either"},
 		{swiftRuntime, `if !target.disabled { click(target.node.stringProp("onClick")) }`,
 			"a disabled F-key match takes the key and clicks nothing"},
-		{swiftStyle, `keyboardShortcut(first.key, modifiers: first.modifiers)`, "the SwiftUI shortcut itself"},
+		{swiftStyle, `modifier(GrMobVisibleChord(key: first.key, modifiers: first.modifiers))`,
+			"the SwiftUI shortcut itself, through the modifier that can ask whether the subtree is hidden"},
+		{swiftStyle, `content.keyboardShortcut(key, modifiers: modifiers)`,
+			"and GrMobVisibleChord attaching it"},
 		{swiftStyle, `.keyboardShortcut(chord.key, modifiers: chord.modifiers)`,
 			"every further chord, which a Button's one keyboardShortcut cannot hold"},
 		{swiftRenderer, `.grMobKeyShortcut(s?.accessibilityKeyShortcuts ?? "", press: press)`,
@@ -90,5 +93,72 @@ func TestBothNativesPressADeclaredPageGlobalChord(t *testing.T) {
 			t.Errorf("%s: %q not found — %s. A declared shortcut would do nothing on "+
 				"this platform, and nothing would say so", pin.file, pin.expr, pin.why)
 		}
+	}
+}
+
+// A chord inside a core.AccessibilityHidden subtree does not fire on iOS.
+//
+// # The gap this closes
+//
+// `.accessibilityHidden(true)` prunes a subtree from VoiceOver and from
+// nothing else, so a chord declared inside one stayed live on a hardware
+// keyboard: a screen behind a modal, or a shut Drawer panel, answering a
+// shortcut for a control the reader could not reach. The web skips a hidden
+// subtree when it routes a chord, Compose does, and this runtime's own F-key
+// walk does (the arm above holds that line) — SwiftUI's keyboardShortcut was
+// the one route left, because SwiftUI resolves it rather than a walk of ours.
+//
+// # Why the environment is the subject
+//
+// The fact is about ANCESTORS, and a renderer building one node's view has the
+// node and not the path above it. The environment is what SwiftUI already
+// propagates down a view tree, so the check is that the same branch which
+// calls accessibilityHidden also sets it, and that both chord routes read it:
+//
+//	grMobAccessibility   sets grMobAccessibilityHidden beside accessibilityHidden
+//	GrMobVisibleChord    a Button's FIRST chord — a View extension cannot read
+//	                     the environment, so the shortcut goes on through a
+//	                     ViewModifier that can
+//	GrMobShortcutButtons a Button's further chords, and every chord of a
+//	                     tappable box
+//
+// Each route failing alone is silent: the Button's first chord is the common
+// one and the further chords are the rarer, so a fix to either half on its own
+// looks like a fix.
+func TestASwiftUIChordBehindAHiddenSubtreeDoesNotFire(t *testing.T) {
+	swiftStyle := nativeFile("ios", "GrMob", "Runtime", "GrMobStyle.swift")
+	code := codeIn(t, swiftStyle)
+	for _, c := range []struct{ expr, why string }{
+		{`.environment(\.grMobAccessibilityHidden, true)`,
+			"the hidden branch of grMobAccessibility publishes the fact to its subtree"},
+		{`@Environment(\.grMobAccessibilityHidden) private var subtreeHidden`,
+			"a chord route reads it"},
+		{`modifier(GrMobVisibleChord(key: first.key, modifiers: first.modifiers))`,
+			"a Button's first chord goes through the modifier that can ask"},
+	} {
+		if !strings.Contains(code, c.expr) {
+			t.Errorf("%s: no %s — %s.\n\nWithout it a shortcut declared behind a "+
+				"modal, or inside a shut Drawer panel, still answers a hardware "+
+				"keyboard while nothing in the subtree can be reached.",
+				swiftStyle, c.expr, c.why)
+		}
+	}
+	// Both routes, not one. Counted rather than matched once: the two reads
+	// are identical text, and a single one would satisfy a Contains.
+	if n := strings.Count(code, `@Environment(\.grMobAccessibilityHidden) private var subtreeHidden`); n != 2 {
+		t.Errorf("%s: %d reader(s) of grMobAccessibilityHidden, want 2 — "+
+			"GrMobVisibleChord for a Button's first chord and "+
+			"GrMobShortcutButtons for every other one. One of the two routes is "+
+			"still live behind a hidden subtree.", swiftStyle, n)
+	}
+	// And the gate is the absence of the shortcut, not a .disabled: a
+	// disabled Button is greyed out for everybody, which is a visible change
+	// to a screen that is merely hidden from a reader.
+	guard := codeOf(t, swiftStyle, "struct GrMobVisibleChord: ViewModifier {")
+	if strings.Contains(guard, ".disabled(") {
+		t.Errorf("%s: GrMobVisibleChord turns the chord off with .disabled, which "+
+			"also greys the control out for sighted users. Not attaching the "+
+			"shortcut is the change that is invisible to everyone but the "+
+			"keyboard.", swiftStyle)
 	}
 }

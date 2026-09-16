@@ -405,6 +405,37 @@ extension EnvironmentValues {
     }
 }
 
+/// Whether this view sits inside a core.AccessibilityHidden subtree.
+///
+/// # What it is for
+///
+/// `.accessibilityHidden(true)` prunes a subtree from VoiceOver and from
+/// nothing else. A keyboard chord declared inside it is still live: a screen
+/// behind a modal, or a shut Drawer panel, kept answering its shortcut on a
+/// hardware keyboard while the reader could not reach anything in it. The web
+/// and Compose both skip a hidden subtree when they route a chord, and so does
+/// this runtime's own F-key walk (GrMobRuntime.functionKeyTarget) — SwiftUI's
+/// keyboardShortcut was the one route left, because it is resolved by SwiftUI
+/// rather than by a walk of ours.
+///
+/// # Why the environment and not the node
+///
+/// The fact is about ANCESTORS. A renderer building one node's view has the
+/// node and not the path above it, and the hidden ancestor may be several
+/// containers up. The environment is the one thing SwiftUI already propagates
+/// down a view tree, and grMobAccessibility sets it at exactly the point it
+/// calls accessibilityHidden — so the two cannot drift apart.
+private struct GrMobAccessibilityHiddenKey: EnvironmentKey {
+    static let defaultValue: Bool = false
+}
+
+extension EnvironmentValues {
+    var grMobAccessibilityHidden: Bool {
+        get { self[GrMobAccessibilityHiddenKey.self] }
+        set { self[GrMobAccessibilityHiddenKey.self] = newValue }
+    }
+}
+
 /// Tap/long-press wiring for nodes that don't draw their own control (Button
 /// and the inputs handle their own interaction). Inserted into grMobBox
 /// after the background layer, so the touch target is the visible box —
@@ -799,7 +830,12 @@ extension View {
     /// combine is a no-op for them.
     @ViewBuilder fileprivate func grMobAccessibility(_ s: GrMobStyle?) -> some View {
         if s?.accessibilityHidden == true {
+            // The environment as well as the modifier: see
+            // GrMobAccessibilityHiddenKey. accessibilityHidden hides the
+            // subtree from VoiceOver, and this is what stops a keyboard chord
+            // inside it from still firing.
             accessibilityHidden(true)
+                .environment(\.grMobAccessibilityHidden, true)
         } else if let s, !s.accessibilityLabel.isEmpty {
             accessibilityElement(children: .combine)
                 .accessibilityLabel(grMobCurrentLabel(s.accessibilityLabel, kind: s.accessibilityCurrent))
@@ -1858,7 +1894,11 @@ extension View {
     @ViewBuilder func grMobKeyShortcut(_ spec: String, press: @escaping () -> Void) -> some View {
         let chords = grMobKeyChords(spec)
         if let first = chords.first {
-            keyboardShortcut(first.key, modifiers: first.modifiers)
+            // Through a ViewModifier rather than .keyboardShortcut directly:
+            // the modifier is what can read grMobAccessibilityHidden, and a
+            // chord inside a hidden subtree must not be live. See
+            // GrMobVisibleChord.
+            modifier(GrMobVisibleChord(key: first.key, modifiers: first.modifiers))
                 .background { GrMobShortcutButtons(chords: Array(chords.dropFirst()), press: press) }
         } else {
             self
@@ -1895,14 +1935,54 @@ struct GrMobShortcutButtons: View {
     let chords: [(key: KeyEquivalent, modifiers: EventModifiers)]
     let press: () -> Void
 
+    /// A chord inside a core.AccessibilityHidden subtree is not live; see
+    /// GrMobAccessibilityHiddenKey. Read here rather than at the call sites
+    /// because both of them — a Button's further chords and a tappable box's
+    /// every chord — arrive through this one view.
+    ///
+    /// The Buttons below set accessibilityHidden(true) on THEMSELVES, which is
+    /// a different statement: it keeps a 0×0 control out of the reader's
+    /// swipe order and says nothing about whether the chord should fire.
+    @Environment(\.grMobAccessibilityHidden) private var subtreeHidden
+
     var body: some View {
-        ForEach(Array(chords.enumerated()), id: \.offset) { _, chord in
-            Button("", action: press)
-                .keyboardShortcut(chord.key, modifiers: chord.modifiers)
-                .opacity(0)
-                .frame(width: 0, height: 0)
-                .accessibilityHidden(true)
-                .allowsHitTesting(false)
+        if subtreeHidden {
+            EmptyView()
+        } else {
+            ForEach(Array(chords.enumerated()), id: \.offset) { _, chord in
+                Button("", action: press)
+                    .keyboardShortcut(chord.key, modifiers: chord.modifiers)
+                    .opacity(0)
+                    .frame(width: 0, height: 0)
+                    .accessibilityHidden(true)
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+}
+
+/// One keyboardShortcut, applied only outside a core.AccessibilityHidden
+/// subtree.
+///
+/// A View extension cannot read the environment — `grMobKeyShortcut` is a
+/// function on View, not a View — and the first chord of a Button goes on the
+/// Button itself rather than through GrMobShortcutButtons, so it needs a
+/// modifier of its own to ask the same question.
+///
+/// Applying nothing is the right "off": a keyboardShortcut that is not
+/// attached cannot be matched, where `.disabled(true)` would also grey the
+/// Button out for everyone.
+struct GrMobVisibleChord: ViewModifier {
+    let key: KeyEquivalent
+    let modifiers: EventModifiers
+
+    @Environment(\.grMobAccessibilityHidden) private var subtreeHidden
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if subtreeHidden {
+            content
+        } else {
+            content.keyboardShortcut(key, modifiers: modifiers)
         }
     }
 }

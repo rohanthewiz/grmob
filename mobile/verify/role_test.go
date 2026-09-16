@@ -149,3 +149,43 @@ func sortedRoles(m map[string]bool) []string {
 	sort.Strings(out)
 	return out
 }
+
+// A named node is one accessibility element on Compose, as it already is on
+// the other two targets.
+//
+// # The gap this closes
+//
+// A comps.Calendar day is a single Go node — a Box carrying the label, the
+// gridcell role, the selected state and an onClick, with a Text of the day
+// number inside it — and Compose drew it as two accessibility nodes: the
+// element, and the digit's own text node under it. A reader met the cell
+// twice, and the grid's touch exploration had two targets per square.
+//
+// SwiftUI has said the same thing since the feed-row pattern landed
+// (`accessibilityElement(children: .combine)` in grMobAccessibility), and on
+// the web an accessible name replaces an element's contents rather than
+// joining them. Compose was the target reading a label as an annotation on a
+// container instead of as a name for one thing.
+//
+// # Why the condition is the label
+//
+// boxModifier's semantics branch is entered for a role alone, or a disabled or
+// selected state alone. Merging there would be worse than two nodes: the
+// calendar's own core.RoleRow Row would swallow its seven cells and a week
+// would become a single element. A label is an author saying "this is one
+// thing and here is its name"; a bare role says the opposite.
+func TestAComposeNodeWithALabelIsOneAccessibilityElement(t *testing.T) {
+	body := codeOf(t, kotlinStyle, "fun GrMobStyle?.boxModifier(")
+	const want = "m = m.semantics(mergeDescendants = accessibilityLabel.isNotEmpty()) {"
+	if !strings.Contains(body, want) {
+		t.Errorf("%s: boxModifier has no %q.\n\nWithout it a labelled node and "+
+			"the Text inside it are two nodes to TalkBack — a calendar day is "+
+			"met twice, and the label the author wrote is not the name of the "+
+			"thing the reader lands on.", kotlinStyle, want)
+	}
+	if strings.Contains(body, "m = m.semantics(mergeDescendants = true) {") {
+		t.Errorf("%s: boxModifier merges unconditionally. This branch is also "+
+			"entered for a role alone, so core.RoleRow on the calendar's week "+
+			"Row would collapse its seven gridcells into one element.", kotlinStyle)
+	}
+}

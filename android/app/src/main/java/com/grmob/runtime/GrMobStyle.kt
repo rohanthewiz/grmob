@@ -554,7 +554,33 @@ fun GrMobStyle?.boxModifier(extra: Modifier = Modifier, gestures: Modifier = Mod
             .filter { it.isNotEmpty() }.joinToString(". ")
         // core.CurrentDate's word, when no stated value holds the state slot.
         val currentState = grMobCurrentState(accessibilityLabel, currentKind, valueRange.text)
-        m = m.semantics {
+        // A named node is ONE element, the way the other two targets already
+        // read it.
+        //
+        // # What two nodes looked like
+        //
+        // A comps.Calendar day is a single Go node: a Box carrying the label
+        // ("14 March 2026"), the gridcell role, the selected state and an
+        // onClick, with a Text of the day number inside it. Compose drew it as
+        // two accessibility nodes — this element, and the digit's own text
+        // node under it — so a reader met the cell twice and the grid's touch
+        // exploration had two targets per square.
+        //
+        // Merging is the same statement SwiftUI's grMobAccessibility makes for
+        // a labelled container (`accessibilityElement(children: .combine)`)
+        // and the same one aria-label makes on the web, where an accessible
+        // name replaces the element's contents rather than joining them.
+        //
+        // # Why the LABEL is the condition, and not the branch
+        //
+        // This branch is also entered for a node that declares only a role, or
+        // only a disabled or selected state. Merging there would be wrong in a
+        // way that is much worse than two nodes: the calendar's own
+        // `core.RoleRow` Row would swallow its seven cells and a week would
+        // become one element. A label is the author saying "this is one thing
+        // and here is its name"; a role on its own says the opposite, that the
+        // node is a container of things.
+        m = m.semantics(mergeDescendants = accessibilityLabel.isNotEmpty()) {
             if (description.isNotEmpty()) contentDescription = description
             // TalkBack announces the Disabled property itself, so a disabled
             // node needs no ", disabled" folded into its description. The

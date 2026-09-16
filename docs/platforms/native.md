@@ -1614,6 +1614,29 @@ None of this paragraph has been seen on a device yet: it compiles
 (`android/verify/sources.sh`) and `mobile/verify` holds each half in source,
 but the measure itself runs only on an emulator.
 
+
+### A labelled node is one accessibility element
+
+`core.AccessibilityLabel` on a container now merges that container's
+descendants into a single Compose semantics node (`semantics(mergeDescendants
+= true)`), which is what SwiftUI has done since the feed-row pattern
+(`accessibilityElement(children: .combine)`) and what an accessible name does
+on the web, where it replaces an element's contents rather than joining them.
+
+A `comps.Calendar` day is one Go node — a Box with the label, the gridcell
+role, the selected state and an `onClick`, holding a Text of the day number —
+and Compose used to draw it as two: the element, and the digit's text node
+underneath. A reader met each square twice.
+
+The condition is the **label**, not the branch. The same code runs for a node
+declaring only a role, or only a disabled or selected state, and merging there
+would be worse than two nodes: the calendar's own `core.RoleRow` week would
+swallow its seven cells. A label is an author naming one thing; a bare role
+says the node is a container of things.
+
+Not yet seen under TalkBack — `mobile/verify` holds it in source and
+`android/verify/sources.sh` compiles it.
+
 ### `core.FlexShrink(0)` on a target with no proportional shrink
 
 `core.FlexShrink` was a web-only prop for two releases, and then half of it
