@@ -3604,8 +3604,14 @@ func lessonClocksAndDrawing() Lesson {
 			area.LineTo(w, h).LineTo(0, h).Close()
 
 			// The donut: sectors from twelve o'clock (-90°), a sliver of gap
-			// between each.
-			slices3 := []string{t.Colors.Primary, t.Colors.SuccessColor(), t.Colors.WarningColor()}
+			// between each, in the theme's first three series colours. Those
+			// are the categorical Chart role, not Success and Warning, which
+			// would say "fine" and "careful" about slices that mean neither.
+			// Indexed round the list, because a theme may state fewer
+			// colours than the demos below reach for.
+			chartColors := t.Colors.ChartColors()
+			hue := func(i int) string { return chartColors[i%len(chartColors)] }
+			slices3 := []string{hue(0), hue(1), hue(2)}
 			var donut []core.Shape
 			start := -90.0
 			for i, share := range tutorialShares {
@@ -3694,6 +3700,22 @@ comps.DigitalClock{Time: now, ShowSeconds: true, ShowDate: true}`),
 						}, core.Width("110px"),
 							core.AccessibilityLabel("A ring with a hole beside a solid disc")),
 						caption("Two circles, one path: FillEvenOdd cuts the inner one out; the default rule does not."),
+					),
+					core.Row(
+						core.Gap(16),
+						core.AlignItemsProp(core.AlignItemsCenter),
+						// A radial highlight off-centre on a disc, and a
+						// diagonal linear fade across the theme's first three
+						// series colours. Gradient geometry is in viewBox
+						// units, the same space as the paths it fills.
+						core.Canvas(100, 50, []core.Shape{
+							{Path: core.Circle(25, 25, 22), FillGradient: core.RadialGradientFill(18, 18, 30,
+								core.Stop(0, "#FFFFFF"), core.Stop(0.35, hue(0)), core.Stop(1, hue(6)))},
+							{Path: core.Rect(52, 3, 46, 44), FillGradient: core.LinearGradientFill(52, 3, 98, 47,
+								core.Stop(0, hue(0)), core.Stop(0.5, hue(1)), core.Stop(1, hue(2)))},
+						}, core.Width("110px"),
+							core.AccessibilityLabel("A shaded sphere beside a square fading blue to orange to green")),
+						caption("FillGradient: RadialGradientFill and LinearGradientFill, in the drawing's own units."),
 					),
 				),
 				prose("An alarm is the time arithmetic in package alarm, a hook that checks it every second, "+

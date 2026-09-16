@@ -24,18 +24,31 @@ func TestBundledThemesSetEveryColorRole(t *testing.T) {
 		palette := reflect.ValueOf(theme.Colors)
 		for i := 0; i < paletteType.NumField(); i++ {
 			field := paletteType.Field(i)
-			got := palette.Field(i).String()
-			if got == "" {
+			// A role is one hex, except a list role (Chart), which is a
+			// sequence of them: every entry is held to the same rule, and an
+			// empty list is as unset as an empty string.
+			var values []string
+			switch v := palette.Field(i); v.Kind() {
+			case reflect.String:
+				values = []string{v.String()}
+			case reflect.Slice:
+				values = v.Interface().([]string)
+			default:
+				t.Fatalf("ColorPalette.%s is a %s; this test knows strings and []string", field.Name, v.Kind())
+			}
+			if len(values) == 0 || (len(values) == 1 && values[0] == "") {
 				t.Errorf("%s.Colors.%s is empty: a bundled theme must define every "+
 					"palette role, or widgets reading that role render no color at all",
 					themeName, field.Name)
 				continue
 			}
-			// Catch a typo'd literal too — every value here is a hex color,
-			// either #RRGGBB or #RRGGBBAA (TextSecondary uses the alpha form).
-			if !strings.HasPrefix(got, "#") || (len(got) != 7 && len(got) != 9) {
-				t.Errorf("%s.Colors.%s = %q, want a #RRGGBB or #RRGGBBAA hex color",
-					themeName, field.Name, got)
+			for _, got := range values {
+				// Catch a typo'd literal too — every value here is a hex color,
+				// either #RRGGBB or #RRGGBBAA (TextSecondary uses the alpha form).
+				if !strings.HasPrefix(got, "#") || (len(got) != 7 && len(got) != 9) {
+					t.Errorf("%s.Colors.%s = %q, want a #RRGGBB or #RRGGBBAA hex color",
+						themeName, field.Name, got)
+				}
 			}
 		}
 	}
@@ -400,5 +413,34 @@ func TestTheDividerAndTheBoundaryAreDifferentTones(t *testing.T) {
 				"rows and the edge that identifies a control carry different floors",
 				themeName, theme.Colors.BorderColor())
 		}
+	}
+}
+
+// ChartColors copies, falls back when the role is unset or blank, and drops
+// blank entries; and the dark list is the light one's hues, slot for slot, in
+// the same count, so a theme can swap one for the other without a series
+// changing identity.
+func TestChartColorsResolve(t *testing.T) {
+	if got := (ColorPalette{}).ChartColors(); !reflect.DeepEqual(got, DefaultChartColors()) {
+		t.Errorf("unset Chart resolves to %v, want DefaultChartColors", got)
+	}
+	if got := (ColorPalette{Chart: []string{"", ""}}).ChartColors(); !reflect.DeepEqual(got, DefaultChartColors()) {
+		t.Errorf("an all-blank Chart resolves to %v, want DefaultChartColors", got)
+	}
+	own := ColorPalette{Chart: []string{"#111111", "", "#222222"}}
+	got := own.ChartColors()
+	if !reflect.DeepEqual(got, []string{"#111111", "#222222"}) {
+		t.Errorf("Chart with a blank resolves to %v", got)
+	}
+	got[0] = "#FFFFFF"
+	if own.Chart[0] != "#111111" {
+		t.Error("ChartColors returned the theme's own backing array; writing to it repainted the theme")
+	}
+	DefaultTheme.Colors.ChartColors()[0] = "#FFFFFF"
+	if DefaultTheme.Colors.Chart[0] == "#FFFFFF" {
+		t.Error("writing to DefaultTheme's resolved list repainted DefaultTheme")
+	}
+	if len(DefaultDarkChartColors()) != len(DefaultChartColors()) {
+		t.Error("the dark chart list and the light one differ in length")
 	}
 }

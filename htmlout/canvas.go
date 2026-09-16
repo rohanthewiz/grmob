@@ -55,23 +55,135 @@ func preserveAspectRatio(scale string) string {
 	return "xMidYMid meet"
 }
 
-// renderCanvas writes the <svg> and its shapes.
+// renderCanvas writes the <svg>, its gradients, and its shapes.
+//
+// # Gradients live in a leading <defs>, not inside their <path>
+//
+// SVG 2 allows a paint server as a child of the shape it paints, which would
+// have kept each shape one self-contained element. Chrome does not resolve
+// one there (a url(#id) fill pointing into a <path> paints nothing; checked
+// headless), so the gradients go where every browser finds them: a <defs> at
+// the head of the <svg>.
+//
+//	<svg viewBox="0 0 100 50">
+//	  <defs data-grmob-chrome="gradients">          ← chrome: no node path
+//	    <linearGradient id="grmob-root-0-fill-0" gradientUnits="userSpaceOnUse" …>
+//	      <stop offset="0" stop-color="#2A78D666"/> …
+//	  </defs>
+//	  <path d="…" fill="url(#grmob-root-0-fill-0)"/>  ← still the canvas's
+//	  <path d="…" stroke="…"/>                           i-th *node* child
+//	</svg>
+//
+// It is marked data-grmob-chrome like a TabView's bar, which is how the live
+// runtime's add-child patches skip it (chromeOffset), and it is written only
+// when some shape has a gradient, so a flat canvas exports as it always did.
 func renderCanvas(b *element.Builder, node *core.Node, attrs []string, path string) {
 	lead := []string{
 		"viewBox", "0 0 " + formatNumber(node.Props["vw"]) + " " + formatNumber(node.Props["vh"]),
 		"preserveAspectRatio", preserveAspectRatio(getStr(node.Props["scale"])),
 	}
 	e := b.Ele("svg", withLead(attrs, lead...)...)
+	var defs element.Element
+	open := false
+	for i, c := range node.Children {
+		tag, gattrs, stops := CanvasGradient(c.Props, CanvasGradientID(path, i))
+		if tag == "" {
+			continue
+		}
+		if !open {
+			defs, open = b.Ele("defs", "data-grmob-chrome", "gradients"), true
+		}
+		g := b.Ele(tag, gattrs...)
+		for _, st := range stops {
+			b.Ele("stop", st...).R()
+		}
+		g.R()
+	}
+	if open {
+		defs.R()
+	}
 	for i, c := range node.Children {
 		renderNode(b, c, imposed{}, childPath(path, i))
 	}
 	e.R()
 }
 
-// renderCanvasShape writes one <path>. The attribute set is canvasShapeAttrs,
+// renderCanvasShape writes one <path>. The attribute set is CanvasShapeAttrs,
 // which the WASM runtime restates as canvasShapeAttrs in grmob-runtime.js.
-func renderCanvasShape(b *element.Builder, node *core.Node, attrs []string) {
-	b.Ele("path", withLead(attrs, CanvasShapeAttrs(node.Props)...)...).R()
+// path is the shape's own node path; its parent's is everything before the
+// last slash, which is what the gradient id is scoped by.
+func renderCanvasShape(b *element.Builder, node *core.Node, attrs []string, path string) {
+	canvas, i := path, 0
+	if slash := strings.LastIndexByte(path, '/'); slash >= 0 {
+		canvas = path[:slash]
+		i, _ = strconv.Atoi(path[slash+1:])
+	}
+	b.Ele("path", withLead(attrs, CanvasShapeAttrs(node.Props, CanvasGradientID(canvas, i))...)...).R()
+}
+
+// CanvasGradientID is the document id of the gradient shape i of the canvas
+// at canvasPath fills with: the canvas's tab-style scope plus "-fill-i", so
+// "root/0" shape 2 is "grmob-root-0-fill-2". Scoped by node path because a
+// path is unique in the document, which an id must be, and because it is the
+// one name both web targets can derive without talking to each other. The
+// runtime restates it as canvasGradientId.
+func CanvasGradientID(canvasPath string, i int) string {
+	return tabScope(canvasPath) + "-fill-" + strconv.Itoa(i)
+}
+
+// CanvasGradient is the paint-server element for a shape's gradient props
+// (see core.Gradient's wire keys): the tag, its attributes, and one attribute
+// list per <stop>. tag is "" when the shape has no gradient, or when the keys
+// are malformed (mismatched stop and colour counts, wrong geometry length),
+// in which case the shape paints no fill rather than a wrong one.
+//
+// gradientUnits="userSpaceOnUse" puts the geometry in viewBox units, which is
+// the contract core.Gradient states; SVG's default, objectBoundingBox, would
+// read (0, 0)–(1, 1) as the shape's own bounds.
+func CanvasGradient(props map[string]any, id string) (tag string, attrs []string, stops [][]string) {
+	kind := getStr(props["gradient"])
+	at := floats(props["gradientAt"])
+	offsets := floats(props["gradientStops"])
+	colors := strs(props["gradientColors"])
+	if len(offsets) == 0 || len(offsets) != len(colors) {
+		return "", nil, nil
+	}
+	num := func(v float64) string { return strconv.FormatFloat(v, 'g', -1, 64) }
+	switch {
+	case kind == "linear" && len(at) == 4:
+		tag = "linearGradient"
+		attrs = []string{"id", id, "gradientUnits", "userSpaceOnUse",
+			"x1", num(at[0]), "y1", num(at[1]), "x2", num(at[2]), "y2", num(at[3])}
+	case kind == "radial" && len(at) == 3:
+		tag = "radialGradient"
+		attrs = []string{"id", id, "gradientUnits", "userSpaceOnUse",
+			"cx", num(at[0]), "cy", num(at[1]), "r", num(at[2])}
+	default:
+		return "", nil, nil
+	}
+	for i, o := range offsets {
+		stops = append(stops, []string{"offset", num(o), "stop-color", colors[i]})
+	}
+	return tag, attrs, stops
+}
+
+// strs reads a []string prop, accepting the []any a JSON-decoded node carries.
+func strs(v any) []string {
+	switch s := v.(type) {
+	case []string:
+		return s
+	case []any:
+		out := make([]string, 0, len(s))
+		for _, e := range s {
+			str, ok := e.(string)
+			if !ok {
+				return nil
+			}
+			out = append(out, str)
+		}
+		return out
+	}
+	return nil
 }
 
 // CanvasShapeAttrs is the SVG attribute list for one CanvasShape's props, as
@@ -80,9 +192,19 @@ func renderCanvasShape(b *element.Builder, node *core.Node, attrs []string) {
 //
 // fill="none" is written for a shape with no fill because SVG's default fill
 // is black — the one place the two vocabularies disagree about "unset".
-func CanvasShapeAttrs(props map[string]any) []string {
+//
+// gradientID is the id CanvasGradient's element carries for this shape (see
+// CanvasGradientID); a shape with a well-formed gradient fills with a
+// reference to it. A malformed one falls to fill="none", as CanvasGradient
+// writes no element for it and a reference to nothing would paint black in
+// some engines rather than nothing.
+func CanvasShapeAttrs(props map[string]any, gradientID string) []string {
 	out := []string{"d", PathData(floats(props["d"]))}
-	if fill := getStr(props["fill"]); fill != "" {
+	fill := getStr(props["fill"])
+	if tag, _, _ := CanvasGradient(props, gradientID); tag != "" {
+		fill = "url(#" + gradientID + ")"
+	}
+	if fill != "" {
 		out = append(out, "fill", fill)
 		if rule := getStr(props["fillRule"]); rule == "evenodd" {
 			out = append(out, "fill-rule", rule)

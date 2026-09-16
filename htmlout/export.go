@@ -524,7 +524,7 @@ func renderNode(b *element.Builder, node *core.Node, from imposed, path string) 
 		// An <svg> with a viewBox; see canvas.go.
 		renderCanvas(b, node, attrs, path)
 	case "CanvasShape":
-		renderCanvasShape(b, node, attrs)
+		renderCanvasShape(b, node, attrs, path)
 	case "CodeEditor":
 		// A box like any other container, plus the line-number gutter ahead of
 		// the rows; see codeeditor.go.

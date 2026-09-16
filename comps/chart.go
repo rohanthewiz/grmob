@@ -88,33 +88,30 @@ const (
 	chartMaxXLabels = 5
 )
 
-// chartPalette returns the series colours a theme offers, in order. They are
-// theme roles so a theme swap recolours every chart, and so a dark theme's
-// roles (which are tuned for its background) come along for free.
+// chartPalette returns the series colours a theme offers, in order: the
+// theme's categorical Chart role (core.ColorPalette.ChartColors), so a theme
+// swap recolours every chart and a dark theme's list comes along for free.
 //
-// Primary, Secondary, Warning, Success and Error are the hue-carrying roles
-// every bundled theme sets. Duplicates are dropped — DefaultTheme gives
-// Secondary and Success the same green — because two series in one colour are
-// worse than a shorter cycle. Error is last because a red series reads as a
-// problem, so it is reached only by a chart with four or more series.
+// It used to be built from Primary, Secondary, Warning, Success and Error,
+// which gave each bundled theme only three to five hues and painted "series 3"
+// in the colour that means warning. The status roles are now left to status.
 //
-// Past the roles the cycle repeats each colour at 60% alpha: a tint of the
+// Duplicates are dropped (case-insensitively), because two series in one
+// colour are worse than a shorter cycle, and a hand-written theme list can
+// repeat a hex.
+//
+// Past the list the cycle repeats each colour at 60% alpha: a tint of the
 // same hue over the page, which stays distinct from its solid twin and never
-// invents a hue the theme did not choose. A role that already carries alpha
-// (or is not "#rrggbb") repeats unchanged.
+// invents a hue the theme did not choose. A colour that already carries alpha
+// (or is not "#rrggbb") repeats unchanged. Nine or more series is past what
+// colour can separate anyway; the legend and summary carry identity there.
 func chartPalette(t *core.Theme) []string {
-	roles := []string{
-		t.Colors.Primary,
-		t.Colors.Secondary,
-		t.Colors.WarningColor(),
-		t.Colors.SuccessColor(),
-		t.Colors.Error,
-	}
 	seen := map[string]bool{}
-	base := make([]string, 0, len(roles))
-	for _, c := range roles {
+	colors := t.Colors.ChartColors()
+	base := make([]string, 0, len(colors))
+	for _, c := range colors {
 		k := strings.ToLower(c)
-		if c == "" || seen[k] {
+		if seen[k] {
 			continue
 		}
 		seen[k] = true

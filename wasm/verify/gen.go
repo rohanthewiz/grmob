@@ -394,6 +394,17 @@ type canvasCase struct {
 	Preserve string `json:"preserve"`
 	// Shapes is each <path>'s attributes as htmlout writes them, in order.
 	Shapes [][]string `json:"shapes"`
+	// Gradients is the leading <defs>'s paint servers as htmlout writes them,
+	// in order; empty when no shape has a gradient (and then no <defs>).
+	Gradients []canvasGradientCase `json:"gradients"`
+}
+
+// canvasGradientCase is one paint server: its tag, attributes, and each
+// <stop>'s attributes.
+type canvasGradientCase struct {
+	Tag   string     `json:"tag"`
+	Attrs []string   `json:"attrs"`
+	Stops [][]string `json:"stops"`
 }
 
 // canvasCases covers every opcode, both scales, every optional stroke
@@ -410,8 +421,14 @@ func canvasCases() []canvasCase {
 			ViewBox:  "0 0 " + strconv.FormatFloat(n.Props["vw"].(float64), 'g', -1, 64) + " " + strconv.FormatFloat(n.Props["vh"].(float64), 'g', -1, 64),
 			Preserve: map[bool]string{true: "none", false: "xMidYMid meet"}[n.Props["scale"] == "stretch"],
 		}
-		for _, shape := range n.Children {
-			c.Shapes = append(c.Shapes, htmlout.CanvasShapeAttrs(shape.Props))
+		// The runtime test mounts the canvas as the first child of a root
+		// Column, so it sits at "root/0" and its gradient ids are scoped so.
+		for i, shape := range n.Children {
+			id := htmlout.CanvasGradientID("root/0", i)
+			c.Shapes = append(c.Shapes, htmlout.CanvasShapeAttrs(shape.Props, id))
+			if tag, attrs, stops := htmlout.CanvasGradient(shape.Props, id); tag != "" {
+				c.Gradients = append(c.Gradients, canvasGradientCase{tag, attrs, stops})
+			}
 		}
 		return c
 	}
@@ -433,6 +450,15 @@ func canvasCases() []canvasCase {
 			{Path: core.NewPath().Arc(75, 25, 20, 0, 360).Close().Arc(75, 25, 10, 0, 360).Close(), Fill: "#4e79a7"},
 			{Path: core.Line(0, 49, 100, 49), Stroke: "#000000", FillRule: core.FillEvenOdd},
 		})),
+		// Gradients: a flat shape first, so the gradient ids are not slot 0;
+		// a stretched linear fade and an even-odd radial; and a degenerate
+		// gradient that Go sends as a flat fill, which gets no server.
+		build("gradients, flat first, one degenerate", core.Canvas(100, 50, []core.Shape{
+			{Path: core.Rect(0, 0, 100, 50), Fill: "#eeeeee"},
+			{Path: core.Rect(0, 10, 100, 40), Stroke: "#2a78d6", FillGradient: core.LinearGradientFill(0, 10, 0, 50, core.Stop(0, "#2a78d666"), core.Stop(1, "#2a78d600"))},
+			{Path: core.NewPath().Arc(50, 25, 20, 0, 360).Close().Arc(50, 25, 10, 0, 360).Close(), FillRule: core.FillEvenOdd, FillGradient: core.RadialGradientFill(50, 25, 20, core.Stop(0, "#ffffff"), core.Stop(0.5, "#eb6834"), core.Stop(1, "#4a3aa7"))},
+			{Path: core.Rect(0, 0, 10, 10), FillGradient: core.LinearGradientFill(1, 1, 1, 1, core.Stop(0, "#000000"), core.Stop(1, "#123456"))},
+		}, core.CanvasStretch)),
 	}
 }
 

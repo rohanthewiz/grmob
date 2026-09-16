@@ -49,8 +49,8 @@ Package core's reference is split into 11 topic pages by source file. The index 
 | [Layout](core-layout.md) | Rows, columns, stacks, scrolls and lists, and the alignment vocabulary they are placed with. | 2 types, 25 functions and methods |
 | [Styling: the Style struct](core-style.md) | Style and the value types its fields take: alignment, flex, position, weights and edge insets. | 11 types, 10 functions and methods |
 | [Styling: style props](core-style-props.md) | The StyleProp constructors: spacing and per-side insets, flex, typography, colour, borders and animation. | 1 types, 69 functions and methods |
-| [Theming](core-theme.md) | Themes, palettes, typography and spacing scales, and per-component defaults. | 5 types, 11 functions and methods |
-| [Controls](core-controls.md) | Buttons, text inputs, switches, sliders, selects, images, tab views, text grids and vector canvases. | 15 types, 41 functions and methods |
+| [Theming](core-theme.md) | Themes, palettes, typography and spacing scales, and per-component defaults. | 5 types, 14 functions and methods |
+| [Controls](core-controls.md) | Buttons, text inputs, switches, sliders, selects, images, tab views, text grids and vector canvases. | 18 types, 44 functions and methods |
 | [Editors](core-editors.md) | The code editor and the rich text editor, and the refs and commands that drive them. | 2 types, 15 functions and methods |
 | [Events & focus](core-events.md) | Event props, host and system events, focus refs and focus order. | 2 types, 19 functions and methods |
 | [Navigation & overlays](core-navigation.md) | The navigator stack, modals, toasts, deep links and opening URLs. | 4 types, 19 functions and methods |
@@ -225,6 +225,8 @@ Package core's reference is split into 11 topic pages by source file. The index 
     - [Constants](core-theme.md#constants) — `FallbackBorder`, `FallbackControlBorder`, `FallbackSuccess`, `FallbackWarning`
     - [Variables](core-theme.md#variables) — `AmberTheme`, `DefaultTheme`, `MaterialTheme`
     - [`func BundledThemes`](core-theme.md#func-bundledthemes)
+    - [`func DefaultChartColors`](core-theme.md#func-defaultchartcolors)
+    - [`func DefaultDarkChartColors`](core-theme.md#func-defaultdarkchartcolors)
     - [`func WithTheme`](core-theme.md#func-withtheme)
     - [`type ColorPalette`](core-theme.md#type-colorpalette)
     - [`type ComponentDefaults`](core-theme.md#type-componentdefaults)
@@ -256,6 +258,12 @@ Package core's reference is split into 11 topic pages by source file. The index 
     - [`type ContentMode`](core-controls.md#type-contentmode)
         - [`func ContentModes`](core-controls.md#func-contentmodes)
     - [`type FillRule`](core-controls.md#type-fillrule)
+    - [`type Gradient`](core-controls.md#type-gradient)
+        - [`func LinearGradientFill`](core-controls.md#func-lineargradientfill)
+        - [`func RadialGradientFill`](core-controls.md#func-radialgradientfill)
+    - [`type GradientKind`](core-controls.md#type-gradientkind)
+    - [`type GradientStop`](core-controls.md#type-gradientstop)
+        - [`func Stop`](core-controls.md#func-stop)
     - [`type GridRow`](core-controls.md#type-gridrow)
     - [`type GridRun`](core-controls.md#type-gridrun)
     - [`type LineCap`](core-controls.md#type-linecap)

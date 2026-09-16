@@ -35,6 +35,12 @@ One of 11 topic pages of [package core](core.md), which has the package overview
 - [`type ContentMode`](#type-contentmode)
     - [`func ContentModes`](#func-contentmodes)
 - [`type FillRule`](#type-fillrule)
+- [`type Gradient`](#type-gradient)
+    - [`func LinearGradientFill`](#func-lineargradientfill)
+    - [`func RadialGradientFill`](#func-radialgradientfill)
+- [`type GradientKind`](#type-gradientkind)
+- [`type GradientStop`](#type-gradientstop)
+    - [`func Stop`](#func-stop)
 - [`type GridRow`](#type-gridrow)
 - [`type GridRun`](#type-gridrun)
 - [`type LineCap`](#type-linecap)
@@ -88,7 +94,7 @@ const (
 )
 ```
 
-<small>[core/canvas.go:290](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L290)</small>
+<small>[core/canvas.go:480](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L480)</small>
 
 GridRun attribute bits. A renderer without a native spelling for one may drop it (there is no dim on the web's font-weight scale, say, so the DOM targets fake it with opacity), but must never fail the row.
 
@@ -191,9 +197,9 @@ A drawing has no text a reader could find in it. A Canvas without an Accessibili
 
 #### Not in v1
 
-Text inside the drawing (lay labels out around it as Text nodes), gradients, clipping and per-shape hit-testing. Fills use the nonzero rule, every target's default, unless a shape asks for FillEvenOdd.
+Text inside the drawing (lay labels out around it as Text nodes), gradient strokes, clipping and per-shape hit-testing. Fills are flat or a Gradient, and use the nonzero rule, every target's default, unless a shape asks for FillEvenOdd.
 
-<small>[core/canvas.go:83](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L83)</small>
+<small>[core/canvas.go:84](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L84)</small>
 
 ### func CanvasMapping
 
@@ -209,7 +215,7 @@ CanvasMapping is how a w × h viewBox lands in a boxW × boxH box under a scale:
 
 The web targets never call this; they hand the viewBox to SVG, which applies the same rule itself. It is the statement the two native renderers restate (canvasViewport in GrMobCanvasGeometry.kt, the Swift equivalent), and internal/canvasfixture holds them to it. A non-positive viewBox side reads as 100, which is what Canvas writes for one.
 
-<small>[core/canvas.go:154](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L154)</small>
+<small>[core/canvas.go:155](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L155)</small>
 
 ### func Checkbox
 
@@ -457,7 +463,7 @@ CanvasScale says how a Canvas's viewBox is mapped onto its box. It is passed amo
 
 	core.Canvas(200, 100, shapes, core.CanvasStretch, core.Height("160px"))
 
-<small>[core/canvas.go:118](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L118)</small>
+<small>[core/canvas.go:119](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L119)</small>
 
 ```go
 const (
@@ -479,7 +485,7 @@ func (c CanvasScale) Apply(_ *Context, n *Node)
 
 Apply makes a CanvasScale a BehaviorProp: it writes a node prop rather than a Style field, because it means nothing to any node but a Canvas.
 
-<small>[core/canvas.go:132](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L132)</small>
+<small>[core/canvas.go:133](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L133)</small>
 
 ### type ContentMode
 
@@ -577,7 +583,7 @@ Even-odd is the one to reach for when a shape has holes and its subpaths come fr
 	Compose   PathFillType.NonZero | PathFillType.EvenOdd
 	SwiftUI   FillStyle(eoFill: false | true)
 
-<small>[core/canvas.go:275](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L275)</small>
+<small>[core/canvas.go:465](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L465)</small>
 
 ```go
 const (
@@ -585,6 +591,120 @@ const (
 	FillEvenOdd FillRule = "evenodd"
 )
 ```
+
+### type Gradient
+
+```go
+type Gradient struct {
+	// Kind is GradientLinear or GradientRadial.
+	Kind GradientKind
+
+	// Linear: the line the stops are laid along, from (X1, Y1) at offset 0 to
+	// (X2, Y2) at offset 1.
+	X1, Y1, X2, Y2 float64
+
+	// Radial: offset 0 at the centre (CX, CY), offset 1 at radius R.
+	CX, CY, R float64
+
+	Stops []GradientStop
+}
+```
+
+Gradient is a fill that varies across a shape: linear along a line, or radial out from a centre. Build one with LinearGradientFill or RadialGradientFill and hand it to Shape.FillGradient.
+
+(The names carry "Fill" because core.LinearGradient already exists: an older helper that formats a CSS linear-gradient() string for a Style background, unrelated to Canvas.)
+
+	fade := core.LinearGradientFill(0, 0, 0, 100,
+	    core.Stop(0, "#2A78D666"),
+	    core.Stop(1, "#2A78D600"))
+	core.Shape{Path: area, FillGradient: fade}
+
+#### Its geometry is in viewBox units, like the shapes'
+
+The points and radius are written in the same coordinate space as the paths they fill, and mapped onto the box by the same CanvasScale. So a gradient from y=0 to y=100 in a 100-unit-tall viewBox runs top to bottom of the box however tall the box is, and under CanvasStretch it stretches with the shapes: a radial gradient in a stretched canvas becomes an ellipse, and a diagonal linear one keeps its bands parallel to the diagonal \*in viewBox space\*. That is SVG's gradientUnits="userSpaceOnUse" under preserveAspectRatio="none", and the natives match it by giving the shader the viewport's own scale-and-offset matrix rather than mapping the end points (mapping only the points would keep the bands perpendicular on screen, which differs on a diagonal).
+
+One space for everything was chosen over the shape's own bounding box (SVG's objectBoundingBox): a chart's bands share one gradient that should line up across them, and a bounding box is a different frame per band.
+
+#### Beyond the ends
+
+Past the first and last stop the end colours extend (pad): SVG's spreadMethod="pad", Compose's TileMode.Clamp, SwiftUI's default. Repeat and reflect are not offered.
+
+#### Stops are normalised in Go, once
+
+Offsets are clamped to \[0, 1] and each is raised to at least the one before it, which is the rule SVG applies to out-of-order stops; Android's shader leaves that case undefined, so it is decided here rather than per target. A gradient with no stops paints nothing, and one with a single stop — or whose line has no length, or whose radius is not positive — is sent as a flat fill in its last stop's colour, which is what SVG paints for the degenerate cases.
+
+#### Fading to transparent
+
+Colours interpolate per channel, alpha included, and the targets do not all premultiply. Fade to the \*same\* hue at zero alpha ("#2A78D600"), not to "transparent" or "#00000000": interpolating toward transparent black would grey the middle on a target that does not premultiply.
+
+	target    element
+	SVG       <linearGradient> / <radialGradient>, userSpaceOnUse, in a
+	          leading <defs> the canvas's shapes refer to by id
+	Compose   LinearGradientShader / RadialGradientShader + local matrix
+	SwiftUI   GraphicsContext.Shading .linearGradient / .radialGradient,
+	          filled in a context carrying the viewport transform
+
+<small>[core/canvas.go:339](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L339)</small>
+
+#### func LinearGradientFill
+
+```go
+func LinearGradientFill(x1, y1, x2, y2 float64, stops ...GradientStop) *Gradient
+```
+
+LinearGradientFill runs from (x1, y1) to (x2, y2), in viewBox units.
+
+<small>[core/canvas.go:374](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L374)</small>
+
+#### func RadialGradientFill
+
+```go
+func RadialGradientFill(cx, cy, r float64, stops ...GradientStop) *Gradient
+```
+
+RadialGradientFill runs out from (cx, cy) to radius r, in viewBox units.
+
+<small>[core/canvas.go:379](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L379)</small>
+
+### type GradientKind
+
+```go
+type GradientKind string
+```
+
+GradientKind names a Gradient's geometry.
+
+<small>[core/canvas.go:354](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L354)</small>
+
+```go
+const (
+	GradientLinear GradientKind = "linear"
+	GradientRadial GradientKind = "radial"
+)
+```
+
+### type GradientStop
+
+```go
+type GradientStop struct {
+	Offset float64
+	Color  string
+}
+```
+
+GradientStop is one colour at an offset along a gradient, 0 at its start and 1 at its end. Color is a CSS hex colour, as Shape.Fill is.
+
+<small>[core/canvas.go:363](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L363)</small>
+
+#### func Stop
+
+```go
+func Stop(offset float64, color string) GradientStop
+```
+
+Stop is a GradientStop, for brevity at the call site.
+
+<small>[core/canvas.go:369](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L369)</small>
 
 ### type GridRow
 
@@ -621,7 +741,7 @@ type LineCap string
 
 LineCap is how an open stroke's ends are drawn.
 
-<small>[core/canvas.go:170](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L170)</small>
+<small>[core/canvas.go:171](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L171)</small>
 
 ```go
 const (
@@ -639,7 +759,7 @@ type LineJoin string
 
 LineJoin is how a stroke turns a corner. A miter longer than 4× half the stroke width is cut to a bevel on every target — SVG's and Compose's default miter limit, pinned explicitly on iOS, whose own default is 10.
 
-<small>[core/canvas.go:181](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L181)</small>
+<small>[core/canvas.go:182](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L182)</small>
 
 ```go
 const (
@@ -659,7 +779,7 @@ type Path struct {
 
 Path is a sequence of subpaths built by chained calls. The builder methods mutate and return the receiver, so a Path should be finished before it is handed to a Shape: the node takes a copy when the Canvas renders, and a change after that is invisible (see Node immutability).
 
-<small>[core/canvas.go:301](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L301)</small>
+<small>[core/canvas.go:491](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L491)</small>
 
 #### func Circle
 
@@ -669,7 +789,7 @@ func Circle(cx, cy, r float64) *Path
 
 Circle is a closed circle, drawn clockwise from three o'clock.
 
-<small>[core/canvas.go:468](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L468)</small>
+<small>[core/canvas.go:658](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L658)</small>
 
 #### func Line
 
@@ -679,7 +799,7 @@ func Line(x1, y1, x2, y2 float64) *Path
 
 Line is a single straight segment.
 
-<small>[core/canvas.go:448](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L448)</small>
+<small>[core/canvas.go:638](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L638)</small>
 
 #### func NewPath
 
@@ -689,7 +809,7 @@ func NewPath() *Path
 
 NewPath returns an empty path.
 
-<small>[core/canvas.go:312](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L312)</small>
+<small>[core/canvas.go:502](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L502)</small>
 
 #### func Polyline
 
@@ -699,7 +819,7 @@ func Polyline(xy ...float64) *Path
 
 Polyline joins the points (x0, y0, x1, y1, ...) with straight segments. An odd trailing coordinate is ignored.
 
-<small>[core/canvas.go:454](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L454)</small>
+<small>[core/canvas.go:644](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L644)</small>
 
 #### func Rect
 
@@ -709,7 +829,7 @@ func Rect(x, y, w, h float64) *Path
 
 Rect is a closed rectangle with its top-left corner at (x, y).
 
-<small>[core/canvas.go:463](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L463)</small>
+<small>[core/canvas.go:653](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L653)</small>
 
 #### func Sector
 
@@ -719,7 +839,7 @@ func Sector(cx, cy, inner, outer, startDeg, sweepDeg float64) *Path
 
 Sector is a closed ring segment between radii inner and outer — a pie wedge when inner is 0, a donut segment otherwise. Angles are as for Path.Arc.
 
-<small>[core/canvas.go:475](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L475)</small>
+<small>[core/canvas.go:665](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L665)</small>
 
 #### func (*Path) Arc
 
@@ -741,7 +861,7 @@ The sweep is split into segments of at most 90°, and each becomes the cubic who
 	             │
 	             P2
 
-<small>[core/canvas.go:378](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L378)</small>
+<small>[core/canvas.go:568](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L568)</small>
 
 #### func (*Path) Close
 
@@ -751,7 +871,7 @@ func (p *Path) Close() *Path
 
 Close joins the current point back to the start of the subpath. A later LineTo continues from that start, as it does on every platform.
 
-<small>[core/canvas.go:416](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L416)</small>
+<small>[core/canvas.go:606](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L606)</small>
 
 #### func (*Path) CubicTo
 
@@ -761,7 +881,7 @@ func (p *Path) CubicTo(x1, y1, x2, y2, x, y float64) *Path
 
 CubicTo draws a cubic Bézier to (x, y) via control points (x1, y1) and (x2, y2).
 
-<small>[core/canvas.go:335](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L335)</small>
+<small>[core/canvas.go:525](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L525)</small>
 
 #### func (*Path) LineTo
 
@@ -771,7 +891,7 @@ func (p *Path) LineTo(x, y float64) *Path
 
 LineTo draws a straight segment to (x, y). With no current point it moves there instead, which is what every platform's API does and what makes a polyline a single loop body.
 
-<small>[core/canvas.go:324](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L324)</small>
+<small>[core/canvas.go:514](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L514)</small>
 
 #### func (*Path) MoveTo
 
@@ -781,7 +901,7 @@ func (p *Path) MoveTo(x, y float64) *Path
 
 MoveTo starts a new subpath at (x, y).
 
-<small>[core/canvas.go:315](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L315)</small>
+<small>[core/canvas.go:505](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L505)</small>
 
 #### func (*Path) QuadTo
 
@@ -791,7 +911,7 @@ func (p *Path) QuadTo(qx, qy, x, y float64) *Path
 
 QuadTo draws a quadratic Bézier to (x, y) via control point (qx, qy). It is sent as the cubic that traces the identical curve: each cubic control point sits two thirds of the way from an end point to the quadratic one.
 
-<small>[core/canvas.go:347](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L347)</small>
+<small>[core/canvas.go:537](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L537)</small>
 
 ### type SelectMenuItem
 
@@ -1015,8 +1135,13 @@ type Shape struct {
 	Fill   string
 	Stroke string
 
-	// FillRule decides which regions of a self-overlapping path Fill paints;
-	// the zero value is FillNonZero. See FillRule.
+	// FillGradient paints the fill with a gradient instead of the flat Fill
+	// colour, and wins when both are set. Build one with LinearGradientFill or
+	// RadialGradientFill. See Gradient.
+	FillGradient *Gradient
+
+	// FillRule decides which regions of a self-overlapping path the fill
+	// (flat or gradient) paints; the zero value is FillNonZero. See FillRule.
 	FillRule FillRule
 
 	// StrokeWidth is in layout units, not viewBox units; 0 means 1.
@@ -1033,7 +1158,7 @@ type Shape struct {
 
 Shape is one path drawn once: filled, stroked, or both (fill first, then the stroke over it, on every target). A shape with neither colour draws nothing and still occupies its child slot, which keeps the slots of the shapes after it stable while it comes and goes.
 
-<small>[core/canvas.go:193](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L193)</small>
+<small>[core/canvas.go:194](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L194)</small>
 
 ### type TabItem
 

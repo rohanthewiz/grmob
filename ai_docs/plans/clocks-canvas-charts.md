@@ -33,7 +33,8 @@ What landed, and where it differs from the sketches below:
   WASM tutorial.
 - **D** — `comps/chart.go` (shared: `ChartSeries`, Heckbert nice ticks in
   `niceScale`, k/M tick units chosen per axis, the theme-role palette with
-  60%-alpha tints past the roles, y labels placed by an exact Gap and a
+  60%-alpha tints past the roles (replaced 2026-09-16 by the categorical
+  `ColorPalette.Chart` role, `core.DefaultChartColors`, validated 8-hue order), y labels placed by an exact Gap and a
   half-line spacer, x labels by FlexGrow weights + zero FlexBasis),
   `sparkline.go`, `line_chart.go` (`LineChart`, `AreaChart`), `bar_chart.go`,
   `donut_chart.go` (`DonutChart`, `PieChart`, largest-remainder percentages),
@@ -223,9 +224,14 @@ always label it and may add a hidden data table.
 
 Text inside a canvas (labels and legends are ordinary `Text` around it —
 platform text rendering in a canvas is where the three targets disagree most),
-gradients, clipping, hit-testing individual shapes. (The even-odd fill rule
-was added as `Shape.FillRule` / `core.FillEvenOdd`, 2026-09-16, and seen on
-the emulator, simulator and Chrome in 4.19's ring pair.)
+gradient strokes, clipping, hit-testing individual shapes. (The even-odd fill
+rule was added as `Shape.FillRule` / `core.FillEvenOdd`, 2026-09-16, and seen
+on the emulator, simulator and Chrome in 4.19's ring pair. Gradient *fills*
+were added the same day as `Shape.FillGradient` with
+`core.LinearGradientFill` / `core.RadialGradientFill`, geometry in viewBox
+units: SVG paint servers in a leading `<defs>` chrome element, Compose shaders
+with the viewport as local matrix, SwiftUI shading in a transformed context.
+Seen matching on all three with a stretched radial and a diagonal hard stop.)
 
 ### Verification
 

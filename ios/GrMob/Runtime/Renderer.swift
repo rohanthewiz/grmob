@@ -1983,10 +1983,13 @@ private struct GrMobCanvas: View {
                     }
                 }
                 // Fill first, then the stroke over it: SVG's paint order.
-                if let fill = GrMobStyle.parseColor(props["fill"] as? String) {
-                    // core.FillEvenOdd; nonzero is FillStyle's default.
-                    ctx.fill(path, with: .color(fill),
-                             style: FillStyle(eoFill: props["fillRule"] as? String == "evenodd"))
+                // Go writes "fill" or the gradient keys, never both.
+                // core.FillEvenOdd; nonzero is FillStyle's default.
+                let fillStyle = FillStyle(eoFill: props["fillRule"] as? String == "evenodd")
+                if let gradient = grMobCanvasGradient(props) {
+                    grMobFillGradient(in: ctx, path: path, gradient: gradient, viewport: vp, style: fillStyle)
+                } else if let fill = GrMobStyle.parseColor(props["fill"] as? String) {
+                    ctx.fill(path, with: .color(fill), style: fillStyle)
                 }
                 guard let stroke = GrMobStyle.parseColor(props["stroke"] as? String) else { continue }
                 let width = (props["strokeWidth"] as? NSNumber)?.doubleValue ?? 1
@@ -2029,6 +2032,73 @@ private struct GrMobCanvas: View {
                   onTap: node.stringProp("onClick"),
                   onLongPress: node.stringProp("onLongPress"))
     }
+}
+
+/// A core.Gradient fill, decoded from a shape's gradient keys: the geometry in
+/// viewBox units (four numbers for linear, three for radial) and the stops.
+struct GrMobCanvasGradientSpec {
+    let radial: Bool
+    let at: [Double]
+    let gradient: Gradient
+}
+
+/// Reads a shape's gradient keys, or nil when it has none or they are
+/// malformed (which paints no fill, as the web targets do).
+func grMobCanvasGradient(_ props: [String: Any]) -> GrMobCanvasGradientSpec? {
+    guard let kind = props["gradient"] as? String,
+          let rawAt = props["gradientAt"] as? [Any],
+          let rawStops = props["gradientStops"] as? [Any],
+          let rawColors = props["gradientColors"] as? [Any],
+          !rawStops.isEmpty, rawStops.count == rawColors.count else { return nil }
+    let at = rawAt.compactMap { ($0 as? NSNumber)?.doubleValue }
+    guard at.count == rawAt.count else { return nil }
+    var stops: [Gradient.Stop] = []
+    for (o, c) in zip(rawStops, rawColors) {
+        guard let offset = (o as? NSNumber)?.doubleValue,
+              let color = GrMobStyle.parseColor(c as? String) else { return nil }
+        stops.append(Gradient.Stop(color: color, location: CGFloat(offset)))
+    }
+    switch kind {
+    case "linear" where at.count == 4:
+        return GrMobCanvasGradientSpec(radial: false, at: at, gradient: Gradient(stops: stops))
+    case "radial" where at.count == 3 && at[2] > 0:
+        return GrMobCanvasGradientSpec(radial: true, at: at, gradient: Gradient(stops: stops))
+    default:
+        return nil
+    }
+}
+
+/// Fills `path` (already mapped into box points) with a gradient whose
+/// geometry is in viewBox units.
+///
+/// The gradient is drawn in a copy of the context that carries the viewport's
+/// transform, with the path mapped back into viewBox units for it, so the
+/// gradient's whole space is scaled the way SVG scales userSpaceOnUse under a
+/// viewBox. Mapping only its end points would keep a stretched radial circular
+/// and a stretched diagonal's bands perpendicular on screen; see core.Gradient
+/// and canvasGradientBrush in GrMobCanvas.kt, which does the same with a
+/// shader matrix.
+///
+///   box point = viewBox point · scale + offset
+///   ctx'      = ctx ∘ translate(offset) ∘ scale(scale)
+///
+/// GraphicsContext is a value type, so the copy's transform does not leak into
+/// the shapes drawn after this one. A zero scale (a box with no area) has no
+/// inverse and nothing to paint, so it is skipped.
+func grMobFillGradient(in ctx: GraphicsContext, path: Path, gradient: GrMobCanvasGradientSpec,
+                       viewport vp: GrMobCanvasViewport, style: FillStyle) {
+    guard vp.scaleX != 0, vp.scaleY != 0 else { return }
+    let toBox = CGAffineTransform(translationX: vp.offsetX, y: vp.offsetY)
+        .scaledBy(x: vp.scaleX, y: vp.scaleY)
+    var local = ctx
+    local.concatenate(toBox)
+    let at = gradient.at.map { CGFloat($0) }
+    let shading: GraphicsContext.Shading = gradient.radial
+        ? .radialGradient(gradient.gradient, center: CGPoint(x: at[0], y: at[1]),
+                          startRadius: 0, endRadius: at[2])
+        : .linearGradient(gradient.gradient, startPoint: CGPoint(x: at[0], y: at[1]),
+                          endPoint: CGPoint(x: at[2], y: at[3]))
+    local.fill(path.applying(toBox.inverted()), with: shading, style: style)
 }
 
 /// A core.TextGrid: a vertical stack of monospace rows, each an

@@ -205,3 +205,54 @@ func TestFillRuleIsWrittenOnlyWhenItPaints(t *testing.T) {
 		}
 	}
 }
+
+// A gradient that paints replaces "fill" with the four gradient keys; stops
+// are clamped and made non-decreasing; the degenerate cases collapse to a
+// flat fill in the last colour; and the fill rule rides along with either.
+func TestGradientWire(t *testing.T) {
+	box := Rect(0, 0, 100, 50)
+	n := renderCanvas(Canvas(100, 50, []Shape{
+		// 0: linear, with an out-of-range and an out-of-order stop.
+		{Path: box, Fill: "#ff0000", FillRule: FillEvenOdd, FillGradient: LinearGradientFill(0, 0, 0, 50.123456,
+			Stop(-1, "#000000"), Stop(0.7, "#111111"), Stop(0.3, "#222222"), Stop(2, "#333333"))},
+		// 1: radial.
+		{Path: box, FillGradient: RadialGradientFill(50, 25, 20, Stop(0, "#ffffff"), Stop(1, "#ffffff00"))},
+		// 2: one stop is a flat fill.
+		{Path: box, FillGradient: LinearGradientFill(0, 0, 10, 0, Stop(0.5, "#abcdef"))},
+		// 3: a zero-length line is a flat fill in the last colour.
+		{Path: box, FillGradient: LinearGradientFill(5, 5, 5, 5, Stop(0, "#000000"), Stop(1, "#123456"))},
+		// 4: a non-positive radius, likewise.
+		{Path: box, FillGradient: RadialGradientFill(5, 5, 0, Stop(0, "#000000"), Stop(1, "#654321"))},
+		// 5: no stops paints nothing, so the flat Fill stands.
+		{Path: box, Fill: "#00ff00", FillGradient: LinearGradientFill(0, 0, 1, 1)},
+	}))
+	p := n.Children[0].Props
+	if _, ok := p["fill"]; ok {
+		t.Errorf("a painting gradient also wrote fill %v; the two keys are exclusive", p["fill"])
+	}
+	if p["gradient"] != "linear" || p["fillRule"] != "evenodd" {
+		t.Errorf("linear: gradient %v, fillRule %v", p["gradient"], p["fillRule"])
+	}
+	if got, want := p["gradientAt"], []float64{0, 0, 0, 50.12}; !reflect.DeepEqual(got, want) {
+		t.Errorf("gradientAt = %v, want %v (rounded to the canvas's places)", got, want)
+	}
+	if got, want := p["gradientStops"], []float64{0, 0.7, 0.7, 1}; !reflect.DeepEqual(got, want) {
+		t.Errorf("gradientStops = %v, want %v", got, want)
+	}
+	if got, want := p["gradientColors"], []string{"#000000", "#111111", "#222222", "#333333"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("gradientColors = %v, want %v", got, want)
+	}
+	r := n.Children[1].Props
+	if r["gradient"] != "radial" || !reflect.DeepEqual(r["gradientAt"], []float64{50, 25, 20}) {
+		t.Errorf("radial: %v %v", r["gradient"], r["gradientAt"])
+	}
+	for i, want := range map[int]string{2: "#abcdef", 3: "#123456", 4: "#654321", 5: "#00ff00"} {
+		c := n.Children[i].Props
+		if c["fill"] != want {
+			t.Errorf("shape %d: fill = %v, want %s", i, c["fill"], want)
+		}
+		if _, ok := c["gradient"]; ok {
+			t.Errorf("shape %d: a degenerate gradient reached the wire", i)
+		}
+	}
+}

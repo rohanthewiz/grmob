@@ -2,6 +2,7 @@ package comps
 
 import (
 	"math"
+	"slices"
 	"strings"
 	"testing"
 
@@ -74,11 +75,27 @@ func TestFormatTick(t *testing.T) {
 	}
 }
 
-// Duplicated roles collapse (DefaultTheme's Secondary and Success are the same
-// green), and the cycle continues with translucent tints, not new hues.
-func TestChartPaletteDedupesRolesAndTints(t *testing.T) {
+// The series colours are the theme's Chart role in order, never a status
+// role, and the cycle continues with translucent tints, not new hues.
+func TestChartPaletteIsTheChartRoleThenTints(t *testing.T) {
 	th := core.DefaultTheme
 	p := chartPalette(th)
+	want := th.Colors.ChartColors()
+	if len(p) != 2*len(want) {
+		t.Fatalf("palette has %d colours, want %d solids and as many tints: %v", len(p), len(want), p)
+	}
+	for i, c := range want {
+		if p[i] != c {
+			t.Errorf("series %d = %s, want the Chart role's slot %s", i+1, p[i], c)
+		}
+	}
+	for _, status := range []string{th.Colors.Error, th.Colors.WarningColor(), th.Colors.SuccessColor()} {
+		for _, c := range p[:len(want)] {
+			if strings.EqualFold(c, status) {
+				t.Errorf("series colour %s is a status role; status colours are reserved", c)
+			}
+		}
+	}
 	seen := map[string]bool{}
 	for _, c := range p {
 		if seen[strings.ToLower(c)] {
@@ -86,14 +103,21 @@ func TestChartPaletteDedupesRolesAndTints(t *testing.T) {
 		}
 		seen[strings.ToLower(c)] = true
 	}
-	if p[0] != th.Colors.Primary {
-		t.Errorf("first series colour = %s, want Primary %s", p[0], th.Colors.Primary)
-	}
 	half := len(p) / 2
 	for i := 0; i < half; i++ {
 		if p[half+i] != withAlpha(p[i], "99") {
 			t.Errorf("palette[%d] = %s, want a tint of %s", half+i, p[half+i], p[i])
 		}
+	}
+}
+
+// A hand-written list that repeats a hex, in another case, is one colour.
+func TestChartPaletteDedupesAThemesList(t *testing.T) {
+	th := &core.Theme{Colors: core.ColorPalette{Chart: []string{"#112233", "", "#112233", "#AABBCC", "#aabbcc"}}}
+	got := chartPalette(th)
+	want := []string{"#112233", "#AABBCC", "#11223399", "#AABBCC99"}
+	if !slices.Equal(got, want) {
+		t.Errorf("chartPalette = %v, want %v", got, want)
 	}
 }
 

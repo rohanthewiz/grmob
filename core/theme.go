@@ -229,6 +229,129 @@ type ColorPalette struct {
 	SuccessOnLight string
 	WarningOnLight string
 	ErrorOnLight   string
+
+	// Chart is the categorical series palette: the colours a chart gives its
+	// series, in the fixed order it gives them. Read via ChartColors.
+	//
+	// # Why a list of its own, and not the roles above
+	//
+	// Charts used to cycle Primary, Secondary, Warning, Success and Error.
+	// That gave each bundled theme three to five distinct hues, and it spent
+	// two roles that mean something on "series 3" and "series 5": a Warning-
+	// orange line reads as a warning and an Error-red one as a failure. A
+	// status colour carries meaning; a series colour carries identity only.
+	// So identity gets its own list, and the status roles stay reserved.
+	//
+	// # The order is the colour-blind safety, not decoration
+	//
+	// Adjacent series (neighbouring bars, stacked bands, successive lines)
+	// are the pairs a reader compares, so the list is ordered so that every
+	// adjacent pair stays apart under simulated protanopia, deuteranopia and
+	// tritanopia. Re-ordering it can break that without changing a hex. See
+	// DefaultChartColors for the numbers.
+	//
+	// # A slice, unlike every other role
+	//
+	// A palette is a sequence, and its length is the theme's choice: a brand
+	// with five approved hues states five. Past the end, charts repeat the
+	// list as 60% tints (see comps' chartPalette) rather than inventing a hue
+	// the theme did not choose.
+	//
+	// Because a slice is shared by reference, ChartColors returns a copy, so a
+	// caller appending to what it got cannot repaint a bundled theme.
+	Chart []string
+}
+
+// DefaultChartColors is the categorical series palette every bundled theme
+// uses, in slot order:
+//
+//	slot  hue       hex       contrast on #FFFFFF
+//	1     blue      #2A78D6   4.42:1
+//	2     orange    #EB6834   3.20:1
+//	3     aqua      #1BAF7A   2.82:1
+//	4     yellow    #EDA100   2.17:1
+//	5     magenta   #E87BA4   2.69:1
+//	6     green     #008300   4.95:1
+//	7     violet    #4A3AA7   8.56:1
+//	8     red       #E34948   3.95:1
+//
+// # Where it comes from and what it was checked against
+//
+// It is a published data-visualisation reference palette, taken verbatim
+// rather than derived from any one theme's brand, because a series palette has
+// to pass checks a brand palette never faced. Each hex was run through an
+// OKLab validator against all three bundled themes' page (#FFFFFF) and
+// Surface fills (#F2F2F7, #F5F5F5, #FFF8E1):
+//
+//	check                         result on every surface
+//	lightness band L 0.43–0.77    all 8 inside
+//	chroma ≥ 0.1                  all 8
+//	adjacent pairs, CVD ΔE        worst 9.1 (yellow↔aqua, protan); target ≥ 8
+//	adjacent pairs, normal ΔE     worst 19.6 (magenta↔yellow); floor ≥ 15
+//	contrast ≥ 3:1                WARN: aqua, yellow, magenta (and orange on
+//	                              the two grey Surfaces) fall short
+//
+// # What the two caveats oblige
+//
+// The contrast warning means colour alone cannot identify a thin mark in
+// slots 3–5 against a pale page. Every chart in comps states its series
+// in a legend and in its spoken summary, which is the relief that warning
+// asks for; an app drawing its own chart from these should do the same.
+//
+// "Adjacent" is the right pairing for bars, stacks and lines, whose neighbours
+// are fixed. A scatter plot puts every pair next to every other, and under
+// that stricter reading only the first three slots stay distinct (worst CVD
+// ΔE 9.2, normal 24.0); a scatter with more than three series should facet
+// or fold the rest into "Other".
+//
+// It is a function returning a fresh slice, not a package var, for the same
+// reason ChartColors copies: a slice var is writable by any importer.
+func DefaultChartColors() []string {
+	return []string{
+		"#2A78D6", // blue
+		"#EB6834", // orange
+		"#1BAF7A", // aqua
+		"#EDA100", // yellow
+		"#E87BA4", // magenta
+		"#008300", // green
+		"#4A3AA7", // violet
+		"#E34948", // red
+	}
+}
+
+// DefaultDarkChartColors is DefaultChartColors stepped for a dark surface
+// (validated against #1A1A19): the same eight hues in the same order, each
+// moved into the lightness band a dark page needs, so the two can be swapped
+// by a theme without a series changing its hue. No bundled theme is dark; this
+// is what a dark theme should put in Colors.Chart.
+func DefaultDarkChartColors() []string {
+	return []string{
+		"#3987E5", // blue
+		"#D95926", // orange
+		"#199E70", // aqua
+		"#C98500", // yellow
+		"#D55181", // magenta
+		"#008300", // green
+		"#9085E9", // violet
+		"#E66767", // red
+	}
+}
+
+// ChartColors resolves the Chart role: a copy of the theme's list, or
+// DefaultChartColors when the theme predates the role or leaves it empty.
+// Blank entries are dropped, because an empty colour paints nothing and a
+// series drawn in it would vanish rather than look wrong.
+func (c ColorPalette) ChartColors() []string {
+	out := make([]string, 0, len(c.Chart))
+	for _, s := range c.Chart {
+		if s != "" {
+			out = append(out, s)
+		}
+	}
+	if len(out) == 0 {
+		return DefaultChartColors()
+	}
+	return out
 }
 
 // Fallbacks for the three roles a pre-existing theme can be missing. They are
@@ -568,6 +691,11 @@ var DefaultTheme = &Theme{
 		SuccessOnLight: "#1E7A34", // systemGreen, darkened   — 5.40:1 (from 2.22:1)
 		WarningOnLight: "#C93400", // Apple accessible orange — 5.28:1 (from 2.20:1)
 		ErrorOnLight:   "#D70015", // Apple accessible red    — 5.38:1 (from 3.55:1)
+
+		// The shared series palette; see DefaultChartColors. It is not
+		// derived from this theme's own hues, because Secondary and Success
+		// are one green here and a series list needs eight distinct ones.
+		Chart: DefaultChartColors(),
 	},
 	Typography: Typography{
 		Title: Style{
@@ -722,6 +850,10 @@ var MaterialTheme = &Theme{
 		SuccessOnLight: "#2E7D32", // = Success            — 5.13:1, already ink
 		WarningOnLight: "#BF360C", // MD deep orange 900   — 5.60:1 (from 3.08:1)
 		ErrorOnLight:   "#B00020", // = Error              — 7.33:1, already ink
+
+		// The shared series palette (see DefaultChartColors), checked
+		// against this theme's white page and its own Surface.
+		Chart: DefaultChartColors(),
 	},
 	Typography: Typography{
 		Title:    Style{FontSize: 22, FontWeight: Bold, TextColor: "#212121"},
@@ -885,6 +1017,10 @@ var AmberTheme = &Theme{
 		SuccessOnLight: "#2E7D32", // = Success            — 5.13:1, already ink
 		WarningOnLight: "#BF360C", // MD deep orange 900   — 5.60:1 (from 3.08:1)
 		ErrorOnLight:   "#B00020", // = Error              — 7.33:1, already ink
+
+		// The shared series palette (see DefaultChartColors), checked
+		// against this theme's white page and its own Surface.
+		Chart: DefaultChartColors(),
 	},
 	Typography: Typography{
 		Title:    Style{FontSize: 24, FontWeight: Bold, TextColor: "#1C1B1F", Display: DisplayBlock},

@@ -44,6 +44,13 @@ const GrMob = (() => {
             syncMap(el);
         }
 
+        // Same slot, same reason: a canvas's gradients are its shapes'
+        // props, and the id each one is named by is its slot among children
+        // that did not exist a moment ago.
+        if (node.Type === "Canvas") {
+            syncCanvasGradients(el);
+        }
+
         // Likewise: the cell an overlay puts its layers in is a property of
         // the children, and there were none a moment ago.
         if (OVERLAY_TYPES.has(node.Type)) {
@@ -3794,11 +3801,16 @@ const GrMob = (() => {
     // CanvasShapeAttrs. fill="none" is explicit because SVG's default fill is
     // black. String(number) matches Go's shortest 'g' formatting for every
     // value core writes (coordinates are rounded to at most four places).
-    function canvasShapeAttrs(props) {
+    //
+    // gradientId is the id this shape's paint server carries (see
+    // canvasGradientId); a well-formed gradient fills by reference to it.
+    function canvasShapeAttrs(props, gradientId) {
         const out = [["d", canvasPathData(props.d)]];
-        out.push(["fill", props.fill ? String(props.fill) : "none"]);
+        let fill = props.fill ? String(props.fill) : "";
+        if (canvasGradient(props, gradientId)) fill = `url(#${gradientId})`;
+        out.push(["fill", fill || "none"]);
         // core.FillEvenOdd, only with a fill, in htmlout's position.
-        if (props.fill && props.fillRule === "evenodd") out.push(["fill-rule", "evenodd"]);
+        if (fill && props.fillRule === "evenodd") out.push(["fill-rule", "evenodd"]);
         if (!props.stroke) return out;
         out.push(["stroke", String(props.stroke)]);
         out.push(["stroke-width", String(props.strokeWidth)]);
@@ -3809,6 +3821,137 @@ const GrMob = (() => {
             out.push(["stroke-dasharray", props.dash.map(String).join(" ")]);
         }
         return out;
+    }
+
+    // ── Canvas gradients ──
+    //
+    // A core.Gradient fill is an SVG paint server, and Chrome resolves a
+    // url(#id) fill only to one outside the shape's own <path> (a gradient
+    // nested in its path paints nothing). So, as htmlout exports it, the
+    // gradients live in one leading <defs> marked as chrome:
+    //
+    //   <svg data-node-path="root/0">
+    //     <defs data-grmob-chrome="gradients">       chromeOffset skips it,
+    //       <linearGradient id="grmob-root-0-fill-1">  nodeChildCount ignores it
+    //     </defs>
+    //     <path data-node-path="root/0/0">
+    //     <path data-node-path="root/0/1" fill="url(#grmob-root-0-fill-1)">
+    //
+    // # Rebuilt whole, per canvas, after the tree settles
+    //
+    // A gradient's id is scoped by its shape's slot, and a shape's slot is a
+    // fact about the canvas's children, not about the shape: an add or remove
+    // patch moves it, and on the create path the shape's own props are
+    // applied before it has a data-node-path at all. So the shape's props are
+    // kept on the element (the one non-attribute input), and
+    // syncCanvasGradients re-derives the <defs> and every gradient shape's
+    // fill from the children as they stand — after renderNode builds them and
+    // after each patch batch that reached the canvas. Rebuilding is cheap next
+    // to diffing: a chart has a handful of gradients and the <defs> is never
+    // painted.
+    const SHAPE_PROPS = "__grmobShapeProps";
+
+    // htmlout's CanvasGradientID: the canvas's tab-style scope plus -fill-i.
+    function canvasGradientId(canvasPath, i) {
+        return "grmob-" + String(canvasPath || "").replace(/\//g, "-") + "-fill-" + i;
+    }
+
+    // htmlout's CanvasGradient: the paint server for a shape's gradient keys,
+    // as { tag, attrs: [[name, value]], stops: [[[name, value], ...]] }, or
+    // null when there is none or the keys are malformed.
+    function canvasGradient(props, id) {
+        const at = props.gradientAt, offsets = props.gradientStops, colors = props.gradientColors;
+        if (!Array.isArray(at) || !Array.isArray(offsets) || !Array.isArray(colors)) return null;
+        if (offsets.length === 0 || offsets.length !== colors.length) return null;
+        let tag, attrs;
+        if (props.gradient === "linear" && at.length === 4) {
+            tag = "linearGradient";
+            attrs = [["id", id], ["gradientUnits", "userSpaceOnUse"],
+                ["x1", String(at[0])], ["y1", String(at[1])], ["x2", String(at[2])], ["y2", String(at[3])]];
+        } else if (props.gradient === "radial" && at.length === 3) {
+            tag = "radialGradient";
+            attrs = [["id", id], ["gradientUnits", "userSpaceOnUse"],
+                ["cx", String(at[0])], ["cy", String(at[1])], ["r", String(at[2])]];
+        } else {
+            return null;
+        }
+        const stops = offsets.map((o, i) => [["offset", String(o)], ["stop-color", String(colors[i])]]);
+        return { tag, attrs, stops };
+    }
+
+    // Re-derives a canvas's <defs> and its gradient shapes' fills from the
+    // shapes as they stand now; see "Rebuilt whole" above.
+    function syncCanvasGradients(svg) {
+        if (!svg || svg.dataset.nodeType !== "Canvas") return;
+        const canvasPath = svg.getAttribute("data-node-path");
+        let defs = null;
+        for (const child of [...svg.children]) {
+            if (child.dataset.grmobChrome === "gradients") {
+                if (defs) svg.removeChild(child); else defs = child;
+            }
+        }
+        const servers = [];
+        let i = 0;
+        for (const child of svg.children) {
+            if (child.getAttribute("data-node-path") === null) continue;
+            const props = child[SHAPE_PROPS];
+            const id = canvasGradientId(canvasPath, i++);
+            if (!props) continue;
+            const g = canvasGradient(props, id);
+            if (!g) continue;
+            servers.push(g);
+            // The fill (and the rule that rides with it) is written again
+            // because the id it points at is a function of this slot.
+            applyCanvasShapeAttrs(child, props, id);
+        }
+        if (servers.length === 0) {
+            if (defs) svg.removeChild(defs);
+            return;
+        }
+        if (!defs) {
+            defs = document.createElementNS(SVG_NS, "defs");
+            defs.setAttribute("data-grmob-chrome", "gradients");
+        }
+        while (defs.children.length) defs.removeChild(defs.children[0]);
+        for (const g of servers) {
+            const server = document.createElementNS(SVG_NS, g.tag);
+            for (const [name, value] of g.attrs) server.setAttribute(name, value);
+            for (const stop of g.stops) {
+                const el = document.createElementNS(SVG_NS, "stop");
+                for (const [name, value] of stop) el.setAttribute(name, value);
+                server.appendChild(el);
+            }
+            defs.appendChild(server);
+        }
+        // Leading, where chromeOffset counts chrome from.
+        if (svg.children[0] !== defs) svg.insertBefore(defs, svg.children[0] || null);
+    }
+
+    // The canvases a patch batch reached: a touched canvas, or the canvas a
+    // touched shape sits in (update-props pushes the shape and its parent;
+    // add and remove push the parent).
+    function syncTouchedCanvases(touched) {
+        const done = new Set();
+        for (const el of touched) {
+            if (!el || !el.dataset) continue;
+            const svg = el.dataset.nodeType === "CanvasShape" ? el.parentNode : el;
+            if (!svg || !svg.dataset || svg.dataset.nodeType !== "Canvas" || done.has(svg)) continue;
+            done.add(svg);
+            syncCanvasGradients(svg);
+        }
+    }
+
+    // Writes a shape's attribute set, removing the managed ones it no longer
+    // carries (an update-props carries the whole new map).
+    function applyCanvasShapeAttrs(el, props, gradientId) {
+        const attrs = canvasShapeAttrs(props, gradientId);
+        const written = new Set(attrs.map(([name]) => name));
+        for (const name of CANVAS_SHAPE_ATTRS) {
+            if (!written.has(name)) el.removeAttribute(name);
+        }
+        for (const [name, value] of attrs) {
+            el.setAttribute(name, value);
+        }
     }
 
     function applyCanvasProps(el, props, nodeType) {
@@ -3822,14 +3965,13 @@ const GrMob = (() => {
             return;
         }
         if (nodeType !== "CanvasShape") return;
-        const attrs = canvasShapeAttrs(props);
-        const written = new Set(attrs.map(([name]) => name));
-        for (const name of CANVAS_SHAPE_ATTRS) {
-            if (!written.has(name)) el.removeAttribute(name);
-        }
-        for (const [name, value] of attrs) {
-            el.setAttribute(name, value);
-        }
+        el[SHAPE_PROPS] = props;
+        // The id from the shape's current slot when it has one. On the create
+        // path it has none yet, and syncCanvasGradients writes the real one
+        // once the canvas's children exist.
+        const path = el.getAttribute("data-node-path") || "";
+        const slash = path.lastIndexOf("/");
+        applyCanvasShapeAttrs(el, props, slash < 0 ? "" : canvasGradientId(path.slice(0, slash), path.slice(slash + 1)));
     }
 
     // A MapView's region and a Marker's position, as dataset entries.
@@ -7654,6 +7796,9 @@ const GrMob = (() => {
         // Leaflet layer is reconciled against the Marker children this batch
         // added, moved or removed.
         syncTouchedMaps(touched);
+        // After every structural patch as well: a gradient's id follows its
+        // shape's slot, which an add or remove in this batch may have moved.
+        syncTouchedCanvases(touched);
         // Truly last: whether any back claim is still on screen is a question
         // about the tree this whole batch produced, removals included.
         syncBrowserBack();

@@ -13,9 +13,12 @@ One of 11 topic pages of [package core](core.md), which has the package overview
 - [Constants](#constants) — `FallbackBorder`, `FallbackControlBorder`, `FallbackSuccess`, `FallbackWarning`
 - [Variables](#variables) — `AmberTheme`, `DefaultTheme`, `MaterialTheme`
 - [`func BundledThemes`](#func-bundledthemes)
+- [`func DefaultChartColors`](#func-defaultchartcolors)
+- [`func DefaultDarkChartColors`](#func-defaultdarkchartcolors)
 - [`func WithTheme`](#func-withtheme)
 - [`type ColorPalette`](#type-colorpalette)
     - [`func (ColorPalette) BorderColor`](#func-colorpalette-bordercolor)
+    - [`func (ColorPalette) ChartColors`](#func-colorpalette-chartcolors)
     - [`func (ColorPalette) ControlBorderColor`](#func-colorpalette-controlbordercolor)
     - [`func (ColorPalette) ErrorOnLightColor`](#func-colorpalette-erroronlightcolor)
     - [`func (ColorPalette) OnLight`](#func-colorpalette-onlight)
@@ -50,7 +53,7 @@ const (
 )
 ```
 
-<small>[core/theme.go:240](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L240)</small>
+<small>[core/theme.go:363](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L363)</small>
 
 ## Variables
 
@@ -105,6 +108,8 @@ var AmberTheme = &Theme{
 		SuccessOnLight: "#2E7D32",
 		WarningOnLight: "#BF360C",
 		ErrorOnLight:   "#B00020",
+
+		Chart: DefaultChartColors(),
 	},
 	Typography: Typography{
 		Title:    Style{FontSize: 24, FontWeight: Bold, TextColor: "#1C1B1F", Display: DisplayBlock},
@@ -185,7 +190,7 @@ var AmberTheme = &Theme{
 }
 ```
 
-<small>[core/theme.go:847](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L847)</small>
+<small>[core/theme.go:979](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L979)</small>
 
 ```go
 var DefaultTheme = &Theme{
@@ -208,6 +213,8 @@ var DefaultTheme = &Theme{
 		SuccessOnLight: "#1E7A34",
 		WarningOnLight: "#C93400",
 		ErrorOnLight:   "#D70015",
+
+		Chart: DefaultChartColors(),
 	},
 	Typography: Typography{
 		Title: Style{
@@ -309,7 +316,7 @@ var DefaultTheme = &Theme{
 }
 ```
 
-<small>[core/theme.go:496](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L496)</small>
+<small>[core/theme.go:619](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L619)</small>
 
 ```go
 var MaterialTheme = &Theme{
@@ -331,6 +338,8 @@ var MaterialTheme = &Theme{
 		SuccessOnLight: "#2E7D32",
 		WarningOnLight: "#BF360C",
 		ErrorOnLight:   "#B00020",
+
+		Chart: DefaultChartColors(),
 	},
 	Typography: Typography{
 		Title:    Style{FontSize: 22, FontWeight: Bold, TextColor: "#212121"},
@@ -395,7 +404,7 @@ var MaterialTheme = &Theme{
 }
 ```
 
-<small>[core/theme.go:691](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L691)</small>
+<small>[core/theme.go:819](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L819)</small>
 
 ## Functions
 
@@ -415,7 +424,57 @@ So the list is one list, and TestBundledThemesListIsExhaustive derives it from t
 
 A fresh map each call, for the reason ColorPalette's resolvers exist: a package-level map is reachable and writable by any importer, and a test that deleted an entry would silently narrow every census at once.
 
-<small>[core/theme.go:1003](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L1003)</small>
+<small>[core/theme.go:1139](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L1139)</small>
+
+### func DefaultChartColors
+
+```go
+func DefaultChartColors() []string
+```
+
+DefaultChartColors is the categorical series palette every bundled theme uses, in slot order:
+
+	slot  hue       hex       contrast on #FFFFFF
+	1     blue      #2A78D6   4.42:1
+	2     orange    #EB6834   3.20:1
+	3     aqua      #1BAF7A   2.82:1
+	4     yellow    #EDA100   2.17:1
+	5     magenta   #E87BA4   2.69:1
+	6     green     #008300   4.95:1
+	7     violet    #4A3AA7   8.56:1
+	8     red       #E34948   3.95:1
+
+#### Where it comes from and what it was checked against
+
+It is a published data-visualisation reference palette, taken verbatim rather than derived from any one theme's brand, because a series palette has to pass checks a brand palette never faced. Each hex was run through an OKLab validator against all three bundled themes' page (#FFFFFF) and Surface fills (#F2F2F7, #F5F5F5, #FFF8E1):
+
+	check                         result on every surface
+	lightness band L 0.43–0.77    all 8 inside
+	chroma ≥ 0.1                  all 8
+	adjacent pairs, CVD ΔE        worst 9.1 (yellow↔aqua, protan); target ≥ 8
+	adjacent pairs, normal ΔE     worst 19.6 (magenta↔yellow); floor ≥ 15
+	contrast ≥ 3:1                WARN: aqua, yellow, magenta (and orange on
+	                              the two grey Surfaces) fall short
+
+#### What the two caveats oblige
+
+The contrast warning means colour alone cannot identify a thin mark in slots 3–5 against a pale page. Every chart in comps states its series in a legend and in its spoken summary, which is the relief that warning asks for; an app drawing its own chart from these should do the same.
+
+"Adjacent" is the right pairing for bars, stacks and lines, whose neighbours are fixed. A scatter plot puts every pair next to every other, and under that stricter reading only the first three slots stay distinct (worst CVD ΔE 9.2, normal 24.0); a scatter with more than three series should facet or fold the rest into "Other".
+
+It is a function returning a fresh slice, not a package var, for the same reason ChartColors copies: a slice var is writable by any importer.
+
+<small>[core/theme.go:309](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L309)</small>
+
+### func DefaultDarkChartColors
+
+```go
+func DefaultDarkChartColors() []string
+```
+
+DefaultDarkChartColors is DefaultChartColors stepped for a dark surface (validated against #1A1A19): the same eight hues in the same order, each moved into the lightness band a dark page needs, so the two can be swapped by a theme without a series changing its hue. No bundled theme is dark; this is what a dark theme should put in Colors.Chart.
+
+<small>[core/theme.go:327](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L327)</small>
 
 ### func WithTheme
 
@@ -423,7 +482,7 @@ A fresh map each call, for the reason ColorPalette's resolvers exist: a package-
 func WithTheme(theme *Theme, children ...View) View
 ```
 
-<small>[core/theme.go:481](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L481)</small>
+<small>[core/theme.go:604](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L604)</small>
 
 ## Types
 
@@ -637,6 +696,37 @@ type ColorPalette struct {
 	SuccessOnLight string
 	WarningOnLight string
 	ErrorOnLight   string
+
+	// Chart is the categorical series palette: the colours a chart gives its
+	// series, in the fixed order it gives them. Read via ChartColors.
+	//
+	// # Why a list of its own, and not the roles above
+	//
+	// Charts used to cycle Primary, Secondary, Warning, Success and Error.
+	// That gave each bundled theme three to five distinct hues, and it spent
+	// two roles that mean something on "series 3" and "series 5": a Warning-
+	// orange line reads as a warning and an Error-red one as a failure. A
+	// status colour carries meaning; a series colour carries identity only.
+	// So identity gets its own list, and the status roles stay reserved.
+	//
+	// # The order is the colour-blind safety, not decoration
+	//
+	// Adjacent series (neighbouring bars, stacked bands, successive lines)
+	// are the pairs a reader compares, so the list is ordered so that every
+	// adjacent pair stays apart under simulated protanopia, deuteranopia and
+	// tritanopia. Re-ordering it can break that without changing a hex. See
+	// DefaultChartColors for the numbers.
+	//
+	// # A slice, unlike every other role
+	//
+	// A palette is a sequence, and its length is the theme's choice: a brand
+	// with five approved hues states five. Past the end, charts repeat the
+	// list as 60% tints (see comps' chartPalette) rather than inventing a hue
+	// the theme did not choose.
+	//
+	// Because a slice is shared by reference, ChartColors returns a copy, so a
+	// caller appending to what it got cannot repaint a bundled theme.
+	Chart []string
 }
 ```
 
@@ -658,7 +748,17 @@ Note this is a \*method on the palette\* and is unrelated to the core.BorderColo
 
 	core.BorderColor(ctx.Theme().Colors.BorderColor())
 
-<small>[core/theme.go:260](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L260)</small>
+<small>[core/theme.go:383](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L383)</small>
+
+#### func (ColorPalette) ChartColors
+
+```go
+func (c ColorPalette) ChartColors() []string
+```
+
+ChartColors resolves the Chart role: a copy of the theme's list, or DefaultChartColors when the theme predates the role or leaves it empty. Blank entries are dropped, because an empty colour paints nothing and a series drawn in it would vanish rather than look wrong.
+
+<small>[core/theme.go:344](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L344)</small>
 
 #### func (ColorPalette) ControlBorderColor
 
@@ -670,7 +770,7 @@ ControlBorderColor resolves the ControlBorder role, falling back to FallbackCont
 
 Note it does \*not\* fall back to BorderColor(). The two roles are near neighbours in the struct and opposites in intent — see the field docs — and a theme that has one and not the other is a theme that has only the divider, which is precisely the value this must not return.
 
-<small>[core/theme.go:274](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L274)</small>
+<small>[core/theme.go:397](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L397)</small>
 
 #### func (ColorPalette) ErrorOnLightColor
 
@@ -678,7 +778,7 @@ Note it does \*not\* fall back to BorderColor(). The two roles are near neighbou
 func (c ColorPalette) ErrorOnLightColor() string
 ```
 
-<small>[core/theme.go:322](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L322)</small>
+<small>[core/theme.go:445](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L445)</small>
 
 #### func (ColorPalette) OnLight
 
@@ -706,7 +806,7 @@ Primary's used to be exactly that, and AmberTheme is what put it back: amber 700
 
 Which arms have a bundled witness and which rest on a test fixture is recorded and checked per role by TestEveryPaletteRuleStillHasAWitness in comps/palette\_witness\_test.go, so a retint that leaves an arm with no evidence anywhere is reported rather than merely true.
 
-<small>[core/theme.go:375](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L375)</small>
+<small>[core/theme.go:498](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L498)</small>
 
 #### func (ColorPalette) PrimaryOnLightColor
 
@@ -716,7 +816,7 @@ func (c ColorPalette) PrimaryOnLightColor() string
 
 The four on-light resolvers. Each falls back to its own role rather than to a constant — see the field docs for why this fallback is softer than Border's, and note that each defers to the role's \*resolver\* where it has one, so a theme missing both halves of a role still lands somewhere visible.
 
-<small>[core/theme.go:301](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L301)</small>
+<small>[core/theme.go:424](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L424)</small>
 
 #### func (ColorPalette) SuccessColor
 
@@ -726,7 +826,7 @@ func (c ColorPalette) SuccessColor() string
 
 SuccessColor resolves the Success role, falling back to FallbackSuccess.
 
-<small>[core/theme.go:282](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L282)</small>
+<small>[core/theme.go:405](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L405)</small>
 
 #### func (ColorPalette) SuccessOnLightColor
 
@@ -734,7 +834,7 @@ SuccessColor resolves the Success role, falling back to FallbackSuccess.
 func (c ColorPalette) SuccessOnLightColor() string
 ```
 
-<small>[core/theme.go:308](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L308)</small>
+<small>[core/theme.go:431](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L431)</small>
 
 #### func (ColorPalette) WarningColor
 
@@ -744,7 +844,7 @@ func (c ColorPalette) WarningColor() string
 
 WarningColor resolves the Warning role, falling back to FallbackWarning.
 
-<small>[core/theme.go:290](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L290)</small>
+<small>[core/theme.go:413](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L413)</small>
 
 #### func (ColorPalette) WarningOnLightColor
 
@@ -752,7 +852,7 @@ WarningColor resolves the Warning role, falling back to FallbackWarning.
 func (c ColorPalette) WarningOnLightColor() string
 ```
 
-<small>[core/theme.go:315](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L315)</small>
+<small>[core/theme.go:438](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L438)</small>
 
 ### type ComponentDefaults
 
@@ -792,7 +892,7 @@ They live here rather than in a list one package over because this is where a th
 
 palette.IsABackdrop and palette.NotABackdrop read these tags and are their only readers; the reachability claim travels on into the census, which prints it when a pair falls short.
 
-<small>[core/theme.go:447](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L447)</small>
+<small>[core/theme.go:570](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L570)</small>
 
 ### type SpacingScale
 
@@ -802,7 +902,7 @@ type SpacingScale struct {
 }
 ```
 
-<small>[core/theme.go:396](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L396)</small>
+<small>[core/theme.go:519](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L519)</small>
 
 ### type Theme
 
@@ -828,5 +928,5 @@ type Typography struct {
 }
 ```
 
-<small>[core/theme.go:389](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L389)</small>
+<small>[core/theme.go:512](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L512)</small>
 

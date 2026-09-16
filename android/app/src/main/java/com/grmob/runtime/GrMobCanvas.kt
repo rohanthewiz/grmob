@@ -5,11 +5,19 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.LinearGradientShader
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.PathFillType
+import androidx.compose.ui.graphics.RadialGradientShader
+import androidx.compose.ui.graphics.Shader
+import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.drawscope.Stroke
 
 /**
@@ -78,8 +86,14 @@ internal fun GrMobCanvas(node: GrMobNode, modifier: Modifier) {
             if (props["fillRule"] == "evenodd") path.fillType = PathFillType.EvenOdd
 
             // Fill first, then the stroke over it: SVG's paint order, and
-            // core.Shape's documented one.
-            GrMobStyle.parseColor(props["fill"] as? String)?.let { drawPath(path, it) }
+            // core.Shape's documented one. Go writes "fill" or the gradient
+            // keys, never both.
+            val gradient = canvasGradientBrush(props, vp)
+            if (gradient != null) {
+                drawPath(path, gradient)
+            } else {
+                GrMobStyle.parseColor(props["fill"] as? String)?.let { drawPath(path, it) }
+            }
 
             val stroke = GrMobStyle.parseColor(props["stroke"] as? String) ?: continue
             val widthDp = (props["strokeWidth"] as? Number)?.toFloat() ?: 1f
@@ -108,5 +122,58 @@ internal fun GrMobCanvas(node: GrMobNode, modifier: Modifier) {
                 ),
             )
         }
+    }
+}
+
+/**
+ * A core.Gradient fill as a Compose brush, or null when the shape has none
+ * (or its keys are malformed, which paints no fill, as the web targets do).
+ *
+ * # The shader is built in viewBox units and carries the viewport as its matrix
+ *
+ * core.Gradient's geometry is in viewBox units, mapped onto the box by the
+ * same scale as the shapes: SVG's userSpaceOnUse under the canvas's
+ * preserveAspectRatio. Mapping only the end points (or the centre and a
+ * radius) would be wrong in two cases under CanvasStretch:
+ *
+ *   radial     one radius cannot say an ellipse; the circle must stretch
+ *   diagonal   the bands of a stretched linear gradient stay parallel to the
+ *              gradient's *viewBox* normal, which is not the screen normal
+ *              once the axes scale unequally
+ *
+ * So the shader is created exactly as written and given the viewport's
+ * scale-then-translate as its local matrix, which transforms the gradient's
+ * whole space the way SVG's viewBox transform does. The path itself was
+ * already mapped point by point, so shape and paint land in one frame.
+ *
+ * Compose's Shader is android.graphics.Shader on this platform, which is what
+ * makes setLocalMatrix available.
+ */
+internal fun canvasGradientBrush(props: Map<String, Any?>, vp: CanvasViewport): Brush? {
+    val kind = props["gradient"] as? String ?: return null
+    val at = (props["gradientAt"] as? List<*>)?.map { (it as? Number)?.toFloat() ?: return null } ?: return null
+    val offsets = (props["gradientStops"] as? List<*>)?.map { (it as? Number)?.toFloat() ?: return null } ?: return null
+    val colors = (props["gradientColors"] as? List<*>)?.map { GrMobStyle.parseColor(it as? String) ?: return null } ?: return null
+    if (offsets.isEmpty() || offsets.size != colors.size) return null
+    val matrix = android.graphics.Matrix().apply {
+        setScale(vp.scaleX.toFloat(), vp.scaleY.toFloat())
+        postTranslate(vp.offsetX.toFloat(), vp.offsetY.toFloat())
+    }
+    val shader: Shader = when {
+        kind == "linear" && at.size == 4 -> LinearGradientShader(
+            from = Offset(at[0], at[1]), to = Offset(at[2], at[3]),
+            colors = colors, colorStops = offsets, tileMode = TileMode.Clamp,
+        )
+        kind == "radial" && at.size == 3 && at[2] > 0f -> RadialGradientShader(
+            center = Offset(at[0], at[1]), radius = at[2],
+            colors = colors, colorStops = offsets, tileMode = TileMode.Clamp,
+        )
+        else -> return null
+    }
+    shader.setLocalMatrix(matrix)
+    // A fixed shader rather than one sized per draw: its geometry is the
+    // viewBox's, not the box's, so the size Compose passes is not an input.
+    return object : ShaderBrush() {
+        override fun createShader(size: Size): Shader = shader
     }
 }

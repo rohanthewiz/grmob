@@ -77,9 +77,10 @@ import "math"
 //
 // # Not in v1
 //
-// Text inside the drawing (lay labels out around it as Text nodes), gradients,
-// clipping and per-shape hit-testing. Fills use the nonzero rule, every
-// target's default, unless a shape asks for FillEvenOdd.
+// Text inside the drawing (lay labels out around it as Text nodes), gradient
+// strokes, clipping and per-shape hit-testing. Fills are flat or a Gradient,
+// and use the nonzero rule, every target's default, unless a shape asks for
+// FillEvenOdd.
 func Canvas(w, h float64, shapes []Shape, props ...PropsAndChildren) View {
 	return ComponentFunc(func(ctx *Context) *Node {
 		if w <= 0 {
@@ -197,8 +198,13 @@ type Shape struct {
 	Fill   string
 	Stroke string
 
-	// FillRule decides which regions of a self-overlapping path Fill paints;
-	// the zero value is FillNonZero. See FillRule.
+	// FillGradient paints the fill with a gradient instead of the flat Fill
+	// colour, and wins when both are set. Build one with LinearGradientFill or
+	// RadialGradientFill. See Gradient.
+	FillGradient *Gradient
+
+	// FillRule decides which regions of a self-overlapping path the fill
+	// (flat or gradient) paints; the zero value is FillNonZero. See FillRule.
 	FillRule FillRule
 
 	// StrokeWidth is in layout units, not viewBox units; 0 means 1.
@@ -227,13 +233,28 @@ func (s Shape) node(places int) *Node {
 		d = []float64{}
 	}
 	props["d"] = d
-	if s.Fill != "" {
-		props["fill"] = s.Fill
-		// Only the non-default rule is written, like cap and join, and only
-		// with a fill: a rule on an unfilled shape paints nothing.
-		if s.FillRule == FillEvenOdd {
-			props["fillRule"] = string(FillEvenOdd)
+	// A gradient that paints is written in place of "fill"; one that
+	// normalises to a single colour is sent as that flat fill, so a renderer
+	// never meets a degenerate gradient (see Gradient.wire). The two keys are
+	// exclusive on the wire, which is what lets each renderer read "is there
+	// a fill" as "fill or gradient".
+	filled := false
+	if g := s.FillGradient; g != nil {
+		if flat, ok := g.wire(props, places); ok {
+			filled = true
+		} else if flat != "" {
+			props["fill"] = flat
+			filled = true
 		}
+	}
+	if !filled && s.Fill != "" {
+		props["fill"] = s.Fill
+		filled = true
+	}
+	// Only the non-default rule is written, like cap and join, and only with
+	// a fill: a rule on an unfilled shape paints nothing.
+	if filled && s.FillRule == FillEvenOdd {
+		props["fillRule"] = string(FillEvenOdd)
 	}
 	if s.Stroke != "" {
 		props["stroke"] = s.Stroke
@@ -253,6 +274,175 @@ func (s Shape) node(places int) *Node {
 		}
 	}
 	return &Node{Type: "CanvasShape", Props: props}
+}
+
+// Gradient is a fill that varies across a shape: linear along a line, or
+// radial out from a centre. Build one with LinearGradientFill or RadialGradientFill
+// and hand it to Shape.FillGradient.
+//
+// (The names carry "Fill" because core.LinearGradient already exists: an
+// older helper that formats a CSS linear-gradient() string for a Style
+// background, unrelated to Canvas.)
+//
+//	fade := core.LinearGradientFill(0, 0, 0, 100,
+//	    core.Stop(0, "#2A78D666"),
+//	    core.Stop(1, "#2A78D600"))
+//	core.Shape{Path: area, FillGradient: fade}
+//
+// # Its geometry is in viewBox units, like the shapes'
+//
+// The points and radius are written in the same coordinate space as the paths
+// they fill, and mapped onto the box by the same CanvasScale. So a gradient
+// from y=0 to y=100 in a 100-unit-tall viewBox runs top to bottom of the box
+// however tall the box is, and under CanvasStretch it stretches with the
+// shapes: a radial gradient in a stretched canvas becomes an ellipse, and a
+// diagonal linear one keeps its bands parallel to the diagonal *in viewBox
+// space*. That is SVG's gradientUnits="userSpaceOnUse" under
+// preserveAspectRatio="none", and the natives match it by giving the shader
+// the viewport's own scale-and-offset matrix rather than mapping the end
+// points (mapping only the points would keep the bands perpendicular on
+// screen, which differs on a diagonal).
+//
+// One space for everything was chosen over the shape's own bounding box
+// (SVG's objectBoundingBox): a chart's bands share one gradient that should
+// line up across them, and a bounding box is a different frame per band.
+//
+// # Beyond the ends
+//
+// Past the first and last stop the end colours extend (pad): SVG's
+// spreadMethod="pad", Compose's TileMode.Clamp, SwiftUI's default. Repeat and
+// reflect are not offered.
+//
+// # Stops are normalised in Go, once
+//
+// Offsets are clamped to [0, 1] and each is raised to at least the one before
+// it, which is the rule SVG applies to out-of-order stops; Android's shader
+// leaves that case undefined, so it is decided here rather than per target.
+// A gradient with no stops paints nothing, and one with a single stop — or
+// whose line has no length, or whose radius is not positive — is sent as a
+// flat fill in its last stop's colour, which is what SVG paints for the
+// degenerate cases.
+//
+// # Fading to transparent
+//
+// Colours interpolate per channel, alpha included, and the targets do not all
+// premultiply. Fade to the *same* hue at zero alpha ("#2A78D600"), not to
+// "transparent" or "#00000000": interpolating toward transparent black would
+// grey the middle on a target that does not premultiply.
+//
+//	target    element
+//	SVG       <linearGradient> / <radialGradient>, userSpaceOnUse, in a
+//	          leading <defs> the canvas's shapes refer to by id
+//	Compose   LinearGradientShader / RadialGradientShader + local matrix
+//	SwiftUI   GraphicsContext.Shading .linearGradient / .radialGradient,
+//	          filled in a context carrying the viewport transform
+type Gradient struct {
+	// Kind is GradientLinear or GradientRadial.
+	Kind GradientKind
+
+	// Linear: the line the stops are laid along, from (X1, Y1) at offset 0 to
+	// (X2, Y2) at offset 1.
+	X1, Y1, X2, Y2 float64
+
+	// Radial: offset 0 at the centre (CX, CY), offset 1 at radius R.
+	CX, CY, R float64
+
+	Stops []GradientStop
+}
+
+// GradientKind names a Gradient's geometry.
+type GradientKind string
+
+const (
+	GradientLinear GradientKind = "linear"
+	GradientRadial GradientKind = "radial"
+)
+
+// GradientStop is one colour at an offset along a gradient, 0 at its start
+// and 1 at its end. Color is a CSS hex colour, as Shape.Fill is.
+type GradientStop struct {
+	Offset float64
+	Color  string
+}
+
+// Stop is a GradientStop, for brevity at the call site.
+func Stop(offset float64, color string) GradientStop {
+	return GradientStop{Offset: offset, Color: color}
+}
+
+// LinearGradientFill runs from (x1, y1) to (x2, y2), in viewBox units.
+func LinearGradientFill(x1, y1, x2, y2 float64, stops ...GradientStop) *Gradient {
+	return &Gradient{Kind: GradientLinear, X1: x1, Y1: y1, X2: x2, Y2: y2, Stops: stops}
+}
+
+// RadialGradientFill runs out from (cx, cy) to radius r, in viewBox units.
+func RadialGradientFill(cx, cy, r float64, stops ...GradientStop) *Gradient {
+	return &Gradient{Kind: GradientRadial, CX: cx, CY: cy, R: r, Stops: stops}
+}
+
+// wire writes the gradient's keys into props and reports true when it paints
+// as a gradient. When it does not, flat is the single colour it degenerates to
+// ("" for one that paints nothing), and props is left untouched.
+//
+// The keys, all written together:
+//
+//	gradient        "linear" | "radial"
+//	gradientAt      [x1, y1, x2, y2] | [cx, cy, r]    viewBox units
+//	gradientStops   [offset, ...]                    non-decreasing, in [0, 1]
+//	gradientColors  [color, ...]                     one per offset
+//
+// Offsets and colours are two parallel flat lists rather than a list of
+// pairs, because every reader of this wire (Kotlin, Swift, JS, Go's htmlout)
+// decodes a flat list of one type without a type switch.
+func (g *Gradient) wire(props map[string]any, places int) (flat string, ok bool) {
+	var offsets []float64
+	var colors []string
+	prev := 0.0
+	for _, st := range g.Stops {
+		if st.Color == "" {
+			continue
+		}
+		o := math.Max(prev, math.Max(0, math.Min(1, st.Offset)))
+		// Four places is a ten-thousandth of the gradient's length, finer
+		// than any band a screen can show, and it keeps the offsets as short
+		// on the wire as the coordinates.
+		o = math.Round(o*1e4) / 1e4
+		offsets = append(offsets, o)
+		colors = append(colors, st.Color)
+		prev = o
+	}
+	if len(colors) == 0 {
+		return "", false
+	}
+	last := colors[len(colors)-1]
+	if len(colors) == 1 {
+		return last, false
+	}
+
+	scale := math.Pow(10, float64(places))
+	round := func(v float64) float64 { return math.Round(v*scale) / scale }
+	var at []float64
+	switch g.Kind {
+	case GradientRadial:
+		at = []float64{round(g.CX), round(g.CY), round(g.R)}
+		if at[2] <= 0 {
+			return last, false
+		}
+	default:
+		at = []float64{round(g.X1), round(g.Y1), round(g.X2), round(g.Y2)}
+		if at[0] == at[2] && at[1] == at[3] {
+			return last, false
+		}
+	}
+	kind := GradientLinear
+	if g.Kind == GradientRadial {
+		kind = GradientRadial
+	}
+	props["gradient"] = string(kind)
+	props["gradientAt"] = at
+	props["gradientStops"] = offsets
+	props["gradientColors"] = colors
+	return "", true
 }
 
 // FillRule is how a fill decides whether a point is inside a path whose
