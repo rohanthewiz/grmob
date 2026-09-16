@@ -43,6 +43,8 @@
 //	pins       internal/pinfixture, one overflowing Row in four arrangements,
 //	           for the browser to lay out so that the CSS half of the pin census
 //	           is a measurement of a browser rather than of one solver.
+//	canvases   core.Canvas trees with htmlout's SVG attributes for each, for
+//	           canvas_test.mjs to hold the runtime's restatement to.
 package main
 
 import (
@@ -52,12 +54,14 @@ import (
 	"os"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/rohanthewiz/grmob/comps"
 	"github.com/rohanthewiz/grmob/core"
 	"github.com/rohanthewiz/grmob/examples/mobileapp"
 	"github.com/rohanthewiz/grmob/examples/signup"
+	"github.com/rohanthewiz/grmob/htmlout"
 	"github.com/rohanthewiz/grmob/internal/bandfixture"
 	"github.com/rohanthewiz/grmob/internal/menufixture"
 	"github.com/rohanthewiz/grmob/internal/palette"
@@ -133,6 +137,11 @@ type transcript struct {
 	// — so "these children have no padding, therefore the two agree" was a
 	// sentence with nothing behind it. browser.mjs mounts the same Rows.
 	Pins []pinfixture.Case `json:"pins"`
+
+	// Canvases are core.Canvas trees with the SVG htmlout exports for them,
+	// which canvas_test.mjs holds the runtime's canvas section to. See
+	// canvasCases.
+	Canvases []canvasCase `json:"canvases"`
 }
 
 // node mirrors just enough of core.Node's JSON to hunt down callback IDs.
@@ -361,11 +370,62 @@ func main() {
 		InkProbes:    probes,
 		InkLigatures: ligatures,
 		Pins:         pinfixture.Cases(),
+		Canvases:     canvasCases(),
 	})
 	if err != nil {
 		fatal("marshal transcript: %v", err)
 	}
 	os.Stdout.Write(out)
+}
+
+// --- Canvases ---------------------------------------------------------------
+
+// canvasCase is one core.Canvas rendered by Go, with the attributes htmlout
+// writes for it. The runtime restates htmlout's PathData and CanvasShapeAttrs
+// in JavaScript, and the only way to hold a restatement to its source across
+// two languages is to run both on the same input: Go's answers are computed
+// here, the runtime's in canvas_test.mjs, and the test compares them.
+type canvasCase struct {
+	What string `json:"what"`
+	// Tree is the canvas's node JSON, exactly as a bridge sends it.
+	Tree string `json:"tree"`
+	// ViewBox and Preserve are the <svg>'s two attributes.
+	ViewBox  string `json:"viewBox"`
+	Preserve string `json:"preserve"`
+	// Shapes is each <path>'s attributes as htmlout writes them, in order.
+	Shapes [][]string `json:"shapes"`
+}
+
+// canvasCases covers every opcode, both scales, every optional stroke
+// attribute, a shape with no path, and a fill-only shape — the branches of
+// CanvasShapeAttrs, each reached at least once.
+func canvasCases() []canvasCase {
+	build := func(what string, v core.View) canvasCase {
+		ctx := core.NewContext()
+		ctx.BeginRenderPass()
+		n := v.Render(ctx)
+		c := canvasCase{
+			What:     what,
+			Tree:     jsonout.Export(n),
+			ViewBox:  "0 0 " + strconv.FormatFloat(n.Props["vw"].(float64), 'g', -1, 64) + " " + strconv.FormatFloat(n.Props["vh"].(float64), 'g', -1, 64),
+			Preserve: map[bool]string{true: "none", false: "xMidYMid meet"}[n.Props["scale"] == "stretch"],
+		}
+		for _, shape := range n.Children {
+			c.Shapes = append(c.Shapes, htmlout.CanvasShapeAttrs(shape.Props))
+		}
+		return c
+	}
+	return []canvasCase{
+		build("a pie and a dashed rule, fit", core.Canvas(100, 100, []core.Shape{
+			{Path: core.Sector(50, 50, 0, 48, -90, 144), Fill: "#4e79a7", Stroke: "#ffffff", StrokeWidth: 1.5, Join: core.JoinRound},
+			{Path: core.Sector(50, 50, 30, 48, 54, 216), Fill: "#f28e2b"},
+			{Path: core.Line(0, 99.5, 100, 99.5), Stroke: "#888888", Dash: []float64{4, 2.5}, Cap: core.CapSquare},
+			{Fill: "#000000"},
+		}, core.AccessibilityLabel("Share of sales"))),
+		build("a stretched line with a quadratic, fractional viewBox", core.Canvas(7.5, 3, []core.Shape{
+			{Path: core.NewPath().MoveTo(0, 3).QuadTo(1.25, 0, 2.5, 1.5).LineTo(7.5, 0.333333), Stroke: "#123456", StrokeWidth: 2, Cap: core.CapRound, Join: core.JoinBevel},
+		}, core.CanvasStretch)),
+	}
 }
 
 // --- The widget swatches ----------------------------------------------------

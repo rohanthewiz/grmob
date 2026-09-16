@@ -270,6 +270,11 @@ func renderNode(b *element.Builder, node *core.Node, from imposed, path string) 
 	if node.Type == "GridRow" {
 		sv = addDecl(gridRowChassis, sv)
 	}
+	// The canvas chassis: core's sizing rule for a drawing, ahead of the
+	// author's style so a stated Width or Height wins. See canvas.go.
+	if node.Type == "Canvas" {
+		sv = addDecl(canvasChassis(node.Props), sv)
+	}
 	// The editor chassis, and the gutter inset that goes with it. Ahead of the
 	// author's style for the same reason the three above are, and in two
 	// pieces because only one of them depends on the node's props: the fixed
@@ -515,6 +520,11 @@ func renderNode(b *element.Builder, node *core.Node, from imposed, path string) 
 		b.Span(attrs...).TE(getStr(node.Props["content"]))
 	case "GridRow":
 		renderGridRow(b, node, attrs)
+	case "Canvas":
+		// An <svg> with a viewBox; see canvas.go.
+		renderCanvas(b, node, attrs, path)
+	case "CanvasShape":
+		renderCanvasShape(b, node, attrs)
 	case "CodeEditor":
 		// A box like any other container, plus the line-number gutter ahead of
 		// the rows; see codeeditor.go.

@@ -179,6 +179,14 @@ struct RenderNode: View {
             // would.
             case "Marker": EmptyView()
 
+            // A vector drawing (core.Canvas). Its CanvasShape children are data
+            // read inside the Canvas closure, like a map's markers — see
+            // GrMobCanvas below and GrMobCanvasGeometry.swift.
+            case "Canvas": GrMobCanvas(node: node, grow: grow)
+            // A shape reached on its own, outside a canvas: nothing, for the
+            // reason a lone Marker is nothing.
+            case "CanvasShape": EmptyView()
+
             // Fragment and Theme are grouping nodes with no visual box of
             // their own: Group flattens the children into whatever stack
             // scope we're currently in.
@@ -1866,6 +1874,105 @@ private struct GrMobSlider: View {
             }
         }
         .grMobBox(marginAndSizeOnly(node.style), grow: grow)
+    }
+}
+
+/// A core.Canvas: a SwiftUI Canvas that draws each CanvasShape child as a Path.
+///
+///     core.Canvas(100, 50, shapes, core.CanvasStretch)
+///       ──▶ Canvas { ctx, size in for each child: fill(path); stroke(path) }
+///
+/// # The shapes are data
+///
+/// The children are never rendered as views; their props are read inside the
+/// Canvas closure, the way GrMobTextGrid reads its rows. With @Observable
+/// tracking an update-props on one shape invalidates this view, and the
+/// closure redraws the whole drawing — which for a Canvas is the unit anyway.
+///
+/// # Transformed points, untransformed strokes
+///
+/// Points go through GrMobCanvasViewport before they reach the Path, and the
+/// stroke is drawn in points untransformed. That is core.Canvas's rule —
+/// strokes are layout units, never scaled — spelled the way SVG's
+/// vector-effect="non-scaling-stroke" spells it on the web. A context
+/// scaleBy would have scaled the line width with the geometry.
+///
+/// # Sizing
+///
+/// core's defaults go inside the box modifier, so an author's Width and
+/// Height (applied by grMobBox, outside) win: fill the proposed width when no
+/// Width was given, and take the viewBox's aspect ratio when no Height was.
+/// SwiftUI's Canvas draws unclipped by default, matching the web's
+/// overflow:visible for a stroke on the viewBox's edge.
+private struct GrMobCanvas: View {
+    let node: GrMobNode
+    let grow: GrMobGrow
+
+    var body: some View {
+        let vw = node.doubleProp("vw") > 0 ? node.doubleProp("vw") : 100
+        let vh = node.doubleProp("vh") > 0 ? node.doubleProp("vh") : 100
+        let stretch = node.stringProp("scale") == "stretch"
+        let fillWidth = (node.style?.width ?? "").isEmpty
+        let keepRatio = (node.style?.height ?? "").isEmpty
+        let shapes = node.children.map(\.props)
+
+        let drawing = Canvas { ctx, size in
+            let vp = GrMobCanvasViewport(vw: vw, vh: vh, width: Double(size.width),
+                                         height: Double(size.height), stretch: stretch)
+            for props in shapes {
+                guard let ops = props["d"] as? [Any] else { continue }
+                var path = Path()
+                grMobDecodeCanvasPath(ops, vp) { call in
+                    switch call {
+                    case let .move(x, y): path.move(to: CGPoint(x: x, y: y))
+                    case let .line(x, y): path.addLine(to: CGPoint(x: x, y: y))
+                    case let .cubic(x1, y1, x2, y2, x, y):
+                        path.addCurve(to: CGPoint(x: x, y: y),
+                                      control1: CGPoint(x: x1, y: y1),
+                                      control2: CGPoint(x: x2, y: y2))
+                    case .close: path.closeSubpath()
+                    }
+                }
+                // Fill first, then the stroke over it: SVG's paint order.
+                if let fill = GrMobStyle.parseColor(props["fill"] as? String) {
+                    ctx.fill(path, with: .color(fill))
+                }
+                guard let stroke = GrMobStyle.parseColor(props["stroke"] as? String) else { continue }
+                let width = (props["strokeWidth"] as? NSNumber)?.doubleValue ?? 1
+                var dash = ((props["dash"] as? [Any]) ?? []).compactMap { ($0 as? NSNumber)?.doubleValue }
+                // SVG repeats an odd dash list to make it even; do the same.
+                if dash.count % 2 == 1 { dash += dash }
+                let cap: CGLineCap = switch props["cap"] as? String {
+                case "round": .round
+                case "square": .square
+                default: .butt
+                }
+                let join: CGLineJoin = switch props["join"] as? String {
+                case "round": .round
+                case "bevel": .bevel
+                default: .miter
+                }
+                ctx.stroke(path, with: .color(stroke),
+                           style: StrokeStyle(lineWidth: width, lineCap: cap, lineJoin: join,
+                                              dash: dash.map { CGFloat($0) }))
+            }
+        }
+
+        // Conditional rather than aspectRatio(nil, ...): a nil ratio is not
+        // "no ratio" but "the child's ideal size's ratio", and a Canvas's ideal
+        // size is an arbitrary placeholder that would squash a canvas whose
+        // author set a Height.
+        Group {
+            if keepRatio {
+                drawing.aspectRatio(CGFloat(vw / vh), contentMode: .fit)
+            } else {
+                drawing
+            }
+        }
+        .frame(maxWidth: fillWidth ? .infinity : nil)
+        .grMobBox(node.style, grow: grow,
+                  onTap: node.stringProp("onClick"),
+                  onLongPress: node.stringProp("onLongPress"))
     }
 }
 

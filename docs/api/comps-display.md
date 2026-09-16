@@ -4,9 +4,9 @@
 import "github.com/rohanthewiz/grmob/comps"
 ```
 
-Avatars, stat tiles, the compass, map panels and static maps.
+Avatars, stat tiles, the compass, clocks and alarms, map panels and static maps.
 
-One of 6 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/avatar.go`, `comps/stat_tile.go`, `comps/compass.go`, `comps/map_panel.go`, `comps/static_map.go`.
+One of 6 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/avatar.go`, `comps/stat_tile.go`, `comps/compass.go`, `comps/clock.go`, `comps/alarm.go`, `comps/map_panel.go`, `comps/static_map.go`.
 
 ## Index
 
@@ -16,10 +16,18 @@ One of 6 topic pages of [package comps](comps.md), which has the package overvie
 - [`func OSMStaticMap`](#func-osmstaticmap)
 - [`func OpenStreetMapHandoff`](#func-openstreetmaphandoff)
 - [`func PlaceCount`](#func-placecount)
+- [`type AlarmRinging`](#type-alarmringing)
+    - [`func (AlarmRinging) Render`](#func-alarmringing-render)
+- [`type AlarmRow`](#type-alarmrow)
+    - [`func (AlarmRow) Render`](#func-alarmrow-render)
+- [`type AnalogClock`](#type-analogclock)
+    - [`func (AnalogClock) Render`](#func-analogclock-render)
 - [`type Avatar`](#type-avatar)
     - [`func (Avatar) Render`](#func-avatar-render)
 - [`type Compass`](#type-compass)
     - [`func (Compass) Render`](#func-compass-render)
+- [`type DigitalClock`](#type-digitalclock)
+    - [`func (DigitalClock) Render`](#func-digitalclock-render)
 - [`type MapHandoff`](#type-maphandoff)
 - [`type MapPanel`](#type-mappanel)
     - [`func (MapPanel) Render`](#func-mappanel-render)
@@ -237,6 +245,180 @@ A recurring event is many entries and one pin; an item with no coordinates is no
 
 ## Types
 
+### type AlarmRinging
+
+```go
+type AlarmRinging struct {
+	Alarm alarm.Alarm
+
+	// Hour24 writes the time as 06:30.
+	Hour24 bool
+
+	OnSnooze  func()
+	OnDismiss func()
+
+	// Style is applied last, to the panel.
+	Style []core.StyleProp
+}
+```
+
+AlarmRinging is the screen an alarm puts up while it rings: the time it was set for, its label, and two buttons.
+
+	ringer := hooks.UseAlarms(ctx, alarms.Get(), opts)
+	if a, ok := ringer.Ringing(); ok {
+	    return comps.AlarmRinging{Alarm: a, OnSnooze: ringer.Snooze, OnDismiss: ringer.Dismiss}
+	}
+
+	          ┌───────────────────────┐
+	          │        6:30 AM        │   the alarm's time, display size
+	          │        Wake up        │   label, if any
+	          │                       │
+	          │ [       Snooze      ] │   filled: the easy target half-awake
+	          │ [      Dismiss      ] │   outlined
+	          └───────────────────────┘
+
+#### Why Snooze is the big button
+
+Every alarm clock makes snooze the easy target and dismiss the deliberate one, because the costly mistake is dismissing by accident — a snooze pressed by mistake costs nine minutes, a dismiss pressed by mistake costs the morning. Filled against outlined is that distinction in this library's vocabulary. OnSnooze nil drops the button, for an alarm with no snooze.
+
+#### Accessibility
+
+The panel is an alert (core.RoleAlert), so a screen reader announces it when it appears rather than waiting for the user to find it, and its label is a sentence: "Alarm, 6:30 AM, Wake up". The time and label inside are hidden to avoid reading that twice; the buttons are ordinary buttons.
+
+<small>[comps/alarm.go:76](https://github.com/rohanthewiz/grmob/blob/master/comps/alarm.go#L76)</small>
+
+#### func (AlarmRinging) Render
+
+```go
+func (r AlarmRinging) Render(ctx *core.Context) *core.Node
+```
+
+<small>[comps/alarm.go:89](https://github.com/rohanthewiz/grmob/blob/master/comps/alarm.go#L89)</small>
+
+### type AlarmRow
+
+```go
+type AlarmRow struct {
+	Alarm alarm.Alarm
+
+	// Hour24 writes the time as 06:30 rather than 6:30 AM.
+	Hour24 bool
+
+	// OnToggle receives the new Enabled value.
+	OnToggle func(on bool)
+
+	// Style is passed through to the row.
+	Style []core.StyleProp
+}
+```
+
+AlarmRow is one alarm in a list: its time as the title, its label and repeat days under it, and a switch that turns it on and off.
+
+	core.For(alarms.Get(), func(a alarm.Alarm, i int) core.View {
+	    return core.Keyed(a.ID, comps.AlarmRow{Alarm: a, OnToggle: func(on bool) { setEnabled(a.ID, on) }})
+	})
+
+It is a SwitchRow, so everything in that type's doc applies — the whole row toggles, and OnToggle is a setter that receives the new value. The subtitle is "Wake up · Weekdays", or just the days for an unlabelled alarm, which is what a reader hears as the switch's hint after hearing the time as its name.
+
+<small>[comps/alarm.go:19](https://github.com/rohanthewiz/grmob/blob/master/comps/alarm.go#L19)</small>
+
+#### func (AlarmRow) Render
+
+```go
+func (r AlarmRow) Render(ctx *core.Context) *core.Node
+```
+
+<small>[comps/alarm.go:32](https://github.com/rohanthewiz/grmob/blob/master/comps/alarm.go#L32)</small>
+
+### type AnalogClock
+
+```go
+type AnalogClock struct {
+	// Time is the instant to draw, in the location it should be read in.
+	Time time.Time
+
+	// Size is the dial's diameter in px; 0 means 200.
+	Size float64
+
+	// ShowSeconds draws the second hand.
+	ShowSeconds bool
+
+	// Numerals draws 1–12 inside the ticks.
+	Numerals bool
+
+	// MinuteTicks adds a fine tick for every minute between the hour ticks.
+	// Off by default: it is 48 more layers, and at small sizes the ticks run
+	// together into a ring.
+	MinuteTicks bool
+
+	// Smooth animates each step of the hands (a short ease-out) instead of
+	// jumping like a quartz movement. See "Angles" above for the midnight
+	// caveat that comes with it.
+	Smooth bool
+
+	// Face fills the dial and Ink draws the ticks, numerals and the hour and
+	// minute hands; empty uses the theme's Surface and TextPrimary.
+	// SecondColor draws the second hand and hub, and defaults to Primary so
+	// the fastest-moving part is the one the eye can find.
+	Face        string
+	Ink         string
+	SecondColor string
+
+	// Style is applied last, to the stack.
+	Style []core.StyleProp
+
+	// AccessibilityLabel overrides the spoken time.
+	AccessibilityLabel string
+}
+```
+
+AnalogClock draws a time as a clock face with hands.
+
+	now := hooks.UseNow(ctx, time.Second)
+	comps.AnalogClock{Time: now, ShowSeconds: true, Numerals: true}
+
+#### How a hand pivots at the centre
+
+core.Rotate turns a node about its own centre and deliberately has no transform-origin; its doc says to wrap the thing in a box whose centre is the pivot. So every hand, tick and numeral is its own layer of a ZStack, and each layer is exactly the size of the dial. The layer is what turns, and its centre is the dial's centre:
+
+	┌───────────────┐   one layer, size × size, Rotate(angle)
+	│               │
+	│   (spacer)    │   height = size/2 − length
+	│       ┃       │
+	│       ┃       │   the hand: length + tail tall, horizontally centred
+	│       ● ──────┼── the layer's centre, which the hand's lower end passes
+	│       ┃       │   tail (second hand only)
+	│               │
+	└───────────────┘
+
+Everything outside the stick is transparent, so a stack of such layers draws as a face with hands. The cost is one node per layer, which on every target is a view with no content, and it uses only primitives that already agree on all four (see Style.Rotate's table) — no shape primitive needed.
+
+#### Angles, and why they do not wrap
+
+All three hands are derived from the seconds elapsed in the local day:
+
+	hour   = s / 120     0 … 720°   (two turns a day)
+	minute = s / 10      0 … 8640°
+	second = s × 6       0 … 518400°
+
+Unwrapped because Smooth animates each change with a Transition, and a transition from 354° to 0° sweeps the long way back. Rotate passes its value through unnormalised for exactly this reason. The largest value is well within Compose's Float precision (about 0.03° at that magnitude).
+
+The day does roll over. At midnight every hand's angle falls to zero, which under a Transition would spin the second hand backwards 1,440 turns; so the pass whose time is in the first second of the day omits the Transition and the hands jump. A caller that skips that exact second (an app suspended over midnight) sees one backwards sweep, and only with Smooth.
+
+#### Accessibility
+
+One element that says the time, as DigitalClock does; the face is hidden.
+
+<small>[comps/clock.go:216](https://github.com/rohanthewiz/grmob/blob/master/comps/clock.go#L216)</small>
+
+#### func (AnalogClock) Render
+
+```go
+func (c AnalogClock) Render(ctx *core.Context) *core.Node
+```
+
+<small>[comps/clock.go:271](https://github.com/rohanthewiz/grmob/blob/master/comps/clock.go#L271)</small>
+
 ### type Avatar
 
 ```go
@@ -387,6 +569,69 @@ func (c Compass) Render(ctx *core.Context) *core.Node
 ```
 
 <small>[comps/compass.go:121](https://github.com/rohanthewiz/grmob/blob/master/comps/compass.go#L121)</small>
+
+### type DigitalClock
+
+```go
+type DigitalClock struct {
+	// Time is the instant to draw, in the location it should be read in.
+	Time time.Time
+
+	// Hour24 draws 22:42 instead of 10:42 PM.
+	Hour24 bool
+
+	// ShowSeconds adds :07 to the digits. Off by default: a clock that only
+	// changes once a minute can be driven by hooks.UseNow(ctx, time.Minute).
+	ShowSeconds bool
+
+	// ShowDate adds a line with the weekday, month and day.
+	ShowDate bool
+
+	// Size is the digits' font size in px; 0 means 40. The AM/PM marker and
+	// the date line scale from it.
+	Size float64
+
+	// Color inks the digits; empty uses the theme's TextPrimary. The date line
+	// always uses TextSecondary, so it reads as subordinate.
+	Color string
+
+	// Style is applied last, to the outer column.
+	Style []core.StyleProp
+
+	// AccessibilityLabel overrides the spoken time.
+	AccessibilityLabel string
+}
+```
+
+DigitalClock draws a time as digits, with an optional date line under them.
+
+	now := hooks.UseNow(ctx, time.Second)
+	comps.DigitalClock{Time: now, ShowSeconds: true, ShowDate: true}
+
+	    10:42:07 PM         digits, with the AM/PM marker set smaller
+	 Wednesday, September 16    optional date
+
+#### A time, not a ticker
+
+The widget draws whatever Time it is handed and holds no hooks, so it can be rendered conditionally, tested at a fixed instant, and fed a time that is not "now here" (a world clock is Time: now.In(tokyo)). hooks.UseNow is the ticker; its doc explains why it aligns to the wall clock rather than to mount.
+
+#### Accessibility
+
+Read in tree order the parts are "10:42:07", "PM", "Wednesday, September 16" — three stops for one fact. So the whole widget is one element that announces a sentence, with its parts hidden, the same shape Compass uses and for the same reason: RoleImg is what makes the label survive on the web (see Compass's Accessibility section).
+
+#### Known limit
+
+core.Style has no font family, so the digits are the platform's proportional ones and the line's width can change by a pixel or two as the digits do. Centring (the default alignment here) keeps that from reading as a jitter at either edge.
+
+<small>[comps/clock.go:41](https://github.com/rohanthewiz/grmob/blob/master/comps/clock.go#L41)</small>
+
+#### func (DigitalClock) Render
+
+```go
+func (c DigitalClock) Render(ctx *core.Context) *core.Node
+```
+
+<small>[comps/clock.go:70](https://github.com/rohanthewiz/grmob/blob/master/comps/clock.go#L70)</small>
 
 ### type MapHandoff
 

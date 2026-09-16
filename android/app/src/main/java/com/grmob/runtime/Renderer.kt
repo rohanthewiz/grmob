@@ -497,6 +497,14 @@ private fun RenderNodeContent(node: GrMobNode, extra: Modifier) {
         // through to the container default, which would draw one.
         "Marker" -> Unit
 
+        // A vector drawing (core.Canvas). Its CanvasShape children are data
+        // read in the draw phase, like a map's markers — see GrMobCanvas.kt.
+        "Canvas" -> GrMobCanvas(node, animatedStyle(style).boxModifier(extra, gestureModifier(node)))
+
+        // A shape reached on its own, outside a canvas: nothing, for the reason
+        // a lone Marker is nothing.
+        "CanvasShape" -> Unit
+
         // Fragment and Theme are grouping nodes with no visual box of their
         // own: emit the children inline into whatever scope we're in.
         "Fragment", "Theme" -> RenderChildren(node)

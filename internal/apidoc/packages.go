@@ -185,9 +185,9 @@ var Packages = []Pkg{
 		}, {
 			Slug:  "controls",
 			Title: "Controls",
-			Blurb: "Buttons, text inputs, switches, sliders, selects, images, tab views and text grids.",
+			Blurb: "Buttons, text inputs, switches, sliders, selects, images, tab views, text grids and vector canvases.",
 			Files: []string{"button.go", "input.go", "switch.go", "slider.go", "select_menu.go", "image.go",
-				"tabview.go", "textgrid.go"},
+				"tabview.go", "textgrid.go", "canvas.go"},
 		}, {
 			Slug:  "editors",
 			Title: "Editors",
@@ -274,9 +274,14 @@ var Packages = []Pkg{
 		}, {
 			Slug:  "display",
 			Title: "Data display & maps",
-			Blurb: "Avatars, stat tiles, the compass, map panels and static maps.",
-			Files: []string{"avatar.go", "stat_tile.go", "compass.go", "map_panel.go", "static_map.go"},
+			Blurb: "Avatars, stat tiles, the compass, clocks and alarms, map panels and static maps.",
+			Files: []string{"avatar.go", "stat_tile.go", "compass.go", "clock.go", "alarm.go", "map_panel.go", "static_map.go"},
 		}},
+	},
+	{
+		Dir:   "alarm",
+		Group: "Widgets",
+		Blurb: "Alarm clock arithmetic: when an alarm next rings, and whether it fell due between two checks.",
 	},
 	{
 		Dir:   "forms",

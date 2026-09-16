@@ -4,15 +4,17 @@
 import "github.com/rohanthewiz/grmob/core"
 ```
 
-Buttons, text inputs, switches, sliders, selects, images, tab views and text grids.
+Buttons, text inputs, switches, sliders, selects, images, tab views, text grids and vector canvases.
 
-One of 11 topic pages of [package core](core.md), which has the package overview and an index of every topic. This page documents the declarations in `core/button.go`, `core/input.go`, `core/switch.go`, `core/slider.go`, `core/select_menu.go`, `core/image.go`, `core/tabview.go`, `core/textgrid.go`.
+One of 11 topic pages of [package core](core.md), which has the package overview and an index of every topic. This page documents the declarations in `core/button.go`, `core/input.go`, `core/switch.go`, `core/slider.go`, `core/select_menu.go`, `core/image.go`, `core/tabview.go`, `core/textgrid.go`, `core/canvas.go`.
 
 ## Index
 
-- [Constants](#constants) — `GridBold`, `GridDim`, `GridItalic`, `GridStrike`, `GridUnderline`
+- [Constants](#constants) — `GridBold`, `GridDim`, `GridItalic`, `GridStrike`, `GridUnderline`, `PathClose`, `PathCubic`, `PathLine`, `PathMove`
 - [`func Button`](#func-button)
 - [`func ButtonWithEvent`](#func-buttonwithevent)
+- [`func Canvas`](#func-canvas)
+- [`func CanvasMapping`](#func-canvasmapping)
 - [`func Checkbox`](#func-checkbox)
 - [`func Image`](#func-image)
 - [`func ImageWithMode`](#func-imagewithmode)
@@ -28,16 +30,34 @@ One of 11 topic pages of [package core](core.md), which has the package overview
 - [`func TabView`](#func-tabview)
 - [`func TextArea`](#func-textarea)
 - [`func TextGrid`](#func-textgrid)
+- [`type CanvasScale`](#type-canvasscale)
+    - [`func (CanvasScale) Apply`](#func-canvasscale-apply)
 - [`type ContentMode`](#type-contentmode)
     - [`func ContentModes`](#func-contentmodes)
 - [`type GridRow`](#type-gridrow)
 - [`type GridRun`](#type-gridrun)
+- [`type LineCap`](#type-linecap)
+- [`type LineJoin`](#type-linejoin)
+- [`type Path`](#type-path)
+    - [`func Circle`](#func-circle)
+    - [`func Line`](#func-line)
+    - [`func NewPath`](#func-newpath)
+    - [`func Polyline`](#func-polyline)
+    - [`func Rect`](#func-rect)
+    - [`func Sector`](#func-sector)
+    - [`func (*Path) Arc`](#func-path-arc)
+    - [`func (*Path) Close`](#func-path-close)
+    - [`func (*Path) CubicTo`](#func-path-cubicto)
+    - [`func (*Path) LineTo`](#func-path-lineto)
+    - [`func (*Path) MoveTo`](#func-path-moveto)
+    - [`func (*Path) QuadTo`](#func-path-quadto)
 - [`type SelectMenuItem`](#type-selectmenuitem)
 - [`type SelectMenuSection`](#type-selectmenusection)
     - [`func SelectMenuSections`](#func-selectmenusections)
     - [`func (SelectMenuSection) First`](#func-selectmenusection-first)
 - [`type SelectOption`](#type-selectoption)
     - [`func Option`](#func-option)
+- [`type Shape`](#type-shape)
 - [`type TabItem`](#type-tabitem)
     - [`func Tab`](#func-tab)
 - [`type TabViewNode`](#type-tabviewnode)
@@ -48,6 +68,26 @@ One of 11 topic pages of [package core](core.md), which has the package overview
     - [`func Tabs`](#func-tabs)
 
 ## Constants
+
+Wire opcodes. The numbers after each are its operands:
+
+	0 x y                   move to
+	1 x y                   line to
+	2 x1 y1 x2 y2 x y       cubic Bézier to, via two control points
+	3                       close the subpath
+
+Held to the renderers by the canvas tests in mobile/verify and wasm/verify.
+
+```go
+const (
+	PathMove  = 0
+	PathLine  = 1
+	PathCubic = 2
+	PathClose = 3
+)
+```
+
+<small>[core/canvas.go:255](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L255)</small>
 
 GridRun attribute bits. A renderer without a native spelling for one may drop it (there is no dim on the web's font-weight scale, say, so the DOM targets fake it with opacity), but must never fail the row.
 
@@ -99,6 +139,76 @@ func ButtonWithEvent(label string, event string, handler func(), props ...PropsA
 ButtonWithEvent is Button with the event name chosen by the caller, for the gestures that have no dedicated builder. It is largely superseded by the widening above — core.Button(label, fn, core.On("LongPress", g)) says the same thing and keeps the click — but it stays because it is the only way to build a button whose \*only\* wiring is a non-click event.
 
 <small>[core/button.go:58](https://github.com/rohanthewiz/grmob/blob/master/core/button.go#L58)</small>
+
+### func Canvas
+
+```go
+func Canvas(w, h float64, shapes []Shape, props ...PropsAndChildren) View
+```
+
+Canvas draws vector shapes — lines, curves, arcs, filled polygons — in a coordinate space of its own, scaled into whatever box the layout gives it.
+
+	p := core.NewPath().MoveTo(0, 80).LineTo(40, 20).LineTo(100, 50)
+
+	core.Canvas(100, 100, []core.Shape{
+	    {Path: core.Circle(50, 50, 48), Fill: t.Colors.Surface},
+	    {Path: p, Stroke: t.Colors.Primary, StrokeWidth: 2, Cap: core.CapRound},
+	}, core.Width("100%"))
+
+It is the one primitive in core that can join two arbitrary points, which is what line, area, pie and scatter charts are made of. Everything else in the vocabulary is a flex box, and a box can only fake a diagonal by turning.
+
+#### The coordinate space is not the size
+
+w × h is a viewBox: the units the shapes are written in, with the origin at the top-left and y growing downwards (screen convention, which is what all three platforms' drawing APIs use). The node's size on screen comes from its Style like any other node's, and the drawing is mapped onto that box by the CanvasScale prop:
+
+	CanvasFit      one scale for both axes, centred — a clock face stays round
+	               in a wide box. The default. SVG `xMidYMid meet`.
+	CanvasStretch  each axis scaled on its own — a line chart spans a wide box.
+	               SVG `none`.
+
+A Canvas whose Style gives no Height takes the viewBox's aspect ratio, and one that gives no Width fills its parent's width, so the common case — a chart as wide as the screen — needs no sizing props at all.
+
+#### Strokes are in layout units, never scaled
+
+A StrokeWidth of 2 is 2 px (dp, pt) whatever the scale, on every target. Scaled strokes would make a stretched chart's lines fat on one axis and thin on the other, and would make the same chart's lines change weight between a phone and a tablet. SVG says this with vector-effect: non-scaling-stroke; the natives transform the path's points and stroke the result untransformed, which is the same thing.
+
+#### Four opcodes on the wire
+
+Path offers moves, lines, quadratic and cubic Béziers, and circular arcs, but what reaches a renderer is only move, line, cubic and close. Quadratics are raised to cubics exactly, and arcs are approximated by cubic segments of at most 90° (error under 0.03% of the radius) — in Go, once.
+
+The alternative was teaching three languages four arc conventions: SVG's endpoint form with its large-arc and sweep flags, Compose's bounding rectangle with degrees, SwiftUI's centre with radians and a clockwise flag that is flipped in a y-down space. Each is a place for the three targets to disagree by a sign, and a disagreement there draws a plausible wrong picture rather than failing. Every renderer already has moveTo, lineTo, cubicTo and close with identical meaning, so that is the whole contract.
+
+#### One child per shape
+
+A Canvas is a container of CanvasShape nodes, the shape TextGrid has with its rows and for the same reason: the reconciler pairs children by index and compares props by value, so a pass that moves one hand of a clock sends one update-props patch and leaves the face alone. Shapes are drawn in order, so a later shape paints over an earlier one.
+
+Shapes take no props of their own and are never built directly by app code. Behavior props (OnClick, ...) apply to the canvas as a whole.
+
+#### Accessibility
+
+A drawing has no text a reader could find in it. A Canvas without an AccessibilityLabel is treated as decoration and hidden; one with a label is a single image element that speaks it. A chart should always be given one that states what the chart shows, not that it is a chart.
+
+#### Not in v1
+
+Text inside the drawing (lay labels out around it as Text nodes), gradients, clipping, per-shape hit-testing, and the even-odd fill rule. Fills use the nonzero rule, which is every target's default.
+
+<small>[core/canvas.go:83](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L83)</small>
+
+### func CanvasMapping
+
+```go
+func CanvasMapping(w, h, boxW, boxH float64, scale CanvasScale) (sx, sy, ox, oy float64)
+```
+
+CanvasMapping is how a w × h viewBox lands in a boxW × boxH box under a scale: a viewBox point (x, y) is drawn at (x·sx + ox, y·sy + oy).
+
+	CanvasStretch  sx = boxW/w, sy = boxH/h, no offset
+	CanvasFit      sx = sy = the smaller of the two, and the slack on the
+	               other axis split evenly — SVG's "xMidYMid meet"
+
+The web targets never call this; they hand the viewBox to SVG, which applies the same rule itself. It is the statement the two native renderers restate (canvasViewport in GrMobCanvasGeometry.kt, the Swift equivalent), and internal/canvasfixture holds them to it. A non-positive viewBox side reads as 100, which is what Canvas writes for one.
+
+<small>[core/canvas.go:154](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L154)</small>
 
 ### func Checkbox
 
@@ -336,6 +446,40 @@ The Style applies to the grid as a whole (FontSize, TextColor and Background are
 
 ## Types
 
+### type CanvasScale
+
+```go
+type CanvasScale string
+```
+
+CanvasScale says how a Canvas's viewBox is mapped onto its box. It is passed among a Canvas's props like a StyleProp:
+
+	core.Canvas(200, 100, shapes, core.CanvasStretch, core.Height("160px"))
+
+<small>[core/canvas.go:118](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L118)</small>
+
+```go
+const (
+	// CanvasFit scales both axes by the same factor, the largest that fits
+	// the whole drawing in the box, and centres it. The default.
+	CanvasFit CanvasScale = "fit"
+
+	// CanvasStretch scales each axis independently so the viewBox exactly
+	// fills the box. Shapes distort; strokes do not (see Canvas).
+	CanvasStretch CanvasScale = "stretch"
+)
+```
+
+#### func (CanvasScale) Apply
+
+```go
+func (c CanvasScale) Apply(_ *Context, n *Node)
+```
+
+Apply makes a CanvasScale a BehaviorProp: it writes a node prop rather than a Style field, because it means nothing to any node but a Canvas.
+
+<small>[core/canvas.go:132](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L132)</small>
+
 ### type ContentMode
 
 ```go
@@ -437,6 +581,186 @@ GridRun is a span of one row drawn in one style. Text is the glyphs; Fg and Bg a
 The json tags are the wire shape the renderers read. They are short because a full pane is a few thousand runs a second at diff rate, and the key names are the part of a run that is not content.
 
 <small>[core/textgrid.go:57](https://github.com/rohanthewiz/grmob/blob/master/core/textgrid.go#L57)</small>
+
+### type LineCap
+
+```go
+type LineCap string
+```
+
+LineCap is how an open stroke's ends are drawn.
+
+<small>[core/canvas.go:170](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L170)</small>
+
+```go
+const (
+	CapButt   LineCap = "butt" // flush with the end point; the default
+	CapRound  LineCap = "round"
+	CapSquare LineCap = "square"
+)
+```
+
+### type LineJoin
+
+```go
+type LineJoin string
+```
+
+LineJoin is how a stroke turns a corner.
+
+<small>[core/canvas.go:179](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L179)</small>
+
+```go
+const (
+	JoinMiter LineJoin = "miter" // the default
+	JoinRound LineJoin = "round"
+	JoinBevel LineJoin = "bevel"
+)
+```
+
+### type Path
+
+```go
+type Path struct {
+	// contains filtered or unexported fields
+}
+```
+
+Path is a sequence of subpaths built by chained calls. The builder methods mutate and return the receiver, so a Path should be finished before it is handed to a Shape: the node takes a copy when the Canvas renders, and a change after that is invisible (see Node immutability).
+
+<small>[core/canvas.go:266](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L266)</small>
+
+#### func Circle
+
+```go
+func Circle(cx, cy, r float64) *Path
+```
+
+Circle is a closed circle, drawn clockwise from three o'clock.
+
+<small>[core/canvas.go:433](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L433)</small>
+
+#### func Line
+
+```go
+func Line(x1, y1, x2, y2 float64) *Path
+```
+
+Line is a single straight segment.
+
+<small>[core/canvas.go:413](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L413)</small>
+
+#### func NewPath
+
+```go
+func NewPath() *Path
+```
+
+NewPath returns an empty path.
+
+<small>[core/canvas.go:277](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L277)</small>
+
+#### func Polyline
+
+```go
+func Polyline(xy ...float64) *Path
+```
+
+Polyline joins the points (x0, y0, x1, y1, ...) with straight segments. An odd trailing coordinate is ignored.
+
+<small>[core/canvas.go:419](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L419)</small>
+
+#### func Rect
+
+```go
+func Rect(x, y, w, h float64) *Path
+```
+
+Rect is a closed rectangle with its top-left corner at (x, y).
+
+<small>[core/canvas.go:428](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L428)</small>
+
+#### func Sector
+
+```go
+func Sector(cx, cy, inner, outer, startDeg, sweepDeg float64) *Path
+```
+
+Sector is a closed ring segment between radii inner and outer — a pie wedge when inner is 0, a donut segment otherwise. Angles are as for Path.Arc.
+
+<small>[core/canvas.go:440](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L440)</small>
+
+#### func (*Path) Arc
+
+```go
+func (p *Path) Arc(cx, cy, r, startDeg, sweepDeg float64) *Path
+```
+
+Arc draws part of a circle centred on (cx, cy) with radius r, starting at startDeg and sweeping sweepDeg. Angles are degrees clockwise from the positive x-axis (three o'clock) — clockwise on screen, the same sense as core.Rotate — and a negative sweep goes anticlockwise.
+
+If the path has a current point, a straight line joins it to the arc's start, so a pie wedge is MoveTo(centre).Arc(...).Close(). Otherwise the arc starts a new subpath.
+
+##### How it is approximated
+
+The sweep is split into segments of at most 90°, and each becomes the cubic whose control points lie on the tangents at its ends, at distance k = 4/3 · tan(θ/4) · r. That k makes the curve's midpoint lie exactly on the circle; the worst radial error for a 90° segment is about 0.027% of r, below a pixel for any radius a phone can show.
+
+	P1 ──k── C1
+	           ╲         C1 = P1 + k · tangent(P1)
+	            C2       C2 = P2 − k · tangent(P2)
+	             │
+	             P2
+
+<small>[core/canvas.go:343](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L343)</small>
+
+#### func (*Path) Close
+
+```go
+func (p *Path) Close() *Path
+```
+
+Close joins the current point back to the start of the subpath. A later LineTo continues from that start, as it does on every platform.
+
+<small>[core/canvas.go:381](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L381)</small>
+
+#### func (*Path) CubicTo
+
+```go
+func (p *Path) CubicTo(x1, y1, x2, y2, x, y float64) *Path
+```
+
+CubicTo draws a cubic Bézier to (x, y) via control points (x1, y1) and (x2, y2).
+
+<small>[core/canvas.go:300](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L300)</small>
+
+#### func (*Path) LineTo
+
+```go
+func (p *Path) LineTo(x, y float64) *Path
+```
+
+LineTo draws a straight segment to (x, y). With no current point it moves there instead, which is what every platform's API does and what makes a polyline a single loop body.
+
+<small>[core/canvas.go:289](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L289)</small>
+
+#### func (*Path) MoveTo
+
+```go
+func (p *Path) MoveTo(x, y float64) *Path
+```
+
+MoveTo starts a new subpath at (x, y).
+
+<small>[core/canvas.go:280](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L280)</small>
+
+#### func (*Path) QuadTo
+
+```go
+func (p *Path) QuadTo(qx, qy, x, y float64) *Path
+```
+
+QuadTo draws a quadratic Bézier to (x, y) via control point (qx, qy). It is sent as the cubic that traces the identical curve: each cubic control point sits two thirds of the way from an end point to the quadratic one.
+
+<small>[core/canvas.go:312](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L312)</small>
 
 ### type SelectMenuItem
 
@@ -649,6 +973,32 @@ func Option(value, label string) SelectOption
 Option builds a SelectOption, mirroring Tab's constructor next door.
 
 <small>[core/input.go:209](https://github.com/rohanthewiz/grmob/blob/master/core/input.go#L209)</small>
+
+### type Shape
+
+```go
+type Shape struct {
+	Path *Path
+
+	// Fill and Stroke are CSS colours ("#rrggbb", "#rrggbbaa"); "" for none.
+	Fill   string
+	Stroke string
+
+	// StrokeWidth is in layout units, not viewBox units; 0 means 1.
+	StrokeWidth float64
+
+	Cap  LineCap
+	Join LineJoin
+
+	// Dash alternates dash and gap lengths, in layout units like StrokeWidth.
+	// Nil for a solid line.
+	Dash []float64
+}
+```
+
+Shape is one path drawn once: filled, stroked, or both (fill first, then the stroke over it, on every target). A shape with neither colour draws nothing and still occupies its child slot, which keeps the slots of the shapes after it stable while it comes and goes.
+
+<small>[core/canvas.go:191](https://github.com/rohanthewiz/grmob/blob/master/core/canvas.go#L191)</small>
 
 ### type TabItem
 

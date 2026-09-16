@@ -333,6 +333,17 @@ class Document {
         return new Element(this, tag);
     }
 
+    // core.Canvas's <svg> and <path>. A browser keeps an SVG element's
+    // tagName in its own case ("svg", not "SVG"), which is modelled because a
+    // runtime check like FORM_CONTROLS.has(el.tagName.toLowerCase()) must see
+    // the same string it would in a browser.
+    createElementNS(ns, tag) {
+        const el = new Element(this, tag);
+        el.tagName = tag;
+        el.namespaceURI = ns;
+        return el;
+    }
+
     createDocumentFragment() {
         return new DocumentFragment(this);
     }

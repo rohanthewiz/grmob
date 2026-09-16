@@ -39,7 +39,7 @@ Package comps's reference is split into 6 topic pages by source file. The index 
 | [Inputs & pickers](comps-inputs.md) | Form fields, search, searchable selects, radio groups, dates and calendars, and the two editors. | 11 types, 10 functions and methods |
 | [Buttons & choices](comps-actions.md) | Buttons and their variants, chips, segmented controls, steppers, ratings and badges. | 10 types, 10 functions and methods |
 | [Overlays & feedback](comps-overlays.md) | Dialogs, action sheets, menus, snackbars, banners, progress, spinners, skeletons and empty states. | 12 types, 9 functions and methods |
-| [Data display & maps](comps-display.md) | Avatars, stat tiles, the compass, map panels and static maps. | 9 types, 12 functions and methods |
+| [Data display & maps](comps-display.md) | Avatars, stat tiles, the compass, clocks and alarms, map panels and static maps. | 13 types, 16 functions and methods |
 
 ## Index
 
@@ -121,8 +121,12 @@ Package comps's reference is split into 6 topic pages by source file. The index 
     - [`func OSMStaticMap`](comps-display.md#func-osmstaticmap)
     - [`func OpenStreetMapHandoff`](comps-display.md#func-openstreetmaphandoff)
     - [`func PlaceCount`](comps-display.md#func-placecount)
+    - [`type AlarmRinging`](comps-display.md#type-alarmringing)
+    - [`type AlarmRow`](comps-display.md#type-alarmrow)
+    - [`type AnalogClock`](comps-display.md#type-analogclock)
     - [`type Avatar`](comps-display.md#type-avatar)
     - [`type Compass`](comps-display.md#type-compass)
+    - [`type DigitalClock`](comps-display.md#type-digitalclock)
     - [`type MapHandoff`](comps-display.md#type-maphandoff)
     - [`type MapPanel`](comps-display.md#type-mappanel)
     - [`type MapPin`](comps-display.md#type-mappin)

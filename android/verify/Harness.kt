@@ -223,4 +223,78 @@ fun main() {
         kotlin.system.exitProcess(1)
     }
     println("OK: ${progressCases.size} value ranges match Go's reading")
+
+    // And again for the canvas table.
+    if (canvasCases.size < 6) {
+        System.err.println("FAIL: only ${canvasCases.size} canvas cases were generated")
+        kotlin.system.exitProcess(1)
+    }
+
+    val canvasProblems = checkCanvas(canvasCases)
+    if (canvasProblems.isNotEmpty()) {
+        System.err.println("FAIL: the Kotlin canvas geometry disagrees with Go:")
+        canvasProblems.forEach { System.err.println("  $it") }
+        kotlin.system.exitProcess(1)
+    }
+    println("OK: ${canvasCases.size} canvas drawings map and decode as Go's do")
+}
+
+/** One case from internal/canvasfixture: inputs, then Go's mapping and calls. */
+data class CanvasCase(
+    val name: String,
+    val vw: Double,
+    val vh: Double,
+    val boxW: Double,
+    val boxH: Double,
+    val stretch: Boolean,
+    val ops: List<Double>,
+    val sx: Double,
+    val sy: Double,
+    val ox: Double,
+    val oy: Double,
+    val calls: List<CanvasCall>,
+)
+
+/** One drawing call in box pixels: "M", "L", "C" or "Z" and its operands. */
+data class CanvasCall(val op: String, val args: List<Double>)
+
+/**
+ * Runs each case through [canvasViewport] and [decodeCanvasPath], recording the
+ * calls the sink receives, and reports every difference. Values are compared
+ * within 1e-9: both sides do the same multiplications in the same order, so
+ * anything wider than rounding noise is a real disagreement.
+ */
+fun checkCanvas(cases: List<CanvasCase>): List<String> {
+    val problems = mutableListOf<String>()
+    fun close(a: Double, b: Double) = kotlin.math.abs(a - b) <= 1e-9
+    for (c in cases) {
+        val vp = canvasViewport(c.vw, c.vh, c.boxW, c.boxH, c.stretch)
+        if (!close(vp.scaleX, c.sx) || !close(vp.scaleY, c.sy) ||
+            !close(vp.offsetX, c.ox) || !close(vp.offsetY, c.oy)
+        ) {
+            problems.add("${c.name}: viewport $vp, want (${c.sx}, ${c.sy}, ${c.ox}, ${c.oy})")
+            continue
+        }
+        val got = mutableListOf<CanvasCall>()
+        decodeCanvasPath(c.ops, vp, object : CanvasPathSink {
+            override fun moveTo(x: Double, y: Double) { got.add(CanvasCall("M", listOf(x, y))) }
+            override fun lineTo(x: Double, y: Double) { got.add(CanvasCall("L", listOf(x, y))) }
+            override fun cubicTo(x1: Double, y1: Double, x2: Double, y2: Double, x: Double, y: Double) {
+                got.add(CanvasCall("C", listOf(x1, y1, x2, y2, x, y)))
+            }
+            override fun close() { got.add(CanvasCall("Z", emptyList())) }
+        })
+        if (got.size != c.calls.size) {
+            problems.add("${c.name}: ${got.size} calls, want ${c.calls.size}")
+            continue
+        }
+        got.zip(c.calls).forEachIndexed { i, (g, w) ->
+            if (g.op != w.op || g.args.size != w.args.size ||
+                g.args.zip(w.args).any { (a, b) -> !close(a, b) }
+            ) {
+                problems.add("${c.name}: call $i is $g, want $w")
+            }
+        }
+    }
+    return problems
 }

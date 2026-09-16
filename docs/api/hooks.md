@@ -36,11 +36,19 @@ Comparison is by value equality on the dependency list. A dependency that is a f
 - [`func UseLocation`](#func-uselocation)
 - [`func UseLocationWhen`](#func-uselocationwhen)
 - [`func UseMemo`](#func-usememo)
+- [`func UseNow`](#func-usenow)
 - [`func UsePermission`](#func-usepermission)
 - [`func UsePermissionLive`](#func-usepermissionlive)
 - [`func UseReducer`](#func-usereducer)
 - [`func UseTimeout`](#func-usetimeout)
 - [`func UseTimeoutWhile`](#func-usetimeoutwhile)
+- [`type AlarmOptions`](#type-alarmoptions)
+- [`type AlarmRinger`](#type-alarmringer)
+    - [`func UseAlarms`](#func-usealarms)
+    - [`func (AlarmRinger) Dismiss`](#func-alarmringer-dismiss)
+    - [`func (AlarmRinger) Ringing`](#func-alarmringer-ringing)
+    - [`func (AlarmRinger) Snooze`](#func-alarmringer-snooze)
+    - [`func (AlarmRinger) Snoozed`](#func-alarmringer-snoozed)
 - [`type Debouncer`](#type-debouncer)
     - [`func UseDebounce`](#func-usedebounce)
     - [`func (*Debouncer) Call`](#func-debouncer-call)
@@ -283,6 +291,40 @@ compute runs inline on the render goroutine (not on its own goroutine like UseEf
 
 <small>[hooks/memo.go:51](https://github.com/rohanthewiz/grmob/blob/master/hooks/memo.go#L51)</small>
 
+### func UseNow
+
+```go
+func UseNow(ctx *core.Context, every time.Duration) time.Time
+```
+
+UseNow returns the current time and re-renders every time it crosses a boundary of every — each second for time.Second, the top of each minute for time.Minute:
+
+	now := hooks.UseNow(ctx, time.Second)
+	comps.AnalogClock{Time: now, ShowSeconds: true}
+
+#### Why the clock widgets do not call this themselves
+
+comps.DigitalClock and comps.AnalogClock take a time.Time and hold no hooks, the same split as comps.Compass and UseHeading. A widget that ticked itself would be a hook caller (render it unconditionally, or its slots shift), could not be tested at a fixed instant, and could not show anything but "now here" — a world clock, a stopwatch or a replay all want to hand over a different time. The app also gets to decide the render rate: a clock without a second hand needs one pass a minute, not sixty.
+
+#### Why not UseInterval
+
+UseInterval's ticker starts at mount, so a one-second ticker is some fixed fraction of a second out of phase with the wall clock for the life of the app. A clock driven that way changes its seconds digit up to 999 ms after the phone's status bar does, which is visible when both are on screen. UseNow instead sleeps until the next boundary every time:
+
+	wall clock   ──|────────|────────|────────|──   boundaries of every
+	mount           ▲
+	UseInterval     ·────────·────────·────────·    fixed phase from mount
+	UseNow                  ·────────·────────·    re-aimed at each boundary
+
+Recomputing the delay on every tick (rather than one ticker started at the first boundary) also absorbs timer lateness and wall-clock adjustments, so the phase cannot drift over a long-running session.
+
+Boundaries are those of time.Truncate, i.e. multiples of every since the zero time in UTC. Seconds and minutes are therefore aligned in every time zone; an hour is aligned only in zones whose offset is a whole number of hours.
+
+#### Limits shared with UseInterval
+
+every \<= 0 means one second. The duration is fixed by the first render. The goroutine stops when the context tree is closed, not when the component leaves the view (hooks have no unmount signal), and restarts on a re-mount over the same context.
+
+<small>[hooks/now.go:68](https://github.com/rohanthewiz/grmob/blob/master/hooks/now.go#L68)</small>
+
 ### func UsePermission
 
 ```go
@@ -439,6 +481,126 @@ It takes one slot and must be called unconditionally in a stable position. fn is
 <small>[hooks/interval.go:277](https://github.com/rohanthewiz/grmob/blob/master/hooks/interval.go#L277)</small>
 
 ## Types
+
+### type AlarmOptions
+
+```go
+type AlarmOptions struct {
+	// OnRing is called once when an alarm starts ringing, including a snoozed
+	// one coming back. It runs on the alarm goroutine, not in a render: write
+	// state with State.Set (which is goroutine-safe) rather than touching
+	// anything a render owns. A one-time alarm (alarm.Alarm.Once) is the
+	// app's to switch off here — the hook reports rings and never edits the
+	// app's list.
+	OnRing func(alarm.Alarm)
+
+	// Sound is played through core's audio player while an alarm rings, and
+	// restarted each time it reaches its end. An empty URL rings silently.
+	//
+	// core has one player (see core.AudioLoad), so a ringing alarm replaces
+	// whatever the app was playing; it is not resumed afterwards.
+	Sound core.AudioTrack
+
+	// Haptics pulses the device every other second while an alarm rings.
+	Haptics bool
+
+	// Snooze is how long Snooze silences an alarm for; 0 means 9 minutes, the
+	// length alarm clocks settled on when snooze was a mechanical cam.
+	Snooze time.Duration
+
+	// RingFor is how long an alarm rings unanswered before it stops by itself;
+	// 0 means 10 minutes. An alarm that stops this way is dismissed, not
+	// snoozed.
+	RingFor time.Duration
+}
+```
+
+AlarmOptions configures UseAlarms. Every field has a usable zero value.
+
+<small>[hooks/alarms.go:12](https://github.com/rohanthewiz/grmob/blob/master/hooks/alarms.go#L12)</small>
+
+### type AlarmRinger
+
+```go
+type AlarmRinger struct {
+	// contains filtered or unexported fields
+}
+```
+
+AlarmRinger is what UseAlarms returns: the ringing alarm, if any, and the two things a person can do about it.
+
+<small>[hooks/alarms.go:43](https://github.com/rohanthewiz/grmob/blob/master/hooks/alarms.go#L43)</small>
+
+#### func UseAlarms
+
+```go
+func UseAlarms(ctx *core.Context, alarms []alarm.Alarm, opts AlarmOptions) AlarmRinger
+```
+
+UseAlarms checks alarms every second while the app runs, and rings the ones that come due:
+
+	alarms := core.NewState(ctx, []alarm.Alarm{...})
+	ringer := hooks.UseAlarms(ctx, alarms.Get(), hooks.AlarmOptions{
+	    Sound: core.AudioTrack{URL: "alarm.mp3", Title: "Alarm"},
+	    Haptics: true,
+	})
+	if a, ok := ringer.Ringing(); ok {
+	    return comps.AlarmRinging{Alarm: a, OnSnooze: ringer.Snooze, OnDismiss: ringer.Dismiss}
+	}
+
+##### In-app only
+
+This rings while the app is running and in the foreground, and not otherwise. iOS suspends a backgrounded app within seconds and Android cuts its network and may stop it (see core/notifications.go), and nothing here asks the OS to wake the app at a time. An alarm that must ring with the app closed needs a scheduled OS notification or the platform's alarm API, which core does not have yet.
+
+##### What a check does
+
+Once a second, aligned to the wall clock as UseNow is, the goroutine asks every enabled alarm and every snooze whether it fell due since the last check. The first due one starts ringing: OnRing is called, the sound starts, and a render is requested so Ringing() reports it. While one rings, others that come due wait their turn. A ringing alarm times out after RingFor.
+
+A render is requested only when the ringing state changes, so an app with alarms set and none ringing costs one goroutine wake a second and no render passes.
+
+The alarm list is re-read from each render, so editing, adding or disabling an alarm takes effect at the next check. Like the other timer hooks, the goroutine stops when the context tree closes, not when the component leaves the view.
+
+<small>[hooks/alarms.go:184](https://github.com/rohanthewiz/grmob/blob/master/hooks/alarms.go#L184)</small>
+
+#### func (AlarmRinger) Dismiss
+
+```go
+func (r AlarmRinger) Dismiss()
+```
+
+Dismiss silences the ringing alarm until its next scheduled time. Nothing happens if no alarm is ringing.
+
+<small>[hooks/alarms.go:89](https://github.com/rohanthewiz/grmob/blob/master/hooks/alarms.go#L89)</small>
+
+#### func (AlarmRinger) Ringing
+
+```go
+func (r AlarmRinger) Ringing() (alarm.Alarm, bool)
+```
+
+Ringing returns the alarm that is ringing now, and whether one is.
+
+<small>[hooks/alarms.go:49](https://github.com/rohanthewiz/grmob/blob/master/hooks/alarms.go#L49)</small>
+
+#### func (AlarmRinger) Snooze
+
+```go
+func (r AlarmRinger) Snooze()
+```
+
+Snooze silences the ringing alarm and rings it again after the snooze length. Nothing happens if no alarm is ringing.
+
+<small>[hooks/alarms.go:77](https://github.com/rohanthewiz/grmob/blob/master/hooks/alarms.go#L77)</small>
+
+#### func (AlarmRinger) Snoozed
+
+```go
+func (r AlarmRinger) Snoozed() (alarm.Alarm, time.Time, bool)
+```
+
+Snoozed returns the soonest snoozed alarm and when it will ring again, and whether there is one — for a "Snoozed until 6:39" line.
+
+<small>[hooks/alarms.go:60](https://github.com/rohanthewiz/grmob/blob/master/hooks/alarms.go#L60)</small>
 
 ### type Debouncer
 

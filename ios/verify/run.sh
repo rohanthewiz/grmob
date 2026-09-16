@@ -37,7 +37,9 @@ swiftc -o "$out/harness" -target arm64-apple-macos14.0 \
   band.swift \
   pin.swift \
   selectmenu.swift \
+  canvas.swift \
   ../GrMob/Runtime/GrMobSelectMenu.swift \
+  ../GrMob/Runtime/GrMobCanvasGeometry.swift \
   ../GrMob/Runtime/GrMobStack.swift \
   ../GrMob/Runtime/GrMobStackBridge.swift \
   ../GrMob/Runtime/GrMobNode.swift \

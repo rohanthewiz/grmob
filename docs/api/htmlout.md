@@ -15,6 +15,7 @@ Package htmlout exports a rendered core.Node tree as a standalone HTML document.
 - [`func AriaOrientationDefaults`](#func-ariaorientationdefaults)
 - [`func AriaOrientationFor`](#func-ariaorientationfor)
 - [`func BorderResetTypes`](#func-borderresettypes)
+- [`func CanvasShapeAttrs`](#func-canvasshapeattrs)
 - [`func CarriesOwnRole`](#func-carriesownrole)
 - [`func CrossAxisAlignFor`](#func-crossaxisalignfor)
 - [`func CrossAxisAligns`](#func-crossaxisaligns)
@@ -31,6 +32,7 @@ Package htmlout exports a rendered core.Node tree as a standalone HTML document.
 - [`func ObjectFits`](#func-objectfits)
 - [`func OverlayTypes`](#func-overlaytypes)
 - [`func OwnRoleFor`](#func-ownrolefor)
+- [`func PathData`](#func-pathdata)
 - [`func ResetsUABorder`](#func-resetsuaborder)
 - [`func StackAxes`](#func-stackaxes)
 - [`func StackAxisFor`](#func-stackaxisfor)
@@ -126,7 +128,19 @@ func BorderResetTypes() []string
 
 BorderResetTypes returns those node types, sorted so that a test looping over them reports in a stable order. Exported for the reason GenericTags is: the WASM conformance test has to compare set against set.
 
-<small>[htmlout/tag.go:399](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L399)</small>
+<small>[htmlout/tag.go:408](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L408)</small>
+
+### func CanvasShapeAttrs
+
+```go
+func CanvasShapeAttrs(props map[string]any) []string
+```
+
+CanvasShapeAttrs is the SVG attribute list for one CanvasShape's props, as name/value pairs in a fixed order. Exported so wasm/verify can hold the runtime's copy to it.
+
+fill="none" is written for a shape with no fill because SVG's default fill is black — the one place the two vocabularies disagree about "unset".
+
+<small>[htmlout/canvas.go:83](https://github.com/rohanthewiz/grmob/blob/master/htmlout/canvas.go#L83)</small>
 
 ### func CarriesOwnRole
 
@@ -138,7 +152,7 @@ CarriesOwnRole reports whether a node type states its own ARIA role, with no cor
 
 Exported because the TabView wiring has to know: the role attribute has one slot per element, and a page whose type already filled it must not be given role="tabpanel" on top.
 
-<small>[htmlout/tag.go:282](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L282)</small>
+<small>[htmlout/tag.go:291](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L291)</small>
 
 ### func CrossAxisAlignFor
 
@@ -213,7 +227,7 @@ func GenericTags() []string
 
 GenericTags returns the role-free tags, sorted so that a test looping over them reports in a stable order. Exported for the reason Tags and TransparentTypes are: the WASM conformance test has to compare set against set, and a hand-written list there would be exactly the untracked second copy this file exists to remove.
 
-<small>[htmlout/tag.go:190](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L190)</small>
+<small>[htmlout/tag.go:199](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L199)</small>
 
 ### func InputTypeFor
 
@@ -245,7 +259,7 @@ func IsGenericTag(tag string) bool
 
 IsGenericTag reports whether a tag's implicit ARIA role is \`generic\`, and so whether a role= attribute may be written onto it. See genericTags.
 
-<small>[htmlout/tag.go:181](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L181)</small>
+<small>[htmlout/tag.go:190](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L190)</small>
 
 ### func IsOverlay
 
@@ -265,7 +279,7 @@ func IsTransparent(nodeType string) bool
 
 IsTransparent reports whether a node type renders its children directly into the parent, with no element of its own.
 
-<small>[htmlout/tag.go:233](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L233)</small>
+<small>[htmlout/tag.go:242](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L242)</small>
 
 ### func ModalChassis
 
@@ -281,7 +295,7 @@ display and background are deliberately not in it. Both are prop-driven, and the
 
 A copy, not the slice itself, for the reason StackAxes returns one: a package-level slice is reachable and writable by any importer.
 
-<small>[htmlout/export.go:1006](https://github.com/rohanthewiz/grmob/blob/master/htmlout/export.go#L1006)</small>
+<small>[htmlout/export.go:1016](https://github.com/rohanthewiz/grmob/blob/master/htmlout/export.go#L1016)</small>
 
 ### func ObjectFitFor
 
@@ -327,7 +341,17 @@ OwnRoleFor returns the ARIA role a node type states for itself, or "" for a type
 
 Exported for the reason Tags is: the WASM runtime has the same two node types to answer for and cannot ask Go at runtime, so wasm/verify holds its copy against this one rather than against a list written twice.
 
-<small>[htmlout/tag.go:293](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L293)</small>
+<small>[htmlout/tag.go:302](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L302)</small>
+
+### func PathData
+
+```go
+func PathData(ops []float64) string
+```
+
+PathData turns core's flat path opcodes into an SVG path string. The opcodes are core.PathMove, PathLine, PathCubic and PathClose, and SVG has a command letter for each with the same operands in the same order, so this is a spelling change and nothing else. A truncated or unknown operation ends the path there: a renderer must not fail a drawing over one bad shape.
+
+<small>[htmlout/canvas.go:121](https://github.com/rohanthewiz/grmob/blob/master/htmlout/canvas.go#L121)</small>
 
 ### func ResetsUABorder
 
@@ -337,7 +361,7 @@ func ResetsUABorder(nodeType string) bool
 
 ResetsUABorder reports whether a node type needs an explicit "no border" written for it when the style declares none. See borderResetTypes.
 
-<small>[htmlout/tag.go:392](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L392)</small>
+<small>[htmlout/tag.go:401](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L401)</small>
 
 ### func StackAxes
 
@@ -405,7 +429,7 @@ TagFor returns the HTML tag a node type renders as.
 
 Fragment and Theme are not in the table and must not be asked: see transparentTypes. The lookup answers \*which element\*, never \*whether an element\*, and a caller that has not made the transparency decision first gets defaultTag — a box those two node types are not supposed to have.
 
-<small>[htmlout/tag.go:130](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L130)</small>
+<small>[htmlout/tag.go:139](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L139)</small>
 
 ### func Tags
 
@@ -417,7 +441,7 @@ Tags returns a copy of the whole table, for the callers that must enumerate it r
 
 A copy, not the map itself, for the reason InputTypes returns one: a package-level map is reachable and writable by any importer.
 
-<small>[htmlout/tag.go:144](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L144)</small>
+<small>[htmlout/tag.go:153](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L153)</small>
 
 ### func TextAlignFor
 
@@ -451,5 +475,5 @@ func TransparentTypes() []string
 
 TransparentTypes returns the transparent node types, sorted so that a test looping over them reports in a stable order. Exported for the same reason Tags is: the WASM conformance test has to know which types are excluded from the tag comparison, and a hand-written list there would be exactly the untracked second copy this file exists to remove.
 
-<small>[htmlout/tag.go:242](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L242)</small>
+<small>[htmlout/tag.go:251](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L251)</small>
 

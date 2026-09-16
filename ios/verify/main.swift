@@ -22,6 +22,9 @@ struct Transcript: Decodable {
     /// three positions, plus the control with none, each carrying the answer a
     /// Compose Row gives it. See pin.swift and internal/pinfixture.
     let pinCases: [PinCase]
+    /// The canvas geometry cases: viewBox mapping and path decoding, with Go's
+    /// answers. See canvas.swift and internal/canvasfixture.
+    let canvasCases: [CanvasCase]
 }
 
 /// One unweighted child of a pinned Row. `pinned` is core.FlexShrink(0),
@@ -241,6 +244,17 @@ func run() -> Int32 {
     } else {
         print("FAIL: \(pinProblems.count) pinned Row difference(s)")
         for p in pinProblems { print("  " + p) }
+        return 1
+    }
+
+    // The canvas geometry, before the replay for the same reason again: pure
+    // arithmetic over the transcript's own table.
+    let canvasProblems = checkCanvas(transcript.canvasCases)
+    if canvasProblems.isEmpty {
+        print("OK: \(transcript.canvasCases.count) canvas drawings map and decode as Go's do")
+    } else {
+        print("FAIL: \(canvasProblems.count) canvas geometry difference(s)")
+        for p in canvasProblems { print("  " + p) }
         return 1
     }
 

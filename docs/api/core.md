@@ -50,7 +50,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
 | [Styling: the Style struct](core-style.md) | Style and the value types its fields take: alignment, flex, position, weights and edge insets. | 11 types, 10 functions and methods |
 | [Styling: style props](core-style-props.md) | The StyleProp constructors: spacing and per-side insets, flex, typography, colour, borders and animation. | 1 types, 68 functions and methods |
 | [Theming](core-theme.md) | Themes, palettes, typography and spacing scales, and per-component defaults. | 5 types, 11 functions and methods |
-| [Controls](core-controls.md) | Buttons, text inputs, switches, sliders, selects, images, tab views and text grids. | 9 types, 26 functions and methods |
+| [Controls](core-controls.md) | Buttons, text inputs, switches, sliders, selects, images, tab views, text grids and vector canvases. | 14 types, 41 functions and methods |
 | [Editors](core-editors.md) | The code editor and the rich text editor, and the refs and commands that drive them. | 2 types, 15 functions and methods |
 | [Events & focus](core-events.md) | Event props, host and system events, focus refs and focus order. | 2 types, 19 functions and methods |
 | [Navigation & overlays](core-navigation.md) | The navigator stack, modals, toasts, deep links and opening URLs. | 4 types, 19 functions and methods |
@@ -231,9 +231,11 @@ Package core's reference is split into 11 topic pages by source file. The index 
     - [`type Theme`](core-theme.md#type-theme)
     - [`type Typography`](core-theme.md#type-typography)
 - [Controls](core-controls.md)
-    - [Constants](core-controls.md#constants) — `GridBold`, `GridDim`, `GridItalic`, `GridStrike`, `GridUnderline`
+    - [Constants](core-controls.md#constants) — `GridBold`, `GridDim`, `GridItalic`, `GridStrike`, `GridUnderline`, `PathClose`, `PathCubic`, `PathLine`, `PathMove`
     - [`func Button`](core-controls.md#func-button)
     - [`func ButtonWithEvent`](core-controls.md#func-buttonwithevent)
+    - [`func Canvas`](core-controls.md#func-canvas)
+    - [`func CanvasMapping`](core-controls.md#func-canvasmapping)
     - [`func Checkbox`](core-controls.md#func-checkbox)
     - [`func Image`](core-controls.md#func-image)
     - [`func ImageWithMode`](core-controls.md#func-imagewithmode)
@@ -249,15 +251,26 @@ Package core's reference is split into 11 topic pages by source file. The index 
     - [`func TabView`](core-controls.md#func-tabview)
     - [`func TextArea`](core-controls.md#func-textarea)
     - [`func TextGrid`](core-controls.md#func-textgrid)
+    - [`type CanvasScale`](core-controls.md#type-canvasscale)
     - [`type ContentMode`](core-controls.md#type-contentmode)
         - [`func ContentModes`](core-controls.md#func-contentmodes)
     - [`type GridRow`](core-controls.md#type-gridrow)
     - [`type GridRun`](core-controls.md#type-gridrun)
+    - [`type LineCap`](core-controls.md#type-linecap)
+    - [`type LineJoin`](core-controls.md#type-linejoin)
+    - [`type Path`](core-controls.md#type-path)
+        - [`func Circle`](core-controls.md#func-circle)
+        - [`func Line`](core-controls.md#func-line)
+        - [`func NewPath`](core-controls.md#func-newpath)
+        - [`func Polyline`](core-controls.md#func-polyline)
+        - [`func Rect`](core-controls.md#func-rect)
+        - [`func Sector`](core-controls.md#func-sector)
     - [`type SelectMenuItem`](core-controls.md#type-selectmenuitem)
     - [`type SelectMenuSection`](core-controls.md#type-selectmenusection)
         - [`func SelectMenuSections`](core-controls.md#func-selectmenusections)
     - [`type SelectOption`](core-controls.md#type-selectoption)
         - [`func Option`](core-controls.md#func-option)
+    - [`type Shape`](core-controls.md#type-shape)
     - [`type TabItem`](core-controls.md#type-tabitem)
         - [`func Tab`](core-controls.md#func-tab)
     - [`type TabViewNode`](core-controls.md#type-tabviewnode)

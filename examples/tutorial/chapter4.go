@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rohanthewiz/grmob/alarm"
 	"github.com/rohanthewiz/grmob/comps"
 	"github.com/rohanthewiz/grmob/core"
 	"github.com/rohanthewiz/grmob/hooks"
@@ -48,6 +49,7 @@ func chapter4() Chapter {
 			lessonChoicesAndProgress(),
 			lessonMenus(),
 			lessonDrawers(),
+			lessonClocksAndDrawing(),
 		},
 	}
 }
@@ -3507,6 +3509,185 @@ func lessonDrawers() Lesson {
 					"While open, Content is hidden from assistive technology; CloseRef and Button.FocusRef move the keyboard focus.",
 					"The drawer covers its ZStack: pin a height when it sits in a scrolling column.",
 					"Android back and browser back close an open drawer through core.OnBack; on the web the screen behind an open drawer is inert, so Tab stays in the panel.",
+				),
+			)
+		},
+	}
+}
+
+// --- 4.19 Clocks, drawing and alarms ----------------------------------------
+
+// tutorialSeries is the 4.19 chart's data: twelve points, rotated by the
+// Shift button so every press changes every shape's path without the demo
+// needing a random source a test would have to pin.
+var tutorialSeries = []float64{12, 18, 15, 26, 22, 31, 28, 36, 33, 41, 38, 45}
+
+// tutorialShares are the donut's slices, with the palette roles that colour
+// them read from the theme at render time.
+var tutorialShares = []float64{45, 30, 25}
+
+func lessonClocksAndDrawing() Lesson {
+	return Lesson{
+		Title:   "Clocks, drawing and alarms",
+		Summary: "hooks.UseNow, comps.AnalogClock and DigitalClock, core.Canvas, and an in-app alarm with hooks.UseAlarms.",
+		Body: func(ctx *core.Context) core.View {
+			t := ctx.Theme()
+
+			// Hooks first and unconditionally, in a fixed order.
+			now := hooks.UseNow(ctx, time.Second)
+			hour24 := core.NewState(ctx, false)
+			shift := core.NewState(ctx, 0)
+			alarms := core.NewState(ctx, []alarm.Alarm{
+				{ID: "wake", Hour: 6, Minute: 30, Label: "Wake up", Days: alarm.Weekdays},
+				{ID: "run", Hour: 7, Minute: 15, Label: "Run", Days: alarm.Weekend},
+			})
+			added := core.NewState(ctx, 0)
+
+			setEnabled := func(id string, on bool) {
+				next := slices.Clone(alarms.Get())
+				for i := range next {
+					if next[i].ID == id {
+						next[i].Enabled = on
+					}
+				}
+				alarms.Set(next)
+			}
+
+			ringer := hooks.UseAlarms(ctx, alarms.Get(), hooks.AlarmOptions{
+				Haptics: true,
+				// A short snooze, so a reader trying it waits a minute rather
+				// than nine.
+				Snooze: time.Minute,
+				// A one-time alarm switches itself off once it has rung; the
+				// hook reports the ring and leaves the list to the app.
+				OnRing: func(a alarm.Alarm) {
+					if a.Once() {
+						setEnabled(a.ID, false)
+					}
+				},
+			})
+
+			// The chart: a line over an area, both built from the same points.
+			series := slices.Clone(tutorialSeries)
+			k := shift.Get() % len(series)
+			series = append(series[k:], series[:k]...)
+			const w, h = 110.0, 50.0
+			line := core.NewPath()
+			for i, v := range series {
+				line.LineTo(float64(i)*w/float64(len(series)-1), h-v)
+			}
+			area := core.NewPath()
+			for i, v := range series {
+				area.LineTo(float64(i)*w/float64(len(series)-1), h-v)
+			}
+			area.LineTo(w, h).LineTo(0, h).Close()
+
+			// The donut: sectors from twelve o'clock (-90°), a sliver of gap
+			// between each.
+			slices3 := []string{t.Colors.Primary, t.Colors.SuccessColor(), t.Colors.WarningColor()}
+			var donut []core.Shape
+			start := -90.0
+			for i, share := range tutorialShares {
+				sweep := share / 100 * 360
+				donut = append(donut, core.Shape{
+					Path: core.Sector(50, 50, 30, 48, start+1, sweep-2),
+					Fill: slices3[i],
+				})
+				start += sweep
+			}
+
+			var ringPanel core.View = caption("No alarm is ringing.")
+			if a, ok := ringer.Ringing(); ok {
+				ringPanel = comps.AlarmRinging{Alarm: a, Hour24: hour24.Get(), OnSnooze: ringer.Snooze, OnDismiss: ringer.Dismiss}
+			} else if a, at, ok := ringer.Snoozed(); ok {
+				ringPanel = caption(fmt.Sprintf("%s is snoozed until %s.", a.TimeLabel(hour24.Get()), at.Format("15:04:05")))
+			}
+
+			rows := make([]core.PropsAndChildren, 0, len(alarms.Get()))
+			for _, a := range alarms.Get() {
+				id := a.ID
+				rows = append(rows, core.Keyed(id, comps.AlarmRow{
+					Alarm:    a,
+					Hour24:   hour24.Get(),
+					OnToggle: func(on bool) { setEnabled(id, on) },
+				}))
+			}
+
+			return core.Column(
+				core.Gap(14),
+				prose("A clock widget draws a time it is handed and never ticks by itself. hooks.UseNow is "+
+					"the ticker, and it wakes on the wall clock's second boundary rather than a second "+
+					"after the screen mounted, so the seconds change when the status bar's do."),
+				codeBlock(`now := hooks.UseNow(ctx, time.Second)
+comps.AnalogClock{Time: now, ShowSeconds: true, Numerals: true, Smooth: true}
+comps.DigitalClock{Time: now, ShowSeconds: true, ShowDate: true}`),
+				demoPanel("The live time, twice.",
+					comps.SwitchRow{Title: "24-hour clock", On: hour24.Get(), OnToggle: hour24.Set},
+					core.Row(
+						core.Gap(20),
+						core.AlignItemsProp(core.AlignItemsCenter),
+						core.Justify(core.JustifyCenter),
+						comps.AnalogClock{Time: now, Size: 150, ShowSeconds: true, Numerals: true, Smooth: true},
+						comps.DigitalClock{Time: now, Hour24: hour24.Get(), ShowSeconds: true, ShowDate: true, Size: 30},
+					),
+				),
+				prose("The analog face has no drawing in it: every hand and tick is a layer the size of the "+
+					"dial, turned with core.Rotate. A layer turns about its own centre, which is the dial's "+
+					"centre, so a stick in its top half sweeps round like a hand. Smooth adds a short "+
+					"Transition, and the angles never wrap, so the second hand does not spin back at the "+
+					"top of each minute."),
+				prose("Charts need what a box cannot do: a line between two arbitrary points. core.Canvas "+
+					"is that primitive. Shapes are written in a coordinate space of your choosing and "+
+					"scaled into the box; stroke widths stay in pixels however the drawing is stretched."),
+				codeBlock(`core.Canvas(110, 50, []core.Shape{
+    {Path: area, Fill: primary + "33"},
+    {Path: line, Stroke: primary, StrokeWidth: 2, Cap: core.CapRound, Join: core.JoinRound},
+}, core.CanvasStretch, core.Height("120px"))`),
+				demoPanel("Shift the data. Each shape is one node, so a change patches its path in place.",
+					comps.Button{Label: "Shift", OnTap: func() { shift.Set(shift.Get() + 1) }},
+					core.Canvas(w, h, []core.Shape{
+						{Path: area, Fill: t.Colors.Primary + "33"},
+						{Path: line, Stroke: t.Colors.Primary, StrokeWidth: 2, Cap: core.CapRound, Join: core.JoinRound},
+						{Path: core.Line(0, h, w, h), Stroke: t.Colors.BorderColor()},
+					}, core.CanvasStretch, core.Height("120px"),
+						core.AccessibilityLabel(fmt.Sprintf("Line chart rising from %.0f to %.0f", series[0], series[len(series)-1]))),
+					core.Row(
+						core.Gap(16),
+						core.AlignItemsProp(core.AlignItemsCenter),
+						core.Canvas(100, 100, donut, core.Width("110px"),
+							core.AccessibilityLabel("Donut chart: 45%, 30% and 25%")),
+						caption("core.Sector(cx, cy, inner, outer, start, sweep) — a pie wedge when inner is 0."),
+					),
+				),
+				prose("An alarm is the time arithmetic in package alarm, a hook that checks it every second, "+
+					"and two widgets. The hook asks whether each alarm fell due since the last check, not "+
+					"whether it is due now, so a late tick cannot miss one. It rings only while the app is "+
+					"open: nothing here asks the operating system to wake the app."),
+				codeBlock(`ringer := hooks.UseAlarms(ctx, alarms.Get(), hooks.AlarmOptions{Haptics: true})
+if a, ok := ringer.Ringing(); ok {
+    return comps.AlarmRinging{Alarm: a, OnSnooze: ringer.Snooze, OnDismiss: ringer.Dismiss}
+}`),
+				demoPanel("Set one, then wait on this screen.",
+					comps.Button{Label: "Ring at the next minute", OnTap: func() {
+						added.Set(added.Get() + 1)
+						at := time.Now().Truncate(time.Minute).Add(time.Minute)
+						alarms.Set(append(slices.Clone(alarms.Get()), alarm.Alarm{
+							ID:      fmt.Sprintf("soon-%d", added.Get()),
+							Hour:    at.Hour(),
+							Minute:  at.Minute(),
+							Label:   "Try it",
+							Enabled: true,
+						}))
+					}},
+					core.Column(append([]core.PropsAndChildren{core.Gap(0)}, rows...)...),
+					ringPanel,
+				),
+				keyPoints(
+					"Clock widgets take a time.Time; hooks.UseNow ticks on the wall clock's boundary.",
+					"AnalogClock is built from rotated full-dial layers, so it needs no drawing primitive.",
+					"core.Canvas maps a viewBox onto its box; CanvasFit keeps the shape, CanvasStretch fills the box.",
+					"Paths flatten to move, line, cubic and close in Go, so every target draws the same curve.",
+					"hooks.UseAlarms rings alarms that fell due since its last check, in the app only; switch one-time alarms off in OnRing.",
 				),
 			)
 		},

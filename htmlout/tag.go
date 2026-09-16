@@ -114,6 +114,15 @@ var tags = map[string]string{
 	// coordinates on it and nothing inside it; see renderNode's arm.
 	"MapView": "div",
 	"Marker":  "div",
+
+	// The vector drawing (core.Canvas) and its shapes. SVG is the browser's
+	// own vector primitive and means what Canvas means — a viewBox mapped onto
+	// a box, shapes painted in order — so each shape is a <path>. Both are in
+	// the SVG namespace, which is why the WASM runtime creates them with
+	// createElementNS rather than through the table's usual createElement.
+	// See canvas.go.
+	"Canvas":      "svg",
+	"CanvasShape": "path",
 }
 
 // defaultTag is what an unrecognized node type renders as. A div is the

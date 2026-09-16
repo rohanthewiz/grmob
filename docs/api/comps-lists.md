@@ -217,6 +217,23 @@ type CollapseBand struct {
 	// branches must be the same size, or a band changes shape on the day
 	// somebody gives it a handler.
 	ControlStyle []core.StyleProp
+
+	// ChevronStyle types the ▸/▾ glyph, applied after the band's own Caption
+	// type so a caller's declaration wins.
+	//
+	// # Why a band needs it and GroupHeader does not
+	//
+	// The Caption default is right for the default band, whose words are
+	// Caption too — disclosure's ChevronStyle doc says why a chevron has to
+	// match the tier beside it. A band given Content has chosen its own words
+	// and their size, and the glyph cannot follow them there: at Caption next to
+	// a Body-sized title it is a 6px speck that reads as a bullet, which is what
+	// the tutorial's chapter cards showed. So the caller who picked the words
+	// picks the glyph's tier too.
+	//
+	// An inactive Collapse draws no chevron, so this has nothing to land on
+	// there and is ignored.
+	ChevronStyle []core.StyleProp
 }
 ```
 
@@ -251,7 +268,7 @@ The zero Collapse — and one with IsCollapsed and no OnToggle — produces the 
 func (b CollapseBand) Render(ctx *core.Context) *core.Node
 ```
 
-<small>[comps/grouping.go:256](https://github.com/rohanthewiz/grmob/blob/master/comps/grouping.go#L256)</small>
+<small>[comps/grouping.go:273](https://github.com/rohanthewiz/grmob/blob/master/comps/grouping.go#L273)</small>
 
 ### type Column
 
@@ -604,7 +621,7 @@ type GroupHeader struct {
 
 GroupHeader is the default band rendered above each group in GroupedList and DataTable: the label in bold caption ink on the theme's Surface, with the row count as a badge pinned to the trailing edge. It is exported so a caller can render it with a different Count or Label from inside a Header override, or reuse it in a hand-built list.
 
-<small>[comps/grouping.go:421](https://github.com/rohanthewiz/grmob/blob/master/comps/grouping.go#L421)</small>
+<small>[comps/grouping.go:442](https://github.com/rohanthewiz/grmob/blob/master/comps/grouping.go#L442)</small>
 
 #### func (GroupHeader) Render
 
@@ -612,7 +629,7 @@ GroupHeader is the default band rendered above each group in GroupedList and Dat
 func (h GroupHeader) Render(ctx *core.Context) *core.Node
 ```
 
-<small>[comps/grouping.go:595](https://github.com/rohanthewiz/grmob/blob/master/comps/grouping.go#L595)</small>
+<small>[comps/grouping.go:616](https://github.com/rohanthewiz/grmob/blob/master/comps/grouping.go#L616)</small>
 
 ### type GroupedList
 

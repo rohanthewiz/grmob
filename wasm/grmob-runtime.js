@@ -62,7 +62,14 @@ const GrMob = (() => {
     }
 
     function createElement(node) {
-        const el = document.createElement(tagForType(node.Type));
+        // SVG elements live in their own namespace, and one created with plain
+        // createElement is an HTMLUnknownElement named "svg" that draws
+        // nothing. core.Canvas and its shapes are the only node types that
+        // need it; see the canvas section.
+        const tag = tagForType(node.Type);
+        const el = SVG_TAGS.has(tag)
+            ? document.createElementNS(SVG_NS, tag)
+            : document.createElement(tag);
         // The Go node type, kept on the element because the tag alone cannot
         // recover it (Row, Column, Card and Box are all divs) and update-style
         // patches carry only the changed Style — see the patch handler.
@@ -126,6 +133,10 @@ const GrMob = (() => {
         // neither a MapView nor a Marker leaves with nothing written.
         if (node.Props) {
             applyMapProps(el, node.Props, node.Type);
+            // The canvas nodes' SVG attributes. Same shape as the map call:
+            // total, gated on its own node types, and repeated on the
+            // update-props path.
+            applyCanvasProps(el, node.Props, node.Type);
         }
 
         // The <input> variant, which the tag alone cannot express: tagForType
@@ -3739,6 +3750,86 @@ const GrMob = (() => {
         }
     }
 
+    // ── Canvas ────────────────────────────────────────────────────────────
+    //
+    // core.Canvas is an <svg> and each CanvasShape a <path> inside it, the
+    // same elements htmlout exports (htmlout/canvas.go), so a live canvas and
+    // an exported one are one document. Everything a shape draws is an
+    // attribute written from its props; there is no drawing code here, because
+    // SVG already means what Canvas means.
+    //
+    // Go flattens every path to four opcodes before it is sent (core.PathMove,
+    // PathLine, PathCubic, PathClose), which map one-to-one onto SVG's M, L, C
+    // and Z. canvasPathData and canvasShapeAttrs restate htmlout's PathData and
+    // CanvasShapeAttrs; wasm/verify's canvas test holds the two to each other.
+    const SVG_NS = "http://www.w3.org/2000/svg";
+    const SVG_TAGS = new Set(["svg", "path"]);
+
+    // The attributes a shape manages, so a patch that drops one (a shape that
+    // loses its stroke) can remove it rather than leave the old paint behind.
+    const CANVAS_SHAPE_ATTRS = [
+        "d", "fill", "stroke", "stroke-width", "vector-effect",
+        "stroke-linecap", "stroke-linejoin", "stroke-dasharray",
+    ];
+
+    // Opcode → [SVG letter, operand count]. A truncated or unknown operation
+    // ends the path there rather than failing the drawing, as PathData does.
+    const CANVAS_OPS = { 0: ["M", 2], 1: ["L", 2], 2: ["C", 6], 3: ["Z", 0] };
+
+    function canvasPathData(ops) {
+        if (!Array.isArray(ops)) return "";
+        let out = "";
+        for (let i = 0; i < ops.length;) {
+            const op = CANVAS_OPS[ops[i]];
+            if (!op) break;
+            const [letter, n] = op;
+            if (n > 0 && i + n >= ops.length) break;
+            out += letter + ops.slice(i + 1, i + 1 + n).map(String).join(" ");
+            i += 1 + n;
+        }
+        return out;
+    }
+
+    // The same name/value pairs, in the same order, as htmlout's
+    // CanvasShapeAttrs. fill="none" is explicit because SVG's default fill is
+    // black. String(number) matches Go's shortest 'g' formatting for every
+    // value core writes (coordinates are rounded to at most four places).
+    function canvasShapeAttrs(props) {
+        const out = [["d", canvasPathData(props.d)]];
+        out.push(["fill", props.fill ? String(props.fill) : "none"]);
+        if (!props.stroke) return out;
+        out.push(["stroke", String(props.stroke)]);
+        out.push(["stroke-width", String(props.strokeWidth)]);
+        out.push(["vector-effect", "non-scaling-stroke"]);
+        if (props.cap) out.push(["stroke-linecap", String(props.cap)]);
+        if (props.join) out.push(["stroke-linejoin", String(props.join)]);
+        if (Array.isArray(props.dash) && props.dash.length > 0) {
+            out.push(["stroke-dasharray", props.dash.map(String).join(" ")]);
+        }
+        return out;
+    }
+
+    function applyCanvasProps(el, props, nodeType) {
+        if (nodeType === "Canvas") {
+            el.setAttribute("viewBox", `0 0 ${props.vw} ${props.vh}`);
+            el.setAttribute("preserveAspectRatio",
+                props.scale === "stretch" ? "none" : "xMidYMid meet");
+            // A property of the viewBox, so written from the props channel;
+            // see the chassis in styleFromGrMob for why it is not there.
+            el.style.aspectRatio = `${props.vw} / ${props.vh}`;
+            return;
+        }
+        if (nodeType !== "CanvasShape") return;
+        const attrs = canvasShapeAttrs(props);
+        const written = new Set(attrs.map(([name]) => name));
+        for (const name of CANVAS_SHAPE_ATTRS) {
+            if (!written.has(name)) el.removeAttribute(name);
+        }
+        for (const [name, value] of attrs) {
+            el.setAttribute(name, value);
+        }
+    }
+
     // A MapView's region and a Marker's position, as dataset entries.
     //
     // The dataset rather than a closure over the props, because every listener
@@ -6303,6 +6394,17 @@ const GrMob = (() => {
             out.minHeight = out.minHeight || "1.2em";
             out.whiteSpace = out.whiteSpace || "nowrap";
         }
+        // The canvas chassis (core.Canvas): fill the width and let the
+        // viewBox's aspect ratio decide the height, unless the author sized
+        // it. Same declarations as htmlout's canvasChassis, less the
+        // aspect-ratio, which is a function of the props and so is written by
+        // applyCanvasProps — this function sees only a Style, and never
+        // assigns aspectRatio, so a style patch cannot clear it.
+        if (nodeType === "Canvas") {
+            out.display = out.display || "block";
+            out.width = out.width || "100%";
+            out.overflow = out.overflow || "visible";
+        }
         // Out-of-flow placement. The offsets are assigned whether or not
         // Position is set, matching CSS itself: they are inert on a static box
         // rather than an error, and a node can sit in a positioned ancestor's
@@ -6559,6 +6661,11 @@ const GrMob = (() => {
             // element because patch paths are positional. See the map section.
             MapView: "div",
             Marker: "div",
+
+            // The vector drawing (core.Canvas) and its shapes, created in the
+            // SVG namespace (SVG_TAGS). See the canvas section.
+            Canvas: "svg",
+            CanvasShape: "path",
 
             // The z-stack. A div like the rest — what makes it an overlay is
             // the single-cell grid styleFromGrMob gives it and the grid-area
@@ -7270,6 +7377,10 @@ const GrMob = (() => {
                     // move and the map's own region, and doing the work per key
                     // would re-read the layer several times for one change.
                     applyMapProps(el, p.Changes, el.dataset.nodeType);
+                    // A canvas's viewBox or a shape's path and paint, written
+                    // whole for the same reason: the patch carries the whole
+                    // new map, and an attribute absent from it is gone.
+                    applyCanvasProps(el, p.Changes, el.dataset.nodeType);
                     // The editor's own props, before the per-key loop and for
                     // the same reason the hint and the map's dataset are: they
                     // are read together (the command's epoch and its string,

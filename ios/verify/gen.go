@@ -25,6 +25,7 @@ import (
 	"sync"
 
 	"github.com/rohanthewiz/grmob/internal/bandfixture"
+	"github.com/rohanthewiz/grmob/internal/canvasfixture"
 	"github.com/rohanthewiz/grmob/internal/menufixture"
 	"github.com/rohanthewiz/grmob/internal/pinfixture"
 	"github.com/rohanthewiz/grmob/mobile"
@@ -58,6 +59,53 @@ type transcript struct {
 	// internal/pinfixture, which is also where the Compose column comes from
 	// and where the honest limits of it are written down.
 	PinCases []pinfixture.Case `json:"pinCases"`
+
+	// The canvas geometry cases: a viewBox, a box and one path's opcodes,
+	// with the mapping core.CanvasMapping gives and the drawing calls the
+	// opcodes decode into. canvas.swift runs GrMobCanvasGeometry.swift
+	// against them. See internal/canvasfixture.
+	CanvasCases []canvasCase `json:"canvasCases"`
+}
+
+// canvasCase is internal/canvasfixture's case and its answer, flattened into
+// the JSON shape canvas.swift decodes. Calls cross as an op letter and its
+// operands so the Swift side can compare without a Decodable enum.
+type canvasCase struct {
+	Name    string      `json:"name"`
+	VW      float64     `json:"vw"`
+	VH      float64     `json:"vh"`
+	BoxW    float64     `json:"boxW"`
+	BoxH    float64     `json:"boxH"`
+	Stretch bool        `json:"stretch"`
+	Ops     []float64   `json:"ops"`
+	SX      float64     `json:"sx"`
+	SY      float64     `json:"sy"`
+	OX      float64     `json:"ox"`
+	OY      float64     `json:"oy"`
+	Calls   []canvasOne `json:"calls"`
+}
+
+type canvasOne struct {
+	Op   string    `json:"op"`
+	Args []float64 `json:"args"`
+}
+
+func canvasCases() []canvasCase {
+	var out []canvasCase
+	for _, c := range canvasfixture.Cases() {
+		w := canvasfixture.WantFor(c)
+		cc := canvasCase{Name: c.Name, VW: c.VW, VH: c.VH, BoxW: c.BoxW, BoxH: c.BoxH,
+			Stretch: c.Stretch, Ops: c.Ops, SX: w.SX, SY: w.SY, OX: w.OX, OY: w.OY}
+		for _, call := range w.Calls {
+			args := call.Args
+			if args == nil {
+				args = []float64{}
+			}
+			cc.Calls = append(cc.Calls, canvasOne{call.Op, args})
+		}
+		out = append(out, cc)
+	}
+	return out
 }
 
 // recorder collects patch batches in arrival order. Sync trigger returns are
@@ -182,6 +230,8 @@ func main() {
 		MenuCases: menufixture.Cases(),
 		BandCases: bandfixture.Cases(),
 		PinCases:  pinfixture.Cases(),
+
+		CanvasCases: canvasCases(),
 	})
 	if err != nil {
 		fatal("marshal transcript: %v", err)

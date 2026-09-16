@@ -148,7 +148,7 @@ esac
 # because this is the line that needs a Go.
 go run . > "$out/Cases.kt"
 
-SRC="../app/src/main/java/com/grmob/runtime/GrMobSelectMenu.kt ../app/src/main/java/com/grmob/runtime/GrMobProgress.kt Harness.kt $out/Cases.kt"
+SRC="../app/src/main/java/com/grmob/runtime/GrMobSelectMenu.kt ../app/src/main/java/com/grmob/runtime/GrMobProgress.kt ../app/src/main/java/com/grmob/runtime/GrMobCanvasGeometry.kt Harness.kt $out/Cases.kt"
 
 if [ "${verdict%%:*}" = kotlinc ]; then
   # shellcheck disable=SC2086
