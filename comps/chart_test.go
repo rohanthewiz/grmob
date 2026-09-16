@@ -1,6 +1,7 @@
 package comps
 
 import (
+	"fmt"
 	"math"
 	"slices"
 	"strconv"
@@ -333,6 +334,65 @@ func TestAreaChartIsZeroBased(t *testing.T) {
 	line := renderView(t, LineChart{Series: []ChartSeries{{Values: []float64{50, 60}}}})
 	if findText(line, "0") != nil {
 		t.Error("a line chart's axis should not be pulled to zero by default")
+	}
+}
+
+// An unstacked area fades toward the base line from its extreme value; a
+// stacked band, a colour withAlpha cannot tint, and a flat-zero series keep a
+// flat fill.
+func TestAreaFadesTowardTheBaseLine(t *testing.T) {
+	scale := niceScale(0, 80, 5, true)
+	base := scale.y(0)
+	area := core.NewPath()
+
+	got := areaShape(area, "#2A78D6", []float64{20, 60, math.NaN(), 40}, scale)
+	g := got.FillGradient
+	if g == nil || got.Fill != "" {
+		t.Fatalf("an unstacked area should carry a gradient and no flat fill: %+v", got)
+	}
+	if g.Y1 != scale.y(60) || g.Y2 != base || g.X1 != g.X2 {
+		t.Errorf("fade runs (%v,%v)→(%v,%v), want vertical from the peak y %v to the base %v",
+			g.X1, g.Y1, g.X2, g.Y2, scale.y(60), base)
+	}
+	if len(g.Stops) != 2 || g.Stops[0].Color != "#2A78D64D" || g.Stops[1].Color != "#2A78D60A" {
+		t.Errorf("stops = %+v, want the series hue at 4D then 0A", g.Stops)
+	}
+
+	// Below zero the fade still runs toward the axis: from the trough up.
+	neg := niceScale(-80, 0, 5, true)
+	if g := areaShape(area, "#2A78D6", []float64{-10, -70}, neg).FillGradient; g == nil ||
+		g.Y1 != neg.y(-70) || g.Y2 != neg.y(neg.base()) {
+		t.Errorf("a negative series should fade from its trough to the base: %+v", g)
+	}
+
+	for name, s := range map[string]core.Shape{
+		"a colour with alpha": areaShape(area, "#2A78D699", []float64{10}, scale),
+		"a flat-zero series":  areaShape(area, "#2A78D6", []float64{0, 0}, scale),
+	} {
+		if s.FillGradient != nil || s.Fill == "" {
+			t.Errorf("%s should keep a flat fill: %+v", name, s)
+		}
+	}
+
+	// Rendered: the unstacked area's canvas shape carries gradient keys, the
+	// stacked one's a flat fill.
+	for _, stacked := range []bool{false, true} {
+		n := renderView(t, AreaChart{Stacked: stacked, Series: []ChartSeries{{Values: []float64{10, 30}}}})
+		var withGradient, withFill int
+		for _, shape := range canvasOf(n).Children {
+			if _, ok := shape.Props["gradient"]; ok {
+				withGradient++
+			}
+			if f, ok := shape.Props["fill"].(string); ok && strings.HasSuffix(f, "66") {
+				withFill++
+			}
+		}
+		if !stacked && withGradient != 1 {
+			t.Errorf("unstacked: %d shapes carry a gradient, want the one area", withGradient)
+		}
+		if stacked && (withGradient != 0 || withFill != 1) {
+			t.Errorf("stacked: %d gradients and %d 40%% fills, want 0 and 1", withGradient, withFill)
+		}
 	}
 }
 
@@ -714,6 +774,58 @@ func TestScatterChart(t *testing.T) {
 	}
 }
 
+// Four or more scatter series alternate round and square dots, with legend
+// swatches to match; three or fewer stay round.
+func TestScatterSquaresPastThreeSeries(t *testing.T) {
+	series := func(k int) []ScatterSeries {
+		out := make([]ScatterSeries, k)
+		for i := range out {
+			out[i] = ScatterSeries{Name: fmt.Sprintf("S%d", i), Points: []ChartPoint{{1, float64(i)}, {2, 5}}}
+		}
+		return out
+	}
+	caps := func(n *core.Node) []string {
+		var got []string
+		for _, s := range canvasOf(n).Children {
+			if c, ok := s.Props["cap"].(string); ok && s.Props["stroke"] != nil {
+				if w, _ := s.Props["strokeWidth"].(float64); w == 6 {
+					got = append(got, c)
+				}
+			}
+		}
+		return got
+	}
+
+	three := caps(renderView(t, ScatterChart{Series: series(3)}))
+	if strings.Join(three, ",") != "round,round,round" {
+		t.Errorf("three series caps = %v, want all round", three)
+	}
+
+	n := renderView(t, ScatterChart{Series: series(4)})
+	if got := strings.Join(caps(n), ","); got != "round,square,round,square" {
+		t.Errorf("four series caps = %v, want alternating round and square", got)
+	}
+	// A square dot's segment has length (a zero-length square cap draws
+	// nothing in SwiftUI), and a round one stays zero-length.
+	for _, s := range canvasOf(n).Children {
+		d, _ := s.Props["d"].([]float64)
+		if s.Props["cap"] == string(core.CapSquare) && len(d) >= 6 && d[1] == d[4] {
+			t.Errorf("a square dot's subpath %v has no length", d[:6])
+		}
+	}
+
+	// The legend's swatches: a circle (radius 5) for round, 0 for square.
+	var radii []float64
+	walk(n, func(m *core.Node) {
+		if m.Type == "Box" && m.Style != nil && m.Style.Width == "10px" && m.Style.Height == "10px" {
+			radii = append(radii, m.Style.BorderRadius)
+		}
+	})
+	if fmt.Sprint(radii) != "[5 0 5 0]" {
+		t.Errorf("legend swatch radii = %v, want [5 0 5 0]", radii)
+	}
+}
+
 // An x label is one line in a slot with no minimum width, so a long label is
 // cut rather than widening its slot.
 func TestXLabelsAreCappedInTheirSlots(t *testing.T) {
@@ -811,6 +923,44 @@ func TestVerticalValuesSitAtTheTips(t *testing.T) {
 	})
 	if stacks != 1 {
 		t.Error("a vertical chart with values should lay them over the plot in a ZStack")
+	}
+}
+
+// barValueRoom grows with the label: a short label needs less of the plot
+// past its tip than a long one, within the floor and the cap.
+func TestBarValueRoomFollowsTheLabel(t *testing.T) {
+	two, five, ten := barValueRoom("85"), barValueRoom("$1.5k"), barValueRoom("$1,234,567")
+	if !(two < five && five < ten) {
+		t.Errorf("room should grow with length: %v, %v, %v", two, five, ten)
+	}
+	if two != barValueRoomMin {
+		t.Errorf("a two-rune label's room = %v, want the floor %v", two, barValueRoomMin)
+	}
+	if got := barValueRoom(strings.Repeat("9", 60)); got != barValueRoomMax {
+		t.Errorf("a very long label's room = %v, want the cap %v", got, barValueRoomMax)
+	}
+	// Runes, not bytes: "€" is three bytes and one glyph.
+	if barValueRoom("€1.5k") != five {
+		t.Errorf("room counts bytes: %v vs %v", barValueRoom("€1.5k"), five)
+	}
+
+	// 85 of 100 leaves 15% past its tip: enough for "85" (outside), not
+	// for "$1,234,567"-long text (inside).
+	th := core.DefaultTheme
+	s := niceScale(0, 100, chartMaxXLabels, true)
+	for _, tc := range []struct {
+		format func(float64) string
+		align  core.Alignment
+	}{
+		{formatValue, core.AlignStart},
+		{func(float64) string { return "$1,234,567" }, core.AlignEnd},
+	} {
+		c := BarChart{Horizontal: true, Series: []ChartSeries{{Values: []float64{85}}}}
+		col := renderView(t, c.bandValueLayer(th, 1, 0.7, s, 28, []string{"#4A3AA7"}, tc.format))
+		label := findFirst(col, func(n *core.Node) bool { return n.Type == "Text" })
+		if label == nil || label.Style.Align != tc.align {
+			t.Errorf("label %q: align = %v, want %v", tc.format(85), label.Style.Align, tc.align)
+		}
 	}
 }
 

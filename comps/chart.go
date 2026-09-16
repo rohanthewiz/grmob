@@ -569,6 +569,15 @@ func bandLabels(t *core.Theme, labels []string, n int) core.View {
 
 // legend is a wrapping row of colour swatches and names, hidden like the axes.
 func legend(t *core.Theme, names, colors []string) core.View {
+	return legendWithMarks(t, names, colors, nil)
+}
+
+// legendWithMarks is legend with each swatch shaped like its series' mark:
+// round where squares[i] is false, square where it is true. A nil squares
+// keeps every swatch the rounded square legend has always drawn, which is the
+// right key for a line, an area or a bar. ScatterChart passes its dot shapes
+// so the swatch repeats the cue the plot uses.
+func legendWithMarks(t *core.Theme, names, colors []string, squares []bool) core.View {
 	items := make([]core.PropsAndChildren, 0, len(names)+5)
 	items = append(items,
 		core.Padding(0),
@@ -582,7 +591,7 @@ func legend(t *core.Theme, names, colors []string) core.View {
 			core.Padding(0),
 			core.Gap(float64(t.Spacing.XS)+2),
 			core.AlignItemsProp(core.AlignItemsCenter),
-			swatch(colors[i]),
+			markSwatch(colors[i], squares, i),
 			axisText(t, name, core.AlignStart),
 		))
 	}
@@ -596,6 +605,25 @@ func swatch(color string) core.View {
 		core.Width("10px"),
 		core.Height("10px"),
 		core.BorderRadius(2),
+		core.BackgroundColor(color),
+	)
+}
+
+// markSwatch is swatch shaped for series i's mark (see legendWithMarks): the
+// default rounded square with no marks, else a circle or a sharp square.
+func markSwatch(color string, squares []bool, i int) core.View {
+	if squares == nil || i >= len(squares) {
+		return swatch(color)
+	}
+	radius := 5.0 // half the 10px side: a circle
+	if squares[i] {
+		radius = 0
+	}
+	return core.Box(
+		core.Padding(0),
+		core.Width("10px"),
+		core.Height("10px"),
+		core.BorderRadius(radius),
 		core.BackgroundColor(color),
 	)
 }

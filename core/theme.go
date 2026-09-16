@@ -302,7 +302,10 @@ type ColorPalette struct {
 // are fixed. A scatter plot puts every pair next to every other, and under
 // that stricter reading only the first three slots stay distinct (worst CVD
 // ΔE 9.2, normal 24.0); a scatter with more than three series should facet
-// or fold the rest into "Other".
+// or fold the rest into "Other". Where it does not, comps.ScatterChart adds a
+// second cue of its own from four series up: every second series draws
+// square dots, with a square legend swatch, so a pair colour cannot separate
+// is still told apart by shape.
 //
 // It is a function returning a fresh slice, not a package var, for the same
 // reason ChartColors copies: a slice var is writable by any importer.

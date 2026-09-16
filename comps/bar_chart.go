@@ -3,6 +3,7 @@ package comps
 import (
 	"math"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/rohanthewiz/grmob/core"
 )
@@ -88,9 +89,10 @@ import (
 // A vertical chart keeps a label line of headroom above the plot (and one
 // below, when a value is negative), so a bar reaching the end of the axis
 // still has room for its label. A horizontal one cannot reserve room it
-// cannot measure, so a bar leaving less than a quarter of the plot past its
-// tip (barValueRoom) carries its value inside, against its end, in whichever
-// of the theme's inks contrasts with the bar.
+// cannot measure, so a bar leaving too little of the plot past its tip for
+// its label (barValueRoom estimates that per label, from its length) carries
+// its value inside, against its end, in whichever of the theme's inks
+// contrasts with the bar.
 type BarChart struct {
 	// Series are the groups' members, in order within each group. Value i of
 	// each series belongs to category i.
@@ -383,10 +385,48 @@ func (c BarChart) barValueCells(n int, fill float64, format func(float64) string
 }
 
 // barValueRoom is the least share of a horizontal plot's width a bar must
-// leave past its tip for its value to be written outside it. A quarter of a
-// phone's plot is some 55 px, room for "$1.5k" or "10400" at the label size
-// with the gap before it; a bar longer than that carries its value inside.
-const barValueRoom = 0.25
+// leave past its tip for its value, text, to be written outside it; a bar
+// longer than that carries its value inside.
+//
+// It is an estimate, because Go cannot measure the plot or the text, but an
+// estimate per label rather than one quarter for all. A flat quarter (some
+// 55 px on a phone) put "85" inside a bar that had room to spare past its
+// tip, and let "$1,234,567" run out past the plot's edge, where it was cut.
+// The label's width is guessed from its rune count at barValueEm of the label
+// size, plus the gap before it, as a share of barPlotGuess:
+//
+//	label          runes   est. px   room
+//	"85"           2       13+4      0.08  (floored at barValueRoomMin)
+//	"$1.5k"        5       33+4      0.17
+//	"$1,234,567"   10      66+4      0.32
+//
+// The guessed plot is a phone's: a 402 pt screen less the page and card
+// insets and the 96 px name column. A wider screen has more room than
+// guessed, so its labels are only ever inside when they could have been
+// outside, never cut; a narrower plot can still cut one, with the ellipsis
+// every chart label takes (chartLabelText).
+func barValueRoom(text string) float64 {
+	px := float64(utf8.RuneCountInString(text))*barValueEm*chartLabelSize + barValueGap
+	return min(max(px/barPlotGuess, barValueRoomMin), barValueRoomMax)
+}
+
+const (
+	// barPlotGuess is the horizontal plot width barValueRoom assumes, in px.
+	barPlotGuess = 220.0
+	// barValueEm is the guessed advance of one label rune, in ems. Digits in
+	// the system fonts run 0.55 to 0.6 em; the top of that range errs toward
+	// writing a label inside, which cannot cut it at the plot's edge.
+	barValueEm = 0.6
+	// barValueGap is the padding between a tip and its outside label, in px.
+	barValueGap = 4.0
+	// barValueRoomMin keeps a one- or two-rune label from hugging the edge,
+	// where a rounding pixel would cut it.
+	barValueRoomMin = 0.08
+	// barValueRoomMax: a label wider than half the plot is cut outside or in;
+	// past half, inside is no better, and the bar has to be very long to
+	// qualify, so the cap keeps long labels from all going inside short bars.
+	barValueRoomMax = 0.5
+)
 
 // barTip is where a ShowValues cell's label goes, along the value axis in
 // viewBox drawing coordinates (y down for vertical bars, x rightwards for
@@ -541,7 +581,7 @@ func (c BarChart) bandValueLayer(t *core.Theme, n int, fill float64, scale value
 	if len(texts) == 0 || len(tips) != len(texts) || total <= 0 {
 		return nil
 	}
-	const gap = 4
+	const gap = barValueGap
 	segment := func(weight float64, text string, align core.Alignment, ink string, side core.StyleProp) core.View {
 		if weight <= 1e-9 {
 			return nil
@@ -578,8 +618,9 @@ func (c BarChart) bandValueLayer(t *core.Theme, n int, fill float64, scale value
 		}
 		p, z := tip.at/chartView, tip.zero/chartView
 		outside, inside := t.Colors.TextSecondary, contrastInk(tip.color, t.Colors.TextPrimary, t.Colors.Background)
+		room := barValueRoom(text)
 		switch {
-		case !tip.negative && (1-p >= barValueRoom || p-z < barValueRoom):
+		case !tip.negative && (1-p >= room || p-z < room):
 			row = append(row,
 				segment(p, "", core.AlignStart, "", nil),
 				segment(1-p, text, core.AlignStart, outside, core.PaddingLeft(gap)))
@@ -588,7 +629,7 @@ func (c BarChart) bandValueLayer(t *core.Theme, n int, fill float64, scale value
 				segment(z, "", core.AlignStart, "", nil),
 				segment(p-z, text, core.AlignEnd, inside, core.PaddingRight(gap)),
 				segment(1-p, "", core.AlignStart, "", nil))
-		case p >= barValueRoom || z-p < barValueRoom:
+		case p >= room || z-p < room:
 			row = append(row,
 				segment(p, text, core.AlignEnd, outside, core.PaddingRight(gap)),
 				segment(1-p, "", core.AlignStart, "", nil))

@@ -41,7 +41,7 @@ type AreaChart LineChart
 
 AreaChart is a LineChart with Area set: each series filled down to zero. Several series overlap translucently rather than stacking.
 
-<small>[comps/line_chart.go:129](https://github.com/rohanthewiz/grmob/blob/master/comps/line_chart.go#L129)</small>
+<small>[comps/line_chart.go:132](https://github.com/rohanthewiz/grmob/blob/master/comps/line_chart.go#L132)</small>
 
 #### func (AreaChart) Render
 
@@ -49,7 +49,7 @@ AreaChart is a LineChart with Area set: each series filled down to zero. Several
 func (a AreaChart) Render(ctx *core.Context) *core.Node
 ```
 
-<small>[comps/line_chart.go:131](https://github.com/rohanthewiz/grmob/blob/master/comps/line_chart.go#L131)</small>
+<small>[comps/line_chart.go:134](https://github.com/rohanthewiz/grmob/blob/master/comps/line_chart.go#L134)</small>
 
 ### type BarChart
 
@@ -159,9 +159,9 @@ Text cannot be placed inside core.Canvas, so the values are a layer of ordinary 
 	             share of the width before the label
 	             across: px bands, as the names column has
 
-A vertical chart keeps a label line of headroom above the plot (and one below, when a value is negative), so a bar reaching the end of the axis still has room for its label. A horizontal one cannot reserve room it cannot measure, so a bar leaving less than a quarter of the plot past its tip (barValueRoom) carries its value inside, against its end, in whichever of the theme's inks contrasts with the bar.
+A vertical chart keeps a label line of headroom above the plot (and one below, when a value is negative), so a bar reaching the end of the axis still has room for its label. A horizontal one cannot reserve room it cannot measure, so a bar leaving too little of the plot past its tip for its label (barValueRoom estimates that per label, from its length) carries its value inside, against its end, in whichever of the theme's inks contrasts with the bar.
 
-<small>[comps/bar_chart.go:94](https://github.com/rohanthewiz/grmob/blob/master/comps/bar_chart.go#L94)</small>
+<small>[comps/bar_chart.go:96](https://github.com/rohanthewiz/grmob/blob/master/comps/bar_chart.go#L96)</small>
 
 #### func (BarChart) Render
 
@@ -169,7 +169,7 @@ A vertical chart keeps a label line of headroom above the plot (and one below, w
 func (c BarChart) Render(ctx *core.Context) *core.Node
 ```
 
-<small>[comps/bar_chart.go:148](https://github.com/rohanthewiz/grmob/blob/master/comps/bar_chart.go#L148)</small>
+<small>[comps/bar_chart.go:150](https://github.com/rohanthewiz/grmob/blob/master/comps/bar_chart.go#L150)</small>
 
 ### type ChartPoint
 
@@ -401,7 +401,10 @@ type LineChart struct {
 
 	// Area fills under each line, down to zero (or the nearest edge of the
 	// axis when zero is off it), with a translucent tint of the line's colour.
-	// AreaChart is this with the field set.
+	// An unstacked area's tint fades from 30% under the series' extreme value
+	// to 4% at the base line (see areaShape); a stacked band stays a flat 40%
+	// so each band reads as its own colour. AreaChart is this with the field
+	// set.
 	Area bool
 
 	// ZeroBased starts the value axis at zero even when every value is far
@@ -479,7 +482,7 @@ Points (and the lone-value dot above) are zero-length strokes with round caps, w
 func (c LineChart) Render(ctx *core.Context) *core.Node
 ```
 
-<small>[comps/line_chart.go:137](https://github.com/rohanthewiz/grmob/blob/master/comps/line_chart.go#L137)</small>
+<small>[comps/line_chart.go:140](https://github.com/rohanthewiz/grmob/blob/master/comps/line_chart.go#L140)</small>
 
 ### type PieChart
 
@@ -559,7 +562,13 @@ Neither axis is pulled to zero unless asked (XZeroBased, ZeroBased): a scatter's
 
 Each point is a zero-length stroke with round caps, LineChart's dot, for the same reason: under CanvasStretch a circle path would come out as an ellipse, and a stroke's width is never scaled. Every point of a series is one subpath of one shape, so a thousand points are one canvas node.
 
-<small>[comps/scatter_chart.go:61](https://github.com/rohanthewiz/grmob/blob/master/comps/scatter_chart.go#L61)</small>
+#### Square dots past three series
+
+From four series up, every second series (the 2nd, 4th, ...) draws square dots, and its legend swatch is square while the others' are round. Colour alone does not hold that many series apart: DefaultChartColors' slots 3 to 5 are under 3:1 on a light page, and with four or more series some pair of dots fails an all-pairs distinctness check, so a second, non-colour cue is what lets a reader match a cloud to its legend entry (WCAG 1.4.1). Up to three series every dot stays round, as it always was; the first three slots pass the check against each other.
+
+A square dot is a stroke with square caps along a segment a hundredth of a viewBox unit long, not a zero-length one: SwiftUI draws nothing for a zero-length subpath with square caps (round caps it draws). Under CanvasStretch the segment scales to a few hundredths of a pixel, so the dot is square to the eye on every target, and like the round dot its size never scales.
+
+<small>[comps/scatter_chart.go:79](https://github.com/rohanthewiz/grmob/blob/master/comps/scatter_chart.go#L79)</small>
 
 #### func (ScatterChart) Render
 
@@ -567,7 +576,7 @@ Each point is a zero-length stroke with round caps, LineChart's dot, for the sam
 func (c ScatterChart) Render(ctx *core.Context) *core.Node
 ```
 
-<small>[comps/scatter_chart.go:94](https://github.com/rohanthewiz/grmob/blob/master/comps/scatter_chart.go#L94)</small>
+<small>[comps/scatter_chart.go:112](https://github.com/rohanthewiz/grmob/blob/master/comps/scatter_chart.go#L112)</small>
 
 ### type ScatterSeries
 

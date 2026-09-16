@@ -89,7 +89,10 @@ type LineChart struct {
 
 	// Area fills under each line, down to zero (or the nearest edge of the
 	// axis when zero is off it), with a translucent tint of the line's colour.
-	// AreaChart is this with the field set.
+	// An unstacked area's tint fades from 30% under the series' extreme value
+	// to 4% at the base line (see areaShape); a stacked band stays a flat 40%
+	// so each band reads as its own colour. AreaChart is this with the field
+	// set.
 	Area bool
 
 	// ZeroBased starts the value axis at zero even when every value is far
@@ -186,11 +189,11 @@ func (c LineChart) Render(ctx *core.Context) *core.Node {
 			// A stacked band is opaque enough to read as its own colour
 			// rather than a blend of every band under it; overlapping areas
 			// stay translucent so each one's line shows through the others.
-			alpha := "33"
 			if c.Stacked {
-				alpha = "66"
+				shapes = append(shapes, core.Shape{Path: area, Fill: withAlpha(color, "66")})
+			} else {
+				shapes = append(shapes, areaShape(area, color, s.Values, scale))
 			}
-			shapes = append(shapes, core.Shape{Path: area, Fill: withAlpha(color, alpha)})
 		}
 		lines = append(lines, core.Shape{
 			Path: line, Stroke: color, StrokeWidth: sw,
@@ -216,6 +219,60 @@ func (c LineChart) Render(ctx *core.Context) *core.Node {
 
 	return cartesianFrame(ctx, scale, h, c.Format, canvas, pointLabels(t, c.Labels, n),
 		legendView, c.label(), c.Style)
+}
+
+// The two ends of an unstacked area's fade, as alpha bytes: 30% at the
+// series' furthest point from the base line, 4% at the base line. Their mean
+// over a typical area is close to the flat 20% ("33") the fill had before, so
+// overlapping areas stay about as legible through each other, while the ink
+// gathers under the line — where the eye reads the value — and thins toward
+// the axis, where a flat tint only said "filled".
+const (
+	areaFadeTop  = "4D"
+	areaFadeBase = "0A"
+)
+
+// areaShape is an unstacked series' area: a vertical fade in its own colour
+// from its extreme value down to the base line.
+//
+// The gradient runs from the drawn point furthest from the base (the peak of
+// a positive series, the trough of a negative one) to the base, in viewBox
+// units. That puts full strength exactly under the extreme, whatever the
+// scale's headroom above it, and keeps the direction right for values below
+// zero: the fade always runs toward the axis. A series crossing zero fades
+// toward the axis from its larger side, and its smaller side takes the faint
+// end colour (the gradient pads past its ends).
+//
+// Geometry is in viewBox units under CanvasStretch; every target resolves a
+// userSpaceOnUse gradient in that space before the stretch, so the fade
+// stretches with the drawing and still ends on the base line.
+//
+// It falls back to the flat fill the chart has always drawn when a fade
+// cannot be made: a colour that is not "#rrggbb" / "#rgb" (withAlpha leaves
+// such a colour unchanged, and a gradient between two copies of it is no
+// fade), or a series with no finite value off the base line (no length to
+// fade along).
+func areaShape(area *core.Path, color string, values []float64, scale valueScale) core.Shape {
+	top, faint := withAlpha(color, areaFadeTop), withAlpha(color, areaFadeBase)
+	flat := core.Shape{Path: area, Fill: withAlpha(color, "33")}
+	if top == color {
+		return flat
+	}
+	base := scale.y(scale.base())
+	extreme, far := base, 0.0
+	for _, v := range values {
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			continue
+		}
+		if y := scale.y(v); math.Abs(y-base) > far {
+			extreme, far = y, math.Abs(y-base)
+		}
+	}
+	if far == 0 {
+		return flat
+	}
+	return core.Shape{Path: area, FillGradient: core.LinearGradientFill(0, extreme, 0, base,
+		core.Stop(0, top), core.Stop(1, faint))}
 }
 
 // pointX is the viewBox x of point i of n: evenly spaced, edge to edge, and

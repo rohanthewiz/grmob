@@ -58,6 +58,24 @@ type ScatterSeries struct {
 // same reason: under CanvasStretch a circle path would come out as an ellipse,
 // and a stroke's width is never scaled. Every point of a series is one
 // subpath of one shape, so a thousand points are one canvas node.
+//
+// # Square dots past three series
+//
+// From four series up, every second series (the 2nd, 4th, ...) draws square
+// dots, and its legend swatch is square while the others' are round. Colour
+// alone does not hold that many series apart: DefaultChartColors' slots 3 to
+// 5 are under 3:1 on a light page, and with four or more series some pair of
+// dots fails an all-pairs distinctness check, so a second, non-colour cue is
+// what lets a reader match a cloud to its legend entry (WCAG 1.4.1). Up to
+// three series every dot stays round, as it always was; the first three
+// slots pass the check against each other.
+//
+// A square dot is a stroke with square caps along a segment a hundredth of a
+// viewBox unit long, not a zero-length one: SwiftUI draws nothing for a
+// zero-length subpath with square caps (round caps it draws). Under
+// CanvasStretch the segment scales to a few hundredths of a pixel, so the dot
+// is square to the eye on every target, and like the round dot its size never
+// scales.
 type ScatterChart struct {
 	// Series are the point sets, drawn in order (a later series paints over an
 	// earlier one).
@@ -126,18 +144,26 @@ func (c ScatterChart) Render(ctx *core.Context) *core.Node {
 	shapes := append(gridShapes(t, yScale), verticalGridShapes(t, xScale)...)
 	colors := make([]string, len(c.Series))
 	names := make([]string, len(c.Series))
+	squares := make([]bool, len(c.Series))
 	for i, s := range c.Series {
 		color := seriesColor(palette, s.Color, i)
 		colors[i], names[i] = color, s.Name
+		squares[i] = scatterSquare(i, len(c.Series))
+		// Half the square dot's segment either side of the point; see
+		// "Square dots past three series".
+		half, capStyle := 0.0, core.CapRound
+		if squares[i] {
+			half, capStyle = scatterSquareHalf, core.CapSquare
+		}
 		p := core.NewPath()
 		for _, pt := range s.Points {
 			if !finitePoint(pt) {
 				continue
 			}
 			x, y := chartView-xScale.y(pt.X), yScale.y(pt.Y)
-			p.MoveTo(x, y).LineTo(x, y)
+			p.MoveTo(x-half, y).LineTo(x+half, y)
 		}
-		shapes = append(shapes, core.Shape{Path: p, Stroke: color, StrokeWidth: dot, Cap: core.CapRound})
+		shapes = append(shapes, core.Shape{Path: p, Stroke: color, StrokeWidth: dot, Cap: capStyle})
 	}
 
 	canvas := core.Canvas(chartView, chartView, shapes, core.CanvasStretch, core.Height(px(h)))
@@ -154,10 +180,19 @@ func (c ScatterChart) Render(ctx *core.Context) *core.Node {
 
 	var legendView core.View
 	if len(c.Series) > 1 {
-		legendView = legend(t, names, colors)
+		legendView = legendWithMarks(t, names, colors, squares)
 	}
 	return cartesianFrame(ctx, yScale, h, c.Format, canvas, pointLabels(t, tickText, len(ticks)),
 		legendView, c.label(), c.Style)
+}
+
+// scatterSquareHalf is half a square dot's segment, in viewBox units.
+const scatterSquareHalf = 0.005
+
+// scatterSquare reports whether series i of n draws square dots: every second
+// series once there are more than three. See "Square dots past three series".
+func scatterSquare(i, n int) bool {
+	return n > 3 && i%2 == 1
 }
 
 func finitePoint(p ChartPoint) bool {
