@@ -6,7 +6,7 @@ import "github.com/rohanthewiz/grmob/comps"
 
 List, settings and input rows, grouped and paged lists, data tables and timelines.
 
-One of 6 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/list_row.go`, `comps/settings_row.go`, `comps/input_row.go`, `comps/grouped_list.go`, `comps/grouping.go`, `comps/paging.go`, `comps/data_table.go`, `comps/timeline.go`.
+One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/list_row.go`, `comps/settings_row.go`, `comps/input_row.go`, `comps/grouped_list.go`, `comps/grouping.go`, `comps/paging.go`, `comps/data_table.go`, `comps/timeline.go`.
 
 ## Index
 

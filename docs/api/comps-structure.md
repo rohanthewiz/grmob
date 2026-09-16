@@ -6,7 +6,7 @@ import "github.com/rohanthewiz/grmob/comps"
 
 Screen, app and bottom bars, tabs, drawers, step indicators, cards, accordions, headings and separators.
 
-One of 6 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/screen.go`, `comps/app_bar.go`, `comps/bottom_bar.go`, `comps/tabs.go`, `comps/drawer.go`, `comps/step_indicator.go`, `comps/card.go`, `comps/accordion.go`, `comps/disclosure.go`, `comps/heading.go`, `comps/separator.go`.
+One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/screen.go`, `comps/app_bar.go`, `comps/bottom_bar.go`, `comps/tabs.go`, `comps/drawer.go`, `comps/step_indicator.go`, `comps/card.go`, `comps/accordion.go`, `comps/disclosure.go`, `comps/heading.go`, `comps/separator.go`.
 
 ## Index
 

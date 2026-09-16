@@ -276,6 +276,11 @@ var Packages = []Pkg{
 			Title: "Data display & maps",
 			Blurb: "Avatars, stat tiles, the compass, clocks and alarms, map panels and static maps.",
 			Files: []string{"avatar.go", "stat_tile.go", "compass.go", "clock.go", "alarm.go", "map_panel.go", "static_map.go"},
+		}, {
+			Slug:  "charts",
+			Title: "Charts",
+			Blurb: "Sparklines, line, area and bar charts, donuts and pies, and gauges, drawn on core.Canvas.",
+			Files: []string{"chart.go", "sparkline.go", "line_chart.go", "bar_chart.go", "donut_chart.go", "gauge.go"},
 		}},
 	},
 	{

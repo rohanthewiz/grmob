@@ -6,7 +6,7 @@ import "github.com/rohanthewiz/grmob/comps"
 
 Form fields, search, searchable selects, radio groups, dates and calendars, and the two editors.
 
-One of 6 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/form_field.go`, `comps/search_field.go`, `comps/searchable_select.go`, `comps/radio_group.go`, `comps/date_picker.go`, `comps/calendar.go`, `comps/code_editor.go`, `comps/rich_text_editor.go`.
+One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/form_field.go`, `comps/search_field.go`, `comps/searchable_select.go`, `comps/radio_group.go`, `comps/date_picker.go`, `comps/calendar.go`, `comps/code_editor.go`, `comps/rich_text_editor.go`.
 
 ## Index
 

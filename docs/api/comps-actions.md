@@ -6,7 +6,7 @@ import "github.com/rohanthewiz/grmob/comps"
 
 Buttons and their variants, chips, segmented controls, steppers, ratings and badges.
 
-One of 6 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/button.go`, `comps/variant.go`, `comps/chip.go`, `comps/chip_strip.go`, `comps/segmented_control.go`, `comps/stepper.go`, `comps/rating.go`, `comps/badge.go`.
+One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/button.go`, `comps/variant.go`, `comps/chip.go`, `comps/chip_strip.go`, `comps/segmented_control.go`, `comps/stepper.go`, `comps/rating.go`, `comps/badge.go`.
 
 ## Index
 

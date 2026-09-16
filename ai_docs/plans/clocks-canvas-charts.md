@@ -2,8 +2,9 @@
 
 **Date:** 2026-09-16
 **Status:** Tiers A, B and C landed 2026-09-16, with tutorial lesson 4.19
-("Clocks, drawing and alarms") exercising all three. Tier D (charts) is next;
-Tier E (scheduled/system alarms) is not started.
+("Clocks, drawing and alarms") exercising all three. Tier D (charts) landed
+the same day with lesson 4.20 ("Charts"). Tier E (scheduled/system alarms) is
+not started.
 
 What landed, and where it differs from the sketches below:
 
@@ -29,6 +30,20 @@ What landed, and where it differs from the sketches below:
   for alarms due while one rings, RingFor timeout), `comps/alarm.go`
   (`AlarmRow`, `AlarmRinging`). Rang, snoozed and self-disabled in the live
   WASM tutorial.
+- **D** — `comps/chart.go` (shared: `ChartSeries`, Heckbert nice ticks in
+  `niceScale`, k/M tick units chosen per axis, the theme-role palette with
+  60%-alpha tints past the roles, y labels placed by an exact Gap and a
+  half-line spacer, x labels by FlexGrow weights + zero FlexBasis),
+  `sparkline.go`, `line_chart.go` (`LineChart`, `AreaChart`), `bar_chart.go`,
+  `donut_chart.go` (`DonutChart`, `PieChart`, largest-remainder percentages),
+  `gauge.go`. No renderer changes. Differences from the sketch: the spoken
+  lead-in is a `Subject` field (not drawn); dots and points are round-capped
+  zero-length strokes, because a Circle under CanvasStretch is an ellipse; the
+  donut's track is drawn only when there is no data (it showed through the
+  slice gaps); the gauge box is square so its text centres on the arc. No
+  hidden data table yet. Checked in Chrome through htmlout and live in the
+  WASM tutorial (Shift and "Use 12%" re-render and re-summarise). Not seen on
+  a simulator or emulator.
 - Adding lesson 4.19 moved the lesson count to 58 in every copy (README,
   site page, docs, shotclaims) and re-took `docs/images/tutorial-contents.png`.
 

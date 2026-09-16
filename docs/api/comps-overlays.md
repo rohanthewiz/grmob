@@ -6,7 +6,7 @@ import "github.com/rohanthewiz/grmob/comps"
 
 Dialogs, action sheets, menus, snackbars, banners, progress, spinners, skeletons and empty states.
 
-One of 6 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/dialog.go`, `comps/action_sheet.go`, `comps/menu.go`, `comps/snackbar.go`, `comps/banner.go`, `comps/progress_bar.go`, `comps/spinner.go`, `comps/skeleton.go`, `comps/empty_state.go`.
+One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/dialog.go`, `comps/action_sheet.go`, `comps/menu.go`, `comps/snackbar.go`, `comps/banner.go`, `comps/progress_bar.go`, `comps/spinner.go`, `comps/skeleton.go`, `comps/empty_state.go`.
 
 ## Index
 

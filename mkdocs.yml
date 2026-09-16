@@ -85,6 +85,7 @@ nav:
           - Buttons & choices: api/comps-actions.md
           - Overlays & feedback: api/comps-overlays.md
           - Data display & maps: api/comps-display.md
+          - Charts: api/comps-charts.md
       - alarm: api/alarm.md
       - forms: api/forms.md
       - richtext: api/richtext.md

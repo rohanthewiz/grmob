@@ -3,6 +3,7 @@ package tutorial
 import (
 	"fmt"
 	"maps"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
@@ -50,6 +51,7 @@ func chapter4() Chapter {
 			lessonMenus(),
 			lessonDrawers(),
 			lessonClocksAndDrawing(),
+			lessonCharts(),
 		},
 	}
 }
@@ -3688,6 +3690,138 @@ if a, ok := ringer.Ringing(); ok {
 					"core.Canvas maps a viewBox onto its box; CanvasFit keeps the shape, CanvasStretch fills the box.",
 					"Paths flatten to move, line, cubic and close in Go, so every target draws the same curve.",
 					"hooks.UseAlarms rings alarms that fell due since its last check, in the app only; switch one-time alarms off in OnRing.",
+				),
+			)
+		},
+	}
+}
+
+// --- 4.20 Charts ------------------------------------------------------------
+
+// chartMonths and the three series below are 4.20's data. Fixed rather than
+// random so the lesson's tests can assert on what the charts say; the Shift
+// button rotates them, which changes every path and every summary.
+var (
+	chartMonths  = []string{"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"}
+	chartVisits  = []float64{120, 180, 150, 260, 220, 310, 280, 360, 330, 410, 380, 450}
+	chartSignups = []float64{40, 55, 60, 52, 80, 95, math.NaN(), 110, 105, 130, 140, 150}
+	chartSteps   = []float64{8200, 10400, 6100, 12000, 9000, 4300, 7600}
+)
+
+// rotated returns xs turned left by k, leaving the input alone.
+func rotated[T any](xs []T, k int) []T {
+	if len(xs) == 0 {
+		return xs
+	}
+	k %= len(xs)
+	return append(slices.Clone(xs[k:]), xs[:k]...)
+}
+
+func lessonCharts() Lesson {
+	return Lesson{
+		Title:   "Charts",
+		Summary: "comps.Sparkline, LineChart, AreaChart, BarChart, DonutChart, PieChart and Gauge: charts drawn on core.Canvas with axes as Text.",
+		Body: func(ctx *core.Context) core.View {
+			shift := core.NewState(ctx, 0)
+			battery := core.NewState(ctx, 72.0)
+
+			k := shift.Get()
+			visits := rotated(chartVisits, k)
+			signups := rotated(chartSignups, k)
+			steps := rotated(chartSteps, k)
+
+			return core.Column(
+				core.Gap(14),
+				prose("The chart widgets are pure Go on top of core.Canvas. Scales and axis ticks are "+
+					"computed in Go, rounded outwards to 1, 2 or 5 times a power of ten so the labels "+
+					"read 0, 100, 200. Labels, legends and the value in a gauge are ordinary Text laid "+
+					"out around the drawing, and colours come from the theme's roles."),
+				codeBlock(`comps.LineChart{
+    Subject: "Traffic",
+    Labels:  months,
+    Series: []comps.ChartSeries{
+        {Name: "Visits", Values: visits},
+        {Name: "Sign-ups", Values: signups}, // NaN leaves a gap
+    },
+    Points: true,
+}`),
+				demoPanel("Shift the data.",
+					comps.Button{Label: "Shift", OnTap: func() { shift.Set(shift.Get() + 1) }},
+					comps.LineChart{
+						Subject: "Traffic",
+						Labels:  rotated(chartMonths, k),
+						Series: []comps.ChartSeries{
+							{Name: "Visits", Values: visits},
+							{Name: "Sign-ups", Values: signups},
+						},
+						Points: true,
+					},
+					comps.AreaChart{
+						Subject: "Visits",
+						Labels:  rotated(chartMonths, k),
+						Series:  []comps.ChartSeries{{Name: "Visits", Values: visits}},
+						Height:  110,
+					},
+				),
+				prose("A bar chart gives each category an equal slot, so its labels sit under their bars "+
+					"exactly. Its axis always includes zero: a bar's length only means something when "+
+					"it starts there. A sparkline has no axes at all and spends its whole height on the "+
+					"shape."),
+				demoPanel("Bars and a sparkline.",
+					comps.BarChart{
+						Subject: "Steps this week",
+						Labels:  rotated([]string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}, k),
+						Series:  []comps.ChartSeries{{Name: "Steps", Values: steps}},
+						Height:  120,
+					},
+					core.Row(
+						core.Gap(12),
+						core.AlignItemsProp(core.AlignItemsCenter),
+						core.Text(fmt.Sprintf("%.0f visits", visits[len(visits)-1]), core.FontWeight(core.Bold)),
+						core.Column(core.FlexGrow(1), core.FlexBasis("0"),
+							comps.Sparkline{Values: visits, Subject: "Visits by month", ShowLast: true, Area: true}),
+					),
+				),
+				prose("Donuts, pies and gauges keep their shape in any box. The donut's legend rounds its "+
+					"percentages so they add up to 100, and a gauge's arc is a stroke, so its thickness "+
+					"is in pixels at every size."),
+				demoPanel("Drain the battery.",
+					core.Row(
+						core.Gap(16),
+						core.FlexWrap(true),
+						core.Justify(core.JustifyCenter),
+						comps.DonutChart{
+							Subject: "Budget",
+							Size:    130,
+							Slices: []comps.ChartSlice{
+								{Label: "Rent", Value: 1200},
+								{Label: "Food", Value: 450},
+								{Label: "Transport", Value: 200},
+								{Label: "Fun", Value: 150},
+							},
+							CenterValue: "$2,000",
+							CenterLabel: "a month",
+						},
+						comps.Gauge{
+							Value:     battery.Get(),
+							Label:     "Battery",
+							ValueText: fmt.Sprintf("%.0f%%", battery.Get()),
+							Size:      130,
+						},
+					),
+					comps.Button{Label: "Use 12%", OnTap: func() {
+						next := battery.Get() - 12
+						if next < 0 {
+							next = 100
+						}
+						battery.Set(next)
+					}},
+				),
+				keyPoints(
+					"Every chart is one accessible element that speaks a summary; its labels are hidden.",
+					"Axis ticks are nice numbers computed in Go, and labels are Text placed by flex weights.",
+					"A NaN value is a gap in a line and a missing bar.",
+					"Series colours come from theme roles; set ChartSeries.Color or Colors to choose your own.",
 				),
 			)
 		},

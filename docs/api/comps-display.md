@@ -6,7 +6,7 @@ import "github.com/rohanthewiz/grmob/comps"
 
 Avatars, stat tiles, the compass, clocks and alarms, map panels and static maps.
 
-One of 6 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/avatar.go`, `comps/stat_tile.go`, `comps/compass.go`, `comps/clock.go`, `comps/alarm.go`, `comps/map_panel.go`, `comps/static_map.go`.
+One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/avatar.go`, `comps/stat_tile.go`, `comps/compass.go`, `comps/clock.go`, `comps/alarm.go`, `comps/map_panel.go`, `comps/static_map.go`.
 
 ## Index
 
