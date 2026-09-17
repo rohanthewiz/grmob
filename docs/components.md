@@ -659,6 +659,141 @@ Other notes:
 - `Leading` takes an icon or avatar, and `Style` reaches the underlying
   `ListRow`.
 
+## SelectRow
+
+The settings row for a value chosen from a short list: the title on the
+leading edge, the current choice on the trailing edge, and a sheet of the
+alternatives behind a tap on the row.
+
+```go
+comps.SelectRow{
+    Title: "Theme",
+    Options: []core.SelectOption{
+        core.Option("system", "System"),
+        core.Option("light", "Light"),
+        core.Option("dark", "Dark"),
+    },
+    Value:    theme.Get(),
+    OnChange: theme.Set,
+}
+```
+
+```
+┌──────────────────────────────────┐        ┌─────────────────────┐
+│ Theme                    Dark ›  │  tap → │ Theme               │
+└──────────────────────────────────┘        │   System            │
+                                            │   Light             │
+                                            │ ✓ Dark              │
+                                            │   Cancel            │
+                                            └─────────────────────┘
+```
+
+**Why a sheet and not `core.Select` in the trailing slot.** `core.Select` is
+the platform's own picker and is right inside a `FormField`, beside text
+inputs. In a *row* it is wrong twice over: a settings list is tapped anywhere
+along its width, and a picker in the trailing slot is only as wide as its
+longest label; and on the web a click on the control bubbles to the row, so a
+row holding both would open two things. That is the same double dispatch
+`SwitchRow` works through — there the two handlers converge on one value and
+the guard drops the second, but two *openings* have nothing to converge on.
+
+**The row owns one piece of state** — whether the sheet is open, exactly as
+`DatePicker` does. So the hook rule applies in full: render a `SelectRow`
+unconditionally, in a stable position, every pass. A loop over a list of
+settings is fine; a row that appears only when another switch is on is not,
+and wants `core.When` around a whole screen section instead.
+
+Other notes:
+
+- `Options` is `[]core.SelectOption`, the type `core.Select` and
+  `SearchableSelect` take, so a list moves between the three unchanged. An
+  empty `Label` falls back to `Value`; `Disabled` and `GroupDisabled` grey an
+  action and drop its taps, read per option.
+- `Group` is **not** drawn: a sheet action is a button with one line and has
+  no section construct. A list long enough to want headings wants
+  `core.Select` (an `<optgroup>`) or `SearchableSelect` (the row's subtitle).
+- Picking the value already chosen closes the sheet and calls nothing —
+  `OnChange` is a setter, like `SwitchRow.OnToggle`.
+- The row takes `RoleButton` and `PopupDialog`, as `DatePicker`'s trigger
+  does, and is named by its own text ("Theme, Dark"). The chosen action is
+  marked with `SheetAction.Checked`.
+- `Value` matching no option shows `Placeholder` and, in debug builds,
+  reports `comps.ConcernSelectRowValueNotAnOption` — the mismatch looks
+  exactly like an unset row on screen. An empty `Value` is quiet.
+- `SheetTitle` overrides the sheet's heading ("Sort" → "Sort by");
+  `CancelLabel` captions its way out.
+
+## SliderRow
+
+The settings row for a number in a range: the title and the current reading
+on one line, the track across the width under them.
+
+```go
+comps.SliderRow{
+    Title: "Brightness", Min: 0, Max: 100, Step: 1,
+    Value:    level.Get(),
+    OnChange: level.Set,
+    Format:   func(v float64) string { return fmt.Sprintf("%.0f%%", v) },
+}
+```
+
+```
+┌────────────────────────────────────────────┐
+│ 🔆  Brightness                        72%  │
+│     ▬▬▬▬▬▬▬▬▬▬▬▬▬▬●─────────               │
+└────────────────────────────────────────────┘
+```
+
+The title, the reading and the track share the row's growing middle column,
+which is what aligns them: the track starts where the title starts whatever
+the leading icon's width, with no arithmetic against the row's own padding.
+
+**`OnChange` fires once, when the drag ends.** `core.Slider` reports twice
+over — continuously under the finger and once more when it lifts — and this
+row wires `OnChange` to the second. A `Set` on any `core.State` requests a
+render of the whole tree, so a row feeding its caller on every tick would put
+a full render pass between each pixel of a drag, for a value nobody has
+finished choosing; and what is downstream of a settings slider is usually a
+write to disk, a device call or a request.
+
+The thumb still follows the finger — every renderer draws the dragged
+position and Go's value otherwise — so only the number beside the title lags.
+A caller who wants it live opts into the cost through `OnDrag`, and holds the
+draft itself:
+
+```go
+draft := core.NewState(ctx, -1.0) // -1: not dragging
+shown := level.Get()
+if draft.Get() >= 0 {
+    shown = draft.Get()
+}
+comps.SliderRow{
+    Title: "Brightness", Max: 100, Value: shown,
+    OnDrag:   func(v float64) { draft.Set(v) },
+    OnChange: func(v float64) { draft.Set(-1); level.Set(v) },
+}
+```
+
+The draft stays the caller's on purpose: holding it in the widget would make
+`SliderRow` hook-owning — unconditional, stable position, every pass — and
+would charge every row the render-per-tick it was written to avoid. As
+written the row takes no hooks and is free to be conditional.
+
+Other notes:
+
+- The row carries **no** `OnTap` and no role. A switch has one other state a
+  row-sized target can reach; a slider's "other value" is the one under the
+  tap, and Go sees no coordinates. The slider is the control a reader is
+  looking for, and it is named by `Title` and hinted by `Subtitle`.
+- `Max` at or below `Min` becomes `Min..Min+1` with the value pinned to the
+  start — `core.Slider`'s own rule, repeated here so the reading and the
+  thumb cannot disagree.
+- `Format` nil writes the number at the precision `Step` is written at (0.5
+  gives one decimal, 0.25 two), or, with no step, at the precision the span
+  suggests: none over 10, one over 1, two at or below. Returning `""` draws
+  no reading at all.
+- `Disabled` greys the track and registers neither callback.
+
 ## Badge
 
 A small **non-interactive** status pill — a count, a "verified" mark, a

@@ -451,3 +451,83 @@ func TestActionSheetLessonDeleteOffersUndo(t *testing.T) {
 	}
 	assertNoConcerns(t)
 }
+
+// --- 6.8 Settings rows for names and numbers ---------------------------------
+
+// 6.8's two claims are opposites, so the test drives them as a pair.
+//
+// SelectRow's claim is that the row — not a control inside it — opens a sheet
+// of the alternatives and reports the picked value. SliderRow's is the one
+// worth a driving test at all: the reading beside the title follows the finger
+// through OnDrag, while the caller's committed value moves only when the drag
+// ends. Those two numbers disagreeing mid-drag *is* the lesson, so the test
+// asserts the disagreement rather than only the settled state.
+func TestMoreSettingsRowsLessonCommitsOnlyWhenTheDragEnds(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Settings rows for names and numbers")
+
+	if !hasText(tree(t, mgr), "Committed: Match the system at 16 pt.") {
+		t.Fatal("the lesson opens on the system theme at 16pt")
+	}
+	if modalNode(t, tree(t, mgr)).Props["visible"] == true {
+		t.Fatal("the select row's sheet starts shut")
+	}
+
+	// The whole row is the target: it carries the click, and it is not a
+	// Button, so `tap` cannot find it and the row's own text has to.
+	row := findNode(tree(t, mgr), func(n *node) bool {
+		_, clickable := n.Props["onClick"].(string)
+		return clickable && n.Type != "Button" && hasText(n, "Appearance")
+	})
+	if row == nil {
+		t.Fatal("the appearance row should carry the tap")
+	}
+	mgr.DispatchCallback(row.Props["onClick"].(string))
+	if modalNode(t, tree(t, mgr)).Props["visible"] != true {
+		t.Fatal("tapping the row opens the sheet")
+	}
+
+	tap(t, mgr, "Always dark")
+	cur := tree(t, mgr)
+	if modalNode(t, cur).Props["visible"] == true {
+		t.Error("picking an option closes the sheet")
+	}
+	if !hasText(cur, "Committed: Always dark at 16 pt.") {
+		t.Fatal("picking should report the chosen value")
+	}
+
+	// The track. Its two callbacks are the point: onChange is the finger,
+	// onChangeEnd is the commit.
+	slider := func() *node {
+		t.Helper()
+		n := findNode(tree(t, mgr), func(n *node) bool { return n.Type == "Slider" })
+		if n == nil {
+			t.Fatal("the demo draws a SliderRow")
+		}
+		return n
+	}
+
+	drag, ok := slider().Props["onChange"].(string)
+	if !ok {
+		t.Fatal("the demo opts into a live reading, so the continuous callback is wired")
+	}
+	mgr.DispatchTextCallback(drag, "22")
+	cur = tree(t, mgr)
+	if !hasText(cur, "22 pt") {
+		t.Error("the reading beside the title follows the finger")
+	}
+	if !hasText(cur, "Committed: Always dark at 16 pt.") {
+		t.Error("a drag tick must not commit: that is the whole reason OnChange rides on the end")
+	}
+
+	end, ok := slider().Props["onChangeEnd"].(string)
+	if !ok {
+		t.Fatal("OnChange must ride on the drag's end")
+	}
+	mgr.DispatchTextCallback(end, "22")
+	if !hasText(tree(t, mgr), "Committed: Always dark at 22 pt.") {
+		t.Error("lifting the finger is what commits the value")
+	}
+
+	assertNoConcerns(t)
+}

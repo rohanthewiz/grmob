@@ -4,13 +4,13 @@
 import "github.com/rohanthewiz/grmob/comps"
 ```
 
-List, settings and input rows, grouped and paged lists, data tables and timelines.
+List rows, the settings-row family (switch, checkbox, select and slider), input rows, grouped and paged lists, data tables and timelines.
 
-One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/list_row.go`, `comps/settings_row.go`, `comps/input_row.go`, `comps/grouped_list.go`, `comps/grouping.go`, `comps/paging.go`, `comps/data_table.go`, `comps/timeline.go`.
+One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/list_row.go`, `comps/settings_row.go`, `comps/select_row.go`, `comps/slider_row.go`, `comps/input_row.go`, `comps/grouped_list.go`, `comps/grouping.go`, `comps/paging.go`, `comps/data_table.go`, `comps/timeline.go`.
 
 ## Index
 
-- [Constants](#constants) — `ConcernPartialSort`
+- [Constants](#constants) — `ConcernPartialSort`, `ConcernSelectRowValueNotAnOption`
 - [`type CheckboxRow`](#type-checkboxrow)
     - [`func (CheckboxRow) Render`](#func-checkboxrow-render)
 - [`type Collapse`](#type-collapse)
@@ -33,6 +33,10 @@ One of 7 topic pages of [package comps](comps.md), which has the package overvie
     - [`func (LoadMore) Render`](#func-loadmore-render)
 - [`type Pagination`](#type-pagination)
     - [`func (Pagination) Render`](#func-pagination-render)
+- [`type SelectRow`](#type-selectrow)
+    - [`func (SelectRow) Render`](#func-selectrow-render)
+- [`type SliderRow`](#type-sliderrow)
+    - [`func (SliderRow) Render`](#func-sliderrow-render)
 - [`type Sort`](#type-sort)
 - [`type SwitchRow`](#type-switchrow)
     - [`func (SwitchRow) Render`](#func-switchrow-render)
@@ -51,6 +55,14 @@ const ConcernPartialSort = "partial-sort"
 ```
 
 <small>[comps/data_table.go:80](https://github.com/rohanthewiz/grmob/blob/master/comps/data_table.go#L80)</small>
+
+ConcernSelectRowValueNotAnOption is raised, in debug builds only, when Value is set to something no option in Options carries. The row has nothing to put in its trailing slot then and shows Placeholder, which looks exactly like an unset field — so the mismatch would otherwise be invisible until somebody noticed a setting that never displays its own value.
+
+```go
+const ConcernSelectRowValueNotAnOption = "select-row-value-not-an-option"
+```
+
+<small>[comps/select_row.go:14](https://github.com/rohanthewiz/grmob/blob/master/comps/select_row.go#L14)</small>
 
 ## Types
 
@@ -1344,6 +1356,238 @@ func (p Pagination) Render(ctx *core.Context) *core.Node
 ```
 
 <small>[comps/paging.go:41](https://github.com/rohanthewiz/grmob/blob/master/comps/paging.go#L41)</small>
+
+### type SelectRow
+
+```go
+type SelectRow struct {
+	// Title is the setting's name, drawn as the row's primary line.
+	Title string
+
+	// Subtitle is the quieter second line under the title.
+	Subtitle string
+
+	// Leading is an optional icon or avatar before the text, as in ListRow.
+	Leading core.View
+
+	// Options are the choices, in the order the sheet lists them.
+	Options []core.SelectOption
+
+	// Value is the chosen option's Value. A value no option carries shows
+	// Placeholder and reports ConcernSelectRowValueNotAnOption in debug
+	// builds; empty shows Placeholder quietly, since "nothing chosen yet" is
+	// a state a settings row legitimately starts in.
+	Value string
+
+	// OnChange receives the picked option's Value and the sheet closes. It is
+	// not called for a tap on the option already chosen — a sheet that is
+	// dismissed by choosing what was already there has changed nothing, and a
+	// setter that writes the value it was given is the one shape that survives
+	// both that and a caller who inverts state. Nil leaves a row that opens a
+	// sheet nothing can be picked from; use Disabled for one that should not
+	// open at all.
+	OnChange func(string)
+
+	// Placeholder is the trailing text when Value matches no option. Empty
+	// leaves the slot blank but still tappable.
+	Placeholder string
+
+	// SheetTitle names the sheet and is its accessible name. Empty uses Title,
+	// which is right whenever the row's name is already the question ("Theme")
+	// and wrong when it is only half of one ("Sort" → "Sort by").
+	SheetTitle string
+
+	// CancelLabel captions the sheet's dismiss button; empty gives "Cancel".
+	// There is always one: the scrim dismisses too, but a way out that is not
+	// a target is not a way out for everybody.
+	CancelLabel string
+
+	// Disabled marks the row inert: it neither opens nor announces itself as
+	// actionable, and the sheet's own actions are disabled with it so a tap
+	// racing the patch cannot land in an open sheet.
+	Disabled bool
+
+	// Style is passed to the underlying ListRow and so beats its defaults.
+	Style []core.StyleProp
+}
+```
+
+SelectRow is the settings-screen row for a value chosen from a short list: the title on the leading edge, the current choice on the trailing edge, and a sheet of the alternatives behind a tap on the row.
+
+	┌──────────────────────────────────┐        ┌─────────────────────┐
+	│ Theme                    Dark ›  │  tap → │ Theme               │
+	└──────────────────────────────────┘        │   System            │
+	                                            │   Light             │
+	                                            │ ✓ Dark              │
+	                                            │   Cancel            │
+	                                            └─────────────────────┘
+
+	comps.SelectRow{
+	    Title: "Theme",
+	    Options: []core.SelectOption{
+	        core.Option("system", "System"),
+	        core.Option("light", "Light"),
+	        core.Option("dark", "Dark"),
+	    },
+	    Value:    theme.Get(),
+	    OnChange: theme.Set,
+	}
+
+It completes the settings-row family: SwitchRow for a boolean that acts on the tap, CheckboxRow for one a form collects, SliderRow for a number, and this for one of a few named values.
+
+#### Why a sheet and not core.Select in the trailing slot
+
+core.Select is the platform's own picker and is the right control inside a form, where it sits in a FormField beside text inputs. It is the wrong one \*in a row\*, for two reasons that are both about the row rather than about the picker:
+
+  - The row is the target. A settings list is scanned and tapped anywhere along its width; a picker in the trailing slot is a control the width of its longest label, and the rest of the row does nothing.
+  - A row that both opened a sheet and held a native picker would open two things on the web, where a click on the control bubbles to the row — the same double dispatch SwitchRow's doc works through. There the two handlers converge on one value and the guard drops the second; two \*openings\* have nothing to converge on.
+
+So the row owns the whole gesture and the choices are drawn as an ActionSheet, which is the shape both phones use for this (iOS's action sheet, Material's list dialog) and the one comps already has.
+
+#### The row owns one piece of state
+
+Whether the sheet is open, and nothing else — the same single state DatePicker owns, for the same reason: no application wants to hold it, and every one of them would hold it identically. The consequence is the hook rule, in full: render a SelectRow unconditionally, in a stable position, every pass. A list of settings rows built by a loop is fine; a row that appears only when some other switch is on is not, and wants core.When around a whole screen section rather than around this widget.
+
+#### Options are core.SelectOption, with one of its fields undrawn
+
+The list is the type core.Select and SearchableSelect take, so it moves between the three unchanged. Label defaults to Value at the same seam core.Select defaults it, and Disabled or GroupDisabled greys an action and drops its taps — read per option, as SearchableSelect reads them, rather than propagated along a run.
+
+Group is \*not\* drawn. A sheet action is a button with a label and has no second line to put a heading on and no section construct to open, and inventing one here would be a third answer to a question core.Select and SearchableSelect have each already answered (an \<optgroup>, and the row's subtitle). A grouped list is a list long enough to want one of those two.
+
+#### Accessibility
+
+The row takes core.RoleButton and core.PopupDialog, as DatePicker's trigger does: a Row is scenery on every target until a role says otherwise, and the popup declaration needs a role ARIA defines it on. Its name comes from its own text — "Theme, Dark" — which is why no label is synthesized here, the rule ListRow states for every row.
+
+The chosen action states core.CurrentTrue through SheetAction.Checked rather than a selected state; see that field for why a run of buttons cannot be a radio group.
+
+#### Theme roles read
+
+Everything ListRow reads, plus Colors.TextSecondary for the trailing summary and everything ActionSheet reads for the sheet.
+
+<small>[comps/select_row.go:103](https://github.com/rohanthewiz/grmob/blob/master/comps/select_row.go#L103)</small>
+
+#### func (SelectRow) Render
+
+```go
+func (r SelectRow) Render(ctx *core.Context) *core.Node
+```
+
+Render builds the row and its sheet.
+
+<small>[comps/select_row.go:155](https://github.com/rohanthewiz/grmob/blob/master/comps/select_row.go#L155)</small>
+
+### type SliderRow
+
+```go
+type SliderRow struct {
+	// Title is the setting's name, and the slider's accessible label.
+	Title string
+
+	// Subtitle is the quieter second line under the title, and the slider's
+	// accessibility hint.
+	Subtitle string
+
+	// Leading is an optional icon or avatar before the text, as in ListRow.
+	Leading core.View
+
+	// Value is the caller's current number, clamped into [Min, Max].
+	Value float64
+
+	// Min and Max bound the track. Both zero gives 0..1; see "Range and step".
+	Min float64
+	Max float64
+
+	// Step snaps the thumb to multiples of it from Min. Zero is continuous.
+	Step float64
+
+	// OnChange receives the final value, once, when the drag ends. It is a
+	// setter: apply the value you are given. Nil leaves a track that can be
+	// dragged and always springs back, which is a read-only meter drawn as a
+	// control — prefer ProgressBar or Gauge for that, and Disabled for a
+	// setting that is temporarily unavailable.
+	OnChange func(float64)
+
+	// OnDrag receives every value under the finger. Nil — the default — means
+	// nothing is reported until the drag ends. Setting it costs a render pass
+	// per tick; see the type comment for the one shape that is worth it.
+	OnDrag func(float64)
+
+	// Format writes the readout beside the title. Nil writes the number at the
+	// precision Step is written at (0.5 gives one decimal, 0.25 two), or, with
+	// no Step, at the precision the range's span suggests — see
+	// sliderRowDecimals for both tables. Returning "" draws no readout at all,
+	// which is how a row whose number means nothing to a reader ("Contrast")
+	// hides it.
+	Format func(float64) string
+
+	// Disabled greys the slider and drops its reports.
+	Disabled bool
+
+	// Style is passed to the underlying ListRow and so beats its defaults.
+	Style []core.StyleProp
+}
+```
+
+SliderRow is the settings-screen row for a number in a range: the title and the current reading on one line, the track across the width under them.
+
+	┌────────────────────────────────────────────┐
+	│ 🔆  Brightness                        72%  │
+	│     ▬▬▬▬▬▬▬▬▬▬▬▬▬▬●─────────               │
+	└────────────────────────────────────────────┘
+
+	comps.SliderRow{
+	    Title: "Brightness", Min: 0, Max: 100, Step: 1,
+	    Value:    level.Get(),
+	    OnChange: level.Set,
+	    Format:   func(v float64) string { return fmt.Sprintf("%.0f%%", v) },
+	}
+
+It completes the settings-row family: SwitchRow and CheckboxRow for a boolean, SelectRow for one of a few named values, and this for a number.
+
+#### Two callbacks, and why OnChange is the one that fires last
+
+core.Slider reports twice over: continuously under the finger, and once more when the finger lifts. This row wires the caller's OnChange to the \*second\* of those, and leaves the first unwired unless OnDrag is set.
+
+That is not only about cost at the bridge. A Set on any core.State requests a render of the whole tree, so a row that fed its caller's state on every tick would put a full render pass between each pixel of the drag — for a value the person has not finished choosing. A settings slider is adjusted and let go; what is downstream of it is usually a write to disk, a device call or a request, and none of those wants sixty of itself per second.
+
+The visible cost is that the readout does not follow the finger: it shows what was last committed until the drag ends. The thumb \*does\* follow it — every renderer draws the finger's position while dragging and Go's value otherwise (see core.Slider) — so the control is never sluggish, and only the number beside the title lags. A caller who wants the number live opts into the cost explicitly, which is what OnDrag is for:
+
+	draft := core.NewState(ctx, -1.0) // -1: not dragging
+	shown := level.Get()
+	if draft.Get() >= 0 {
+	    shown = draft.Get()
+	}
+	comps.SliderRow{
+	    Title: "Brightness", Max: 100, Value: shown,
+	    OnDrag:   func(v float64) { draft.Set(v) },
+	    OnChange: func(v float64) { draft.Set(-1); level.Set(v) },
+	}
+
+The draft is the caller's rather than the row's on purpose: holding it here would make SliderRow a hook-owning widget — rendered unconditionally, in a stable position, every pass, as DatePicker and SelectRow must be — and would charge every row in the framework the render-per-tick it was written to avoid, to make one of them look livelier. This row takes no hooks at all and is free to be conditional.
+
+#### The row is not a tap target
+
+SwitchRow makes the whole row tappable because a switch has one other state to go to and a row-sized target is easier to hit than a switch-sized one. A slider has no such "other" value: a tap on the row would have to invent one, and the only honest candidate — the value under the tap — cannot be computed in Go, which sees no coordinates. So the row carries no OnTap and no role, and the slider is the control a reader is looking for, which is the rule ListRow states for every row with a control in it.
+
+#### Range and step
+
+Max at or below Min is turned into Min..Min+1 with the value pinned to the start, which is exactly what core.Slider does with a degenerate range — done here as well so the readout and the thumb cannot disagree about what a zero-value SliderRow is showing. Step snaps the thumb to multiples of it from Min, and also decides how many decimals the default readout writes.
+
+#### Theme roles read
+
+Everything ListRow reads, plus Colors.TextSecondary for the readout.
+
+<small>[comps/slider_row.go:87](https://github.com/rohanthewiz/grmob/blob/master/comps/slider_row.go#L87)</small>
+
+#### func (SliderRow) Render
+
+```go
+func (r SliderRow) Render(ctx *core.Context) *core.Node
+```
+
+Render builds the two-line row described in the type doc.
+
+<small>[comps/slider_row.go:136](https://github.com/rohanthewiz/grmob/blob/master/comps/slider_row.go#L136)</small>
 
 ### type Sort
 

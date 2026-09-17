@@ -29,6 +29,7 @@ func chapter6() Chapter {
 			lessonToast(),
 			lessonDialogAndSettingsRows(),
 			lessonActionSheet(),
+			lessonMoreSettingsRows(),
 		},
 	}
 }
@@ -795,4 +796,142 @@ func copiesLabel(n int) string {
 		return "1 copy"
 	}
 	return fmt.Sprintf("%d copies", n)
+}
+
+// --- 6.8 -----------------------------------------------------------------
+
+// themeChoices is the SelectRow demo's option list. []core.SelectOption is the
+// type core.Select and comps.SearchableSelect take, so the same slice moves
+// between the three widgets unchanged — which is the point worth making in a
+// lesson that shows only one of them.
+var themeChoices = []core.SelectOption{
+	core.Option("system", "Match the system"),
+	core.Option("light", "Always light"),
+	core.Option("dark", "Always dark"),
+}
+
+// lessonMoreSettingsRows finishes the family 6.6 started. SwitchRow and
+// CheckboxRow cover a boolean; a settings screen also holds values that are one
+// of a few names and values that are a number, and both of those were
+// hand-rolled until SelectRow and SliderRow existed.
+//
+// The two are deliberately opposite in one respect and the demo is arranged to
+// show it: SelectRow owns a piece of state (is the sheet open) and so inherits
+// the hook obligations, while SliderRow owns none at all and reports only when
+// a drag ends. That contrast is the lesson — the same family, the same row,
+// and two different answers to "who holds what".
+//
+// Appended at the end of the chapter for the reason 4.15, 4.22 and 4.23 were:
+// lesson numbers already in deep links do not move.
+func lessonMoreSettingsRows() Lesson {
+	return Lesson{
+		Title:   "Settings rows for names and numbers",
+		Summary: "comps.SelectRow puts a choice behind an ActionSheet; comps.SliderRow puts a number on a track and reports when the finger lifts.",
+		Body: func(ctx *core.Context) core.View {
+			// Hooks first and unconditionally, above any branch, as every
+			// lesson in this chapter does.
+			theme := core.NewState(ctx, "system")
+			textSize := core.NewState(ctx, 16.0)
+			// The slider's draft: -1 means "not dragging". Held here rather
+			// than inside SliderRow on purpose — see the prose below.
+			dragging := core.NewState(ctx, -1.0)
+
+			shown := textSize.Get()
+			if dragging.Get() >= 0 {
+				shown = dragging.Get()
+			}
+
+			return core.Column(
+				core.Gap(14),
+				prose("6.6 left the settings-row family half-built. A switch covers a boolean "+
+					"that acts on the tap and a checkbox one a form collects later, but a "+
+					"settings screen also holds values that are one of a few names, and values "+
+					"that are a number on a scale. SelectRow and SliderRow are those two, and "+
+					"they are the same ListRow underneath."),
+				codeBlock(`comps.SelectRow{
+    Title:    "Appearance",
+    Options:  themeChoices,          // []core.SelectOption
+    Value:    theme.Get(),
+    OnChange: theme.Set,
+}`),
+				prose("SelectRow shows the current choice on the trailing edge and opens an "+
+					"ActionSheet — 6.7's widget — with a check beside the chosen one. It does "+
+					"not put a core.Select in the row, for two reasons: a settings list is "+
+					"tapped anywhere along its width, and a picker in the trailing slot is only "+
+					"as wide as its longest label; and on the web a click on a control bubbles "+
+					"to the row, so a row holding both would open two things at once."),
+				prose("It owns one piece of state — whether the sheet is open — exactly as "+
+					"DatePicker does, so the hook rule applies to it in full: render a "+
+					"SelectRow unconditionally, in a stable position, every pass. A loop over a "+
+					"list of settings is fine; a row that appears only when another switch is "+
+					"on is not."),
+				codeBlock(`comps.SliderRow{
+    Title: "Text size", Min: 12, Max: 24, Step: 1,
+    Value:    textSize.Get(),
+    OnChange: textSize.Set,          // once, when the finger lifts
+}`),
+				prose("SliderRow is the other half of that argument: it owns nothing. The title "+
+					"and the reading share the row's growing middle column with the track, "+
+					"which is what aligns them whatever the leading icon's width — and "+
+					"OnChange is wired to the end of the drag, not to the value under the "+
+					"finger. A Set on any core.State requests a render of the whole tree, so a "+
+					"row reporting every tick would put a full render pass between each pixel "+
+					"of a drag, for a number nobody has finished choosing."),
+				prose("The thumb still follows the finger: every renderer draws the dragged "+
+					"position and Go's value otherwise. Only the reading beside the title lags, "+
+					"and a caller who wants it live opts into the cost with OnDrag and holds "+
+					"the draft itself — which is what the demo below does, so you can watch "+
+					"the number move. Holding that draft inside the widget would have charged "+
+					"every SliderRow in the framework for it."),
+				demoPanel("Tap the Appearance row anywhere, then drag the text size and watch the reading follow.",
+					comps.SelectRow{
+						Title:      "Appearance",
+						Subtitle:   "How this app picks its theme",
+						Options:    themeChoices,
+						Value:      theme.Get(),
+						OnChange:   theme.Set,
+						SheetTitle: "Appearance",
+					},
+					comps.SliderRow{
+						Title:    "Text size",
+						Subtitle: "Applies to article bodies",
+						Value:    shown,
+						Min:      12,
+						Max:      24,
+						Step:     1,
+						Format:   func(v float64) string { return fmt.Sprintf("%.0f pt", v) },
+						OnDrag:   func(v float64) { dragging.Set(v) },
+						OnChange: func(v float64) { dragging.Set(-1); textSize.Set(v) },
+					},
+					caption(fmt.Sprintf("Committed: %s at %.0f pt.",
+						themeChoiceLabel(theme.Get()), textSize.Get())),
+				),
+				prose("Both rows keep the family's contract. OnChange is a setter — hand it "+
+					"theme.Set, not a function that works out the next value — and picking the "+
+					"option already chosen closes the sheet and calls nothing. A Value no "+
+					"option carries shows the placeholder and, in debug builds, raises "+
+					"comps.ConcernSelectRowValueNotAnOption, because on screen that mistake "+
+					"looks exactly like a row nobody has set yet."),
+				keyPoints(
+					"SelectRow is a ListRow with the current choice trailing and an ActionSheet of the alternatives behind a tap on the row.",
+					"Its Options are core.SelectOption, so a list moves between SelectRow, core.Select and SearchableSelect unchanged; Group is the one field a sheet cannot draw.",
+					"SelectRow owns its open/shut state and so must be rendered unconditionally, in a stable position, every pass.",
+					"SliderRow owns nothing and reports through the drag's end, so a settings screen does not re-render per pixel.",
+					"OnDrag opts into a live reading, and the draft it feeds stays the caller's.",
+					"The slider is the control a reader looks for: the row carries no OnTap and no role, and the track is named by Title and hinted by Subtitle.",
+				),
+			)
+		},
+	}
+}
+
+// themeChoiceLabel reads a label back out of the same table the row picks
+// from, so the caption cannot name a choice the sheet does not offer.
+func themeChoiceLabel(value string) string {
+	for _, o := range themeChoices {
+		if o.Value == value {
+			return o.Label
+		}
+	}
+	return value
 }

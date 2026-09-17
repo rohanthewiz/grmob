@@ -1,7 +1,8 @@
 # Low-hanging fruit for `comps`, round two
 
-**Status:** drafted 2026-09-17. D1 `FAB` + `Screen.Floating` and D2 `QRCode`
-both landed the same day. Everything else is unstarted.
+**Status:** drafted 2026-09-17. D1 `FAB` + `Screen.Floating`, D2 `QRCode` and
+D4 `SelectRow` + `SliderRow` all landed the same day. Everything else is
+unstarted.
 
 The first round (`comps-low-hanging-fruit.md`) landed entire on 2026-09-12:
 Tiers A through C, fifteen widgets, one carousel left blocked on a scroll
@@ -121,7 +122,7 @@ both want it.
   render is not the place to run a handler) or from the hook's effect. The
   hook's effect, once, on the tick that crosses zero.
 
-### D4. `SelectRow` and `SliderRow`
+### D4. `SelectRow` and `SliderRow` — **landed 2026-09-17**
 
 The rest of the settings-row family beside `SwitchRow` and `CheckboxRow`.
 
@@ -131,6 +132,40 @@ The rest of the settings-row family beside `SwitchRow` and `CheckboxRow`.
 - `SliderRow`: a `ListRow` over a `core.Slider`, reporting through
   `OnSliderChangeEnd` so a drag does not re-render the app per pixel.
 - No decision; both are the shapes already in the package.
+
+**What the sketch left for the build.** Three things, and the first two are
+the same question asked of each widget: *who holds the state?*
+
+- **`SelectRow` holds one piece and `SliderRow` holds none**, and the pair is
+  now the clearest statement of the trade in the package. The sketch's "the
+  row owns the open/shut state" was right and carries `DatePicker`'s hook
+  obligation with it. The slider's tempting mirror — hold the in-flight drag
+  value so the reading follows the finger — was rejected: `State.Set` requests
+  a render of the *whole tree*, so a widget holding the draft would charge
+  every `SliderRow` the render-per-tick this item exists to avoid, to make one
+  of them look livelier. `OnDrag` hands that choice to the caller, who holds
+  the draft. Lesson 6.8's demo does exactly that, and its driving test asserts
+  the two numbers disagreeing mid-drag.
+- **The row is the control, or it isn't.** `SelectRow` takes `RoleButton` and
+  `PopupDialog` and is the whole tap target, because there is nothing else in
+  the row to be the control — the sketch's "not `core.Select` in the trailing
+  slot" needed the reason, which is that on the web a click on a control
+  bubbles to the row, and two *openings* have nothing to converge on the way
+  `SwitchRow`'s two setters do. `SliderRow` is the opposite: no `OnTap`, no
+  role, because a tap on the row has no value it could honestly mean.
+- **Where the track goes.** Title and reading on one line, track under them,
+  and both inside the row's *growing middle column* rather than beside it —
+  that is what aligns the track with the title whatever the leading icon's
+  width, with no arithmetic against the theme's row padding. It costs one
+  `Box`, since `ListRow.Content` is a single view and there are two things to
+  put in it.
+
+`core.SelectOption.Group` is the one field that does not survive the trip: a
+sheet action is a button with one line and no section construct. Documented as
+a limit pointing at `core.Select` and `SearchableSelect`, which have each
+already answered it. A `Value` no option carries reports
+`comps.ConcernSelectRowValueNotAnOption` in debug builds, because on screen
+that mistake is indistinguishable from a row nobody has set.
 
 ### D5. `PINInput`
 

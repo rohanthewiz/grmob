@@ -35,7 +35,7 @@ Package comps's reference is split into 7 topic pages by source file. The index 
 | Topic | What it covers | Declares |
 | --- | --- | --- |
 | [Screens & structure](comps-structure.md) | Screen, app and bottom bars, the FAB, tabs, drawers, step indicators, two-pane and foldable layouts, cards, accordions, headings and separators. | 15 types, 11 functions and methods |
-| [Lists & tables](comps-lists.md) | List, settings and input rows, grouped and paged lists, data tables and timelines. | 16 types, 12 functions and methods |
+| [Lists & tables](comps-lists.md) | List rows, the settings-row family (switch, checkbox, select and slider), input rows, grouped and paged lists, data tables and timelines. | 18 types, 14 functions and methods |
 | [Inputs & pickers](comps-inputs.md) | Form fields, search, searchable selects, radio groups, dates and calendars, and the two editors. | 11 types, 10 functions and methods |
 | [Buttons & choices](comps-actions.md) | Buttons and their variants, chips, segmented controls, steppers, ratings and badges. | 10 types, 10 functions and methods |
 | [Overlays & feedback](comps-overlays.md) | Dialogs, action sheets, menus, snackbars, banners, progress, spinners, skeletons and empty states. | 12 types, 9 functions and methods |
@@ -61,7 +61,7 @@ Package comps's reference is split into 7 topic pages by source file. The index 
     - [`type TwoPane`](comps-structure.md#type-twopane)
     - [`type TwoPaneCompact`](comps-structure.md#type-twopanecompact)
 - [Lists & tables](comps-lists.md)
-    - [Constants](comps-lists.md#constants) — `ConcernPartialSort`
+    - [Constants](comps-lists.md#constants) — `ConcernPartialSort`, `ConcernSelectRowValueNotAnOption`
     - [`type CheckboxRow`](comps-lists.md#type-checkboxrow)
     - [`type Collapse`](comps-lists.md#type-collapse)
     - [`type CollapseBand`](comps-lists.md#type-collapseband)
@@ -74,6 +74,8 @@ Package comps's reference is split into 7 topic pages by source file. The index 
     - [`type ListRow`](comps-lists.md#type-listrow)
     - [`type LoadMore`](comps-lists.md#type-loadmore)
     - [`type Pagination`](comps-lists.md#type-pagination)
+    - [`type SelectRow`](comps-lists.md#type-selectrow)
+    - [`type SliderRow`](comps-lists.md#type-sliderrow)
     - [`type Sort`](comps-lists.md#type-sort)
     - [`type SwitchRow`](comps-lists.md#type-switchrow)
     - [`type Timeline`](comps-lists.md#type-timeline)
