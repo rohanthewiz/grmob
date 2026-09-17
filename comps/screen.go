@@ -156,6 +156,36 @@ type Screen struct {
 	// lifted over the keyboard, which is how both platforms treat a tab bar.
 	Footer core.View
 
+	// Floating is a view drawn over the content, pinned to the bottom-end
+	// corner: a comps.FAB, almost always. When set, the content (the scroll
+	// region, or the column when there is none) becomes the base layer of a
+	// core.ZStack that grows to fill the safe area, and Floating is the layer
+	// on top, placed core.StackAlignBottomEnd with a Spacing.LG margin.
+	//
+	//	SafeArea
+	//	  ├─ ZStack FlexGrow(1)
+	//	  │    ├─ Scroll / Column   Width 100%, Height 100%   ← the content
+	//	  │    └─ Floating          StackAlignBottomEnd
+	//	  └─ Footer
+	//
+	// The Footer stays below the stack, so a FAB floats above a BottomBar
+	// rather than on it, which is where both platforms put one.
+	//
+	// The base layer states its size in percent because a stack centres and
+	// hugs every layer that says nothing (see core.ZStack, "What the stack
+	// sizes to"): without those two props the content would sit in the middle
+	// of the screen as wide as its widest row. The stack, not the column, takes
+	// FlexGrow(1): a layer of a stack has no main axis to grow along.
+	//
+	// Content under the button: the last row of a scrolling list can end
+	// beneath it. The scaffold does not pad the content for it, because it
+	// cannot see the list's own inset; give the last item room, or end the
+	// list with a Spacer.
+	//
+	// Nil changes nothing, which keeps the zero value byte-identical to
+	// SafeArea(Column(...)).
+	Floating core.View
+
 	// Style is applied to the column, after Gap and Fill, so a caller can
 	// override either — or add padding and a background the scaffold itself
 	// has no opinion about.
@@ -254,6 +284,12 @@ func (s Screen) Render(ctx *core.Context) *core.Node {
 		// caller's Style deliberately, so an explicit padding still wins.
 		items = append(items, core.Padding(0))
 	}
+	if s.Floating != nil && !s.Scroll {
+		// The column is the base layer of the floating stack and has to fill
+		// it; see the Floating field. With Scroll, the Scroll is the layer
+		// and takes these instead (below).
+		items = append(items, core.Width("100%"), core.Height("100%"))
+	}
 	// Caller Style last: containerNode applies style props in argument order,
 	// so anything here wins over the three props above.
 	for _, sp := range s.Style {
@@ -286,7 +322,27 @@ func (s Screen) Render(ctx *core.Context) *core.Node {
 			// leftover height so the footer sits below it. Without one the
 			// false path is nil and the Scroll keeps its unstyled shape.
 			core.MaybeProp(s.Footer != nil, core.FlexGrow(1)),
+			// As the base layer of a floating stack the Scroll fills the
+			// stack; see the Floating field.
+			core.MaybeProp(s.Floating != nil, core.Width("100%")),
+			core.MaybeProp(s.Floating != nil, core.Height("100%")),
 			inner,
+		)
+	}
+	if s.Floating != nil {
+		// The content becomes the base layer and Floating the top one. The
+		// stack grows so its bottom-end corner is the safe area's (above the
+		// Footer, when there is one); the placement and the margin ride on a
+		// Box around the caller's view, because a caller's View cannot be
+		// handed props, and a Box carries no theme base to inset it further.
+		inner = core.ZStack(
+			core.FlexGrow(1),
+			inner,
+			core.Box(
+				core.StackAlign(core.StackAlignBottomEnd),
+				core.Margin(ctx.Theme().Spacing.LG),
+				s.Floating,
+			),
 		)
 	}
 	// The screen's background is painted on the safe area as well as on the

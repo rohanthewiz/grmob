@@ -34,7 +34,7 @@ Package comps's reference is split into 7 topic pages by source file. The index 
 
 | Topic | What it covers | Declares |
 | --- | --- | --- |
-| [Screens & structure](comps-structure.md) | Screen, app and bottom bars, tabs, drawers, step indicators, two-pane and foldable layouts, cards, accordions, headings and separators. | 13 types, 10 functions and methods |
+| [Screens & structure](comps-structure.md) | Screen, app and bottom bars, the FAB, tabs, drawers, step indicators, two-pane and foldable layouts, cards, accordions, headings and separators. | 15 types, 11 functions and methods |
 | [Lists & tables](comps-lists.md) | List, settings and input rows, grouped and paged lists, data tables and timelines. | 16 types, 12 functions and methods |
 | [Inputs & pickers](comps-inputs.md) | Form fields, search, searchable selects, radio groups, dates and calendars, and the two editors. | 11 types, 10 functions and methods |
 | [Buttons & choices](comps-actions.md) | Buttons and their variants, chips, segmented controls, steppers, ratings and badges. | 10 types, 10 functions and methods |
@@ -52,6 +52,8 @@ Package comps's reference is split into 7 topic pages by source file. The index 
     - [`type Card`](comps-structure.md#type-card)
     - [`type Drawer`](comps-structure.md#type-drawer)
     - [`type DrawerItem`](comps-structure.md#type-draweritem)
+    - [`type FAB`](comps-structure.md#type-fab)
+    - [`type FABSize`](comps-structure.md#type-fabsize)
     - [`type Screen`](comps-structure.md#type-screen)
     - [`type Separator`](comps-structure.md#type-separator)
     - [`type StepIndicator`](comps-structure.md#type-stepindicator)

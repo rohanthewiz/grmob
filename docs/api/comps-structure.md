@@ -4,9 +4,9 @@
 import "github.com/rohanthewiz/grmob/comps"
 ```
 
-Screen, app and bottom bars, tabs, drawers, step indicators, two-pane and foldable layouts, cards, accordions, headings and separators.
+Screen, app and bottom bars, the FAB, tabs, drawers, step indicators, two-pane and foldable layouts, cards, accordions, headings and separators.
 
-One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/screen.go`, `comps/app_bar.go`, `comps/bottom_bar.go`, `comps/tabs.go`, `comps/drawer.go`, `comps/step_indicator.go`, `comps/two_pane.go`, `comps/card.go`, `comps/accordion.go`, `comps/disclosure.go`, `comps/heading.go`, `comps/separator.go`.
+One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/screen.go`, `comps/app_bar.go`, `comps/bottom_bar.go`, `comps/fab.go`, `comps/tabs.go`, `comps/drawer.go`, `comps/step_indicator.go`, `comps/two_pane.go`, `comps/card.go`, `comps/accordion.go`, `comps/disclosure.go`, `comps/heading.go`, `comps/separator.go`.
 
 ## Index
 
@@ -22,6 +22,9 @@ One of 7 topic pages of [package comps](comps.md), which has the package overvie
 - [`type Drawer`](#type-drawer)
     - [`func (Drawer) Render`](#func-drawer-render)
 - [`type DrawerItem`](#type-draweritem)
+- [`type FAB`](#type-fab)
+    - [`func (FAB) Render`](#func-fab-render)
+- [`type FABSize`](#type-fabsize)
 - [`type Screen`](#type-screen)
     - [`func (Screen) Render`](#func-screen-render)
 - [`type Separator`](#type-separator)
@@ -539,6 +542,125 @@ DrawerItem is one destination in a Drawer.
 
 <small>[comps/drawer.go:234](https://github.com/rohanthewiz/grmob/blob/master/comps/drawer.go#L234)</small>
 
+### type FAB
+
+```go
+type FAB struct {
+	// Icon is the glyph on the disc, and leads the Label on the extended
+	// form. A single character or emoji; the widget does not size an image.
+	Icon string
+
+	// Label turns the disc into a pill with the word beside the glyph.
+	Label string
+
+	// OnTap is the action. Nil leaves the button in place and inert.
+	OnTap func()
+
+	// Variant picks the fill. The zero value is the theme's own Button
+	// pairing, which on every bundled theme is the primary fill.
+	Variant Variant
+
+	// Emphasis is passed through to the Button. The zero value is filled,
+	// which is what a FAB is; an outlined or ghost FAB is unusual but not
+	// forbidden.
+	Emphasis Emphasis
+
+	// Size picks the diameter. The zero value is FABRegular.
+	Size FABSize
+
+	// Disabled draws the button muted and drops taps, as Button does.
+	Disabled bool
+
+	// AccessibilityLabel is the spoken name. Required for an icon-only FAB;
+	// on the extended form it replaces the Label as the name.
+	AccessibilityLabel string
+
+	// AccessibilityHint says what happens on activation, as on Button.
+	AccessibilityHint string
+
+	// Style is applied after the widget's own props and before Disabled, so
+	// a look can be overridden and inertness cannot.
+	Style []core.StyleProp
+
+	// FocusRef lets the caller move focus to the button.
+	FocusRef *core.FocusRef
+}
+```
+
+FAB is the floating action button: the one primary action of a screen, drawn as a raised disc that sits over the content rather than in it.
+
+	comps.FAB{Icon: "+", AccessibilityLabel: "New note", OnTap: create}
+	comps.FAB{Icon: "✎", Label: "Compose", OnTap: compose}   // the extended form
+
+It is a comps.Button in a circle, and nothing more: the treatment (Variant × Emphasis, disabled dimming, the caller's Style landing after the widget's own) is Button's, so a FAB and a Button on the same screen cannot disagree about what "primary" looks like.
+
+#### Where it floats
+
+The widget does not place itself. A floating thing needs a layer to float on, and the only container that draws one child over another is core.ZStack, which sizes to its largest layer — so a FAB that wrapped its own screen would have to know how big the screen is. The screen already knows: Screen.Floating takes the FAB and places it bottom-end over the content, above the Footer, and that is the intended way to use it.
+
+	comps.Screen{
+	    Scroll:   true,
+	    Children: []core.View{list},
+	    Floating: comps.FAB{Icon: "+", AccessibilityLabel: "Add", OnTap: add},
+	    Footer:   comps.BottomBar{...},
+	}
+
+A FAB placed anywhere else is an ordinary round button in the flow, which is also fine — a toolbar can hold one — it just does not float.
+
+#### Two shapes
+
+Icon-only is a disc: Width and Height equal, BorderRadius half of that, no padding so the glyph centres. With Label set it is the \*extended\* FAB, a pill wide enough for the glyph and the word; the height is the same so the two forms sit at the same place on a screen and a label can be added without the button moving.
+
+	┌──────┐        ┌─────────────────┐
+	│  +   │        │  ✎  Compose     │
+	└──────┘        └─────────────────┘
+	  disc              extended
+
+The sizes are fixed points rather than the theme's spacing scale, because a FAB is a \*touch target\* first: 56 is the platform norm for the regular size and 40 for the small one, and neither sits on a scale whose steps are 4, 8, 16, 24, 32. Spacing does still set the extended form's horizontal padding.
+
+#### Accessibility
+
+A "+" is a glyph, not a name, so an icon-only FAB needs AccessibilityLabel and the widget gives it nothing to fall back on: it would rather a screen reader say "plus" than say a wrong name the widget invented. The extended form is named by its Label like any button, and AccessibilityLabel replaces that where the word on the pill is too short to explain the action.
+
+#### Theme roles read
+
+	Fill and ink   as comps.Button: the theme's Button base for the zero
+	               Variant, the variant's colour and contrast-picked ink
+	               otherwise
+	Padding        Spacing.MD, on the extended form's sides
+
+<small>[comps/fab.go:71](https://github.com/rohanthewiz/grmob/blob/master/comps/fab.go#L71)</small>
+
+#### func (FAB) Render
+
+```go
+func (f FAB) Render(ctx *core.Context) *core.Node
+```
+
+Render builds the round (or pill) Button.
+
+<small>[comps/fab.go:139](https://github.com/rohanthewiz/grmob/blob/master/comps/fab.go#L139)</small>
+
+### type FABSize
+
+```go
+type FABSize string
+```
+
+FABSize selects a FAB's height, and its width when it is a disc.
+
+<small>[comps/fab.go:113](https://github.com/rohanthewiz/grmob/blob/master/comps/fab.go#L113)</small>
+
+```go
+const (
+	// FABRegular is 56 points, the platform default; the zero value.
+	FABRegular FABSize = ""
+	// FABSmall is 40 points, for a secondary action beside a regular one or
+	// a FAB in a dense layout.
+	FABSmall FABSize = "small"
+)
+```
+
 ### type Screen
 
 ```go
@@ -611,6 +733,36 @@ type Screen struct {
 	// lifted over the keyboard, which is how both platforms treat a tab bar.
 	Footer core.View
 
+	// Floating is a view drawn over the content, pinned to the bottom-end
+	// corner: a comps.FAB, almost always. When set, the content (the scroll
+	// region, or the column when there is none) becomes the base layer of a
+	// core.ZStack that grows to fill the safe area, and Floating is the layer
+	// on top, placed core.StackAlignBottomEnd with a Spacing.LG margin.
+	//
+	//	SafeArea
+	//	  ├─ ZStack FlexGrow(1)
+	//	  │    ├─ Scroll / Column   Width 100%, Height 100%   ← the content
+	//	  │    └─ Floating          StackAlignBottomEnd
+	//	  └─ Footer
+	//
+	// The Footer stays below the stack, so a FAB floats above a BottomBar
+	// rather than on it, which is where both platforms put one.
+	//
+	// The base layer states its size in percent because a stack centres and
+	// hugs every layer that says nothing (see core.ZStack, "What the stack
+	// sizes to"): without those two props the content would sit in the middle
+	// of the screen as wide as its widest row. The stack, not the column, takes
+	// FlexGrow(1): a layer of a stack has no main axis to grow along.
+	//
+	// Content under the button: the last row of a scrolling list can end
+	// beneath it. The scaffold does not pad the content for it, because it
+	// cannot see the list's own inset; give the last item room, or end the
+	// list with a Spacer.
+	//
+	// Nil changes nothing, which keeps the zero value byte-identical to
+	// SafeArea(Column(...)).
+	Floating core.View
+
 	// Style is applied to the column, after Gap and Fill, so a caller can
 	// override either — or add padding and a background the scaffold itself
 	// has no opinion about.
@@ -672,7 +824,7 @@ Style still wins. The cleared padding is applied ahead of the caller's Style pro
 func (s Screen) Render(ctx *core.Context) *core.Node
 ```
 
-<small>[comps/screen.go:215](https://github.com/rohanthewiz/grmob/blob/master/comps/screen.go#L215)</small>
+<small>[comps/screen.go:245](https://github.com/rohanthewiz/grmob/blob/master/comps/screen.go#L245)</small>
 
 ### type Separator
 

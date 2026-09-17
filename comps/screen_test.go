@@ -582,3 +582,84 @@ func TestScreenWithoutFooterKeepsItsSingleChild(t *testing.T) {
 		t.Errorf("no footer means no FlexGrow on the Scroll, got %v", s.FlexGrow)
 	}
 }
+
+// --- Floating -----------------------------------------------------------------
+
+// floatingStackOf returns the ZStack a Floating screen builds, and its two
+// layers: the content and the Box carrying the floating view.
+func floatingStackOf(t *testing.T, n *core.Node) (stack, content, layer *core.Node) {
+	t.Helper()
+	if n.Type != "SafeArea" || len(n.Children) == 0 {
+		t.Fatalf("root = %q with %d children, want a SafeArea", n.Type, len(n.Children))
+	}
+	stack = n.Children[0]
+	if stack.Type != "ZStack" || len(stack.Children) != 2 {
+		t.Fatalf("content = %q with %d children, want a two-layer ZStack", stack.Type, len(stack.Children))
+	}
+	return stack, stack.Children[0], stack.Children[1]
+}
+
+func TestScreenFloatingStacksTheContentUnderTheView(t *testing.T) {
+	_, n := renderDebug(t, Screen{
+		Children: []core.View{core.Text("body")},
+		Floating: FAB{Icon: "+", AccessibilityLabel: "Add"},
+	})
+	stack, content, layer := floatingStackOf(t, n)
+
+	if stack.Style == nil || stack.Style.FlexGrow != 1 {
+		t.Error("the stack grows to the safe area so its bottom-end corner is the screen's")
+	}
+	if content.Type != "Column" || content.Style.Width != "100%" || content.Style.Height != "100%" {
+		t.Errorf("content = %q %s×%s; the base layer must fill the stack or the stack centres and hugs it",
+			content.Type, content.Style.Width, content.Style.Height)
+	}
+	if content.Style.FlexGrow != 0 {
+		t.Error("a layer of a stack has no axis to grow along; the stack grows, the column does not")
+	}
+	if layer.Type != "Box" || layer.Style.StackAlign != core.StackAlignBottomEnd {
+		t.Errorf("floating layer = %q placed %q, want a Box at bottom-end", layer.Type, layer.Style.StackAlign)
+	}
+	lg := core.DefaultTheme.Spacing.LG
+	if m := layer.Style.Margin; m.Left != lg || m.Right != lg || m.Top != lg || m.Bottom != lg {
+		t.Errorf("floating margin = %+v, want %d all round", m, lg)
+	}
+	if len(layer.Children) != 1 || layer.Children[0].Type != "Button" {
+		t.Error("the Box holds the caller's view and nothing else")
+	}
+}
+
+func TestScreenFloatingWithScrollMakesTheScrollTheBaseLayer(t *testing.T) {
+	_, n := renderDebug(t, Screen{
+		Scroll:   true,
+		Children: []core.View{core.Text("body")},
+		Floating: core.Text("fab"),
+	})
+	_, content, _ := floatingStackOf(t, n)
+	if content.Type != "Scroll" || content.Style.Width != "100%" || content.Style.Height != "100%" {
+		t.Errorf("content = %q %s×%s, want the Scroll filling the stack", content.Type, content.Style.Width, content.Style.Height)
+	}
+	if col := content.Children[0]; col.Type != "Column" || col.Style.Width != "" {
+		t.Error("the scrolled column is not a layer and takes no percent size")
+	}
+}
+
+func TestScreenFloatingSitsAboveTheFooter(t *testing.T) {
+	_, n := renderDebug(t, Screen{
+		Children: []core.View{core.Text("body")},
+		Floating: core.Text("fab"),
+		Footer:   core.Text("footer"),
+	})
+	if len(n.Children) != 2 || n.Children[0].Type != "ZStack" || n.Children[1].Props["content"] != "footer" {
+		t.Fatal("want SafeArea(ZStack, footer): the floating view floats above the bar, not on it")
+	}
+}
+
+func TestScreenWithoutFloatingBuildsNoStack(t *testing.T) {
+	_, n := renderDebug(t, Screen{Scroll: true, Children: []core.View{core.Text("body")}})
+	if n.Children[0].Type != "Column" && n.Children[0].Type != "Scroll" {
+		t.Fatalf("content = %q, want the plain scaffold", n.Children[0].Type)
+	}
+	if n.Children[0].Style != nil && n.Children[0].Style.Width == "100%" {
+		t.Error("a screen without Floating carries no percent size: the zero value is unchanged")
+	}
+}

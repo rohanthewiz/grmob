@@ -53,6 +53,7 @@ func chapter4() Chapter {
 			lessonClocksAndDrawing(),
 			lessonCharts(),
 			lessonFoldables(),
+			lessonFAB(),
 		},
 	}
 }
@@ -4107,6 +4108,94 @@ return listBesideDetail`),
 					"Only a separating fold is laid out around. A flat, continuous panel can be crossed.",
 					"Fold bounds are in window coordinates; a TwoPane that does not start at the window's corner passes its Origin.",
 					"Android reports through Jetpack WindowManager, the browser through viewport segments and device posture, and iOS reports size alone.",
+				),
+			)
+		},
+	}
+}
+
+// lessonFAB is the floating action button and the Screen slot that floats it.
+// A lesson is itself a scrolling screen, so the demo cannot hand a Screen a
+// Floating view without nesting one safe area inside another; instead it
+// floats the FAB over a fixed-height ZStack, which is exactly what
+// Screen.Floating builds around the content, and prints the Screen form as
+// code. It is appended at the end of the chapter for the reason 4.15 was:
+// lesson numbers already in deep links do not move.
+func lessonFAB() Lesson {
+	return Lesson{
+		Title:   "The floating action button",
+		Summary: "comps.FAB, a raised disc for a screen's one primary action, and Screen.Floating, the layer it floats on.",
+		Body: func(ctx *core.Context) core.View {
+			// Hooks first and unconditionally, as in every lesson.
+			notes := core.NewState(ctx, 3)
+			t := ctx.Theme()
+
+			// A mixed prop-and-child list, as core.Column takes: the gap first,
+			// then one row per note.
+			rows := make([]core.PropsAndChildren, 0, notes.Get()+1)
+			rows = append(rows, core.Gap(4))
+			for i := 1; i <= notes.Get(); i++ {
+				rows = append(rows, comps.ListRow{Title: fmt.Sprintf("Note %d", i)})
+			}
+
+			return core.Column(
+				core.Gap(14),
+				prose("A FAB is comps.Button in a circle: the fill, the ink, the disabled "+
+					"dimming and the Style order are all Button's, so a FAB and a Button on "+
+					"one screen cannot disagree about what primary looks like. Icon-only it is "+
+					"a 56-point disc; with a Label it is the extended pill, at the same height, "+
+					"so naming the action does not move it."),
+				codeBlock(`comps.FAB{Icon: "+", AccessibilityLabel: "New note", OnTap: create}
+comps.FAB{Icon: "✎", Label: "Compose", OnTap: compose}`),
+				prose("It does not place itself. The only container that draws one child over "+
+					"another is core.ZStack, which sizes to its largest layer, so the screen "+
+					"that already fills the safe area is what hosts it: Screen.Floating makes "+
+					"the content the base layer and places the FAB bottom-end, above the Footer."),
+				codeBlock(`comps.Screen{
+    Scroll:   true,
+    Children: []core.View{notes},
+    Floating: comps.FAB{Icon: "+", AccessibilityLabel: "New note", OnTap: create},
+    Footer:   comps.BottomBar{Items: tabs, Selected: tab.Get()},
+}`),
+				prose("A plus is a glyph, not a name, so an icon-only FAB needs an "+
+					"AccessibilityLabel; the widget invents nothing to say instead."),
+				demoPanel("Tap the disc to add a note. The stack below is the shape Screen.Floating builds around a screen's content.",
+					core.ZStack(
+						core.Width("100%"),
+						core.Height("220px"),
+						core.BorderRadius(12),
+						core.BackgroundColor(t.Colors.Surface),
+						// The content layer fills the stack, as the screen's
+						// column does under Floating.
+						core.Scroll(
+							core.Width("100%"),
+							core.Height("100%"),
+							core.Column(rows...),
+						),
+						core.Box(
+							core.StackAlign(core.StackAlignBottomEnd),
+							core.Margin(t.Spacing.MD),
+							comps.FAB{
+								Icon:               "+",
+								AccessibilityLabel: "New note",
+								OnTap:              func() { notes.Set(notes.Get() + 1) },
+							},
+						),
+					),
+					core.Row(
+						core.Gap(12),
+						core.AlignItemsProp(core.AlignItemsCenter),
+						comps.FAB{Icon: "✎", Label: "Compose", OnTap: func() {}},
+						comps.FAB{Icon: "↑", Size: comps.FABSmall, AccessibilityLabel: "Back to top", OnTap: func() {}},
+					),
+					caption(fmt.Sprintf("%d notes", notes.Get())),
+				),
+				keyPoints(
+					"FAB is a Button in a circle; Variant, Emphasis, Disabled and Style all mean what they mean on Button.",
+					"Icon-only is a 56-point disc (40 for FABSmall); Label makes it an extended pill at the same height.",
+					"Screen.Floating stacks the content under the view and places it bottom-end with a Spacing.LG margin, above the Footer.",
+					"The base layer states Width and Height 100%: a ZStack centres and hugs any layer that says nothing.",
+					"An icon-only FAB needs AccessibilityLabel; a glyph is not a name.",
 				),
 			)
 		},

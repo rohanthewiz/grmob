@@ -2317,3 +2317,38 @@ func TestFoldablesLessonReadsTheWindowAndSplitsAtTheHinge(t *testing.T) {
 	}
 	assertNoConcerns(t)
 }
+
+// --- 4.22 The floating action button -----------------------------------------
+
+func TestFABLessonFloatsTheDiscAndAddsNotes(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "The floating action button")
+
+	root := tree(t, mgr)
+	if !hasText(root, "3 notes") {
+		t.Fatal("the demo starts with three notes")
+	}
+	// The disc floats: it is the bottom-end layer of a ZStack whose other
+	// layer fills the stack, the shape Screen.Floating builds.
+	stack := findNode(root, func(n *node) bool { return n.Type == "ZStack" && len(n.Children) == 2 })
+	if stack == nil {
+		t.Fatal("the demo draws a two-layer ZStack")
+	}
+	// The test's node mirrors only the style fields lessons have needed so
+	// far; the width is among them and stands for the pair, and the placement
+	// is pinned by comps' own Screen tests.
+	if base := stack.Children[0]; base.Style == nil || base.Style.Width != "100%" {
+		t.Error("the content layer must fill the stack")
+	}
+	if disc := findNode(stack.Children[1], func(n *node) bool {
+		return n.Style != nil && n.Style.AccessibilityLabel == "New note"
+	}); disc == nil || disc.Style.BorderRadius != 28 {
+		t.Error("the top layer holds the 56-point disc")
+	}
+
+	tapLabelled(t, mgr, "New note")
+	if !hasText(tree(t, mgr), "4 notes") {
+		t.Fatal("tapping the FAB adds a note")
+	}
+	assertNoConcerns(t)
+}

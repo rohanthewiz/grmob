@@ -48,6 +48,9 @@ SafeArea
   │         ├─ Children[0]
   │         └─ …
   └─ Footer            (only when Footer is set; pinned, never scrolls)
+
+// With Floating, the content becomes the base layer of a ZStack that grows
+// to fill the safe area, and Floating is placed over its bottom-end corner.
 ```
 
 ```go
@@ -79,6 +82,7 @@ comps.Screen{
 | `Fill` | `FlexGrow(1)` on the column — claim the full safe-area height |
 | `Style` | applied to the column **after** `Gap` and `Fill`, so it overrides both |
 | `Footer` | pinned below the content, outside the scroll region; the content grows to push it to the bottom edge |
+| `Floating` | drawn over the content at its bottom-end corner, above the `Footer`; the slot for a `comps.FAB` |
 
 **Every field defaults to contributing nothing**, so the zero value renders
 the bare scaffold with no style props at all and the theme's `Column` base
@@ -177,6 +181,28 @@ comps.Screen{
 The footer takes no inset or style from the scaffold. It is the caller's
 widget and draws its own background and padding. A nil `Footer` leaves the
 tree exactly as it was.
+
+**`Floating` is the slot for a `FAB`.** The content (the `Scroll`, or the
+column when there is none) becomes the base layer of a `core.ZStack` that
+grows to fill the safe area, and `Floating` is the top layer, placed
+`core.StackAlignBottomEnd` with a `Spacing.LG` margin. The `Footer` stays
+below the stack, so the button floats above a `BottomBar` rather than on it.
+
+```go
+comps.Screen{
+    Scroll:   true,
+    Children: []core.View{notes},
+    Floating: comps.FAB{Icon: "+", AccessibilityLabel: "New note", OnTap: create},
+    Footer:   comps.BottomBar{Items: tabs, Selected: tab.Get()},
+}
+```
+
+The base layer states `Width("100%")` and `Height("100%")`, because a stack
+centres and hugs any layer that says nothing: without them the content would
+sit in the middle of the screen as wide as its widest row. The stack, not the
+column, grows, since a layer of a stack has no axis to grow along. The
+scaffold does not pad the content for the button, because it cannot see a
+list's own inset; give the last row room. A nil `Floating` builds no stack.
 
 **`Fill` is load-bearing wherever a child grows.** A `FlexGrow` child can only
 grow inside a parent that has height to give, so a screen whose list should
@@ -1781,6 +1807,41 @@ Other notes:
   not control.
 - The icon is decoration and hidden from assistive technology.
 - `BarItem.AccessibilityLabel` replaces an abbreviated label as the spoken name.
+
+## FAB
+
+The floating action button: a screen's one primary action as a raised disc
+over the content. It is a `comps.Button` in a circle, so its fill, ink,
+disabled treatment and `Style` order are Button's, and belongs in
+`Screen.Floating`.
+
+```go
+comps.FAB{Icon: "+", AccessibilityLabel: "New note", OnTap: create}
+comps.FAB{Icon: "✎", Label: "Compose", OnTap: compose}   // extended
+comps.FAB{Icon: "↑", Size: comps.FABSmall, AccessibilityLabel: "Top"}
+```
+
+**Two shapes at one height.** Icon-only is a disc: 56 points across (40 for
+`FABSmall`), no padding so the glyph centres, the glyph sized to the disc.
+With `Label` it is the *extended* form, a pill as wide as its glyph and word
+with `Spacing.MD` at each side. Both are the same height, so a label can be
+added without the button moving.
+
+**It does not place itself.** A floating thing needs a layer to float on, and
+`core.ZStack` sizes to its largest layer, so the screen that already fills the
+safe area is what hosts it: `Screen.Floating` places it bottom-end above the
+`Footer`. Anywhere else a `FAB` is an ordinary round button in the flow.
+
+Other notes:
+
+- Icon-only needs `AccessibilityLabel`. A `+` is a glyph, not a name, and the
+  widget invents nothing to say instead.
+- The sizes are fixed points, not theme spacing steps: a FAB is a touch target
+  first, and 56 and 40 are the platform norms.
+- `core.Shadow(6)` raises it above cards (which sit at 2). `Style` lands after
+  the widget's own props, so `core.Shadow(0)` flattens it.
+- The zero `Variant` is the theme's own Button pairing, so a FAB and a Button
+  on one screen agree about what primary looks like.
 
 ## Drawer
 

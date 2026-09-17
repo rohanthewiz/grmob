@@ -183,12 +183,12 @@ var Claims = []Claim{{
 	Shows: []string{
 		"GrMob Interactive Tutorial",
 		"Learn GrMob inside GrMob",
-		"0 of 60 lessons opened",
+		"0 of 61 lessons opened",
 		"Chapter 1 — Views & Layout", "5 lessons",
 		"Hello, GrMob", "Text & typography", "Rows, Columns & spacing",
 		"Alignment & flex",
 	},
-	Quoted: []string{"0 of 60 lessons opened"},
+	Quoted: []string{"0 of 61 lessons opened"},
 	Test:   "TestTheTutorialContentsScreenshotStillShowsWhatItClaims",
 }, {
 	File:    "tutorial-lesson.png",
