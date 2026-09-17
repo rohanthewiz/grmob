@@ -2520,6 +2520,87 @@ the rose is "N W E S" whatever the bearing — so the whole widget speaks
 all derive from it. Letters are an eighth of the diameter with a 10px floor,
 so a deliberately small compass stays readable.
 
+## QRCode
+
+A string drawn as a QR Code, encoded in Go.
+
+```go
+comps.QRCode{
+    Data:  "cats://pair?t=9f2c1a&host=studio.local",
+    Label: "Scan to pair this device",
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `Data` | encoded in byte mode, so any string is legal |
+| `Size` | the box's side in px, quiet zone included; `0` means 160 |
+| `Level` | `ECLow`/`ECMedium`/`ECQuartile`/`ECHigh`; the zero value is `ECMedium` |
+| `Quiet` | the light margin in modules; `0` means the standard's four, a negative value means none |
+| `Label` | names the code to assistive tech; empty says "QR code" |
+
+**The encoder is ours, in `internal/qr`.** `github.com/skip2/go-qrcode` is MIT
+and correct, and it would still have been the first third-party dependency any
+widget in this framework required — `go.mod` holds nothing outside this
+author's own packages and the gomobile toolchain. A QR encoder is a closed,
+fully specified algorithm with published test vectors, which is the kind of
+thing that is cheaper to own than to track: byte mode, versions 1–40, all four
+levels, the eight masks with the standard penalty scoring, and no `image/png`
+or bitmap model that a `Canvas` would only have to undo. The package's tests
+check it against the standard's own printed format and version bit strings,
+its published byte capacities and alignment coordinates, the defining
+Reed-Solomon property (every codeword vanishes at the generator's roots), and
+a round trip back out of the finished grid for all forty versions.
+
+**One path, not a rectangle per module.** A version-10 symbol has some three
+thousand modules. Three thousand child nodes is the reconciler's worst case
+for a drawing that is either identical between passes or wholly different —
+and separate shapes are antialiased against each other, which leaves hairlines
+between adjacent modules that a decoder's binarizer can read as light. A single
+filled path has no interior seams. Within a row, consecutive dark modules merge
+into one rectangle, which costs one comparison per module and typically halves
+the path.
+
+**The quiet zone is inside the box.** `Size` is the whole square, so the symbol
+is `Size × n/(n+2·Quiet)` across. Putting the margin outside would make the
+widget's footprint depend on how long the data turned out to be; a caller lays
+out a 160px square and gets one.
+
+**Colour is not themed, and that is the point.** A QR code is read by a camera,
+and every decoder's binarizer assumes dark modules on a light field. The widget
+uses the theme's own ink and surface when those *are* dark-on-light with room
+to spare — 0.6 luminance and 0.15, so a light theme's code sits in the page
+rather than on a hard white patch — and otherwise falls back to black on white.
+In a dark theme that means a white square, which is what every banking and
+payment app shows, for this reason. There is no `Foreground` or `Background`
+field: every colour a caller could pass is either the pair already chosen or a
+worse one, and an unscannable code fails silently — it looks exactly like a
+working one.
+
+**Data too long draws nothing.** The limit is a version-40 symbol: 2953 bytes
+at `ECLow`, 1273 at `ECHigh`. Past it the widget keeps the box, so the screen
+does not reflow when the data is fixed, draws no symbol, and in debug builds
+reports a `comps.ConcernQRDataTooLong` concern. There is no half of a QR code
+worth showing: a truncated one still scans, just to the wrong thing.
+
+**The default level is `ECMedium`, not `ECHigh`.** The failure a code on a
+screen actually faces is not damage — the glass is pristine — but module size.
+A higher level spends more of the symbol on redundancy, so at a fixed drawn
+width it means a larger symbol and smaller modules, which is what a phone
+camera struggles with. Raise it when a logo will be laid over the middle, or
+when the code will be printed and handled.
+
+**The data is never spoken.** A reader announcing a 300-character URL one
+character at a time helps nobody, and a person who needs the link needs it as
+a link. `Label` should say what scanning it will *do*; put the underlying
+action on screen as well where you can.
+
+Encoding runs on every render pass — version choice, block layout, then scoring
+all eight masks — which is about 0.2 ms for a link-sized payload. That is under
+a hundredth of a frame and not worth caching for a screen that shows a code and
+waits. For a code inside a tree that re-renders every frame, `core.Cached` fits:
+`QRCode` holds no hooks and registers no callbacks.
+
 ## StaticMap
 
 A map image of one point, which hands off to the platform's own maps app when

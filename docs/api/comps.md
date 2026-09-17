@@ -39,7 +39,7 @@ Package comps's reference is split into 7 topic pages by source file. The index 
 | [Inputs & pickers](comps-inputs.md) | Form fields, search, searchable selects, radio groups, dates and calendars, and the two editors. | 11 types, 10 functions and methods |
 | [Buttons & choices](comps-actions.md) | Buttons and their variants, chips, segmented controls, steppers, ratings and badges. | 10 types, 10 functions and methods |
 | [Overlays & feedback](comps-overlays.md) | Dialogs, action sheets, menus, snackbars, banners, progress, spinners, skeletons and empty states. | 12 types, 9 functions and methods |
-| [Data display & maps](comps-display.md) | Avatars, stat tiles, the compass, clocks and alarms, map panels and static maps. | 13 types, 16 functions and methods |
+| [Data display & maps](comps-display.md) | Avatars, stat tiles, the compass, clocks and alarms, QR codes, map panels and static maps. | 15 types, 17 functions and methods |
 | [Charts](comps-charts.md) | Sparklines, line, area, bar and scatter charts, donuts and pies, and gauges, drawn on core.Canvas. | 12 types, 8 functions and methods |
 
 ## Index
@@ -120,7 +120,7 @@ Package comps's reference is split into 7 topic pages by source file. The index 
     - [`type Spinner`](comps-overlays.md#type-spinner)
     - [`type SpinnerSize`](comps-overlays.md#type-spinnersize)
 - [Data display & maps](comps-display.md)
-    - [Constants](comps-display.md#constants) — `ConcernNoMapProvider`, `DefaultMapHeight`, `DefaultMapPanelHeight`, `DefaultMapScale`, `DefaultMapWidth`, `DefaultMapZoom`, `FitPadding`, `MaxFitZoom`, `MaxGoogleMapScale`, `MaxMapDimension`, `MaxMapScale`, `MercatorLatLimit`, and 2 more
+    - [Constants](comps-display.md#constants) — `ConcernNoMapProvider`, `ConcernQRDataTooLong`, `DefaultMapHeight`, `DefaultMapPanelHeight`, `DefaultMapScale`, `DefaultMapWidth`, `DefaultMapZoom`, `FitPadding`, `MaxFitZoom`, `MaxGoogleMapScale`, `MaxMapDimension`, `MaxMapScale`, and 3 more
     - [`func FitRegion`](comps-display.md#func-fitregion)
     - [`func GoogleMapsHandoff`](comps-display.md#func-googlemapshandoff)
     - [`func OSMStaticMap`](comps-display.md#func-osmstaticmap)
@@ -132,9 +132,11 @@ Package comps's reference is split into 7 topic pages by source file. The index 
     - [`type Avatar`](comps-display.md#type-avatar)
     - [`type Compass`](comps-display.md#type-compass)
     - [`type DigitalClock`](comps-display.md#type-digitalclock)
+    - [`type ECLevel`](comps-display.md#type-eclevel)
     - [`type MapHandoff`](comps-display.md#type-maphandoff)
     - [`type MapPanel`](comps-display.md#type-mappanel)
     - [`type MapPin`](comps-display.md#type-mappin)
+    - [`type QRCode`](comps-display.md#type-qrcode)
     - [`type StatTile`](comps-display.md#type-stattile)
     - [`type StaticMap`](comps-display.md#type-staticmap)
     - [`type StaticMapArea`](comps-display.md#type-staticmaparea)

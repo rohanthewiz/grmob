@@ -4,13 +4,13 @@
 import "github.com/rohanthewiz/grmob/comps"
 ```
 
-Avatars, stat tiles, the compass, clocks and alarms, map panels and static maps.
+Avatars, stat tiles, the compass, clocks and alarms, QR codes, map panels and static maps.
 
-One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/avatar.go`, `comps/stat_tile.go`, `comps/compass.go`, `comps/clock.go`, `comps/alarm.go`, `comps/map_panel.go`, `comps/static_map.go`.
+One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/avatar.go`, `comps/stat_tile.go`, `comps/compass.go`, `comps/clock.go`, `comps/alarm.go`, `comps/qr_code.go`, `comps/map_panel.go`, `comps/static_map.go`.
 
 ## Index
 
-- [Constants](#constants) — `ConcernNoMapProvider`, `DefaultMapHeight`, `DefaultMapPanelHeight`, `DefaultMapScale`, `DefaultMapWidth`, `DefaultMapZoom`, `FitPadding`, `MaxFitZoom`, `MaxGoogleMapScale`, `MaxMapDimension`, `MaxMapScale`, `MercatorLatLimit`, and 2 more
+- [Constants](#constants) — `ConcernNoMapProvider`, `ConcernQRDataTooLong`, `DefaultMapHeight`, `DefaultMapPanelHeight`, `DefaultMapScale`, `DefaultMapWidth`, `DefaultMapZoom`, `FitPadding`, `MaxFitZoom`, `MaxGoogleMapScale`, `MaxMapDimension`, `MaxMapScale`, and 3 more
 - [`func FitRegion`](#func-fitregion)
 - [`func GoogleMapsHandoff`](#func-googlemapshandoff)
 - [`func OSMStaticMap`](#func-osmstaticmap)
@@ -28,10 +28,13 @@ One of 7 topic pages of [package comps](comps.md), which has the package overvie
     - [`func (Compass) Render`](#func-compass-render)
 - [`type DigitalClock`](#type-digitalclock)
     - [`func (DigitalClock) Render`](#func-digitalclock-render)
+- [`type ECLevel`](#type-eclevel)
 - [`type MapHandoff`](#type-maphandoff)
 - [`type MapPanel`](#type-mappanel)
     - [`func (MapPanel) Render`](#func-mappanel-render)
 - [`type MapPin`](#type-mappin)
+- [`type QRCode`](#type-qrcode)
+    - [`func (QRCode) Render`](#func-qrcode-render)
 - [`type StatTile`](#type-stattile)
     - [`func (StatTile) Render`](#func-stattile-render)
 - [`type StaticMap`](#type-staticmap)
@@ -144,6 +147,14 @@ const ConcernNoMapProvider = "no-map-provider"
 ```
 
 <small>[comps/static_map.go:318](https://github.com/rohanthewiz/grmob/blob/master/comps/static_map.go#L318)</small>
+
+ConcernQRDataTooLong is raised, in debug builds only, when Data is longer than any QR Code can hold at the requested level. The widget then draws nothing: there is no half of a QR Code that is worth showing, and a symbol that encodes a truncated URL is worse than a blank space because it scans.
+
+```go
+const ConcernQRDataTooLong = "qr-data-too-long"
+```
+
+<small>[comps/qr_code.go:54](https://github.com/rohanthewiz/grmob/blob/master/comps/qr_code.go#L54)</small>
 
 ## Functions
 
@@ -633,6 +644,32 @@ func (c DigitalClock) Render(ctx *core.Context) *core.Node
 
 <small>[comps/clock.go:70](https://github.com/rohanthewiz/grmob/blob/master/comps/clock.go#L70)</small>
 
+### type ECLevel
+
+```go
+type ECLevel string
+```
+
+ECLevel is a QR Code's error-correction level: how much of the symbol is redundancy, and so how much of it may be covered, smudged or reflected off and still read.
+
+A string enum with an empty zero value, the package's idiom (see Variant), so that adding the field to an existing QRCode changes nothing. The values are the specification's own one-letter names, which is what every other QR tool a developer will compare against prints.
+
+<small>[comps/qr_code.go:16](https://github.com/rohanthewiz/grmob/blob/master/comps/qr_code.go#L16)</small>
+
+```go
+const (
+	// ECDefault is the zero value and means ECMedium.
+	ECDefault ECLevel = ""
+
+	// ECLow recovers about 7% of the symbol, ECMedium about 15%, ECQuartile
+	// about 25% and ECHigh about 30%.
+	ECLow      ECLevel = "L"
+	ECMedium   ECLevel = "M"
+	ECQuartile ECLevel = "Q"
+	ECHigh     ECLevel = "H"
+)
+```
+
 ### type MapHandoff
 
 ```go
@@ -745,6 +782,83 @@ MapPin is one point in a MapPanel: the data a core.Marker needs, as a value a ca
 A struct rather than four arguments for the reason StaticMapArea is one: a caller builds these in a loop from their own data, and a field added here is a field existing code ignores.
 
 <small>[comps/map_panel.go:103](https://github.com/rohanthewiz/grmob/blob/master/comps/map_panel.go#L103)</small>
+
+### type QRCode
+
+```go
+type QRCode struct {
+	// Data is encoded in byte mode, so any string is legal — the only input
+	// that cannot be drawn is one too long for a version-40 symbol (2953
+	// bytes at ECLow, 1273 at ECHigh).
+	Data string
+
+	// Size is the box's side in px, quiet zone included; 0 means 160.
+	Size float64
+
+	// Level is the error-correction level; the zero value is ECMedium.
+	Level ECLevel
+
+	// Quiet is the light margin in modules; 0 means the specification's four.
+	// A negative Quiet draws none, for a caller who is supplying the margin
+	// from the surrounding layout instead.
+	Quiet int
+
+	// Label names the code to assistive tech; empty says "QR code".
+	Label string
+
+	// Style is applied last, to the canvas.
+	Style []core.StyleProp
+}
+```
+
+QRCode draws its Data as a QR Code: a core.Canvas of module rectangles, encoded in Go, with no image file, no network round trip and no dependency outside this module.
+
+	comps.QRCode{Data: "cats://pair?t=9f2c1a", Label: "Pairing code"}
+
+#### What is drawn
+
+Two shapes and no more: one light rectangle covering the whole box, and one path holding every dark module. The modules go in a single path rather than a Shape each for two reasons. A version-10 symbol has some three thousand modules, and three thousand child nodes is a reconciler's worst case for a drawing that is either identical between passes or wholly different. And a single path is filled once, so adjacent modules have no seam between them — separate shapes would be antialiased against each other and leave hairlines that a decoder's binarizer can read as light.
+
+Within a row, consecutive dark modules are merged into one rectangle, which costs one comparison per module and typically halves the path.
+
+	██ ██████ ██      one row, four runs
+	└┘ └────┘ └┘      four rectangles, not eight
+
+#### Size, and where the quiet zone comes from
+
+Size is the side of the whole box in px, the quiet zone included. The symbol itself is therefore Size × n/(n+2·Quiet) across, where n is the version's module count — a 160px box at the default quiet zone of 4 gives a 29-module version-3 symbol about 125px of picture and 17px of margin.
+
+Putting the margin inside the box rather than outside it is what makes the widget's footprint predictable: a caller lays out a 160px square and gets one, whatever the data does to the version.
+
+#### Colour is not themed, and that is deliberate
+
+A QR Code is read by a camera, not by a person, and every decoder's binarizer assumes dark modules on a light field. Painting one in a dark theme's colours — light ink on a dark surface — produces a symbol that many readers simply will not see, and the ones that do invert are the exception.
+
+So the widget draws dark-on-light always. It uses the theme's own ink and surface when those \*are\* dark-on-light with room to spare, so that a light theme's code sits in the page rather than on a hard white patch; otherwise it falls back to black on white, which in a dark theme means a white square — the same thing every banking and payment app shows, for the same reason.
+
+There is no Foreground or Background field. Every colour a caller could pass is either the pair already chosen or a worse one, and an unscannable QR code fails silently: it looks exactly like a working one.
+
+#### Cost
+
+Encoding runs on every render pass: choosing a version, laying out the blocks, and then scoring all eight data masks to pick one. For a link-sized payload that is around 0.2 ms on a current phone-class core, which is under a hundredth of a frame and not worth caching for a screen that shows a code and waits.
+
+A code that sits in a tree re-rendering every frame — an animation, or a list being scrolled — is a different matter, and the lever is core.Cached, which QRCode is a fit for: it holds no hooks and registers no callbacks.
+
+	core.Cached(comps.QRCode{Data: link, Label: "Pairing code"})
+
+#### Accessibility
+
+One image element, named by Label ("QR code" when empty). The data is never spoken: a reader announcing a 300-character URL one character at a time helps nobody, and a person who needs the link needs it as a link. Give the code a Label that says what scanning it will do, and put the underlying action on screen as well where you can.
+
+<small>[comps/qr_code.go:138](https://github.com/rohanthewiz/grmob/blob/master/comps/qr_code.go#L138)</small>
+
+#### func (QRCode) Render
+
+```go
+func (q QRCode) Render(ctx *core.Context) *core.Node
+```
+
+<small>[comps/qr_code.go:162](https://github.com/rohanthewiz/grmob/blob/master/comps/qr_code.go#L162)</small>
 
 ### type StatTile
 

@@ -1,7 +1,7 @@
 # Low-hanging fruit for `comps`, round two
 
-**Status:** drafted 2026-09-17. D1 `FAB` + `Screen.Floating` started the same
-day. Everything else is unstarted.
+**Status:** drafted 2026-09-17. D1 `FAB` + `Screen.Floating` and D2 `QRCode`
+both landed the same day. Everything else is unstarted.
 
 The first round (`comps-low-hanging-fruit.md`) landed entire on 2026-09-12:
 Tiers A through C, fifteen widgets, one carousel left blocked on a scroll
@@ -28,7 +28,7 @@ What changed since the first round that makes some of these newly cheap:
 
 ## Tier D — a few hours each
 
-### D1. `FAB` and `Screen.Floating` — **in progress**
+### D1. `FAB` and `Screen.Floating` — **landed 2026-09-17**
 
 The floating action button: a circular, elevated, filled button pinned to the
 bottom-end corner of a screen, over the content rather than below it. The
@@ -70,7 +70,7 @@ Content under a FAB: the last row of a scrolling list can end under the
 button. The widget does not pad the content for it, because it cannot know
 the list's own inset; the doc says to give the last item room.
 
-### D2. `QRCode`
+### D2. `QRCode` — **landed 2026-09-17**
 
 A `core.Canvas` of `Rect` modules. The roadmap wants a `cats://pair` deep link
 handed over as a QR, and nothing in the module tree encodes one.
@@ -80,9 +80,32 @@ handed over as a QR, and nothing in the module tree encodes one.
 - Dark modules in the theme's text colour on the surface colour, never
   inverted: readers assume dark-on-light.
 - `RoleImage` with `Label` (default "QR code"), the data never spoken.
-- **Decision to settle:** vendor an encoder (`github.com/skip2/go-qrcode`
-  gives a bitmap and is small) or write one. Vendoring is a day cheaper and
-  the licence is MIT; write one only if the dependency policy says so.
+- **Decision settled: write one**, in `internal/qr`. `go.mod` holds no runtime
+  dependency outside this author's own packages and the gomobile toolchain, so
+  `skip2/go-qrcode` — MIT and correct — would have been the first third-party
+  package a widget here required, and it carries an `image/png` bitmap model a
+  `Canvas` only has to undo. A QR encoder is a closed algorithm with published
+  test vectors: byte mode, versions 1–40, four levels, eight masks with the
+  standard penalty scoring, about 700 lines.
+
+- **What shipped beyond the sketch.** Every dark module goes into *one* filled
+  path with runs merged along each row, not a `Shape` per module: three
+  thousand children is the reconciler's worst case, and separate shapes are
+  antialiased against each other into hairlines a binarizer reads as light.
+  Colour resolved as "the theme's ink and surface only when those are already
+  dark-on-light with room to spare (0.6 luminance and 0.15), else black on
+  white" — the sketch's "theme colours, never inverted" cannot hold in a dark
+  theme, and an unscannable code fails silently. Data past a version-40 symbol
+  keeps the box, draws nothing and reports `comps.ConcernQRDataTooLong` in
+  debug builds.
+
+- **How it is checked.** Against the standard's own printed format and version
+  bit strings, its published byte capacities and alignment coordinates, the
+  defining Reed-Solomon property (every codeword vanishes at the generator's
+  roots), and a round trip back out of the finished grid for all forty
+  versions. Then through Chrome's `BarcodeDetector` on the real rendered SVG,
+  at all four levels, for a 50-byte and a 313-byte payload — the second past
+  both the 16-bit character-count field and the version-information block.
 
 ### D3. `Countdown` and `Stopwatch`
 

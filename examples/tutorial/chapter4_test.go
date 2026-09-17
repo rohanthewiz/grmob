@@ -2352,3 +2352,56 @@ func TestFABLessonFloatsTheDiscAndAddsNotes(t *testing.T) {
 	}
 	assertNoConcerns(t)
 }
+
+// 4.23. The lesson's claim is that the error-correction level changes the
+// symbol: more redundancy needs a bigger symbol for the same payload, which at
+// a fixed drawn width is what shrinks the modules. The Canvas's viewBox is that
+// symbol's module count plus its quiet zone, so it is the number to watch — and
+// it is a prop rather than anything in the tree's text, which is why the demo
+// is checked here rather than by its caption alone.
+func TestQRCodeLessonRedrawsTheSymbolPerLevel(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Codes a camera can read")
+
+	symbol := func() (*node, float64) {
+		t.Helper()
+		n := findNode(tree(t, mgr), func(n *node) bool {
+			return n.Type == "Canvas" && n.Style != nil && n.Style.AccessibilityLabel == "Scan to pair this device"
+		})
+		if n == nil {
+			t.Fatal("the demo draws a named QR code")
+		}
+		view, ok := n.Props["vw"].(float64)
+		if !ok {
+			t.Fatalf("the canvas has no viewBox width: %#v", n.Props)
+		}
+		return n, view
+	}
+
+	// The lesson opens on M, the widget's own default, and the code is two
+	// shapes: the light field and one path holding every dark module.
+	code, atMedium := symbol()
+	if len(code.Children) != 2 {
+		t.Errorf("%d shapes, want the light field and one path of modules", len(code.Children))
+	}
+	if !hasTextContaining(tree(t, mgr), "Level M recovers") {
+		t.Error("the lesson opens on the widget's own default level")
+	}
+
+	// L holds less back, so the same payload fits in a smaller symbol; H holds
+	// more back and needs a larger one.
+	tapLabelled(t, mgr, "Level L")
+	if _, atLow := symbol(); atLow >= atMedium {
+		t.Errorf("L gives a %v-unit symbol and M %v; less redundancy must not cost more room", atLow, atMedium)
+	}
+	tapLabelled(t, mgr, "Level H")
+	_, atHigh := symbol()
+	if atHigh <= atMedium {
+		t.Errorf("H gives a %v-unit symbol and M %v; more redundancy must cost room", atHigh, atMedium)
+	}
+	if !hasTextContaining(tree(t, mgr), "Level H recovers") {
+		t.Error("the caption follows the selection")
+	}
+
+	assertNoConcerns(t)
+}

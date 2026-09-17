@@ -54,6 +54,7 @@ func chapter4() Chapter {
 			lessonCharts(),
 			lessonFoldables(),
 			lessonFAB(),
+			lessonQRCode(),
 		},
 	}
 }
@@ -4200,4 +4201,111 @@ comps.FAB{Icon: "✎", Label: "Compose", OnTap: compose}`),
 			)
 		},
 	}
+}
+
+// --- 4.23 ----------------------------------------------------------------
+
+// qrLessonLevels pairs the four error-correction levels with their captions,
+// so the segmented control's labels and the value it selects cannot drift
+// apart — the same trick 4.1 plays with variantNames and variantValues.
+var qrLessonLevels = []struct {
+	caption  string
+	level    comps.ECLevel
+	recovers string
+}{
+	{"L", comps.ECLow, "about 7%"},
+	{"M", comps.ECMedium, "about 15%"},
+	{"Q", comps.ECQuartile, "about 25%"},
+	{"H", comps.ECHigh, "about 30%"},
+}
+
+// lessonQRCode is the QR code widget: a Canvas of modules encoded in Go.
+//
+// The demo is the error-correction level, because that is the one field whose
+// effect is visible rather than argued: the same payload at H needs a bigger
+// symbol than at L, so at a fixed drawn width the modules shrink, and that —
+// not damage — is what a code on a screen actually fails on.
+//
+// Appended at the end of the chapter for the reason 4.15 and 4.22 were: lesson
+// numbers already in deep links do not move.
+func lessonQRCode() Lesson {
+	return Lesson{
+		Title:   "Codes a camera can read",
+		Summary: "comps.QRCode, a QR symbol encoded in Go and drawn as one Canvas path — no image file, no network round trip.",
+		Body: func(ctx *core.Context) core.View {
+			// Hooks first and unconditionally, as in every lesson.
+			level := core.NewState(ctx, 1) // M, the widget's own default
+			chosen := qrLessonLevels[level.Get()]
+
+			return core.Column(
+				core.Gap(14),
+				prose("comps.QRCode encodes its Data in Go and draws the result on a "+
+					"core.Canvas. There is no image file to ship, no service to call and no "+
+					"dependency outside the module: the encoder lives in internal/qr, because "+
+					"a QR code is a closed algorithm with published test vectors and that is "+
+					"the kind of thing cheaper to own than to track."),
+				codeBlock(`comps.QRCode{
+    Data:  "cats://pair?t=9f2c1a&host=studio.local",
+    Label: "Scan to pair this device",
+}`),
+				prose("Size is the whole box, quiet zone included — the light margin a reader "+
+					"needs is drawn inside the square rather than around it, so the widget's "+
+					"footprint does not depend on how long the data turned out to be. Every "+
+					"dark module goes into one filled path: three thousand separate shapes "+
+					"would be the reconciler's worst case, and they would be antialiased "+
+					"against each other into hairlines a decoder can read as light."),
+				prose("The level is the trade the demo shows. More redundancy means a larger "+
+					"symbol for the same payload, and at a fixed drawn width a larger symbol "+
+					"means smaller modules — which is what a phone camera struggles with. The "+
+					"default is ECMedium for that reason, not ECHigh."),
+				demoPanel("Pick an error-correction level and watch the modules shrink.",
+					comps.SegmentedControl{
+						Labels:       qrLessonLevelCaptions(),
+						Selected:     level.Get(),
+						OnSelect:     func(i int) { level.Set(i) },
+						KeyPrefix:    "qr-level-",
+						SegmentLabel: func(label string, _ int) string { return "Level " + label },
+					},
+					core.Row(
+						core.Justify(core.JustifyCenter),
+						comps.QRCode{
+							Data:  "https://grmob.example/pair?t=9f2c1a&host=studio.local",
+							Size:  200,
+							Level: chosen.level,
+							Label: "Scan to pair this device",
+						},
+					),
+					caption(fmt.Sprintf("Level %s recovers %s of the symbol.", chosen.caption, chosen.recovers)),
+				),
+				prose("Colour is not themed, and that is the point. A camera's binarizer assumes "+
+					"dark modules on a light field, so the widget uses the theme's own ink and "+
+					"surface only when those are already dark-on-light with room to spare, and "+
+					"otherwise falls back to black on white. In a dark theme that means a white "+
+					"square — which is what every payment app shows, for this reason. There is "+
+					"no Foreground field: an unscannable code looks exactly like a working one."),
+				prose("The data is never spoken. A reader announcing a 300-character URL one "+
+					"character at a time helps nobody, so Label should say what scanning it "+
+					"will do, and the same action should be on screen somewhere a person can "+
+					"reach without a second device."),
+				keyPoints(
+					"comps.QRCode encodes in Go and draws one Canvas: no image file, no network, no third-party dependency.",
+					"Size is the whole box including the quiet zone, which defaults to the standard's four modules.",
+					"Every dark module is in a single filled path, with runs merged along each row — no child per module, and no seams between them.",
+					"The zero Level is ECMedium: at a fixed width more redundancy buys damage tolerance a screen does not need, and costs module size a camera does.",
+					"Dark-on-light always, whatever the theme; there is no colour override, because an unscannable code fails silently.",
+					"Label names what scanning does; the data itself is never announced.",
+				),
+			)
+		},
+	}
+}
+
+// qrLessonLevelCaptions is the segmented control's label slice, taken from the
+// same table the values come from.
+func qrLessonLevelCaptions() []string {
+	out := make([]string, len(qrLessonLevels))
+	for i, l := range qrLessonLevels {
+		out[i] = l.caption
+	}
+	return out
 }
