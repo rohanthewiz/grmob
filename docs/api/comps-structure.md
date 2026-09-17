@@ -4,9 +4,9 @@
 import "github.com/rohanthewiz/grmob/comps"
 ```
 
-Screen, app and bottom bars, tabs, drawers, step indicators, cards, accordions, headings and separators.
+Screen, app and bottom bars, tabs, drawers, step indicators, two-pane and foldable layouts, cards, accordions, headings and separators.
 
-One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/screen.go`, `comps/app_bar.go`, `comps/bottom_bar.go`, `comps/tabs.go`, `comps/drawer.go`, `comps/step_indicator.go`, `comps/card.go`, `comps/accordion.go`, `comps/disclosure.go`, `comps/heading.go`, `comps/separator.go`.
+One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/screen.go`, `comps/app_bar.go`, `comps/bottom_bar.go`, `comps/tabs.go`, `comps/drawer.go`, `comps/step_indicator.go`, `comps/two_pane.go`, `comps/card.go`, `comps/accordion.go`, `comps/disclosure.go`, `comps/heading.go`, `comps/separator.go`.
 
 ## Index
 
@@ -30,6 +30,9 @@ One of 7 topic pages of [package comps](comps.md), which has the package overvie
     - [`func (StepIndicator) Render`](#func-stepindicator-render)
 - [`type Tabs`](#type-tabs)
     - [`func (Tabs) Render`](#func-tabs-render)
+- [`type TwoPane`](#type-twopane)
+    - [`func (TwoPane) Render`](#func-twopane-render)
+- [`type TwoPaneCompact`](#type-twopanecompact)
 
 ## Types
 
@@ -865,4 +868,123 @@ func (t Tabs) Render(ctx *core.Context) *core.Node
 ```
 
 <small>[comps/tabs.go:26](https://github.com/rohanthewiz/grmob/blob/master/comps/tabs.go#L26)</small>
+
+### type TwoPane
+
+```go
+type TwoPane struct {
+	// First and Second are the two panes: list and detail, content and
+	// controls, left page and right page. First is leading (left in a
+	// left-to-right layout) or top.
+	First, Second core.View
+
+	// Ratio is the fraction of the width First takes in a ratio split (rule
+	// 3). Zero means 0.5; a value outside (0, 1) is clamped to it. A list
+	// beside a detail usually wants about 0.4.
+	Ratio float64
+
+	// Gap is the space between the panes in a ratio split and in a stacked
+	// compact layout. Zero means the theme's MD spacing. It is not applied
+	// around a hinge — see "Lining up with the hinge".
+	Gap float64
+
+	// SplitAt is the smallest width class that splits side by side without
+	// a fold. Zero means core.SizeMedium, which is where an unfolded
+	// book-style foldable and a portrait tablet land; core.SizeExpanded keeps
+	// medium windows single-pane for content that needs width on both sides.
+	SplitAt core.SizeClass
+
+	// Compact is what a compact window with no separating fold shows. Zero is
+	// TwoPaneStack.
+	Compact TwoPaneCompact
+
+	// Origin is the TwoPane's top-left in window coordinates, for aligning to
+	// a hinge when the pane does not start at the window's corner. Only X and
+	// Y are read.
+	Origin core.WindowRect
+
+	// IgnoreHorizontalFold skips rule 2, for a TwoPane inside a scrolling
+	// column. Scrolling moves the pane up and down past a horizontal hinge,
+	// so no fixed Origin.Y can say where the hinge falls in it, and a First
+	// sized to a stale offset is worse than a ratio split. A vertical hinge
+	// is unaffected: vertical scrolling does not move anything sideways.
+	IgnoreHorizontalFold bool
+
+	// Style is applied to the container after the widget's own props.
+	Style []core.StyleProp
+}
+```
+
+TwoPane lays two views out side by side when the window has room for both, one after the other (or just one) when it does not, and — on a foldable — on either side of the hinge rather than across it.
+
+	comps.TwoPane{
+	    First:   inboxList,
+	    Second:  messageDetail,
+	    Compact: comps.TwoPaneFirst, // a phone shows the list; a tap navigates
+	}
+
+#### The decision, in order
+
+The first rule that applies wins:
+
+ 1. a separating fold, vertical     Row:    First | hinge | Second
+ 2. a separating fold, horizontal   Column: First / hinge / Second
+ 3. width class ≥ SplitAt           Row:    First | Gap | Second, by Ratio
+ 4. otherwise (compact)             Compact decides: both stacked, or one
+
+A fold outranks width because it is a physical fact about the glass: an unfolded book-style device is medium or expanded \*and\* has a hinge down the middle, and a ratio split that happened to put a button on the crease is the bug foldable support exists to prevent. A horizontal fold is what the tabletop posture looks like — the natural layout there is content above the hinge and controls below, which is rule 2 with First above.
+
+Only a \*separating\* fold is laid out around. A flat, continuous panel (a Galaxy Z Fold opened flat) reports a fold the platform says content may cross, and falls through to rule 3 so an app is not split in half on a screen with nothing in the middle.
+
+#### Lining up with the hinge
+
+Fold bounds are in window coordinates (see core/window.go) and a TwoPane lays out in its own, so the two agree only when the TwoPane starts where the window does. Origin is the pane's top-left corner in window coordinates, for the layouts where it does not: a TwoPane under an 64dp app bar in tabletop posture passes Origin{Y: statusBar + 64}. A TwoPane that fills the window along the split axis — the usual arrangement for a vertical hinge, where nothing sits to its left — needs none.
+
+First is sized to end exactly at the hinge (a fixed width or height) and Second grows to fill what remains, which means the split is exact on the First side and assumes the TwoPane reaches the window's far edge on the Second. A hinge the pane does not actually contain (First would be zero or negative, or the hinge sits past the window) falls through to the ratio rules rather than drawing a pane with no room.
+
+An occluding hinge (a dual-screen seam with real width) becomes a spacer of that width, so nothing is drawn under it. A non-occluding one is a line and adds nothing; each pane's own padding keeps its content off the crease.
+
+#### One hook
+
+TwoPane calls hooks.UseWindow, so it re-renders itself when the device folds, unfolds or bends, with nothing for the caller to wire. That makes the rule Accordion and Snackbar document apply here too: render a TwoPane in a stable position on every pass rather than conditionally.
+
+#### Filling
+
+The container grows (FlexGrow 1) and stretches its panes along the cross axis. A side-by-side split has to fill the height it is given to look like two panes rather than two cards, and a top/bottom split has to fill the height for the hinge arithmetic to mean anything, so filling is the default and Style can undo it.
+
+<small>[comps/two_pane.go:76](https://github.com/rohanthewiz/grmob/blob/master/comps/two_pane.go#L76)</small>
+
+#### func (TwoPane) Render
+
+```go
+func (p TwoPane) Render(ctx *core.Context) *core.Node
+```
+
+Render reads the window, resolves the arrangement and builds it.
+
+<small>[comps/two_pane.go:228](https://github.com/rohanthewiz/grmob/blob/master/comps/two_pane.go#L228)</small>
+
+### type TwoPaneCompact
+
+```go
+type TwoPaneCompact int
+```
+
+TwoPaneCompact chooses what a compact window shows.
+
+<small>[comps/two_pane.go:119](https://github.com/rohanthewiz/grmob/blob/master/comps/two_pane.go#L119)</small>
+
+```go
+const (
+	// TwoPaneStack shows both panes, First above Second. Right for content
+	// and controls that both belong on screen.
+	TwoPaneStack TwoPaneCompact = iota
+	// TwoPaneFirst shows only First — the list in list–detail, where the
+	// caller navigates to the detail on a phone.
+	TwoPaneFirst
+	// TwoPaneSecond shows only Second — the detail, once something is
+	// selected.
+	TwoPaneSecond
+)
+```
 

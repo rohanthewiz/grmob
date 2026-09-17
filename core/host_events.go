@@ -102,6 +102,9 @@ func ReceiveHostEvent(name string, data map[string]any) {
 	case hostEventLifecycle:
 		receiveLifecycle(data)
 		consumed = true
+	case hostEventWindow:
+		receiveWindow(data)
+		consumed = true
 	case hostEventHeading:
 		receiveHeading(data)
 		consumed = true

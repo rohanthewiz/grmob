@@ -42,6 +42,10 @@ type nodeStyle struct {
 	MinWidth                  string
 	AccessibilityKeyShortcuts string
 
+	// Chapter 4's foldables lesson asserts on Width: the pane that ends at
+	// the hinge is found by the length it was given.
+	Width string
+
 	// Chapter 4's endless-feed lesson asserts on FlexGrow: its footer strip's
 	// spacer is an empty Box, so the grow factor is all there is to find.
 	FlexGrow float64
@@ -747,7 +751,7 @@ func TestAlignmentDemoFloorsABoxByPercentage(t *testing.T) {
 // widget from putting a kilobyte in Props, and the parse is still the largest
 // single stage of an Android launch — it is simply now proportional to
 // something small. The bound is a factor of ten in each direction because the
-// number is a fact about 59 lessons of prose, which is edited: a new chapter
+// number is a fact about 60 lessons of prose, which is edited: a new chapter
 // should not fail a test, and a screen that suddenly sends four megabytes
 // should.
 func TestHomeTreeSize(t *testing.T) {

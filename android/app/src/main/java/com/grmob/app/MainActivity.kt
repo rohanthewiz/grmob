@@ -52,6 +52,11 @@ class MainActivity : ComponentActivity() {
         // AppLifecycle.kt for why the process lifecycle and not this
         // Activity's.
         AppLifecycle.attach(runtime)
+        // Window size and fold posture, as the "window" host event. Per
+        // Activity rather than once per process like the lifecycle: a fold
+        // or unfold recreates this Activity, and the new instance's window
+        // is the one to measure. See AppWindow.kt.
+        AppWindow.attach(this, runtime)
         runtime.start()
         this.runtime = runtime
         setContent { GrMobRoot(runtime) }

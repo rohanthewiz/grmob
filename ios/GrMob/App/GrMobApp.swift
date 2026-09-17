@@ -35,6 +35,14 @@ struct GrMobApp: App {
     var body: some Scene {
         WindowGroup {
             GrMobRoot(runtime: runtime)
+                // Fill the window so the reader behind it measures the window
+                // even before Go's first tree exists (GrMobRoot is empty
+                // until then). GrMobRoot already frames itself this way once
+                // it has a root, so this changes no layout.
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                // Window size, reported to Go as the "window" host event; see
+                // AppWindow.swift.
+                .background(AppWindowReader(runtime: runtime))
                 // The inbound half of core.OpenURL: a URL the OS hands this
                 // app, forwarded to Go as the "deeplink" host event and parsed
                 // there. See core/deeplink.go on why the shell does not parse

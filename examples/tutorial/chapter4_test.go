@@ -2279,3 +2279,41 @@ func TestDrawersLessonClosesOnTheCrossAndTheScrim(t *testing.T) {
 	}
 	assertNoConcerns(t)
 }
+
+// 4.21 reads the process-wide window record, so the test sets one: a
+// book-style foldable half-opened like a book. The readout must name the
+// posture and the fold, and the TwoPane demo must split at the hinge rather
+// than by its 0.4 ratio.
+func TestFoldablesLessonReadsTheWindowAndSplitsAtTheHinge(t *testing.T) {
+	core.ReceiveWindow(core.Window{Width: 841, Height: 673, HasFold: true,
+		Fold: core.Fold{State: core.FoldHalfOpened, Orientation: core.FoldVertical, Separating: true,
+			Bounds: core.WindowRect{X: 420, Height: 673}}})
+	t.Cleanup(func() { core.ReceiveWindow(core.Window{Width: 411, Height: 891}) })
+
+	mgr := newApp(t)
+	openLesson(t, mgr, "Foldables and window size")
+
+	root := tree(t, mgr)
+	for _, want := range []string{"841 × 673", "medium", "book", "half_opened, vertical at x 420, separating"} {
+		if !hasText(root, want) {
+			t.Errorf("the readout does not show %q", want)
+		}
+	}
+	if findNode(root, func(n *node) bool { return n.Style != nil && n.Style.Width == "420.00px" }) == nil {
+		t.Error("the TwoPane demo did not size its first pane to the hinge")
+	}
+
+	tap(t, mgr, "Trip ideas")
+	if !hasTextContaining(tree(t, mgr), "A lake with a short trail") {
+		t.Error("picking a note must show it in the detail pane")
+	}
+
+	// Folding shut is a window change the lesson hears with no tap: the
+	// record's subscribers re-render it.
+	core.ReceiveWindow(core.Window{Width: 411, Height: 891})
+	root = tree(t, mgr)
+	if !hasText(root, "compact") || !hasText(root, "none") {
+		t.Error("a folded window must read compact with no fold")
+	}
+	assertNoConcerns(t)
+}

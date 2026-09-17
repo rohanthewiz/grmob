@@ -52,6 +52,7 @@ func chapter4() Chapter {
 			lessonDrawers(),
 			lessonClocksAndDrawing(),
 			lessonCharts(),
+			lessonFoldables(),
 		},
 	}
 }
@@ -3980,6 +3981,132 @@ comps.ScatterChart{Series: []comps.ScatterSeries{{Points: points}}}`),
 					"Axis ticks are nice numbers computed in Go, and labels are Text placed by flex weights.",
 					"A NaN value is a gap in a line and a missing bar.",
 					"Series colours come from theme roles; set ChartSeries.Color or Colors to choose your own.",
+				),
+			)
+		},
+	}
+}
+
+// --- 4.21 Foldables and window size -----------------------------------------
+
+// foldNotes are the 4.21 list–detail demo's rows: a title for the list pane
+// and a body for the detail pane.
+var foldNotes = []struct{ Title, Body string }{
+	{"Groceries", "Oat milk, lemons, the good bread, and something for Sunday."},
+	{"Trip ideas", "A lake with a short trail, somewhere with a bookshop, no more than three hours away."},
+	{"Hinge notes", "A half-opened device wants content above the crease and controls below it."},
+}
+
+// describeFold is the readout's fold line, in words a reader can check
+// against the device in their hand.
+func describeFold(win core.Window) string {
+	if !win.HasFold {
+		return "none"
+	}
+	f := win.Fold
+	at := fmt.Sprintf("x %.0f", f.Bounds.X)
+	if f.Orientation == core.FoldHorizontal {
+		at = fmt.Sprintf("y %.0f", f.Bounds.Y)
+	}
+	sep := "continuous"
+	if f.Separating {
+		sep = "separating"
+	}
+	return fmt.Sprintf("%s, %s at %s, %s", f.State, f.Orientation, at, sep)
+}
+
+// lessonFoldables teaches the window record and the one layout built on it.
+// The readout is the part worth running on a foldable or its emulator: fold
+// the device, bend it, rotate it, and every line changes with no code in the
+// lesson asking for it. The TwoPane demo sits in a scrolling page, so it sets
+// IgnoreHorizontalFold — the one arrangement a scrolling pane cannot line up.
+func lessonFoldables() Lesson {
+	return Lesson{
+		Title:   "Foldables and window size",
+		Summary: "hooks.UseWindow and comps.TwoPane: size classes, tabletop and book postures, and panes that sit on either side of a hinge instead of across it.",
+		Body: func(ctx *core.Context) core.View {
+			// Hooks first and unconditionally, as in every lesson.
+			win := hooks.UseWindow(ctx)
+			picked := core.NewState(ctx, 0)
+
+			t := ctx.Theme()
+			readout := func(label, value string) core.View {
+				return core.Row(
+					core.Gap(8),
+					core.Text(label, core.UseStyle(t.Typography.Caption), core.Width("110px"), core.FlexShrink(0)),
+					core.Text(value, core.UseStyle(t.Typography.Body), core.FlexGrow(1)),
+				)
+			}
+			size := "not reported yet"
+			if win.Received {
+				size = fmt.Sprintf("%.0f × %.0f", win.Width, win.Height)
+			}
+
+			list := make([]core.PropsAndChildren, 0, len(foldNotes)+1)
+			list = append(list, core.Gap(6))
+			for i, n := range foldNotes {
+				emphasis := comps.EmphasisGhost
+				if i == picked.Get() {
+					emphasis = comps.EmphasisOutlined
+				}
+				list = append(list, comps.Button{
+					Label:    n.Title,
+					Emphasis: emphasis,
+					OnTap:    func() { picked.Set(i) },
+				})
+			}
+			note := foldNotes[picked.Get()]
+
+			return core.Column(
+				core.Gap(14),
+				prose("A foldable changes shape under a running app: it unfolds from a phone "+
+					"into a small tablet, and it bends into postures a slab never has. "+
+					"hooks.UseWindow returns the window the host reported — its size, and the "+
+					"fold crossing it if there is one — and re-renders when either changes."),
+				demoPanel("Fold, unfold, bend or rotate the device and watch every line change.",
+					readout("Window", size),
+					readout("Width class", string(win.WidthClass())),
+					readout("Height class", string(win.HeightClass())),
+					readout("Posture", string(win.Posture())),
+					readout("Fold", describeFold(win)),
+				),
+				codeBlock(`win := hooks.UseWindow(ctx)
+switch {
+case win.Posture() == core.PostureTabletop:  // hinge across, device standing
+    return videoAboveControls
+case win.WidthClass() == core.SizeCompact:   // a phone, or a folded foldable
+    return listOnly
+}
+return listBesideDetail`),
+				prose("Branch on the size class and the posture, not the raw width. The "+
+					"report changes with every pixel of a window drag; the class changes at "+
+					"600 and 840, which is where a layout actually wants to."),
+				prose("comps.TwoPane is the layout most screens want from all of this. On a "+
+					"separating fold it sizes the first pane to end at the hinge, so nothing "+
+					"straddles the crease; with room and no hinge it splits by Ratio; on a "+
+					"phone it stacks both panes or shows the one Compact names."),
+				codeBlock(`comps.TwoPane{
+    First:   noteList,
+    Second:  noteDetail,
+    Ratio:   0.4,
+    Compact: comps.TwoPaneFirst,   // on a phone, tap through instead
+}`),
+				demoPanel("Pick a note. Unfold the device to put the list and the note side by side.",
+					comps.TwoPane{
+						First:  core.Column(list...),
+						Second: core.Column(core.Gap(6), core.Text(note.Title, core.UseStyle(t.Typography.Subtitle)), prose(note.Body)),
+						Ratio:  0.4,
+						// A lesson scrolls, so this pane moves past a
+						// horizontal hinge and no offset could line it up.
+						IgnoreHorizontalFold: true,
+					},
+				),
+				keyPoints(
+					"hooks.UseWindow returns core.Window: Width and Height in layout units, WidthClass and HeightClass, Posture, and the fold.",
+					"Posture is tabletop for a half-opened horizontal hinge and book for a vertical one; everything else is normal.",
+					"Only a separating fold is laid out around. A flat, continuous panel can be crossed.",
+					"Fold bounds are in window coordinates; a TwoPane that does not start at the window's corner passes its Origin.",
+					"Android reports through Jetpack WindowManager, the browser through viewport segments and device posture, and iOS reports size alone.",
 				),
 			)
 		},

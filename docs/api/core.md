@@ -55,7 +55,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
 | [Events & focus](core-events.md) | Event props, host and system events, focus refs and focus order. | 2 types, 19 functions and methods |
 | [Navigation & overlays](core-navigation.md) | The navigator stack, modals, toasts, deep links and opening URLs. | 4 types, 19 functions and methods |
 | [Accessibility](core-accessibility.md) | Roles, selected, expanded and current states, value ranges and the accessibility audit. | 9 types, 19 functions and methods |
-| [Device services](core-device.md) | Audio, camera, clipboard, haptics, local notifications, compass heading, location, maps and the app lifecycle. | 12 types, 63 functions and methods |
+| [Device services](core-device.md) | Audio, camera, clipboard, haptics, local notifications, compass heading, location, maps, the app lifecycle, and the window's size and fold. | 19 types, 70 functions and methods |
 
 ## Index
 
@@ -411,6 +411,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
     - [`func OnMarkerTap`](core-device.md#func-onmarkertap)
     - [`func OnNotificationTap`](core-device.md#func-onnotificationtap)
     - [`func OnRegionChange`](core-device.md#func-onregionchange)
+    - [`func OnWindow`](core-device.md#func-onwindow)
     - [`func ParseLatLng`](core-device.md#func-parselatlng)
     - [`func PostNotification`](core-device.md#func-postnotification)
     - [`func ReadClipboard`](core-device.md#func-readclipboard)
@@ -418,6 +419,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
     - [`func ReceiveHeading`](core-device.md#func-receiveheading)
     - [`func ReceiveLifecycle`](core-device.md#func-receivelifecycle)
     - [`func ReceiveLocation`](core-device.md#func-receivelocation)
+    - [`func ReceiveWindow`](core-device.md#func-receivewindow)
     - [`func ShowUserLocation`](core-device.md#func-showuserlocation)
     - [`func StartHeading`](core-device.md#func-startheading)
     - [`func StartLocation`](core-device.md#func-startlocation)
@@ -442,6 +444,9 @@ Package core's reference is split into 11 topic pages by source file. The index 
         - [`func WithFlash`](core-device.md#func-withflash)
         - [`func WithOverlay`](core-device.md#func-withoverlay)
         - [`func WithStyle`](core-device.md#func-withstyle)
+    - [`type Fold`](core-device.md#type-fold)
+    - [`type FoldOrientation`](core-device.md#type-foldorientation)
+    - [`type FoldState`](core-device.md#type-foldstate)
     - [`type HapticKind`](core-device.md#type-haptickind)
         - [`func HapticKinds`](core-device.md#func-haptickinds)
     - [`type Heading`](core-device.md#type-heading)
@@ -451,6 +456,11 @@ Package core's reference is split into 11 topic pages by source file. The index 
     - [`type LocalNotification`](core-device.md#type-localnotification)
     - [`type Location`](core-device.md#type-location)
         - [`func CurrentLocation`](core-device.md#func-currentlocation)
+    - [`type Posture`](core-device.md#type-posture)
     - [`type Region`](core-device.md#type-region)
         - [`func ParseRegion`](core-device.md#func-parseregion)
+    - [`type SizeClass`](core-device.md#type-sizeclass)
+    - [`type Window`](core-device.md#type-window)
+        - [`func CurrentWindow`](core-device.md#func-currentwindow)
+    - [`type WindowRect`](core-device.md#type-windowrect)
 

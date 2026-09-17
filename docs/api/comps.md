@@ -34,7 +34,7 @@ Package comps's reference is split into 7 topic pages by source file. The index 
 
 | Topic | What it covers | Declares |
 | --- | --- | --- |
-| [Screens & structure](comps-structure.md) | Screen, app and bottom bars, tabs, drawers, step indicators, cards, accordions, headings and separators. | 11 types, 9 functions and methods |
+| [Screens & structure](comps-structure.md) | Screen, app and bottom bars, tabs, drawers, step indicators, two-pane and foldable layouts, cards, accordions, headings and separators. | 13 types, 10 functions and methods |
 | [Lists & tables](comps-lists.md) | List, settings and input rows, grouped and paged lists, data tables and timelines. | 16 types, 12 functions and methods |
 | [Inputs & pickers](comps-inputs.md) | Form fields, search, searchable selects, radio groups, dates and calendars, and the two editors. | 11 types, 10 functions and methods |
 | [Buttons & choices](comps-actions.md) | Buttons and their variants, chips, segmented controls, steppers, ratings and badges. | 10 types, 10 functions and methods |
@@ -56,6 +56,8 @@ Package comps's reference is split into 7 topic pages by source file. The index 
     - [`type Separator`](comps-structure.md#type-separator)
     - [`type StepIndicator`](comps-structure.md#type-stepindicator)
     - [`type Tabs`](comps-structure.md#type-tabs)
+    - [`type TwoPane`](comps-structure.md#type-twopane)
+    - [`type TwoPaneCompact`](comps-structure.md#type-twopanecompact)
 - [Lists & tables](comps-lists.md)
     - [Constants](comps-lists.md#constants) — `ConcernPartialSort`
     - [`type CheckboxRow`](comps-lists.md#type-checkboxrow)

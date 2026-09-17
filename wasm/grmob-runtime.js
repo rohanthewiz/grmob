@@ -8678,6 +8678,115 @@ const GrMob = (() => {
     // natives answer from a record that outlives the process; a page's record
     // is `fired` below and dies with the tab, which is also when its timers
     // die, so a fresh page correctly has nothing to cancel or report.
+    // The browser half of core's window event (core/window.go): how big the
+    // viewport is and whether a fold crosses it.
+    //
+    //   innerWidth / innerHeight        ──▶ width, height   (CSS px)
+    //   window.viewport.segments (2)    ──▶ fold bounds, orientation
+    //   navigator.devicePosture.type    ──▶ fold state
+    //
+    // Two newer APIs carry the fold, and each carries half of it. The
+    // Viewport Segments API splits the viewport into one rectangle per side
+    // of a hinge that separates content — so two segments *are* a separating
+    // fold, and the gap between them is its bounds. The Device Posture API
+    // says whether the device is "folded" (half-opened) or "continuous"
+    // (flat), but not where the hinge is. So a fold is reported only when
+    // there are segments, with the posture refining its state: posture alone
+    // would be a fold with no position, which no layout can act on, and core
+    // would have to invent one.
+    //
+    // Everywhere else — every desktop, every phone without a hinge, every
+    // browser without the APIs — there are no segments and the report is the
+    // viewport size alone, which is still what size classes need.
+    //
+    // It reports on resize (a fold or unfold resizes the viewport, and a
+    // segment change fires resize too), on a posture change, and once when
+    // Go comes up (see waitForWasm), because the size a page loaded at is
+    // never a change and would otherwise never be sent. Go dedupes repeats.
+    const windowMetrics = (() => {
+        // foldFrom turns two viewport segments into core's fold payload, or
+        // null when they do not describe one. Pure, so it can be tested
+        // against rectangles without a browser.
+        //
+        // Segments are ordered in reading order, so the second is either to
+        // the right of the first (a vertical hinge) or below it (a
+        // horizontal one). Anything else — overlapping rectangles, more than
+        // two — is not a shape core can express and is dropped rather than
+        // guessed at. The half-pixel slack absorbs subpixel rounding in
+        // segment edges that should meet exactly.
+        function foldFrom(segments, postureType) {
+            if (!segments || segments.length !== 2) return null;
+            const [a, b] = segments;
+            const aRight = a.x + a.width, aBottom = a.y + a.height;
+            const state = postureType === "folded" ? "half_opened" : "flat";
+            let fold;
+            if (b.x >= aRight - 0.5) {
+                const top = Math.min(a.y, b.y);
+                fold = {
+                    orientation: "vertical",
+                    x: aRight, y: top,
+                    width: Math.max(0, b.x - aRight),
+                    height: Math.max(aBottom, b.y + b.height) - top,
+                };
+            } else if (b.y >= aBottom - 0.5) {
+                const left = Math.min(a.x, b.x);
+                fold = {
+                    orientation: "horizontal",
+                    x: left, y: aBottom,
+                    width: Math.max(aRight, b.x + b.width) - left,
+                    height: Math.max(0, b.y - aBottom),
+                };
+            } else {
+                return null;
+            }
+            return {
+                state,
+                orientation: fold.orientation,
+                // Two segments exist only when the browser has decided the
+                // viewport is split, which is exactly "separating".
+                separating: true,
+                // A gap between the segments is glass nobody can see.
+                occluding: fold.orientation === "vertical" ? fold.width > 0 : fold.height > 0,
+                x: fold.x, y: fold.y, width: fold.width, height: fold.height,
+            };
+        }
+
+        // measure reads the page into a payload, or null when there is no
+        // viewport to measure (the verify harness's minimal DOM, a worker).
+        function measure() {
+            if (typeof window === "undefined") return null;
+            const width = window.innerWidth, height = window.innerHeight;
+            if (typeof width !== "number" || typeof height !== "number") return null;
+            const payload = { width, height };
+            const segments = window.viewport && window.viewport.segments;
+            const posture = typeof navigator !== "undefined" && navigator.devicePosture
+                ? navigator.devicePosture.type : undefined;
+            const fold = foldFrom(segments, posture);
+            if (fold) payload.fold = fold;
+            return payload;
+        }
+
+        // report sends the current measurement, if Go is there to hear it.
+        // The host is looked up per call for the same reason the lifecycle
+        // listener does: the runtime loads before the wasm module.
+        function report() {
+            const host = window.GrMobWASM;
+            if (!host || typeof host.HostEvent !== "function") return;
+            const payload = measure();
+            if (payload) host.HostEvent("window", JSON.stringify(payload));
+        }
+
+        if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+            window.addEventListener("resize", report);
+        }
+        if (typeof navigator !== "undefined" && navigator.devicePosture &&
+            typeof navigator.devicePosture.addEventListener === "function") {
+            navigator.devicePosture.addEventListener("change", report);
+        }
+
+        return { foldFrom, measure, report };
+    })();
+
     const notifications = (() => {
         const open = new Map();
         const timers = new Map();
@@ -8788,6 +8897,7 @@ const GrMob = (() => {
         clipboard,
         haptics,
         notifications,
+        windowMetrics,
     };
 })();
 
@@ -8878,6 +8988,9 @@ function checkLoop() {
 
 function waitForWasm() {
     if (window.GrMobWASM) {
+        // The size the page loaded at, which no resize will ever report;
+        // see windowMetrics.
+        GrMob.windowMetrics.report();
         checkLoop();
     } else {
         setTimeout(waitForWasm, 100);

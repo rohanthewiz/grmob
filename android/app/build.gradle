@@ -196,6 +196,11 @@ dependencies {
     // resolves to and compiles against compileSdk 34.
     implementation 'androidx.lifecycle:lifecycle-process:2.6.2'
 
+    // Jetpack WindowManager: window metrics and FoldingFeature (hinge
+    // posture and bounds), behind core's window host event (AppWindow.kt).
+    // 1.4.0's AAR metadata declares minCompileSdk 34, which is this app's.
+    implementation 'androidx.window:window:1.4.0'
+
     // Image node rendering (remote/local sources).
     implementation 'io.coil-kt:coil-compose:2.6.0'
 

@@ -212,8 +212,8 @@ var Packages = []Pkg{
 		}, {
 			Slug:  "device",
 			Title: "Device services",
-			Blurb: "Audio, camera, clipboard, haptics, local notifications, compass heading, location, maps and the app lifecycle.",
-			Files: []string{"audio.go", "camera.go", "clipboard.go", "haptics.go", "notifications.go", "heading.go", "location.go", "mapview.go", "lifecycle.go"},
+			Blurb: "Audio, camera, clipboard, haptics, local notifications, compass heading, location, maps, the app lifecycle, and the window's size and fold.",
+			Files: []string{"audio.go", "camera.go", "clipboard.go", "haptics.go", "notifications.go", "heading.go", "location.go", "mapview.go", "lifecycle.go", "window.go"},
 		}},
 	},
 	{
@@ -244,9 +244,9 @@ var Packages = []Pkg{
 		Topics: []Topic{{
 			Slug:  "structure",
 			Title: "Screens & structure",
-			Blurb: "Screen, app and bottom bars, tabs, drawers, step indicators, cards, accordions, headings and separators.",
+			Blurb: "Screen, app and bottom bars, tabs, drawers, step indicators, two-pane and foldable layouts, cards, accordions, headings and separators.",
 			Files: []string{"screen.go", "app_bar.go", "bottom_bar.go", "tabs.go", "drawer.go", "step_indicator.go",
-				"card.go", "accordion.go", "disclosure.go", "heading.go", "separator.go"},
+				"two_pane.go", "card.go", "accordion.go", "disclosure.go", "heading.go", "separator.go"},
 		}, {
 			Slug:  "lists",
 			Title: "Lists & tables",

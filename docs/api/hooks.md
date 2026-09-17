@@ -42,6 +42,7 @@ Comparison is by value equality on the dependency list. A dependency that is a f
 - [`func UseReducer`](#func-usereducer)
 - [`func UseTimeout`](#func-usetimeout)
 - [`func UseTimeoutWhile`](#func-usetimeoutwhile)
+- [`func UseWindow`](#func-usewindow)
 - [`type AlarmOptions`](#type-alarmoptions)
 - [`type AlarmRinger`](#type-alarmringer)
     - [`func UseAlarms`](#func-usealarms)
@@ -479,6 +480,28 @@ UseTimeout arms on the first render and never again, which suits a splash screen
 It takes one slot and must be called unconditionally in a stable position. fn is refreshed every render and the fire runs the latest closure, then requests a render so the change reaches the screen with no native event in flight. A pending timer is cancelled when the context tree is closed.
 
 <small>[hooks/interval.go:277](https://github.com/rohanthewiz/grmob/blob/master/hooks/interval.go#L277)</small>
+
+### func UseWindow
+
+```go
+func UseWindow(ctx *core.Context) core.Window
+```
+
+UseWindow returns the app window's size and fold, and re-renders the app whenever either changes — a foldable unfolding, the hinge bending into tabletop, an iPad window resized in Split View, a browser window dragged wider:
+
+	win := hooks.UseWindow(ctx)
+	if win.WidthClass() == core.SizeCompact {
+	    return listScreen
+	}
+	return comps.TwoPane{First: list, Second: detail}
+
+Branch on WidthClass or Posture rather than on raw Width wherever a bucket will do: the report changes on every pixel of a window drag, but the tree only needs to change when a bucket does, and a component that renders from the bucket diffs to nothing in between.
+
+The subscription is taken on the hook's first render and released when the context tree closes, with the same no-unmount-signal limit and the same harmless cost as UseLifecycle: a stale subscription asks for one render that diffs to nothing.
+
+Like UseLifecycle the value is not copied into the slot; core keeps one record for the process (core.CurrentWindow) and reading it at render time is what makes every subscriber see the same report.
+
+<small>[hooks/window.go:40](https://github.com/rohanthewiz/grmob/blob/master/hooks/window.go#L40)</small>
 
 ## Types
 

@@ -4,9 +4,9 @@
 import "github.com/rohanthewiz/grmob/core"
 ```
 
-Audio, camera, clipboard, haptics, local notifications, compass heading, location, maps and the app lifecycle.
+Audio, camera, clipboard, haptics, local notifications, compass heading, location, maps, the app lifecycle, and the window's size and fold.
 
-One of 11 topic pages of [package core](core.md), which has the package overview and an index of every topic. This page documents the declarations in `core/audio.go`, `core/camera.go`, `core/clipboard.go`, `core/haptics.go`, `core/notifications.go`, `core/heading.go`, `core/location.go`, `core/mapview.go`, `core/lifecycle.go`.
+One of 11 topic pages of [package core](core.md), which has the package overview and an index of every topic. This page documents the declarations in `core/audio.go`, `core/camera.go`, `core/clipboard.go`, `core/haptics.go`, `core/notifications.go`, `core/heading.go`, `core/location.go`, `core/mapview.go`, `core/lifecycle.go`, `core/window.go`.
 
 ## Index
 
@@ -41,6 +41,7 @@ One of 11 topic pages of [package core](core.md), which has the package overview
 - [`func OnMarkerTap`](#func-onmarkertap)
 - [`func OnNotificationTap`](#func-onnotificationtap)
 - [`func OnRegionChange`](#func-onregionchange)
+- [`func OnWindow`](#func-onwindow)
 - [`func ParseLatLng`](#func-parselatlng)
 - [`func PostNotification`](#func-postnotification)
 - [`func ReadClipboard`](#func-readclipboard)
@@ -48,6 +49,7 @@ One of 11 topic pages of [package core](core.md), which has the package overview
 - [`func ReceiveHeading`](#func-receiveheading)
 - [`func ReceiveLifecycle`](#func-receivelifecycle)
 - [`func ReceiveLocation`](#func-receivelocation)
+- [`func ReceiveWindow`](#func-receivewindow)
 - [`func ShowUserLocation`](#func-showuserlocation)
 - [`func StartHeading`](#func-startheading)
 - [`func StartLocation`](#func-startlocation)
@@ -74,6 +76,9 @@ One of 11 topic pages of [package core](core.md), which has the package overview
     - [`func WithFlash`](#func-withflash)
     - [`func WithOverlay`](#func-withoverlay)
     - [`func WithStyle`](#func-withstyle)
+- [`type Fold`](#type-fold)
+- [`type FoldOrientation`](#type-foldorientation)
+- [`type FoldState`](#type-foldstate)
 - [`type HapticKind`](#type-haptickind)
     - [`func HapticKinds`](#func-haptickinds)
 - [`type Heading`](#type-heading)
@@ -84,8 +89,17 @@ One of 11 topic pages of [package core](core.md), which has the package overview
 - [`type LocalNotification`](#type-localnotification)
 - [`type Location`](#type-location)
     - [`func CurrentLocation`](#func-currentlocation)
+- [`type Posture`](#type-posture)
 - [`type Region`](#type-region)
     - [`func ParseRegion`](#func-parseregion)
+- [`type SizeClass`](#type-sizeclass)
+- [`type Window`](#type-window)
+    - [`func CurrentWindow`](#func-currentwindow)
+    - [`func (Window) HeightClass`](#func-window-heightclass)
+    - [`func (Window) Posture`](#func-window-posture)
+    - [`func (Window) SeparatingFold`](#func-window-separatingfold)
+    - [`func (Window) WidthClass`](#func-window-widthclass)
+- [`type WindowRect`](#type-windowrect)
 
 ## Constants
 
@@ -526,6 +540,18 @@ The region arrives through the text callback channel as "lat,lng,zoom", which is
 
 <small>[core/mapview.go:241](https://github.com/rohanthewiz/grmob/blob/master/core/mapview.go#L241)</small>
 
+### func OnWindow
+
+```go
+func OnWindow(fn func(Window)) (cancel func())
+```
+
+OnWindow subscribes fn to window changes. The returned function cancels the subscription; calling it more than once is harmless.
+
+Process-wide like OnLifecycle, and for the same reason: one app, one window. fn runs on whichever goroutine delivered the event and must not block; writing State and calling RequestRender are fine from there.
+
+<small>[core/window.go:259](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L259)</small>
+
 ### func ParseLatLng
 
 ```go
@@ -611,6 +637,23 @@ Coordinates are normalised here rather than trusted, which is this function's re
 Active is core's bookkeeping and is overwritten from the reference count rather than taken from the caller: a host does not know how many screens asked.
 
 <small>[core/location.go:322](https://github.com/rohanthewiz/grmob/blob/master/core/location.go#L322)</small>
+
+### func ReceiveWindow
+
+```go
+func ReceiveWindow(w Window)
+```
+
+ReceiveWindow is the typed entry point for a host that reports in Go (a test, an embedder). The JSON hosts arrive through ReceiveHostEvent("window", ...), which decodes into this.
+
+Validation is split by what a bad value would do downstream:
+
+  - A negative, NaN or infinite size drops the whole report. A layout that divides by the width or sizes a pane from it would otherwise produce nonsense, and the previous report is a better guess than garbage.
+  - A fold whose state or orientation is not one core knows is dropped on its own and the size kept, the same forward-compatibility stance as ReceiveLifecycle: a newer shell's fifth posture must not reach a switch in an older app that has no arm for it, but the window it measured is still true.
+
+Received is set here, whatever the caller passed, since arriving through this function is what receiving means. A repeat of the current window is absorbed silently. Subscribers are notified outside the lock.
+
+<small>[core/window.go:290](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L290)</small>
 
 ### func ShowUserLocation
 
@@ -910,6 +953,77 @@ func WithStyle(style Style) CameraProp
 
 <small>[core/camera.go:90](https://github.com/rohanthewiz/grmob/blob/master/core/camera.go#L90)</small>
 
+### type Fold
+
+```go
+type Fold struct {
+	State       FoldState
+	Orientation FoldOrientation
+
+	// Separating reports whether the platform thinks content should not
+	// straddle the fold: always for a half-opened hinge, and for a flat
+	// one only when it is a physical seam between two screens. A flat
+	// Galaxy Fold's inner display is one continuous panel, so its fold is
+	// not separating and a layout may run straight across it.
+	Separating bool
+
+	// Occluding reports whether the fold hides pixels — a seam between two
+	// panels with real width, like the Surface Duo's. Nothing should be
+	// drawn in Bounds when it is true. A folding OLED panel hides nothing and
+	// reports a zero-width Bounds on the fold line.
+	Occluding bool
+
+	// Bounds is the fold's rectangle in window coordinates. For a
+	// non-occluding hinge one dimension is zero: it is a line, and the value
+	// that matters is where it sits (X for a vertical hinge, Y for a
+	// horizontal one).
+	Bounds WindowRect
+}
+```
+
+Fold is one hinge or seam crossing the window.
+
+<small>[core/window.go:141](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L141)</small>
+
+### type FoldOrientation
+
+```go
+type FoldOrientation string
+```
+
+FoldOrientation is the direction the hinge \*line\* runs across the window. A vertical hinge splits the window into left and right; a horizontal one into top and bottom.
+
+<small>[core/window.go:109](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L109)</small>
+
+```go
+const (
+	FoldVertical   FoldOrientation = "vertical"
+	FoldHorizontal FoldOrientation = "horizontal"
+)
+```
+
+### type FoldState
+
+```go
+type FoldState string
+```
+
+FoldState is how far the hinge is bent.
+
+<small>[core/window.go:94](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L94)</small>
+
+```go
+const (
+	// FoldFlat is fully open — 180°. A hinge that is flat can still separate
+	// content (a dual-screen device's seam), which is why Separating is its
+	// own field.
+	FoldFlat FoldState = "flat"
+	// FoldHalfOpened is bent partway, somewhere around a right angle: the
+	// device is standing on its own or being held like a book.
+	FoldHalfOpened FoldState = "half_opened"
+)
+```
+
 ### type HapticKind
 
 ```go
@@ -1151,6 +1265,31 @@ CurrentLocation returns the last fix, exactly as it arrived — the notification
 
 <small>[core/location.go:278](https://github.com/rohanthewiz/grmob/blob/master/core/location.go#L278)</small>
 
+### type Posture
+
+```go
+type Posture string
+```
+
+Posture names the two half-opened shapes a layout designs for, derived from FoldState and FoldOrientation rather than reported, because every platform reports the two underlying facts and none reports these words.
+
+<small>[core/window.go:119](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L119)</small>
+
+```go
+const (
+	// PostureNormal is everything that is not half-opened: a phone, a
+	// tablet, a foldable fully open or fully closed.
+	PostureNormal Posture = "normal"
+	// PostureTabletop is half-opened with a horizontal hinge — the device
+	// stands like a small laptop. Content goes above the hinge, controls
+	// below it.
+	PostureTabletop Posture = "tabletop"
+	// PostureBook is half-opened with a vertical hinge — held like an open
+	// book. Two pages, one each side.
+	PostureBook Posture = "book"
+)
+```
+
 ### type Region
 
 ```go
@@ -1189,4 +1328,117 @@ ParseRegion reads a host's "lat,lng,zoom" payload. The bool is false for anythin
 Exported because all three hosts format this string and a test in each harness has to read one back. Keeping the parse in one place is also what makes the wire format a single fact rather than three.
 
 <small>[core/mapview.go:359](https://github.com/rohanthewiz/grmob/blob/master/core/mapview.go#L359)</small>
+
+### type SizeClass
+
+```go
+type SizeClass string
+```
+
+SizeClass buckets a window dimension into Material's three window size classes. The buckets, not the raw width, are what a layout should branch on: a Z Fold's inner screen and a small tablet differ by 100dp and want the same layout, and a breakpoint shared across apps is one users learn.
+
+<small>[core/window.go:70](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L70)</small>
+
+```go
+const (
+	// SizeCompact is a phone held upright, or a folded foldable.
+	SizeCompact SizeClass = "compact"
+	// SizeMedium is an unfolded book-style foldable or a small tablet
+	// upright: room for a list beside a narrow detail, not for three panes.
+	SizeMedium SizeClass = "medium"
+	// SizeExpanded is a tablet in landscape, a desktop browser, or a
+	// foldable unfolded in landscape.
+	SizeExpanded SizeClass = "expanded"
+)
+```
+
+### type Window
+
+```go
+type Window struct {
+	// Width and Height are the window's size in layout units (see the file
+	// comment). Zero before the host reports.
+	Width, Height float64
+
+	// HasFold reports whether a fold crosses the window. A foldable that is
+	// folded shut reports none — the outer screen is a plain phone — and so
+	// does an app in a split-screen half that the hinge does not cross.
+	//
+	// A bool beside a value rather than a *Fold so that Window stays
+	// comparable with ==, which is what lets the record dedupe repeats.
+	HasFold bool
+	Fold    Fold
+
+	// Received is true once any host has reported. Before that the size is
+	// unknown rather than zero, and WidthClass answers compact — a phone is
+	// the safest layout to draw into a window of unknown size.
+	Received bool
+}
+```
+
+Window is the last report of the app window's size and fold.
+
+<small>[core/window.go:166](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L166)</small>
+
+#### func CurrentWindow
+
+```go
+func CurrentWindow() Window
+```
+
+CurrentWindow reports the last window the host announced; the zero Window (Received false) until it has announced one.
+
+<small>[core/window.go:247](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L247)</small>
+
+#### func (Window) HeightClass
+
+```go
+func (w Window) HeightClass() SizeClass
+```
+
+HeightClass is the window's height bucketed into a SizeClass. Most layouts only need WidthClass; height is what tells a landscape phone (compact height) from a tablet in landscape, which a bottom sheet or a video player cares about.
+
+<small>[core/window.go:202](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L202)</small>
+
+#### func (Window) Posture
+
+```go
+func (w Window) Posture() Posture
+```
+
+Posture derives the named posture from the fold. See Posture's constants.
+
+<small>[core/window.go:213](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L213)</small>
+
+#### func (Window) SeparatingFold
+
+```go
+func (w Window) SeparatingFold() (Fold, bool)
+```
+
+SeparatingFold returns the fold when content should be laid out around it, which is the one question a two-pane layout asks. A non-separating fold (a flat, continuous panel) is reported as none, since there is nothing to avoid.
+
+<small>[core/window.go:227](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L227)</small>
+
+#### func (Window) WidthClass
+
+```go
+func (w Window) WidthClass() SizeClass
+```
+
+WidthClass is the window's width bucketed into a SizeClass. See the breakpoint constants above.
+
+<small>[core/window.go:188](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L188)</small>
+
+### type WindowRect
+
+```go
+type WindowRect struct {
+	X, Y, Width, Height float64
+}
+```
+
+WindowRect is an axis-aligned rectangle in window coordinates. Not "Rect": that name is the canvas shape constructor (canvas.go).
+
+<small>[core/window.go:136](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L136)</small>
 
