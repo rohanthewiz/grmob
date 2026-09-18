@@ -85,18 +85,76 @@ func caption(text string) core.View {
 // The Trim is the tutorial's own: a snippet is written as a raw string literal
 // that starts and ends with a newline, and those two newlines are formatting.
 // See highlightGo, which says why the highlight package must not do it.
+//
+// # The copy button
+//
+// Every snippet carries a comps.CopyButton as a ZStack layer pinned to its
+// top-end corner, so a reader can take the code into their own editor without
+// selecting across a scrolling grid. CopyButton is stateless, which is what
+// lets it live here: the rule above holds for the block as a whole. It copies
+// the trimmed snippet — the exact string the editor draws — and is coloured
+// from the scheme rather than the theme, because its backdrop is the code
+// surface and not the page: the theme's on-light tones would be dark ink on
+// Darcula's dark grey.
+//
+//	┌ ZStack ───────────────────────────────────────┐
+//	│ ┌ CodeEditor (base layer) ──────────[ Copy ]┐ │  top-end, 6px in
+//	│ │ func main() {                              │ │
+//	│ │     …                                      │ │
+//	│ └────────────────────────────────────────────┘ │
+//	└────────────────────────────────────────────────┘
+//
+// The button carries ZIndex(1); see the comment at the prop for why the
+// top layer has to say so on the web. The button can cover the end of a long
+// first line. Code wider than the
+// phone already scrolls sideways under it, and a separate header strip was
+// rejected because it would add a row to every one of the tutorial's
+// snippets to hold one small control.
 func codeBlock(code string) core.View {
-	return comps.CodeEditor{
-		Value:    strings.Trim(code, "\n"),
-		Language: "go",
-		Scheme:   highlight.Darcula,
-		ReadOnly: true,
-		Style: []core.StyleProp{
-			core.Padding(14),
-			core.BorderRadius(10),
-			core.FontSize(13),
+	snippet := strings.Trim(code, "\n")
+	scheme := highlight.Darcula
+	return core.ZStack(
+		// Full width so the ZStack spans the lesson column the way the bare
+		// editor did; a ZStack otherwise sizes to its largest layer, and the
+		// editor's intrinsic width is its longest line.
+		core.Width("100%"),
+		comps.CodeEditor{
+			Value:    snippet,
+			Language: "go",
+			Scheme:   scheme,
+			ReadOnly: true,
+			Style: []core.StyleProp{
+				core.Width("100%"),
+				core.Padding(14),
+				core.BorderRadius(10),
+				core.FontSize(13),
+			},
 		},
-	}
+		comps.CopyButton{
+			Text:               snippet,
+			AccessibilityLabel: "Copy code",
+			CopiedMessage:      "Code copied",
+			Emphasis:           comps.EmphasisGhost,
+			Style: []core.StyleProp{
+				core.StackAlign(core.StackAlignTopEnd),
+				// Above the editor explicitly. The web draws a CodeEditor as a
+				// position:relative <pre> (the containing block for its caret
+				// overlay), and a positioned element paints over a later
+				// non-positioned sibling — so without this the button is laid
+				// out in the corner and drawn underneath the code.
+				core.ZIndex(1),
+				core.Margin(6),
+				core.PaddingVertical(2),
+				core.PaddingHorizontal(8),
+				core.FontSize(12),
+				core.BorderRadius(6),
+				core.TextColor(scheme.Ink),
+				core.Background(scheme.Bg),
+				core.BorderWidth(1),
+				core.BorderColor(scheme.Comment),
+			},
+		},
+	)
 }
 
 // demoPanel frames a live demo: a "TRY IT" badge and caption on top, then the
@@ -132,8 +190,8 @@ func demoPanel(hint string, children ...core.View) core.View {
 }
 
 // keyPoints is the recap list closing every lesson: a subtitle and bulleted
-// lines. Bullets are plain Rows — a list this short gains nothing from
-// core.List's virtualization, and static children need no keys.
+// lines. The bullets are a comps.BulletList — the widget these rows were the
+// model for — so the points are also a list of listitems to a screen reader.
 //
 // "Key points" is a heading at level 2: a section of the lesson whose own name
 // lessonHeader carries at level 1. It is the one heading on a lesson screen a
@@ -148,13 +206,7 @@ func keyPoints(points ...string) core.View {
 				core.AccessibilityRole(core.RoleHeading),
 				core.AccessibilityHeadingLevel(2)),
 		}
-		for _, p := range points {
-			items = append(items, core.Row(
-				core.Gap(8),
-				core.Text("•", core.TextColor(t.Colors.Primary), core.FontWeight(core.Bold)),
-				core.Text(p, core.UseStyle(t.Typography.Body), core.FlexGrow(1)),
-			))
-		}
+		items = append(items, comps.BulletList{Items: points})
 		return core.Column(items...).Render(ctx)
 	})
 }

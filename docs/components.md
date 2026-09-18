@@ -355,6 +355,52 @@ existed; `ListRow` did not, and its own entry says why.
 focus onto it, as `Drawer`'s opener does with the drawer's ✕ and its
 `OnDismiss` does with the ☰. Nil names nothing.
 
+## CopyButton
+
+A button that puts a fixed string on the clipboard and confirms it.
+
+```go
+comps.CopyButton{
+    Text:               inviteCode,
+    Label:              "Copy code",
+    AccessibilityLabel: "Copy invite code",
+    Emphasis:           comps.EmphasisOutlined,
+}
+// tap → core.WriteClipboard(Text), core.Haptic(HapticLight), core.ShowToast("Copied")
+```
+
+- **The toast confirms, not the caption.** Flipping the caption to "Copied ✓"
+  and back needs a timer, a timer is a hook, and a hook would forbid rendering
+  the button inside an `if`. CopyButton takes no hook slot; every code block in
+  the tutorial carries one for that reason.
+- **No `Text`, no copy.** An empty `Text` disables the button — a link still
+  loading is a real state — and a tap that arrives anyway writes nothing:
+  `WriteClipboard("")` would clear the clipboard.
+- Several on one screen would all be "Copy", so `AccessibilityLabel` says what
+  is copied. The copied text is not read out.
+- Over a `CodeEditor` in a `ZStack`, give the button `core.ZIndex(1)`: the web
+  draws the editor as a positioned `<pre>`, which paints over a later sibling
+  that is not positioned.
+
+## Link
+
+A line of text that goes somewhere.
+
+```go
+comps.Link{Text: "Privacy policy", URL: "https://example.com/privacy"}
+comps.Link{Text: "Forgot password?", OnTap: showReset}
+```
+
+- `RoleLink`, not a button: it leaves the screen, and a reader deciding
+  whether to follow it needs to know that.
+- `OnTap` wins; otherwise a tap is `core.OpenURL(URL)`. With neither, it reports
+  `ConcernLinkInert`.
+- Drawn in `Primary`'s on-light tone, hugging its text (`AlignSelf(start)`) so
+  the empty width beside it is not a target.
+- **Not underlined**: core's Style has no text decoration. **Not inline**: a
+  link inside a sentence is an inline span, which core does not have. Give it a
+  line of its own.
+
 ## InputRow
 
 The composer: a text field that fills the row, and an optional trailing button
@@ -826,6 +872,23 @@ comps.KeyValueList{
 - `Dividers` puts a hidden `Separator` between rows, never above the first or
   below the last.
 
+## BulletList
+
+Short points behind a marker, bulleted or numbered.
+
+```go
+comps.BulletList{Items: []string{"Free delivery", "Cancel any time"}}
+comps.BulletList{Items: steps, Ordered: true}   // 1. 2. 3. …; Start moves the first
+```
+
+- The marker is pinned and the text grows, so a long item wraps under its own
+  first word (a hanging indent). Ordered markers are right-aligned in one
+  column sized for the widest number, so "9." and "10." end at the same x.
+- A `RoleList` of listitems, each named by its text; the marker is hidden,
+  because a screen reader states the position itself.
+- Not `core.List`: a bullet list is short, and static children need no keys.
+  The tutorial's key points are built with it.
+
 ## Badge
 
 A small **non-interactive** status pill — a count, a "verified" mark, a
@@ -875,8 +938,8 @@ Explicit `TextColor` beats the computed ink.
 "warning" to a screen reader, and a reader who cannot tell the tints apart
 sees only the label — so the label has to say it ("Overdue", not "!").
 
-`Variant` is a package-level type, not Badge's own, so a future Alert or
-banner resolves the same four roles the same way. `Variant.Color(theme)` and
+`Variant` is a package-level type, not Badge's own, so [Banner](#banner) —
+the inline alert — and Button resolve the same four roles the same way. `Variant.Color(theme)` and
 `Variant.Ink(theme, bg)` are exported for building your own status surface.
 
 For a *selectable* pill, use Chip.
@@ -3146,6 +3209,11 @@ comps.CalendarHeatmap{Subject: "Workouts", Days: workouts, End: today}
 - The calendar is `Weeks` columns (17 by default) ending on the week holding
   `End`, each starting on `WeekStart` (Sunday); entries are summed per date in
   `End`'s location.
+- **The grid always fits; `Weeks` decides the cells' shape.** Columns stretch,
+  so a year across a phone is a grid of slivers. `WeeksFor(width)` returns the
+  count at which cells come out square, for a width you supply — usually
+  `hooks.UseWindow(ctx).Width` less your padding. It is arithmetic, not a
+  measurement, and reads no hook.
 - One `RoleImg`, one sentence: "Workouts: 42 over 17 weeks, on 23 days; most
   on Tue 3 Mar 2026, 4."
 

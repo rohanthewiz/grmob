@@ -494,6 +494,37 @@ type DayValue struct {
 	Value float64
 }
 
+// calendarAxisAllowance is the width WeeksFor sets aside for the weekday
+// label column and the gap after it: "Wed" at chartLabelSize is about 20px in
+// the bundled faces, plus the grid's 6px gap, rounded up so the estimate errs
+// towards one week fewer rather than one week too thin.
+const calendarAxisAllowance = 30.0
+
+// WeeksFor is how many week columns fit width px with square cells — each
+// column as wide as a row is tall (CellHeight, 14 by default) — clamped to
+// between 1 and 53, a year.
+//
+//	win := hooks.UseWindow(ctx)
+//	weeks := comps.CalendarHeatmap{}.WeeksFor(win.Width - 2*16) // less the screen's padding
+//	comps.CalendarHeatmap{Days: days, Weeks: weeks}
+//
+// The grid stretches its columns to whatever width it is given, so Weeks is
+// not what makes it fit — it always fits. What Weeks decides is the cell's
+// shape: 53 weeks across a 360px phone is a column under six pixels wide
+// under a row fourteen tall, a grid of slivers. This returns the count at
+// which the cells come out square.
+//
+// It is arithmetic on a width the caller supplies, not a measurement: no host
+// reports a rendered width, and the caller knows its own padding where this
+// widget does not. It reads no hook, so CalendarHeatmap stays safe to render
+// conditionally; the caller's hooks.UseWindow is what makes a rotation or a
+// fold re-render with a new count.
+func (c CalendarHeatmap) WeeksFor(width float64) int {
+	cell := orDefaultFloat(c.CellHeight, 14)
+	n := int(math.Floor((width - calendarAxisAllowance) / cell))
+	return min(max(n, 1), 53)
+}
+
 // dayKey is a date with the clock and location stripped, for matching.
 type dayKey struct {
 	y int

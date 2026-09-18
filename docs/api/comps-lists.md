@@ -4,13 +4,15 @@
 import "github.com/rohanthewiz/grmob/comps"
 ```
 
-List rows, the settings-row family (switch, checkbox, select and slider), input rows, key-value lists, grouped and paged lists, data tables and timelines.
+List rows, the settings-row family (switch, checkbox, select and slider), input rows, key-value lists, bullet lists, grouped and paged lists, data tables and timelines.
 
-One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/list_row.go`, `comps/settings_row.go`, `comps/select_row.go`, `comps/slider_row.go`, `comps/input_row.go`, `comps/key_value_list.go`, `comps/grouped_list.go`, `comps/grouping.go`, `comps/paging.go`, `comps/data_table.go`, `comps/timeline.go`.
+One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/list_row.go`, `comps/settings_row.go`, `comps/select_row.go`, `comps/slider_row.go`, `comps/input_row.go`, `comps/key_value_list.go`, `comps/bullet_list.go`, `comps/grouped_list.go`, `comps/grouping.go`, `comps/paging.go`, `comps/data_table.go`, `comps/timeline.go`.
 
 ## Index
 
 - [Constants](#constants) — `ConcernPartialSort`, `ConcernSelectRowValueNotAnOption`
+- [`type BulletList`](#type-bulletlist)
+    - [`func (BulletList) Render`](#func-bulletlist-render)
 - [`type CheckboxRow`](#type-checkboxrow)
     - [`func (CheckboxRow) Render`](#func-checkboxrow-render)
 - [`type Collapse`](#type-collapse)
@@ -68,6 +70,76 @@ const ConcernSelectRowValueNotAnOption = "select-row-value-not-an-option"
 <small>[comps/select_row.go:14](https://github.com/rohanthewiz/grmob/blob/master/comps/select_row.go#L14)</small>
 
 ## Types
+
+### type BulletList
+
+```go
+type BulletList struct {
+	// Items are the points, drawn top to bottom.
+	Items []string
+
+	// Ordered numbers the items instead of bulleting them.
+	Ordered bool
+
+	// Start is the first number of an ordered list; 0 means 1.
+	Start int
+
+	// Marker replaces the bullet of an unordered list; empty gives "•".
+	Marker string
+
+	// Label names the list for assistive technology. Empty leaves it unnamed,
+	// which is fine under a visible heading.
+	Label string
+
+	// Style is applied to the list column after its defaults.
+	Style []core.StyleProp
+}
+```
+
+BulletList is a short run of points, each behind a marker: the key points under a lesson, the steps of a recipe, what a plan includes.
+
+	comps.BulletList{Items: []string{"Free delivery", "Cancel any time"}}
+	comps.BulletList{Items: steps, Ordered: true}
+
+	┌ Column  role=list ──────────────────────────────┐
+	│ ┌ Row  listitem ─────────────────────────────┐  │
+	│ │  •   Free delivery on every order over     │  │
+	│ │      twenty pounds                         │  │  wraps under itself
+	│ └────────────────────────────────────────────┘  │
+	│ ┌ Row  listitem ─────────────────────────────┐  │
+	│ │  •   Cancel any time                       │  │
+	│ └────────────────────────────────────────────┘  │
+	└─────────────────────────────────────────────────┘
+
+#### The marker column
+
+The marker refuses to shrink and the text grows, so a long item wraps under its own first word rather than back under the bullet — the hanging indent every word processor draws. Ordered markers ("1.", "2." … "10.") are right-aligned in a column sized for the widest of them, so the item text starts at one x whatever the number's width. The column is sized from the last marker's character count at the body size, because no host reports a rendered width; digits are tabular in every bundled face, so the estimate only has to cover the widest digit.
+
+#### Not core.List
+
+A bullet list is short by construction, and static children need no keys: the reason the tutorial's keyPoints were plain Rows before this existed. core.List's laziness is for data of unknown length.
+
+#### Accessibility
+
+The column is a RoleList and each row a listitem named by its text, so a reader hears "list, 3 items" and each point once. The marker is hidden: a screen reader states the position itself ("2 of 5"), and "bullet, Free delivery" is the marker read as a word.
+
+#### Theme roles read
+
+	Marker     Colors.Primary's on-light tone, bold
+	Text       Typography.Body
+	Gap        Spacing.XS between items, Spacing.SM after the marker
+
+<small>[comps/bullet_list.go:54](https://github.com/rohanthewiz/grmob/blob/master/comps/bullet_list.go#L54)</small>
+
+#### func (BulletList) Render
+
+```go
+func (b BulletList) Render(ctx *core.Context) *core.Node
+```
+
+Render builds Column(role=list, Row(listitem, marker, text)…). It takes no hook slot.
+
+<small>[comps/bullet_list.go:77](https://github.com/rohanthewiz/grmob/blob/master/comps/bullet_list.go#L77)</small>
 
 ### type CheckboxRow
 

@@ -251,9 +251,9 @@ var Packages = []Pkg{
 		}, {
 			Slug:  "lists",
 			Title: "Lists & tables",
-			Blurb: "List rows, the settings-row family (switch, checkbox, select and slider), input rows, key-value lists, grouped and paged lists, data tables and timelines.",
+			Blurb: "List rows, the settings-row family (switch, checkbox, select and slider), input rows, key-value lists, bullet lists, grouped and paged lists, data tables and timelines.",
 			Files: []string{"list_row.go", "settings_row.go", "select_row.go", "slider_row.go", "input_row.go",
-				"key_value_list.go", "grouped_list.go", "grouping.go", "paging.go", "data_table.go", "timeline.go"},
+				"key_value_list.go", "bullet_list.go", "grouped_list.go", "grouping.go", "paging.go", "data_table.go", "timeline.go"},
 		}, {
 			Slug:  "inputs",
 			Title: "Inputs & pickers",
@@ -263,8 +263,8 @@ var Packages = []Pkg{
 		}, {
 			Slug:  "actions",
 			Title: "Buttons & choices",
-			Blurb: "Buttons and their variants, chips, segmented controls, steppers, ratings and badges.",
-			Files: []string{"button.go", "variant.go", "chip.go", "chip_strip.go", "segmented_control.go",
+			Blurb: "Buttons and their variants, copy buttons, links, chips, segmented controls, steppers, ratings and badges.",
+			Files: []string{"button.go", "variant.go", "copy_button.go", "link.go", "chip.go", "chip_strip.go", "segmented_control.go",
 				"stepper.go", "rating.go", "badge.go"},
 		}, {
 			Slug:  "overlays",

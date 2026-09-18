@@ -16,6 +16,7 @@ One of 7 topic pages of [package comps](comps.md), which has the package overvie
     - [`func (BarChart) Render`](#func-barchart-render)
 - [`type CalendarHeatmap`](#type-calendarheatmap)
     - [`func (CalendarHeatmap) Render`](#func-calendarheatmap-render)
+    - [`func (CalendarHeatmap) WeeksFor`](#func-calendarheatmap-weeksfor)
 - [`type ChartPoint`](#type-chartpoint)
 - [`type ChartSeries`](#type-chartseries)
 - [`type ChartSlice`](#type-chartslice)
@@ -248,7 +249,25 @@ The summary is the calendar's own: "Workouts: 42 over 17 weeks, on 23 days; most
 func (c CalendarHeatmap) Render(ctx *core.Context) *core.Node
 ```
 
-<small>[comps/heatmap.go:509](https://github.com/rohanthewiz/grmob/blob/master/comps/heatmap.go#L509)</small>
+<small>[comps/heatmap.go:540](https://github.com/rohanthewiz/grmob/blob/master/comps/heatmap.go#L540)</small>
+
+#### func (CalendarHeatmap) WeeksFor
+
+```go
+func (c CalendarHeatmap) WeeksFor(width float64) int
+```
+
+WeeksFor is how many week columns fit width px with square cells — each column as wide as a row is tall (CellHeight, 14 by default) — clamped to between 1 and 53, a year.
+
+	win := hooks.UseWindow(ctx)
+	weeks := comps.CalendarHeatmap{}.WeeksFor(win.Width - 2*16) // less the screen's padding
+	comps.CalendarHeatmap{Days: days, Weeks: weeks}
+
+The grid stretches its columns to whatever width it is given, so Weeks is not what makes it fit — it always fits. What Weeks decides is the cell's shape: 53 weeks across a 360px phone is a column under six pixels wide under a row fourteen tall, a grid of slivers. This returns the count at which the cells come out square.
+
+It is arithmetic on a width the caller supplies, not a measurement: no host reports a rendered width, and the caller knows its own padding where this widget does not. It reads no hook, so CalendarHeatmap stays safe to render conditionally; the caller's hooks.UseWindow is what makes a rotation or a fold re-render with a new count.
+
+<small>[comps/heatmap.go:522](https://github.com/rohanthewiz/grmob/blob/master/comps/heatmap.go#L522)</small>
 
 ### type ChartPoint
 

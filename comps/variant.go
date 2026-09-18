@@ -9,8 +9,10 @@ import (
 
 // Variant selects a widget's semantic color role — what a piece of UI *means*
 // rather than what it looks like. It is shared across the package rather than
-// owned by Badge so a future Alert, Banner or status Chip resolves the same
-// four roles the same way, and so a caller can pass one value around.
+// owned by Badge so Badge, Button, Banner and any later status surface
+// resolve the same four roles the same way, and so a caller can pass one
+// value around. (This once said "a future Alert, Banner": Banner is that
+// Alert — the inline status strip — so no separate Alert is planned.)
 //
 // It is a string enum with an empty zero value, matching core's Alignment and
 // DisplayMode. That is load-bearing here: the zero value must be the existing

@@ -169,3 +169,22 @@ func TestCalendarHeatmapLaysDaysIntoWeeks(t *testing.T) {
 		t.Error("the first column (from 16 Nov) should not be named when December starts two columns later")
 	}
 }
+
+// WeeksFor makes square cells: a 360px phone less 32px of screen padding at
+// the 14px default is (328−30)/14 → 21 weeks; a wide window caps at a year and
+// a tiny one floors at one week. A taller cell fits fewer.
+func TestCalendarHeatmapWeeksForSquaresTheCells(t *testing.T) {
+	for _, tc := range []struct {
+		cell, width float64
+		want        int
+	}{
+		{0, 328, 21},
+		{0, 2000, 53},
+		{0, 10, 1},
+		{20, 328, 14},
+	} {
+		if got := (CalendarHeatmap{CellHeight: tc.cell}).WeeksFor(tc.width); got != tc.want {
+			t.Errorf("CellHeight %v, width %v: WeeksFor = %d, want %d", tc.cell, tc.width, got, tc.want)
+		}
+	}
+}

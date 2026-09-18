@@ -4,13 +4,13 @@
 import "github.com/rohanthewiz/grmob/comps"
 ```
 
-Buttons and their variants, chips, segmented controls, steppers, ratings and badges.
+Buttons and their variants, copy buttons, links, chips, segmented controls, steppers, ratings and badges.
 
-One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/button.go`, `comps/variant.go`, `comps/chip.go`, `comps/chip_strip.go`, `comps/segmented_control.go`, `comps/stepper.go`, `comps/rating.go`, `comps/badge.go`.
+One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/button.go`, `comps/variant.go`, `comps/copy_button.go`, `comps/link.go`, `comps/chip.go`, `comps/chip_strip.go`, `comps/segmented_control.go`, `comps/stepper.go`, `comps/rating.go`, `comps/badge.go`.
 
 ## Index
 
-- [Constants](#constants) — `ColorTransparent`
+- [Constants](#constants) — `ColorTransparent`, `ConcernLinkInert`
 - [`type Badge`](#type-badge)
     - [`func (Badge) Render`](#func-badge-render)
 - [`type Button`](#type-button)
@@ -19,7 +19,11 @@ One of 7 topic pages of [package comps](comps.md), which has the package overvie
     - [`func (Chip) Render`](#func-chip-render)
 - [`type ChipStrip`](#type-chipstrip)
     - [`func (ChipStrip) Render`](#func-chipstrip-render)
+- [`type CopyButton`](#type-copybutton)
+    - [`func (CopyButton) Render`](#func-copybutton-render)
 - [`type Emphasis`](#type-emphasis)
+- [`type Link`](#type-link)
+    - [`func (Link) Render`](#func-link-render)
 - [`type Prominence`](#type-prominence)
 - [`type Rating`](#type-rating)
     - [`func (Rating) Render`](#func-rating-render)
@@ -43,6 +47,14 @@ const ColorTransparent = "#00000000"
 ```
 
 <small>[comps/button.go:14](https://github.com/rohanthewiz/grmob/blob/master/comps/button.go#L14)</small>
+
+ConcernLinkInert is raised, in debug builds only, when a Link has neither a URL nor an OnTap. It is drawn in the link colour and announced as a link, and a tap does nothing — a promise the screen makes and does not keep, which on screen looks exactly like a working link.
+
+```go
+const ConcernLinkInert = "link-inert"
+```
+
+<small>[comps/link.go:9](https://github.com/rohanthewiz/grmob/blob/master/comps/link.go#L9)</small>
 
 ## Types
 
@@ -380,6 +392,81 @@ func (c ChipStrip) Render(ctx *core.Context) *core.Node
 
 <small>[comps/chip_strip.go:86](https://github.com/rohanthewiz/grmob/blob/master/comps/chip_strip.go#L86)</small>
 
+### type CopyButton
+
+```go
+type CopyButton struct {
+	// Text is what lands on the clipboard. Empty disables the button; see
+	// "Nothing to copy means inert".
+	Text string
+
+	// Label is the visible caption; empty gives "Copy".
+	Label string
+
+	// CopiedMessage is the toast shown after a copy; empty gives "Copied".
+	CopiedMessage string
+
+	// Variant and Emphasis are passed to the Button unchanged. The zero value
+	// is a filled Primary button; a copy action sitting beside the thing it
+	// copies usually wants EmphasisOutlined or EmphasisGhost.
+	Variant  Variant
+	Emphasis Emphasis
+
+	// Disabled makes the button inert even with Text set.
+	Disabled bool
+
+	// AccessibilityLabel names the button for screen readers; empty uses the
+	// visible Label. AccessibilityHint describes the effect; empty gives
+	// "Copies to the clipboard".
+	AccessibilityLabel string
+	AccessibilityHint  string
+
+	// Style is applied to the Button after its variant treatment.
+	Style []core.StyleProp
+
+	// FocusRef names the button for core.Focus.
+	FocusRef *core.FocusRef
+}
+```
+
+CopyButton is a button that puts a fixed string on the system clipboard and confirms it: a code snippet, an invite link, a QR code's payload, an order number.
+
+	comps.CopyButton{Text: inviteURL, Label: "Copy link"}
+
+	tap ──► core.WriteClipboard(Text)
+	    ──► core.Haptic(HapticLight)
+	    ──► core.ShowToast(CopiedMessage)          "Copied"
+
+#### The toast confirms, not the caption
+
+The familiar web idiom flips the button's own caption to "Copied ✓" for a second or two. That needs a timer to flip it back, and a timer here is a hook (hooks.UseTimeoutWhile), which would make CopyButton unsafe to render inside a conditional or a loop. Its first consumer is the tutorial's codeBlock, which is built in exactly those places and says in its own doc that a widget with hook obligations could not be. Banner's doc had already assigned the job: "Use the toast for 'Copied'". So the platform's transient overlay confirms, and the widget stays stateless, like Stepper and TimePicker.
+
+The haptic is the light tick, the one a successful small action gets; a device without a motor, and every web target, ignores it.
+
+#### Nothing to copy means inert
+
+An empty Text disables the button rather than reporting a concern. It is a legitimate state — an invite link still being fetched, an order number not yet assigned — and a disabled Copy says truthfully that there is nothing to copy yet. The one thing an enabled Copy must not do with an empty string is write it: core.WriteClipboard("") clears the clipboard, which is a real request when made on purpose and never what a button labelled "Copy" means.
+
+#### Accessibility
+
+Several copy buttons on one screen — one per code block — would all be announced "Copy", so AccessibilityLabel is where a caller says what is copied ("Copy code", "Copy invite link"). The copied text itself is not read out: it is usually on screen beside the button, and a URL or a snippet spoken in full is noise. The toast is announced by each platform's own toast machinery.
+
+#### Theme roles read
+
+None of its own: the button is a comps.Button, and reads what Button reads for the Variant and Emphasis given.
+
+<small>[comps/copy_button.go:53](https://github.com/rohanthewiz/grmob/blob/master/comps/copy_button.go#L53)</small>
+
+#### func (CopyButton) Render
+
+```go
+func (c CopyButton) Render(ctx *core.Context) *core.Node
+```
+
+Render draws the button. It takes no hook slot, so it may be rendered conditionally.
+
+<small>[comps/copy_button.go:88](https://github.com/rohanthewiz/grmob/blob/master/comps/copy_button.go#L88)</small>
+
 ### type Emphasis
 
 ```go
@@ -413,6 +500,67 @@ const (
 	EmphasisGhost Emphasis = "ghost"
 )
 ```
+
+### type Link
+
+```go
+type Link struct {
+	// Text is the visible link text and its accessible name.
+	Text string
+
+	// URL is opened with core.OpenURL when OnTap is nil.
+	URL string
+
+	// OnTap handles the tap instead of opening URL.
+	OnTap func()
+
+	// AccessibilityHint describes where the link goes when Text alone does not
+	// ("Opens in your browser").
+	AccessibilityHint string
+
+	// Style is applied to the link text after its defaults.
+	Style []core.StyleProp
+}
+```
+
+Link is a line of text that goes somewhere: a terms page, a help article, a "Forgot password?" under a sign-in form.
+
+	comps.Link{Text: "Privacy policy", URL: "https://example.com/privacy"}
+	comps.Link{Text: "Forgot password?", OnTap: showReset}
+
+	┌ Box  role=link  name=Text  onClick ┐
+	│  Text  (Primary's on-light tone)   │
+	└────────────────────────────────────┘
+
+#### A link and not a ghost Button
+
+The two look alike and the difference is the one core.RoleLink's doc draws: a button does something here, a link goes somewhere else. A reader deciding whether to follow a control needs to know which, so the node carries RoleLink, which the web maps to role="link" and both natives to their link trait. StaticMap's tappable form made the same call.
+
+#### OnTap or URL
+
+OnTap wins when it is set: an in-app destination (a Navigator push, a sheet) is a link too, and the caller knows how to get there. Otherwise a tap calls core.OpenURL(URL), which hands the address to the platform — the browser, or the app registered for the scheme (mailto:, tel:).
+
+#### What it cannot do
+
+  - \*\*It is not underlined.\*\* core.Style has no text decoration, so the link colour and the role carry the whole distinction. That is enough for a link on a line of its own, which is the only kind this can be.
+  - \*\*It cannot sit inside a sentence.\*\* A link in running text is an inline span, and core has no inline span node (see the RichTextView entry on the round-two plan's blocked list). Put the link on its own line, or after the sentence.
+
+#### Theme roles read
+
+	Ink          Colors.Primary's on-light tone (Variant.OnLight)
+	Type         Typography.Body
+
+<small>[comps/link.go:50](https://github.com/rohanthewiz/grmob/blob/master/comps/link.go#L50)</small>
+
+#### func (Link) Render
+
+```go
+func (l Link) Render(ctx *core.Context) *core.Node
+```
+
+Render draws the link. It takes no hook slot.
+
+<small>[comps/link.go:69](https://github.com/rohanthewiz/grmob/blob/master/comps/link.go#L69)</small>
 
 ### type Prominence
 
@@ -741,11 +889,11 @@ Render builds the group row described in the type doc.
 type Variant string
 ```
 
-Variant selects a widget's semantic color role — what a piece of UI \*means\* rather than what it looks like. It is shared across the package rather than owned by Badge so a future Alert, Banner or status Chip resolves the same four roles the same way, and so a caller can pass one value around.
+Variant selects a widget's semantic color role — what a piece of UI \*means\* rather than what it looks like. It is shared across the package rather than owned by Badge so Badge, Button, Banner and any later status surface resolve the same four roles the same way, and so a caller can pass one value around. (This once said "a future Alert, Banner": Banner is that Alert — the inline status strip — so no separate Alert is planned.)
 
 It is a string enum with an empty zero value, matching core's Alignment and DisplayMode. That is load-bearing here: the zero value must be the existing look, or adding the field would restyle every Badge already in a tree.
 
-<small>[comps/variant.go:18](https://github.com/rohanthewiz/grmob/blob/master/comps/variant.go#L18)</small>
+<small>[comps/variant.go:20](https://github.com/rohanthewiz/grmob/blob/master/comps/variant.go#L20)</small>
 
 ```go
 const (
@@ -768,7 +916,7 @@ Color resolves the variant to a background from the theme's palette.
 
 Success and Warning go through their resolver methods so a theme predating those roles falls back to a visible default rather than to no color; Error is one of the palette's original seven and is read directly, since no theme can be missing it.
 
-<small>[comps/variant.go:35](https://github.com/rohanthewiz/grmob/blob/master/comps/variant.go#L35)</small>
+<small>[comps/variant.go:37](https://github.com/rohanthewiz/grmob/blob/master/comps/variant.go#L37)</small>
 
 #### func (Variant) Ink
 
@@ -791,7 +939,7 @@ VariantDefault had an arm of its own here that returned the theme's Background w
   - Badge{Color: "#FFF9C4"} with no variant used to get white ink on pale yellow, because the exemption ignored bg entirely. Badge's own doc already promised the opposite ("resolved against bg, so an explicit Color still gets a legible ink picked for it"); it is true now.
   - A theme that states no Components.Button base at all — examples exist, see the Components note in examples/fintechapp — has declared no pairing, so its default variant is measured like any other. That is the one case whose pixels move, and towards the more legible ink.
 
-<small>[comps/variant.go:115](https://github.com/rohanthewiz/grmob/blob/master/comps/variant.go#L115)</small>
+<small>[comps/variant.go:117](https://github.com/rohanthewiz/grmob/blob/master/comps/variant.go#L117)</small>
 
 #### func (Variant) OnLight
 
@@ -812,5 +960,5 @@ Color and this are the two halves of one role, and which one a widget wants is d
 
 VariantDefault resolves through the palette's Primary tone here, with no special arm, and the reason is that there is nothing for one to preserve. Ink's answer for the default is a \*pairing\* the theme itself declares (Background over Primary, which is what Button already paints, and which Ink now reads back rather than assuming); no theme declares anything about a role spent as ink on an unknown backdrop, because before these tones existed every caller spent the role colour raw — which is exactly what the unset fallback still returns.
 
-<small>[comps/variant.go:70](https://github.com/rohanthewiz/grmob/blob/master/comps/variant.go#L70)</small>
+<small>[comps/variant.go:72](https://github.com/rohanthewiz/grmob/blob/master/comps/variant.go#L72)</small>
 

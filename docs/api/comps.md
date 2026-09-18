@@ -35,12 +35,12 @@ Package comps's reference is split into 7 topic pages by source file. The index 
 | Topic | What it covers | Declares |
 | --- | --- | --- |
 | [Screens & structure](comps-structure.md) | Screen, app and bottom bars, the FAB, tabs, drawers, step indicators, two-pane and foldable layouts, cards, accordions, headings, breadcrumbs and separators, labelled or not. | 17 types, 13 functions and methods |
-| [Lists & tables](comps-lists.md) | List rows, the settings-row family (switch, checkbox, select and slider), input rows, key-value lists, grouped and paged lists, data tables and timelines. | 20 types, 15 functions and methods |
+| [Lists & tables](comps-lists.md) | List rows, the settings-row family (switch, checkbox, select and slider), input rows, key-value lists, bullet lists, grouped and paged lists, data tables and timelines. | 21 types, 16 functions and methods |
 | [Inputs & pickers](comps-inputs.md) | Form fields, password fields, one-time code fields, search, searchable selects, radio groups, dates, date ranges, times and calendars, and the two editors. | 15 types, 14 functions and methods |
-| [Buttons & choices](comps-actions.md) | Buttons and their variants, chips, segmented controls, steppers, ratings and badges. | 10 types, 10 functions and methods |
+| [Buttons & choices](comps-actions.md) | Buttons and their variants, copy buttons, links, chips, segmented controls, steppers, ratings and badges. | 12 types, 12 functions and methods |
 | [Overlays & feedback](comps-overlays.md) | Dialogs, lightboxes, action sheets, menus, snackbars, banners, progress, spinners, skeletons and empty states. | 13 types, 10 functions and methods |
 | [Data display & maps](comps-display.md) | Avatars and avatar stacks, stat tiles, the compass, clocks, countdowns and alarms, QR codes, map panels and static maps. | 18 types, 20 functions and methods |
-| [Charts](comps-charts.md) | Sparklines, line, area, bar and scatter charts, histograms, heatmaps and calendar heatmaps, donuts and pies, and gauges, drawn on core.Canvas. | 16 types, 11 functions and methods |
+| [Charts](comps-charts.md) | Sparklines, line, area, bar and scatter charts, histograms, heatmaps and calendar heatmaps, donuts and pies, and gauges, drawn on core.Canvas. | 16 types, 12 functions and methods |
 
 ## Index
 
@@ -64,6 +64,7 @@ Package comps's reference is split into 7 topic pages by source file. The index 
     - [`type TwoPaneCompact`](comps-structure.md#type-twopanecompact)
 - [Lists & tables](comps-lists.md)
     - [Constants](comps-lists.md#constants) — `ConcernPartialSort`, `ConcernSelectRowValueNotAnOption`
+    - [`type BulletList`](comps-lists.md#type-bulletlist)
     - [`type CheckboxRow`](comps-lists.md#type-checkboxrow)
     - [`type Collapse`](comps-lists.md#type-collapse)
     - [`type CollapseBand`](comps-lists.md#type-collapseband)
@@ -104,12 +105,14 @@ Package comps's reference is split into 7 topic pages by source file. The index 
     - [`type SearchableSelect`](comps-inputs.md#type-searchableselect)
     - [`type TimePicker`](comps-inputs.md#type-timepicker)
 - [Buttons & choices](comps-actions.md)
-    - [Constants](comps-actions.md#constants) — `ColorTransparent`
+    - [Constants](comps-actions.md#constants) — `ColorTransparent`, `ConcernLinkInert`
     - [`type Badge`](comps-actions.md#type-badge)
     - [`type Button`](comps-actions.md#type-button)
     - [`type Chip`](comps-actions.md#type-chip)
     - [`type ChipStrip`](comps-actions.md#type-chipstrip)
+    - [`type CopyButton`](comps-actions.md#type-copybutton)
     - [`type Emphasis`](comps-actions.md#type-emphasis)
+    - [`type Link`](comps-actions.md#type-link)
     - [`type Prominence`](comps-actions.md#type-prominence)
     - [`type Rating`](comps-actions.md#type-rating)
     - [`type SegmentedControl`](comps-actions.md#type-segmentedcontrol)

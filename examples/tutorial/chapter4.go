@@ -60,6 +60,7 @@ func chapter4() Chapter {
 			lessonTimePicker(),
 			lessonSmallPieces(),
 			lessonHeatAndSpread(),
+			lessonCopyLinkAndList(),
 		},
 	}
 }
@@ -5053,6 +5054,117 @@ func lessonHeatAndSpread() Lesson {
 					"CalendarHeatmap: a Heatmap of weeks × weekdays; zero is empty, the future is not drawn.",
 					"Histogram: nice bin edges, drawn on LineChart's point axis; the bars touch.",
 					"Every one is a single image with one spoken sentence, like every chart here.",
+				),
+			)
+		},
+	}
+}
+
+// 4.29 — the first batch of the third low-hanging-fruit round: CopyButton
+// (G1) and Tier H's three small pieces. The lesson is organised around what
+// each piece hands to the platform or refuses to measure, because that is
+// the part a reader building their own would get wrong: the copy goes to the
+// clipboard and the confirmation to the toast, the link to OpenURL, and the
+// calendar's width is the caller's number, not a measurement.
+//
+// Appended at the end of the chapter for the reason 4.25 was.
+func lessonCopyLinkAndList() Lesson {
+	return Lesson{
+		Title:   "Copy, link and list",
+		Summary: "comps.CopyButton, Link and BulletList, and sizing a CalendarHeatmap to the window with WeeksFor.",
+		Body: func(ctx *core.Context) core.View {
+			followed := core.NewState(ctx, 0)
+			win := hooks.UseWindow(ctx)
+
+			// The lesson column's own inset: the screen's padding and the
+			// demo panel's, both sides. Only an estimate is needed — WeeksFor
+			// rounds down, so a few px either way moves at most one week.
+			// Zero before the host has reported a window (a headless test,
+			// the static export) leaves the widget's own default of 17.
+			weeks, shown := 0, 17
+			if win.Width > 0 {
+				weeks = comps.CalendarHeatmap{}.WeeksFor(win.Width - 64)
+				shown = weeks
+			}
+
+			return core.Column(
+				core.Gap(14),
+				prose("CopyButton puts a fixed string on the clipboard, ticks the haptic motor and "+
+					"shows the platform's toast. It holds no state: the confirmation is the toast and "+
+					"not a caption that flips back after a second, because flipping back needs a timer, "+
+					"a timer is a hook, and a hook would forbid rendering the button inside an if. "+
+					"Every code block in this tutorial now carries one, which is only possible because it is stateless."),
+				codeBlock(`comps.CopyButton{
+    Text:               inviteCode,
+    Label:              "Copy code",
+    AccessibilityLabel: "Copy invite code",
+}`),
+				demoPanel("An invite code with its copy button.",
+					core.Row(
+						core.Gap(12),
+						core.AlignItemsProp(core.AlignItemsCenter),
+						core.Text("CATS-4721-QX", core.FontSize(20), core.FontWeight(core.Bold), core.FlexGrow(1)),
+						comps.CopyButton{
+							Text:               "CATS-4721-QX",
+							Label:              "Copy code",
+							AccessibilityLabel: "Copy invite code",
+							CopiedMessage:      "Invite code copied",
+							Emphasis:           comps.EmphasisOutlined,
+						},
+					),
+					comps.CopyButton{Label: "Copy link", Emphasis: comps.EmphasisOutlined},
+					caption("The second button has no Text yet — a link still loading — so it is disabled rather than able to clear the clipboard."),
+				),
+				prose("Link is a line of text that goes somewhere. It is announced as a link, not a "+
+					"button, because a reader deciding whether to follow a control needs to know it "+
+					"leaves the screen. With a URL it calls core.OpenURL; with OnTap it goes wherever "+
+					"the handler takes it. It is not underlined — core's Style has no text decoration — "+
+					"and it cannot sit inside a sentence, because core has no inline span."),
+				demoPanel("One link out of the app, one within it.",
+					comps.Link{Text: "GrMob on GitHub", URL: "https://github.com/rohanthewiz/grmob",
+						AccessibilityHint: "Opens in your browser"},
+					comps.Link{Text: "Follow an in-app link", OnTap: func() { followed.Set(followed.Get() + 1) }},
+					caption(fmt.Sprintf("In-app link followed %d times.", followed.Get())),
+				),
+				prose("BulletList is the list every lesson's key points already were, as a widget: a "+
+					"list of listitems, the marker hidden and pinned so a long item wraps under its "+
+					"own first word. Ordered numbers share one right-aligned column."),
+				demoPanel("Ordered, from 9, so the column has to fit \"10.\".",
+					comps.BulletList{
+						Ordered: true,
+						Start:   9,
+						Label:   "Release steps",
+						Items: []string{
+							"Tag the release.",
+							"Build the four targets, and run each one's verify suite before uploading anything.",
+							"Publish the notes.",
+						},
+					},
+				),
+				prose("A CalendarHeatmap always fits its width — its columns stretch — so the question "+
+					"is the cells' shape: a year across a phone is a grid of slivers. WeeksFor turns a "+
+					"width into the number of weeks at which the cells come out square. The width is "+
+					"yours, from hooks.UseWindow less your padding; nothing measures it."),
+				codeBlock(`win := hooks.UseWindow(ctx)
+comps.CalendarHeatmap{
+    Days:  workouts,
+    Weeks: comps.CalendarHeatmap{}.WeeksFor(win.Width - 64),
+}`),
+				demoPanel("Rotate the device or resize the window: the weeks follow.",
+					comps.CalendarHeatmap{
+						Subject: "Workouts",
+						Days:    tutorialWorkouts(),
+						End:     tutorialToday,
+						Weeks:   weeks,
+					},
+					caption(fmt.Sprintf("Window %.0fpx wide: %d weeks.", win.Width, shown)),
+				),
+				keyPoints(
+					"CopyButton: WriteClipboard, a light haptic and a toast; stateless, so safe in an if.",
+					"CopyButton with no Text is disabled: an empty write would clear the clipboard.",
+					"Link: RoleLink, OnTap or OpenURL(URL); a line of its own, not underlined.",
+					"BulletList: a list of listitems, hidden pinned markers, ordered numbers in one column.",
+					"CalendarHeatmap.WeeksFor: square cells for a width you supply; no measurement, no hook.",
 				),
 			)
 		},
