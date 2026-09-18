@@ -2655,6 +2655,110 @@ the rose is "N W E S" whatever the bearing — so the whole widget speaks
 all derive from it. Letters are an eighth of the diameter with a 10px floor,
 so a deliberately small compass stays readable.
 
+## Countdown & Stopwatch
+
+The two widgets that watch a duration: one counting toward a deadline, one
+counting away from a start.
+
+```go
+comps.Countdown{Until: expiresAt, OnDone: func() { code.Set("") }}
+comps.Stopwatch{Since: startedAt.Get(), Elapsed: banked.Get(), Running: running.Get()}
+```
+
+**They own a tick, so they are not conditional-safe.** `DigitalClock` takes a
+`time.Time` and holds nothing, which is what lets it be rendered
+conditionally and tested at a fixed instant. A countdown has to know what
+"now" is, so it holds a hook — and with it the rule
+[`Accordion`](#accordion) states: render it in a stable position on every
+pass and drive `Hidden`, rather than wrapping it in a `core.If`. A hidden
+timer is `Display none` and costs no pixels.
+
+**The tick is `hooks.UseIntervalWhile` with an empty callback.** Both widgets
+read the clock in their own `Render`, so all a tick has to do is bring the
+render back. It runs only while there is a reason for it:
+
+| state | ticking |
+| --- | --- |
+| counting, visible | yes |
+| counting, `Hidden` | only if `OnDone` is set |
+| finished | no |
+| `Hidden` with no `OnDone` | no |
+
+The second row is the one worth stating. Hiding a countdown removes the
+reason to draw but not the reason to count — somebody is still waiting to be
+told it ran out — so a hidden countdown that owes an `OnDone` keeps ticking,
+and one that owes nothing stops dead. A `Stopwatch` has no such exception,
+because it owes nobody a callback.
+
+**Not `hooks.UseNow`.** That hook aligns its ticks to the wall clock, so a
+`DigitalClock` changes its seconds digit when the phone's status bar does. A
+countdown has no such phase to share: its own boundaries fall at `Until` minus
+a whole number of seconds, which nothing else on the screen is on. There being
+nothing to align to, the cheaper hook wins — and `UseNow` cannot be paused,
+which the table above needs.
+
+**`OnDone` comes from an effect, not from the render pass.** A render may run
+more than once for one state and runs while the tree is being built, so a
+handler called from inside it would fire twice or re-enter the renderer.
+`OnDone` is a `hooks.UseEffect` keyed on whether the deadline has passed, so
+it fires once per *crossing*:
+
+```
+remaining  5s ──── 4s ──── … ──── 1s ──── 0 ──── 0 ──── 0
+deps       false   false         false   true   true   true
+OnDone      ·       ·             ·      fire    ·      ·
+```
+
+Two things follow from "per crossing" rather than "per widget". A `Countdown`
+whose `Until` is already past on its first pass fires immediately — the right
+reading of a deadline restored from disk while the app was closed, and why a
+zero `Until` raises `comps.ConcernCountdownUntilUnset` rather than passing
+quietly. And moving `Until` forward re-arms it, so a restart is
+`Until: time.Now().Add(d)` and nothing else.
+
+`OnDone` is a display-grade signal, not a scheduler: it only fires while the
+widget is rendered and the app is running, and it is late by up to one tick.
+Something that must happen whether or not anyone is looking belongs in the
+[`alarm`](api/alarm.md) package and `hooks.UseAlarms`.
+
+**The stopwatch's two numbers belong to the caller.** A stopwatch that knew
+only when it started could not be paused — the instant the finger lifts is
+recorded nowhere. So the state is the pair every stopwatch keeps, and the
+reading is their sum, `Elapsed + (Running ? now − Since : 0)`, which makes the
+four moves plain assignments:
+
+```go
+start   since.Set(time.Now());                    running.Set(true)
+pause   banked.Set(banked.Get() + time.Since(since.Get())); running.Set(false)
+resume  since.Set(time.Now());                    running.Set(true)
+reset   banked.Set(0);                            running.Set(false)
+```
+
+Held here instead, it would be state the app cannot save, restore or show
+elsewhere — and a running stopwatch is exactly what an app wants to keep
+across a screen change. The same reasoning keeps [`SliderRow`](#sliderrow)'s
+drag draft with its caller.
+
+**The two roundings go opposite ways, and both are conservative.** The
+countdown rounds *up*, so it never says you have less time left than you do;
+the stopwatch *truncates*, so it never claims more elapsed time than has
+passed and its first second reads `0:00`. Neither shows hundredths: a
+`core.State` change requests a render of the whole tree, and two animated
+digits are not worth a hundred passes a second.
+
+**The reading is the phone timer's format** — `M:SS` under an hour, `H:MM:SS`
+at or over one, with days folded into hours (`26:00:00`). `Format` overrides
+it and receives the duration already rounded the way the widget rounds it, so
+a custom format cannot disagree with the widget about which second is on
+screen.
+
+**They announce a sentence, not punctuation.** The digits are one element with
+`RoleImg` and a spoken label — "4 minutes 12 seconds remaining", "Time is
+up", "1 minute 15 seconds elapsed" — for `DigitalClock`'s reason: read as
+text, "4:12" is punctuation. The label is not a live region, so nothing is
+announced every second; a caller who wants that puts the timer beside its own
+`core.RoleStatus` text.
+
 ## QRCode
 
 A string drawn as a QR Code, encoded in Go.

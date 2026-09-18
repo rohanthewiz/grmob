@@ -55,6 +55,7 @@ func chapter4() Chapter {
 			lessonFoldables(),
 			lessonFAB(),
 			lessonQRCode(),
+			lessonTimers(),
 		},
 	}
 }
@@ -4308,4 +4309,145 @@ func qrLessonLevelCaptions() []string {
 		out[i] = l.caption
 	}
 	return out
+}
+
+// --- 4.24 ----------------------------------------------------------------
+
+// lessonTimers is the pair of widgets that own a tick — the only two in the
+// package that watch a duration rather than draw one they were handed.
+//
+// The demo runs both at once because the interesting thing is the difference:
+// the countdown holds a deadline and reports when it passes, the stopwatch
+// holds nothing and reports nothing. The "ran out N times" caption is what
+// makes OnDone's once-per-crossing visible without the reader having to take
+// it on trust.
+//
+// Appended at the end of the chapter for the reason 4.15, 4.22 and 4.23 were:
+// lesson numbers already in deep links do not move.
+func lessonTimers() Lesson {
+	return Lesson{
+		Title:   "Counting down, counting up",
+		Summary: "comps.Countdown and comps.Stopwatch: the two widgets that own a tick, and why OnDone comes from an effect.",
+		Body: func(ctx *core.Context) core.View {
+			// Hooks first and unconditionally, as in every lesson. The
+			// deadline's initial value is read on the mount pass only, so
+			// entering the lesson starts a fresh ten seconds.
+			deadline := core.NewState(ctx, time.Now().Add(10*time.Second))
+			ranOut := core.NewState(ctx, 0)
+
+			// The stopwatch's two numbers, held here because the widget holds
+			// neither: time banked from earlier runs, and the start of the
+			// current one.
+			banked := core.NewState(ctx, time.Duration(0))
+			since := core.NewState(ctx, time.Time{})
+			running := core.NewState(ctx, false)
+
+			// The four moves from the type doc, as the handlers the buttons
+			// get. Each one is an assignment or two and no arithmetic the
+			// widget could have done instead.
+			start := func() { since.Set(time.Now()); running.Set(true) }
+			pause := func() {
+				banked.Set(banked.Get() + time.Since(since.Get()))
+				running.Set(false)
+			}
+			reset := func() { banked.Set(0); running.Set(false) }
+
+			return core.Column(
+				core.Gap(14),
+				prose("Every widget so far has been handed what it draws. These two are not: "+
+					"a countdown has to know what time it is now, so it owns a tick. That makes "+
+					"both of them hook callers, with the rule 4.4 gave for Accordion — render "+
+					"them in a stable position on every pass and drive Hidden, rather than "+
+					"wrapping them in a core.If."),
+				codeBlock(`comps.Countdown{Until: expiresAt, OnDone: func() { code.Set("") }}
+comps.Stopwatch{Since: startedAt.Get(), Elapsed: banked.Get(), Running: running.Get()}`),
+				prose("The tick is hooks.UseIntervalWhile with an empty callback: the widget "+
+					"reads the clock in its own Render, so all a tick has to do is bring the "+
+					"render back. It runs only while there is a reason for it — a finished "+
+					"countdown stops, and a hidden one stops too unless it still owes an "+
+					"OnDone, because hiding it removes the reason to draw but not the reason "+
+					"to count."),
+				prose("OnDone comes from a hooks.UseEffect keyed on whether the deadline has "+
+					"passed, never from the render pass. A render may run more than once for "+
+					"one state and runs while the tree is being built, so a handler called "+
+					"from inside it would fire twice or re-enter the renderer. Keyed on the "+
+					"crossing rather than on the widget, it fires once each time the deadline "+
+					"goes by — which means moving Until forward is the whole of a restart."),
+				demoPanel("Restart the countdown and watch the caption. Then start, pause and resume the stopwatch.",
+					core.Row(
+						core.Gap(24),
+						core.Justify(core.JustifyCenter),
+						core.AlignItemsProp(core.AlignItemsCenter),
+						core.Column(
+							core.Gap(4),
+							core.AlignItemsProp(core.AlignItemsCenter),
+							comps.Countdown{
+								Until: deadline.Get(),
+								Size:  34,
+								// Set from the effect's goroutine, which is
+								// where every OnDone runs.
+								OnDone: func() { ranOut.Set(ranOut.Get() + 1) },
+							},
+							caption("Countdown"),
+						),
+						core.Column(
+							core.Gap(4),
+							core.AlignItemsProp(core.AlignItemsCenter),
+							comps.Stopwatch{
+								Since:   since.Get(),
+								Elapsed: banked.Get(),
+								Running: running.Get(),
+								Size:    34,
+							},
+							caption("Stopwatch"),
+						),
+					),
+					core.Row(
+						core.Gap(8),
+						core.Justify(core.JustifyCenter),
+						comps.Button{
+							Label:    "Restart 10s",
+							Emphasis: comps.EmphasisOutlined,
+							OnTap:    func() { deadline.Set(time.Now().Add(10 * time.Second)) },
+						},
+						comps.Button{
+							Label: map[bool]string{true: "Pause", false: "Start"}[running.Get()],
+							OnTap: func() {
+								if running.Get() {
+									pause()
+									return
+								}
+								start()
+							},
+						},
+						comps.Button{
+							Label:    "Reset",
+							Emphasis: comps.EmphasisGhost,
+							OnTap:    reset,
+						},
+					),
+					caption(fmt.Sprintf("Ran out %d times", ranOut.Get())),
+				),
+				prose("The two roundings go opposite ways, and both are conservative. The "+
+					"countdown rounds up, so it never says you have less time than you do; the "+
+					"stopwatch truncates, so it never claims more elapsed time than has "+
+					"passed and its first second reads 0:00. Neither shows hundredths: a "+
+					"core.State change requests a render of the whole tree, and two animated "+
+					"digits are not worth a hundred passes a second."),
+				prose("The stopwatch's two fields are the pair every stopwatch keeps, and they "+
+					"live with the caller for the reason SliderRow's draft does — state held "+
+					"inside the widget is state the app cannot save, restore, or show anywhere "+
+					"else, and a running stopwatch is exactly the thing an app wants to keep "+
+					"across a screen change."),
+				keyPoints(
+					"Both widgets own a tick, so both are hook callers: stable position, every pass, Hidden rather than core.If.",
+					"The tick is UseIntervalWhile with an empty callback — the widget reads the clock itself, so a tick only has to bring the render back.",
+					"A finished countdown stops ticking; a hidden one stops too, unless it still owes an OnDone.",
+					"OnDone is an effect keyed on the crossing, so it fires once per deadline and re-arms when Until moves forward.",
+					"Countdown rounds up and Stopwatch truncates: neither ever flatters the number it is reporting.",
+					"The stopwatch's banked time and start instant belong to the caller, which is what makes pause, resume and reset plain assignments.",
+				),
+			)
+		},
+	}
 }

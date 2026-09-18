@@ -274,8 +274,9 @@ var Packages = []Pkg{
 		}, {
 			Slug:  "display",
 			Title: "Data display & maps",
-			Blurb: "Avatars, stat tiles, the compass, clocks and alarms, QR codes, map panels and static maps.",
-			Files: []string{"avatar.go", "stat_tile.go", "compass.go", "clock.go", "alarm.go", "qr_code.go", "map_panel.go", "static_map.go"},
+			Blurb: "Avatars, stat tiles, the compass, clocks, countdowns and alarms, QR codes, map panels and static maps.",
+			Files: []string{"avatar.go", "stat_tile.go", "compass.go", "clock.go", "timers.go", "alarm.go", "qr_code.go",
+				"map_panel.go", "static_map.go"},
 		}, {
 			Slug:  "charts",
 			Title: "Charts",

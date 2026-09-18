@@ -1,8 +1,8 @@
 # Low-hanging fruit for `comps`, round two
 
-**Status:** drafted 2026-09-17. D1 `FAB` + `Screen.Floating`, D2 `QRCode` and
-D4 `SelectRow` + `SliderRow` all landed the same day. Everything else is
-unstarted.
+**Status:** drafted 2026-09-17. D1 `FAB` + `Screen.Floating`, D2 `QRCode`,
+D4 `SelectRow` + `SliderRow` and D3 `Countdown` + `Stopwatch` all landed the
+same day. Everything else is unstarted.
 
 The first round (`comps-low-hanging-fruit.md`) landed entire on 2026-09-12:
 Tiers A through C, fifteen widgets, one carousel left blocked on a scroll
@@ -108,19 +108,57 @@ handed over as a QR, and nothing in the module tree encodes one.
   at all four levels, for a 50-byte and a 313-byte payload — the second past
   both the 16-bit character-count field and the version-information block.
 
-### D3. `Countdown` and `Stopwatch`
+### D3. `Countdown` and `Stopwatch` — **landed 2026-09-17**
 
-`hooks.UseNow` at one tick a second while running, formatted the way
-`DigitalClock` formats, with `OnDone` for a countdown. Alarm rows and timers
-both want it.
+One tick a second while running, formatted the way a phone timer formats, with
+`OnDone` for a countdown. Alarm rows and timers both want it.
 
-- `Countdown{Until time.Time, OnDone func(), Format, Label, Style}`;
-  `Stopwatch{Since time.Time, Running bool, ...}`.
+- `Countdown{Until time.Time, OnDone func(), Format, Size, Color, Hidden,
+  AccessibilityLabel, Style}`; `Stopwatch{Since time.Time, Elapsed
+  time.Duration, Running bool, ...}`.
 - The widget holds a hook, so it is *not* conditional-safe; a `Hidden` field
   as `Spinner` has, and the tick pauses while hidden or done.
-- **Decision:** whether `OnDone` fires from the render pass (it must not — a
-  render is not the place to run a handler) or from the hook's effect. The
-  hook's effect, once, on the tick that crosses zero.
+- **Decision settled: the hook's effect**, keyed on whether the deadline has
+  passed, so `OnDone` fires once per *crossing* — which also makes moving
+  `Until` forward the whole of a restart, and makes an already-past `Until`
+  fire on the first pass.
+
+**What the sketch left for the build.** Four things.
+
+- **Not `hooks.UseNow`, and no `UseNowWhile` either.** `UseNow` aligns to the
+  wall clock so a `DigitalClock` changes its digit when the status bar does; a
+  countdown's own boundaries fall at `Until` minus a whole number of seconds,
+  which nothing else on the screen is on. There being nothing to align to, the
+  reason for the more expensive hook evaporates — and `UseNow` cannot be
+  paused, which "pauses while hidden or done" needs. The tick is therefore
+  `hooks.UseIntervalWhile` with an *empty* callback: both widgets read the
+  clock in their own `Render`, so a tick's whole job is to bring the render
+  back. Adding a pausable `UseNow` to `hooks` was considered and dropped for
+  the same reason.
+- **The clock is read before the hooks, not by them.** Whether to keep ticking
+  and whether the deadline has passed are both answers about the same instant,
+  and a hook cannot both report an instant and be told, in the same call, what
+  it means.
+- **"Pauses while hidden" needed one exception.** Hiding a countdown removes
+  the reason to draw but not the reason to count: somebody is still waiting to
+  be told it ran out. So a hidden countdown that owes an `OnDone` keeps
+  ticking and one that owes nothing stops dead — a four-row table in the type
+  doc, pinned by a table test over `ticking`. `Stopwatch` has no exception,
+  because it owes nobody a callback.
+- **`Stopwatch` needed a second field the sketch did not have.** `Since` alone
+  cannot be paused — the instant the finger lifts is recorded nowhere — so the
+  state is the pair every stopwatch keeps, `Elapsed` banked plus the current
+  run, and the four moves are assignments the caller writes inline. Held in
+  the widget it would be state the app cannot save or restore, which is
+  `SliderRow`'s argument again.
+
+Two roundings, both conservative and opposite: the countdown rounds *up* so it
+never says you have less time than you do, the stopwatch truncates so it never
+claims more elapsed time than has passed. Neither shows hundredths, for the
+render-per-tick reason. A zero `Until`, and a `Running` stopwatch with no
+`Since`, report `ConcernCountdownUntilUnset` and `ConcernStopwatchSinceUnset`
+in debug builds: both are permanently-wrong states that look on screen exactly
+like ordinary ones.
 
 ### D4. `SelectRow` and `SliderRow` — **landed 2026-09-17**
 
@@ -240,7 +278,7 @@ wheel (node type), a clipboard copy button (no clipboard bridge).
 | 1 | D1 `FAB` + `Screen.Floating` | StackAlign just made it possible; the most-asked-for Android shape |
 | 2 | D2 `QRCode` | the roadmap's pairing flow has nothing to show |
 | 3 | D4 `SelectRow`, `SliderRow` | completes a family, zero decisions |
-| 4 | D3 `Countdown` | alarms exist and cannot show time left |
+| 4 | D3 `Countdown`, `Stopwatch` | alarms exist and cannot show time left |
 | 5 | D5 `PINInput`, D6 `DateRangePicker`, D7 `TimePicker` | in any order |
 | 6 | Tier E as one bundle with one lesson | |
 | 7 | Tier F once its theme or core prerequisite lands | |

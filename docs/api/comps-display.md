@@ -4,13 +4,13 @@
 import "github.com/rohanthewiz/grmob/comps"
 ```
 
-Avatars, stat tiles, the compass, clocks and alarms, QR codes, map panels and static maps.
+Avatars, stat tiles, the compass, clocks, countdowns and alarms, QR codes, map panels and static maps.
 
-One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/avatar.go`, `comps/stat_tile.go`, `comps/compass.go`, `comps/clock.go`, `comps/alarm.go`, `comps/qr_code.go`, `comps/map_panel.go`, `comps/static_map.go`.
+One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/avatar.go`, `comps/stat_tile.go`, `comps/compass.go`, `comps/clock.go`, `comps/timers.go`, `comps/alarm.go`, `comps/qr_code.go`, `comps/map_panel.go`, `comps/static_map.go`.
 
 ## Index
 
-- [Constants](#constants) — `ConcernNoMapProvider`, `ConcernQRDataTooLong`, `DefaultMapHeight`, `DefaultMapPanelHeight`, `DefaultMapScale`, `DefaultMapWidth`, `DefaultMapZoom`, `FitPadding`, `MaxFitZoom`, `MaxGoogleMapScale`, `MaxMapDimension`, `MaxMapScale`, and 3 more
+- [Constants](#constants) — `ConcernCountdownUntilUnset`, `ConcernNoMapProvider`, `ConcernQRDataTooLong`, `ConcernStopwatchSinceUnset`, `DefaultMapHeight`, `DefaultMapPanelHeight`, `DefaultMapScale`, `DefaultMapWidth`, `DefaultMapZoom`, `FitPadding`, `MaxFitZoom`, `MaxGoogleMapScale`, and 5 more
 - [`func FitRegion`](#func-fitregion)
 - [`func GoogleMapsHandoff`](#func-googlemapshandoff)
 - [`func OSMStaticMap`](#func-osmstaticmap)
@@ -26,6 +26,8 @@ One of 7 topic pages of [package comps](comps.md), which has the package overvie
     - [`func (Avatar) Render`](#func-avatar-render)
 - [`type Compass`](#type-compass)
     - [`func (Compass) Render`](#func-compass-render)
+- [`type Countdown`](#type-countdown)
+    - [`func (Countdown) Render`](#func-countdown-render)
 - [`type DigitalClock`](#type-digitalclock)
     - [`func (DigitalClock) Render`](#func-digitalclock-render)
 - [`type ECLevel`](#type-eclevel)
@@ -43,6 +45,8 @@ One of 7 topic pages of [package comps](comps.md), which has the package overvie
 - [`type StaticMapArea`](#type-staticmaparea)
 - [`type StaticMapProvider`](#type-staticmapprovider)
     - [`func GoogleStaticMap`](#func-googlestaticmap)
+- [`type Stopwatch`](#type-stopwatch)
+    - [`func (Stopwatch) Render`](#func-stopwatch-render)
 
 ## Constants
 
@@ -140,6 +144,14 @@ const (
 
 <small>[comps/static_map.go:235](https://github.com/rohanthewiz/grmob/blob/master/comps/static_map.go#L235)</small>
 
+ConcernCountdownUntilUnset is raised, in debug builds only, when Until is the zero time.Time. The countdown is then permanently expired: it draws 0:00 and fires OnDone on its first pass, which on screen is exactly what a timer that has just finished looks like. So a Countdown rendered before its deadline was assigned — a struct built from a half-filled record, a field spelled differently in the caller — would otherwise announce itself as a completed timer and nobody would go looking.
+
+```go
+const ConcernCountdownUntilUnset = "countdown-until-unset"
+```
+
+<small>[comps/timers.go:20](https://github.com/rohanthewiz/grmob/blob/master/comps/timers.go#L20)</small>
+
 ConcernNoMapProvider: a StaticMap rendered with no Provider, which draws an empty frame. It is a development-time finding rather than a panic because the failure is survivable — a screen missing its map is still a screen — and because the fix is configuration, which is exactly the class of mistake that is invisible in a running app and obvious in a concern list.
 
 ```go
@@ -155,6 +167,14 @@ const ConcernQRDataTooLong = "qr-data-too-long"
 ```
 
 <small>[comps/qr_code.go:54](https://github.com/rohanthewiz/grmob/blob/master/comps/qr_code.go#L54)</small>
+
+ConcernStopwatchSinceUnset is raised, in debug builds only, when Running is true and Since is the zero time.Time. The elapsed time is then measured from year 1, which reads as a seventeen-million-hour stopwatch — visibly wrong, but only if somebody is looking at the digits rather than at a screenshot, and silently wrong in the accessible label.
+
+```go
+const ConcernStopwatchSinceUnset = "stopwatch-since-unset"
+```
+
+<small>[comps/timers.go:27](https://github.com/rohanthewiz/grmob/blob/master/comps/timers.go#L27)</small>
 
 ## Functions
 
@@ -580,6 +600,111 @@ func (c Compass) Render(ctx *core.Context) *core.Node
 ```
 
 <small>[comps/compass.go:121](https://github.com/rohanthewiz/grmob/blob/master/comps/compass.go#L121)</small>
+
+### type Countdown
+
+```go
+type Countdown struct {
+	// Until is the deadline. The widget draws the time from now to here,
+	// clamped at zero.
+	Until time.Time
+
+	// OnDone is called once when the deadline passes, from the hook's effect
+	// and so on its own goroutine. Nil is a display-only countdown, which
+	// also stops ticking the moment it is hidden.
+	OnDone func()
+
+	// Format writes the digits. It receives the remaining time already
+	// rounded up to a whole second — the same number the default writes — so
+	// a custom format cannot disagree with the widget about which second it
+	// is showing. Nil uses the phone-timer format: M:SS under an hour,
+	// H:MM:SS at or over one.
+	Format func(time.Duration) string
+
+	// Size is the digits' font size in px; 0 means 40, as in DigitalClock.
+	Size float64
+
+	// Color inks the digits; empty uses the theme's TextPrimary.
+	Color string
+
+	// Hidden removes the widget from display, which also stops its tick
+	// unless OnDone is still owed. Prefer it to leaving the widget out of the
+	// tree; see "It holds hooks".
+	Hidden bool
+
+	// AccessibilityLabel overrides the spoken remaining time.
+	AccessibilityLabel string
+
+	// Style is applied last, to the digits.
+	Style []core.StyleProp
+}
+```
+
+Countdown draws the time left until a deadline, one tick a second, and reports once when it runs out.
+
+	comps.Countdown{Until: expiresAt, OnDone: func() { code.Set("") }}
+
+	  2:59      the digits, in DigitalClock's face
+
+It is the half of the clock family that watches a \*duration\* rather than an instant: an alarm row that wants to say how long until it rings, a one-time-code field that wants to say how long the code is good for, a rest timer between sets. Stopwatch, below, is the same widget counting the other way.
+
+#### It holds hooks, so it is not conditional-safe
+
+Unlike DigitalClock — which takes a time.Time and holds nothing — a countdown has to know what "now" is, so it owns a tick. That makes it a hook caller, with the rule Accordion and Snackbar document: render it in a stable position on every pass and drive Hidden, rather than wrapping it in a core.If. A hidden countdown is Display none, so it costs no pixels.
+
+#### What the tick is, and what it is not
+
+The tick is hooks.UseIntervalWhile with an empty callback: the widget reads the clock itself in Render, so all a tick has to do is bring the render back. It runs only while there is a reason for it:
+
+	state                       ticking
+	────────────────────────    ───────
+	counting, visible           yes
+	counting, Hidden            only if OnDone is set
+	finished                    no
+	Hidden and no OnDone        no
+
+The middle row is the one worth stating. Hiding a countdown removes the first reason to tick (nothing to draw) but not the second (somebody is waiting to be told it ran out), so a hidden countdown that owes an OnDone keeps counting. A hidden one that owes nothing stops dead.
+
+#### Why not hooks.UseNow
+
+UseNow is the clock hook and aligns its ticks to the wall clock, so a DigitalClock changes its seconds digit when the phone's status bar does. A countdown has no such phase to share: its own boundaries fall at Until minus a whole number of seconds, which is a phase nothing else on the screen is on. There being nothing to align to, the cheaper hook wins — and UseNow cannot be paused, which the table above needs.
+
+The visible consequence is that the deadline is noticed on the first tick at or after it, so the digits reach 0:00 up to a second late. The reading is rounded \*up\* to compensate, which makes the lag conservative rather than arbitrary: a Countdown never tells you that you have less time left than you do.
+
+#### OnDone comes from the effect, not from the render
+
+A render pass is not a place to run a handler — it may run more than once for one state, it runs while the tree is being built, and a handler that set state from inside it would re-enter the renderer. So OnDone is a hooks.UseEffect keyed on whether the deadline has passed, which gives it exactly the semantics the name implies:
+
+	remaining  5s ──── 4s ──── … ──── 1s ──── 0 ──── 0 ──── 0
+	deps       false   false         false   true   true   true
+	OnDone      ·       ·             ·      fire    ·      ·
+
+Once per crossing, on the tick that crosses, off the render goroutine. Two consequences follow from "per crossing" rather than "per widget":
+
+  - A Countdown whose Until is already in the past when it first renders fires immediately. That is the correct reading of a deadline restored from disk while the app was closed, and it is why the zero Until is a concern rather than a quiet no-op.
+  - Moving Until forward re-arms it. A restart is Until: time.Now().Add(d) and nothing else; the widget needs no reset call.
+
+OnDone is a display-grade signal and not a scheduler. It only fires while the widget is rendered and the app is running, and it is late by up to one tick. Something that must happen at a time whether or not anyone is looking belongs in the alarm package and hooks.UseAlarms.
+
+#### Accessibility
+
+The digits are one element with RoleImg and a spoken label — "4 minutes 12 seconds remaining", "Time is up" — for the reason DigitalClock gives: read as text, "4:12" is punctuation, and RoleImg is what makes a label survive on the web. The label is not a live region, so a screen reader is not told the new number every second; a caller who wants the announcement puts the Countdown beside its own core.RoleStatus text.
+
+#### Theme roles read
+
+	Digits   Colors.TextPrimary, unless Color says otherwise
+
+<small>[comps/timers.go:122](https://github.com/rohanthewiz/grmob/blob/master/comps/timers.go#L122)</small>
+
+#### func (Countdown) Render
+
+```go
+func (c Countdown) Render(ctx *core.Context) *core.Node
+```
+
+Render reads the clock once, arms the tick and the effect, and draws the digits.
+
+<small>[comps/timers.go:159](https://github.com/rohanthewiz/grmob/blob/master/comps/timers.go#L159)</small>
 
 ### type DigitalClock
 
@@ -1186,4 +1311,87 @@ A constructor rather than a bare provider because the key is the caller's: it is
 An empty key yields a provider that returns "", which renders the widget as a box with no image in it rather than as a map of Google's "this request is not authorized" error tile. A misconfigured build should look unfinished, not broken.
 
 <small>[comps/static_map.go:380](https://github.com/rohanthewiz/grmob/blob/master/comps/static_map.go#L380)</small>
+
+### type Stopwatch
+
+```go
+type Stopwatch struct {
+	// Since is when the current run started. Read only while Running.
+	Since time.Time
+
+	// Elapsed is time banked from earlier runs, and the whole reading while
+	// paused. Zero for a stopwatch that has never been paused.
+	Elapsed time.Duration
+
+	// Running says whether the current run is counting.
+	Running bool
+
+	// Format writes the digits. It receives the elapsed time already
+	// truncated to a whole second. Nil uses the phone-timer format: M:SS
+	// under an hour, H:MM:SS at or over one.
+	Format func(time.Duration) string
+
+	// Size is the digits' font size in px; 0 means 40, as in DigitalClock.
+	Size float64
+
+	// Color inks the digits; empty uses the theme's TextPrimary.
+	Color string
+
+	// Hidden removes the widget from display and stops its tick.
+	Hidden bool
+
+	// AccessibilityLabel overrides the spoken elapsed time.
+	AccessibilityLabel string
+
+	// Style is applied last, to the digits.
+	Style []core.StyleProp
+}
+```
+
+Stopwatch draws time elapsed, one tick a second, and can be paused and resumed without losing what it has counted.
+
+	comps.Stopwatch{Since: startedAt.Get(), Elapsed: banked.Get(), Running: running.Get()}
+
+It is Countdown counting the other way, and it is the simpler of the two: there is no deadline, so there is nothing to report and no OnDone.
+
+#### The caller holds the two numbers, and why there are two
+
+A stopwatch that knew only when it started could not be paused: the instant the finger lifts is not recorded anywhere, so on the next render the widget would either keep counting or forget everything. So the state is the pair every stopwatch keeps — the time banked from earlier runs, and the start of the current one — and the reading is their sum:
+
+	Elapsed + (Running ? now − Since : 0)
+
+which makes the four moves assignments the caller can write inline:
+
+	start    Since = time.Now();  Elapsed = 0;                     Running = true
+	pause    Elapsed += time.Since(Since);                         Running = false
+	resume   Since = time.Now();                                   Running = true
+	reset    Elapsed = 0;                                          Running = false
+
+The pair lives with the caller rather than in the widget for the reason SliderRow's draft does: state held here would be state the app cannot save, restore or show anywhere else, and a stopwatch is exactly the thing an app wants to keep running across a screen change.
+
+#### No hundredths
+
+Real stopwatches show hundredths and this one shows seconds, because a core.State change requests a render of the whole tree: a centisecond stopwatch would charge the app a hundred render passes a second to animate two digits. A lap timer that genuinely needs them wants a renderer-side clock, which is what core.Spin is for animation and what no core primitive offers for text.
+
+The reading is rounded \*down\*, the opposite of Countdown's rounding and for the same reason: a stopwatch never claims more elapsed time than has actually passed, so 0:00 covers the first second exactly as a phone's does.
+
+#### Ticking
+
+hooks.UseIntervalWhile again, active while Running and not Hidden. There is no exception for a hidden one, because unlike Countdown it owes nobody a callback — a hidden stopwatch has nothing to do but keep its arithmetic, which is the caller's two fields and needs no ticks at all. It therefore holds a hook and is not conditional-safe; see Countdown.
+
+#### Theme roles read
+
+	Digits   Colors.TextPrimary, unless Color says otherwise
+
+<small>[comps/timers.go:278](https://github.com/rohanthewiz/grmob/blob/master/comps/timers.go#L278)</small>
+
+#### func (Stopwatch) Render
+
+```go
+func (s Stopwatch) Render(ctx *core.Context) *core.Node
+```
+
+Render arms the tick and draws the digits.
+
+<small>[comps/timers.go:311](https://github.com/rohanthewiz/grmob/blob/master/comps/timers.go#L311)</small>
 

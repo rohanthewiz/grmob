@@ -2405,3 +2405,75 @@ func TestQRCodeLessonRedrawsTheSymbolPerLevel(t *testing.T) {
 
 	assertNoConcerns(t)
 }
+
+// 4.24. The lesson's two claims that a tree can answer without waiting out a
+// real ten seconds: moving Until forward *is* the restart (the reading goes
+// back to the top with no reset call anywhere), and the stopwatch's controls
+// are the caller's three assignments rather than anything the widget holds.
+//
+// OnDone's once-per-crossing is not driven here — it costs ten wall-clock
+// seconds and comps' own TestCountdownFiresOnDoneOnceOnTheCrossing pins it
+// against a controlled deadline. What this checks is that the demo is wired to
+// it at all: the caption exists and starts at zero.
+func TestTimersLessonRestartsTheDeadlineAndBanksTheStopwatch(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Counting down, counting up")
+
+	// The digits are Text nodes named by the spoken duration, which is what
+	// tells the two widgets apart: one says "remaining", the other "elapsed".
+	reading := func(sense string) *node {
+		t.Helper()
+		n := findNode(tree(t, mgr), func(n *node) bool {
+			return n.Type == "Text" && n.Style != nil &&
+				strings.HasSuffix(n.Style.AccessibilityLabel, sense)
+		})
+		if n == nil {
+			t.Fatalf("no timer whose label ends in %q", sense)
+		}
+		return n
+	}
+	digits := func(sense string) string {
+		t.Helper()
+		s, _ := reading(sense).Props["content"].(string)
+		return s
+	}
+
+	// The deadline is set on the mount pass, so the lesson opens at the top of
+	// its ten seconds.
+	if got := digits("remaining"); got != "0:10" {
+		t.Errorf("countdown opens at %q, want 0:10", got)
+	}
+	if !hasText(tree(t, mgr), "Ran out 0 times") {
+		t.Error("the OnDone caption starts at zero")
+	}
+	if got := digits("elapsed"); got != "0:00" {
+		t.Errorf("stopwatch opens at %q, want 0:00", got)
+	}
+
+	// The stopwatch's button is the state: Start banks nothing and begins a
+	// run, Pause ends it, and the label follows Running both ways.
+	tap(t, mgr, "Start")
+	if findNode(tree(t, mgr), func(n *node) bool {
+		return n.Type == "Button" && n.Props["label"] == "Pause"
+	}) == nil {
+		t.Fatal("starting the stopwatch must offer Pause")
+	}
+	tap(t, mgr, "Pause")
+	if findNode(tree(t, mgr), func(n *node) bool {
+		return n.Type == "Button" && n.Props["label"] == "Start"
+	}) == nil {
+		t.Fatal("pausing must offer Start again")
+	}
+	tap(t, mgr, "Reset")
+	if got := digits("elapsed"); got != "0:00" {
+		t.Errorf("reset stopwatch reads %q, want 0:00", got)
+	}
+
+	// The restart. Nothing is reset: Until moves, and the widget's reading
+	// follows it — which is the whole of the claim.
+	tap(t, mgr, "Restart 10s")
+	if got := digits("remaining"); got != "0:10" {
+		t.Errorf("restarted countdown reads %q, want 0:10", got)
+	}
+	assertNoConcerns(t)
+}
