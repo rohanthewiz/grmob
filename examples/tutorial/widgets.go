@@ -185,7 +185,11 @@ func demoPanel(hint string, children ...core.View) core.View {
 		for _, c := range children {
 			items = append(items, c)
 		}
-		return core.Column(items...).Render(ctx)
+		// Keyed so the two-pane layout can find the panel in the rendered
+		// tree and move it onto the phone (split.go, liftDemos). The hint is
+		// in the key because the pointer left in the guide repeats it; every
+		// hint is a literal, so the key never changes under a live panel.
+		return core.Keyed(demoKeyPrefix+hint, core.Column(items...)).Render(ctx)
 	})
 }
 

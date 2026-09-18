@@ -39,6 +39,12 @@ func (t *tutorial) lessonRoute(index int) func(*core.Context) core.View {
 			// replaces Navigator's (see core.withSystemBackPop), and Screen
 			// builds a fresh node every pass, so writing into it is safe.
 			core.OnBack(func() { t.toContents(ctx) }).Apply(ctx, n)
+			// Marks the node as a lesson for the split layout, which splits a
+			// lesson but not a screen a demo pushed over one (see
+			// lessonRootKey). Navigator keeps it as a suffix of the frame key,
+			// so the frame's identity — a new frame is a new screen — is
+			// unchanged. Written in place for OnBack's reason above.
+			n.Key = lessonRootKey
 			return n
 		})
 	}

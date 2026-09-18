@@ -79,6 +79,12 @@ type tutorial struct {
 	// lesson — `open` expands whatever chapter they landed in, so backing out
 	// lands on a card already showing the row they came from.
 	expanded core.State[map[int]bool]
+	// split is whether the host page asked for the two-pane layout: the
+	// lesson's guide on a wide pane, its demos on a phone beside it (see
+	// split.go). False until a "layout" host event says otherwise, so every
+	// host that never sends one — the natives, the tests — keeps the phone
+	// layout the tutorial was written for.
+	split core.State[bool]
 }
 
 // App is the root view: a Navigator whose initial route is the table of
@@ -99,11 +105,15 @@ func App(ctx *core.Context) core.View {
 		// Chapter 1 open, the rest shut. See the field's doc for why this is a
 		// seed rather than an empty map.
 		expanded: core.NewState(sctx, map[int]bool{0: true}),
+		split:    core.NewState(sctx, false),
 	}
 	// Same scope, for the same reason: the route handler moves frames, so
-	// it must outlive them.
+	// it must outlive them. The layout mode likewise outlives every frame.
 	t.useDeepLinks(sctx)
-	return core.Navigator(t.Home)
+	t.useLayoutMode(sctx)
+	// withLayout is transparent in the phone layout; in the split layout it
+	// rearranges the Navigator's rendered tree into two panes (split.go).
+	return t.withLayout(core.Navigator(t.Home))
 }
 
 // markVisited records that a lesson has been opened. It copies the map before

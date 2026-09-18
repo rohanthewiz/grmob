@@ -53,6 +53,21 @@
   header .copylink:hover { border-color: var(--accent); }
   header .copylink.done { color: var(--ok); border-color: var(--ok); }
 
+  /* The layout switch: two buttons in one pill, the pressed one filled.
+     aria-pressed is both the state a screen reader hears and the hook the
+     look is keyed on, so the two cannot disagree. */
+  header .layout-toggle {
+    display: inline-flex; border: 1px solid var(--edge); border-radius: 6px; overflow: hidden;
+  }
+  header .layout-toggle[hidden] { display: none; }
+  header .layout-toggle button {
+    font: inherit; font-size: .8rem; cursor: pointer; color: var(--dim);
+    background: var(--bg); border: 0; padding: .2rem .6rem;
+  }
+  header .layout-toggle button + button { border-left: 1px solid var(--edge); }
+  header .layout-toggle button:hover { color: var(--fg); }
+  header .layout-toggle button[aria-pressed="true"] { color: var(--panel); background: var(--accent); }
+
   /* --- stage: the app centred in a phone bezel ------------------------------
      A phone-width, phone-height viewport is what the tutorial was designed
      for, and what the natives give it; showing it in a bezel on a wide
@@ -144,6 +159,87 @@
     flex: 1 1 0; min-width: 0;
   }
 
+  /* --- the two-pane layout ------------------------------------------------------
+     The default on a wide screen: the lesson's guide (prose, code, key points)
+     on a reading pane, its live demos on a phone beside it. The app builds the
+     panes (examples/tutorial/split.go) when this page sends it the "layout"
+     host event, and names them with ids; everything about how they look is
+     here, because it is this page's chrome and palette, not the app's.
+
+         main ─────────────────────────────────────────────────────────────┐
+         │ #tutorial-split (row)                                            │
+         │ ┌ #tutorial-guide ──────────────────────┐ ┌ #tutorial-phone ───┐ │
+         │ │ the lesson, demos lifted out;         │ │ ┌ …-phone-screen ┐ │ │
+         │ │ its text column capped and centred    │ │ │ header         │ │ │
+         │ │                                       │ │ │ …-phone-content│ │ │
+         │ └───────────────────────────────────────┘ │ └────────────────┘ │ │
+         │                                           └────────────────────┘ │
+         └──────────────────────────────────────────────────────────────────┘
+
+     The bezel around #app below is switched off by :has() rather than by a
+     class this page sets, so the chrome follows the tree the app actually
+     drew. Between the page asking for the split and the app's patch arriving,
+     the tree is still the phone layout, and so is the chrome around it — there
+     is no frame with one and not the other. */
+  main:has(#tutorial-split) { padding: 0; }
+  main:has(#tutorial-split) .phone {
+    max-width: none; max-height: none; padding: 0;
+    background: none; border-radius: 0; box-shadow: none;
+  }
+  main:has(#tutorial-split) .screen { background: transparent; border-radius: 0; }
+
+  #tutorial-split { gap: 1.2rem; padding: 1.2rem; align-items: stretch; }
+
+  /* The guide takes whatever the phone leaves. It is not capped itself — the
+     phone stays pinned to the right edge, which is what lets the toast rule
+     below find it — so its text column is capped instead, centred in the pane
+     at a line length that reads comfortably. The column is the Scroll's (a
+     lesson) or the List's (the contents) direct children. */
+  #tutorial-guide {
+    flex: 1 1 0; min-width: 0; display: flex; flex-direction: column;
+    background: #ffffff; color: #000000; border-radius: 14px; overflow: hidden;
+    box-shadow: 0 10px 30px rgba(0,0,0,.18), 0 0 0 1px var(--edge);
+  }
+  #tutorial-guide > * { flex: 1; min-height: 0; }
+  #tutorial-guide [data-node-type="Scroll"] > *,
+  #tutorial-guide [data-node-type="List"] > * {
+    width: 100%; max-width: 820px; margin-inline: auto;
+  }
+
+  /* The phone: the same bezel as the phone layout's .phone, at a fixed width,
+     as tall as the pane allows up to a phone's height and centred vertically
+     when that is less than the window. A height and align-self: center rather
+     than stretch plus auto margins: an auto cross-axis margin turns stretch
+     off, and the phone shrank to the height of its header. */
+  #tutorial-phone {
+    flex: none; width: 400px; height: 100%; max-height: 860px;
+    align-self: center; display: flex; flex-direction: column;
+    background: var(--bezel); border-radius: 34px; padding: 12px;
+    box-shadow: 0 20px 50px rgba(0,0,0,.35), 0 0 0 1px var(--edge);
+  }
+  /* The glass. The transform makes it the containing block for position:
+     fixed descendants — core.Modal's overlay — for the reason .screen has one:
+     a dialog from a demo dims the phone, not the guide beside it. */
+  #tutorial-phone-screen {
+    flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column;
+    background: #ffffff; color: #000000; border-radius: 24px; overflow: hidden;
+    transform: translateZ(0);
+  }
+  #tutorial-phone-screen > * { flex: none; }
+  #tutorial-phone-content { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+  #tutorial-phone-content > * { flex: 1; min-height: 0; }
+
+  /* Toasts. The runtime hangs its toast layer on #app's parent (.screen), with
+     left/right 0 inline, so in the split it would centre toasts under the
+     whole window. It is the one element of .screen that is not #app; this
+     pins it over the phone instead — 1.2rem of split padding plus 12px of
+     bezel from the right and bottom, the glass's width wide. !important
+     because the layer's placement is inline style. */
+  main:has(#tutorial-split) .screen > :not(#app) {
+    left: auto !important; right: calc(1.2rem + 12px) !important;
+    bottom: calc(1.2rem + 36px) !important; width: 376px;
+  }
+
   /* --- loading / error state ---------------------------------------------------
      main.wasm is a few MB; the first paint is this, then the app replaces it
      (mount clears #app's innerHTML). */
@@ -172,6 +268,10 @@
   <h1><span>GrMob</span> · Interactive Tutorial</h1>
   <span class="meta">60 lessons · 8 chapters · every demo is live Go, running in your browser</span>
   <span class="spacer"></span>
+  <div id="layout-toggle" class="layout-toggle" role="group" aria-label="Layout" hidden>
+    <button type="button" data-mode="split" aria-pressed="false" title="Read the guide beside a live phone">Guide + phone</button>
+    <button type="button" data-mode="phone" aria-pressed="false" title="The tutorial as it runs on a phone">Phone only</button>
+  </div>
   <button id="copylink" class="copylink" type="button" title="Copy a link to this lesson" hidden>🔗 Copy link</button>
   <a href="https://github.com/rohanthewiz/grmob/tree/master/docs" target="_blank" rel="noopener">Docs</a>
   <a href="https://github.com/rohanthewiz/grmob/tree/master/examples/tutorial" target="_blank" rel="noopener">Source</a>
@@ -289,6 +389,55 @@
         }).catch(() => { /* clipboard blocked: the address bar still has the link */ });
     });
 
+    // --- Layout -------------------------------------------------------------
+    // Two layouts: "split" (the guide on a reading pane, the demos on a phone
+    // beside it — the default) and "phone" (the whole tutorial inside one
+    // phone, as it runs on a device). The reader's choice is remembered in
+    // localStorage; the split also needs room for both panes, so under
+    // SPLIT_MIN the phone layout is used whatever the choice, and the switch
+    // is hidden rather than offered as a button that would do nothing.
+    //
+    // Like the deep links, the app knows nothing of windows or storage: this
+    // page sends it the mode as a "layout" host event (examples/tutorial/
+    // split.go) at boot and on every change, and the app rearranges its tree.
+    // The bezel CSS follows the tree by itself (:has(#tutorial-split)), so
+    // nothing here touches the stage.
+    const LAYOUT_KEY = "grmob-tutorial-layout";
+    const SPLIT_MIN = "(min-width: 900px)";
+    const wide = window.matchMedia(SPLIT_MIN);
+    const toggle = document.getElementById("layout-toggle");
+    // Storage can be absent or throw (a private window, blocked site data):
+    // the layout then falls back to the default and simply is not remembered.
+    const readChoice = () => {
+        try { return localStorage.getItem(LAYOUT_KEY) === "phone" ? "phone" : "split"; }
+        catch { return "split"; }
+    };
+    const saveChoice = (mode) => {
+        try { localStorage.setItem(LAYOUT_KEY, mode); } catch { /* not remembered */ }
+    };
+    let choice = readChoice();
+    const sendLayout = () => {
+        const mode = wide.matches ? choice : "phone";
+        toggle.hidden = !wide.matches;
+        for (const b of toggle.querySelectorAll("button")) {
+            b.setAttribute("aria-pressed", String(b.dataset.mode === choice));
+        }
+        const host = window.GrMobWASM;
+        if (!host || typeof host.HostEvent !== "function") return; // before boot: boot sends it
+        host.HostEvent("layout", JSON.stringify({ mode }));
+    };
+    toggle.addEventListener("click", (ev) => {
+        const b = ev.target.closest("button[data-mode]");
+        if (!b || b.dataset.mode === choice) return;
+        choice = b.dataset.mode;
+        saveChoice(choice);
+        sendLayout();
+    });
+    wide.addEventListener("change", sendLayout);
+    // Now, for the switch alone: it is page chrome, usable while main.wasm
+    // is still downloading, and the app is told once it exists (boot).
+    sendLayout();
+
     // --- Boot ---------------------------------------------------------------
     // One function rather than a run-once script, because it runs more than
     // once: the dev server's hot reload (serve -dev) calls GrMobHost.boot again
@@ -318,6 +467,10 @@
         const exited = go.run(result.instance);
         const patch = window.GrMobWASM.RenderInitial();
         GrMob.mount(patch);
+        // After the mount, because the app takes its subscription to the
+        // event during its first render; the rearranged tree then arrives as
+        // a pushed patch, like any other state change.
+        sendLayout();
         // The app has just mounted on the contents; a hash present at boot
         // pushes the lesson on top of it, exactly as a row tap would.
         if (lessonFromHash()) sendRoute();
