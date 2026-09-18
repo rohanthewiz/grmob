@@ -2,6 +2,7 @@
 
 **Status:** drafted 2026-09-18. **G1 `CopyButton` and Tier H landed** the
 same day as one batch, taught by lesson 4.29 "Copy, link and list".
+**G2 `TagInput` landed** next, with lesson 5.8.
 
 Round one (`comps-low-hanging-fruit.md`, Tiers A–C) and round two
 (`comps-low-hanging-fruit-2.md`, Tiers D–F) are both complete. This file is
@@ -112,7 +113,28 @@ directly, but never what a button labelled "Copy" means.
 - With no host (a headless test, htmlout), `WriteClipboard` is silent, so the
   test asserts the event was sent, not what landed.
 
-### G2. `TagInput`
+### G2. `TagInput` — **landed 2026-09-18**
+
+**What the build changed from the sketch.** Four things.
+
+- **The list and its items are unnamed.** The sketch had the list follow
+  `KeyValueList`, which names every row. But a tag's row holds an
+  interactive ✕, and a named container stands in for its children on the
+  targets that merge a labelled container. The ✕ would stop being
+  reachable. So the tag's text is read as is, followed by "Remove *tag*".
+- **Tags go above the input, not beside it.** A wrapping Row whose last item
+  is a growing input depends on how each native wraps a growing item. Tags on
+  their own row, with the input full width below, is layout every target
+  already does.
+- **`RemoveLabel`** was added so the ✕ names can be localized.
+- **The paste rule and the separator rule are one function** (`splitDraft`).
+  Everything before the last separator is committed, and the rest is the
+  draft. Separators may be multi-byte.
+
+Shipped: `TagInput{Tags, OnChange, Placeholder, Label, Max, Separators,
+RemoveLabel, Disabled, Style}`.
+
+The sketch, as drafted:
 
 A wrapping strip of removable tags followed by a text input. Typical uses are
 email recipients, labels and interests.
@@ -313,7 +335,7 @@ New this round:
 |---|---|---|
 | 1 | ~~G1 `CopyButton`~~ | named twice in Next lists; the tutorial's code blocks are the first consumer |
 | 2 | ~~Tier H bundle + lesson~~ | three small pieces, each with a consumer waiting |
-| 3 | G2 `TagInput` | the one new *input*; completes the form family |
+| 3 | ~~G2 `TagInput`~~ | the one new *input*; completes the form family |
 | 4 | G3 `AudioPlayer` | an extraction; the example proves it |
 | 5 | G4 `MessageBubble` | an extraction; the example proves it |
 | 6 | Tier I | each after its catch is settled |

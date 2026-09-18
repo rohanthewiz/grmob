@@ -30,6 +30,7 @@ func chapter5() Chapter {
 			lessonValuesReset(),
 			lessonPicker(),
 			lessonPINInput(),
+			lessonTagInput(),
 		},
 	}
 }
@@ -832,6 +833,76 @@ func lessonPINInput() Lesson {
 					"Backspace in an empty cell is invisible to Go, because the framework carries text and not keys.",
 					"OnComplete fires whenever an edit leaves the code full, so a corrected code submits again.",
 					"It holds one hook per cell, so render it in a stable position every pass — and its hook count never shrinks when Length does.",
+				),
+			)
+		},
+	}
+}
+
+// --- 5.8 -----------------------------------------------------------------
+
+// 5.8 — G2 of the third low-hanging-fruit round. The lesson is organised
+// around who holds what: the set is the form's, the half-typed tag is the
+// widget's, and the reason is the same test DateRangePicker's pending start
+// passed.
+func lessonTagInput() Lesson {
+	return Lesson{
+		Title:   "Tags: a set typed one at a time",
+		Summary: "comps.TagInput: return or a comma commits, each tag has its own ✕, and the half-typed tag is the widget's.",
+		Body: func(ctx *core.Context) core.View {
+			// The set is lesson state, as every value in this chapter is. The
+			// draft is not here: the widget holds it.
+			tags := core.NewState(ctx, []string{"design", "urgent"})
+
+			return core.Column(
+				core.Gap(14),
+				prose("A tag field collects a set of short strings — recipients, labels, "+
+					"interests — one at a time. comps.TagInput draws the set as a wrapping list "+
+					"of pills above an input, and commits whatever is typed when the reader "+
+					"presses return or types a comma."),
+				codeBlock(`comps.FormField{
+    Label: "Labels",
+    Input: comps.TagInput{
+        Tags:        tags.Get(),
+        OnChange:    tags.Set,
+        Label:       "Labels",
+        Placeholder: "Add a label",
+        Max:         6,
+    },
+}`),
+				demoPanel("Type a label and press return. Paste \"a, b, c\". Remove one with its ✕.",
+					comps.FormField{
+						Label: "Labels",
+						Hint:  "Up to six. Return or a comma adds one.",
+						Input: comps.TagInput{
+							Tags:        tags.Get(),
+							OnChange:    tags.Set,
+							Label:       "Labels",
+							Placeholder: "Add a label",
+							Max:         6,
+						},
+					},
+					caption(fmt.Sprintf("Tags = %q", tags.Get())),
+				),
+				prose("The set is yours and the half-typed tag is the widget's. A form submits the "+
+					"set, and \"desi\" is not a member of it, so no application wants the draft — "+
+					"the same test DateRangePicker's pending start passed. Holding it makes "+
+					"TagInput hook-owning, so render it unconditionally, like PasswordField."),
+				prose("Each tag's ✕ is its own button, and the tag's text is not one. A ✕ inside a "+
+					"Chip would be a button inside a button, which no accessibility tree can "+
+					"represent; a chip that removed itself when tapped would bind its largest "+
+					"surface to a destructive action. A reader hears the tag, then \"Remove "+
+					"design, button\"."),
+				prose("A paste is the same rule as a comma: everything before the last separator "+
+					"is committed, and what follows it stays in the input. Pieces are trimmed, and "+
+					"empties and duplicates are dropped. There is no \"backspace in an empty "+
+					"field removes the last tag\" — the field reports its text, not its keys, "+
+					"which is the wall 5.7 met."),
+				keyPoints(
+					"TagInput: tags as a wrapping list of pills above an input; return or a separator commits.",
+					"The set is the caller's; the draft is the widget's, so it holds a hook.",
+					"Each tag is inert text plus a ✕ named \"Remove …\" — never a button inside a button.",
+					"Pastes split on the separators; trimmed, no empties, no duplicates, no more than Max.",
 				),
 			)
 		},

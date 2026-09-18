@@ -36,7 +36,7 @@ Package comps's reference is split into 7 topic pages by source file. The index 
 | --- | --- | --- |
 | [Screens & structure](comps-structure.md) | Screen, app and bottom bars, the FAB, tabs, drawers, step indicators, two-pane and foldable layouts, cards, accordions, headings, breadcrumbs and separators, labelled or not. | 17 types, 13 functions and methods |
 | [Lists & tables](comps-lists.md) | List rows, the settings-row family (switch, checkbox, select and slider), input rows, key-value lists, bullet lists, grouped and paged lists, data tables and timelines. | 21 types, 16 functions and methods |
-| [Inputs & pickers](comps-inputs.md) | Form fields, password fields, one-time code fields, search, searchable selects, radio groups, dates, date ranges, times and calendars, and the two editors. | 15 types, 14 functions and methods |
+| [Inputs & pickers](comps-inputs.md) | Form fields, password fields, one-time code fields, tag inputs, search, searchable selects, radio groups, dates, date ranges, times and calendars, and the two editors. | 16 types, 15 functions and methods |
 | [Buttons & choices](comps-actions.md) | Buttons and their variants, copy buttons, links, chips, segmented controls, steppers, ratings and badges. | 12 types, 12 functions and methods |
 | [Overlays & feedback](comps-overlays.md) | Dialogs, lightboxes, action sheets, menus, snackbars, banners, progress, spinners, skeletons and empty states. | 13 types, 10 functions and methods |
 | [Data display & maps](comps-display.md) | Avatars and avatar stacks, stat tiles, the compass, clocks, countdowns and alarms, QR codes, map panels and static maps. | 18 types, 20 functions and methods |
@@ -86,7 +86,7 @@ Package comps's reference is split into 7 topic pages by source file. The index 
     - [`type Timeline`](comps-lists.md#type-timeline)
     - [`type TimelineEvent`](comps-lists.md#type-timelineevent)
 - [Inputs & pickers](comps-inputs.md)
-    - [Constants](comps-inputs.md#constants) — `ConcernCalendarRangeReversed`, `ConcernDateRangePickerInert`, `ConcernPINInputInert`, `ConcernPINValueTooLong`, `ConcernPasswordFieldInert`, `ConcernTimePickerInert`, `RichToolLink`
+    - [Constants](comps-inputs.md#constants) — `ConcernCalendarRangeReversed`, `ConcernDateRangePickerInert`, `ConcernPINInputInert`, `ConcernPINValueTooLong`, `ConcernPasswordFieldInert`, `ConcernTagInputInert`, `ConcernTimePickerInert`, `RichToolLink`
     - [Variables](comps-inputs.md#variables) — `RichToolbarDefault`
     - [`type Calendar`](comps-inputs.md#type-calendar)
     - [`type CodeEditor`](comps-inputs.md#type-codeeditor)
@@ -103,6 +103,7 @@ Package comps's reference is split into 7 topic pages by source file. The index 
         - [`func UseRichToolbar`](comps-inputs.md#func-userichtoolbar)
     - [`type SearchField`](comps-inputs.md#type-searchfield)
     - [`type SearchableSelect`](comps-inputs.md#type-searchableselect)
+    - [`type TagInput`](comps-inputs.md#type-taginput)
     - [`type TimePicker`](comps-inputs.md#type-timepicker)
 - [Buttons & choices](comps-actions.md)
     - [Constants](comps-actions.md#constants) — `ColorTransparent`, `ConcernLinkInert`

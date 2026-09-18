@@ -676,3 +676,45 @@ func pinFocused(t *testing.T, mgr *render.Manager) int {
 	}
 	return -1
 }
+
+// 5.8. The demo's claims, driven through the manager: return commits the
+// draft, a paste commits all but its tail, a ✕ removes its own tag, and the
+// caption reads the lesson's state, which is the set and never the draft.
+func TestTagInputLessonCommitsPastesAndRemoves(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Tags: a set typed one at a time")
+
+	input := func() *node {
+		t.Helper()
+		n := findNode(tree(t, mgr), func(n *node) bool {
+			return n.Type == "Input" && n.Style != nil && n.Style.AccessibilityLabel == "Labels"
+		})
+		if n == nil {
+			t.Fatal("the tag input is missing")
+		}
+		return n
+	}
+	wantCaption := func(want string) {
+		t.Helper()
+		if !hasText(tree(t, mgr), want) {
+			t.Errorf("caption should read %s", want)
+		}
+	}
+
+	wantCaption(`Tags = ["design" "urgent"]`)
+
+	mgr.DispatchTextCallback(input().Props["onChange"].(string), "q3")
+	wantCaption(`Tags = ["design" "urgent"]`)
+	mgr.DispatchCallback(input().Props["onSubmit"].(string))
+	wantCaption(`Tags = ["design" "urgent" "q3"]`)
+
+	mgr.DispatchTextCallback(input().Props["onChange"].(string), "a, b, c")
+	wantCaption(`Tags = ["design" "urgent" "q3" "a" "b"]`)
+	if v := input().Props["value"]; v != " c" {
+		t.Errorf("draft = %v, want the paste's tail", v)
+	}
+
+	tapLabelled(t, mgr, "Remove urgent")
+	wantCaption(`Tags = ["design" "q3" "a" "b"]`)
+	assertNoConcerns(t)
+}

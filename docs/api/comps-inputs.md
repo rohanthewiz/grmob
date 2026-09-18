@@ -4,13 +4,13 @@
 import "github.com/rohanthewiz/grmob/comps"
 ```
 
-Form fields, password fields, one-time code fields, search, searchable selects, radio groups, dates, date ranges, times and calendars, and the two editors.
+Form fields, password fields, one-time code fields, tag inputs, search, searchable selects, radio groups, dates, date ranges, times and calendars, and the two editors.
 
-One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/form_field.go`, `comps/password_field.go`, `comps/pin_input.go`, `comps/search_field.go`, `comps/searchable_select.go`, `comps/radio_group.go`, `comps/date_picker.go`, `comps/date_range_picker.go`, `comps/time_picker.go`, `comps/calendar.go`, `comps/code_editor.go`, `comps/rich_text_editor.go`.
+One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/form_field.go`, `comps/password_field.go`, `comps/pin_input.go`, `comps/tag_input.go`, `comps/search_field.go`, `comps/searchable_select.go`, `comps/radio_group.go`, `comps/date_picker.go`, `comps/date_range_picker.go`, `comps/time_picker.go`, `comps/calendar.go`, `comps/code_editor.go`, `comps/rich_text_editor.go`.
 
 ## Index
 
-- [Constants](#constants) — `ConcernCalendarRangeReversed`, `ConcernDateRangePickerInert`, `ConcernPINInputInert`, `ConcernPINValueTooLong`, `ConcernPasswordFieldInert`, `ConcernTimePickerInert`, `RichToolLink`
+- [Constants](#constants) — `ConcernCalendarRangeReversed`, `ConcernDateRangePickerInert`, `ConcernPINInputInert`, `ConcernPINValueTooLong`, `ConcernPasswordFieldInert`, `ConcernTagInputInert`, `ConcernTimePickerInert`, `RichToolLink`
 - [Variables](#variables) — `RichToolbarDefault`
 - [`type Calendar`](#type-calendar)
     - [`func (Calendar) Render`](#func-calendar-render)
@@ -39,6 +39,8 @@ One of 7 topic pages of [package comps](comps.md), which has the package overvie
     - [`func (SearchField) Render`](#func-searchfield-render)
 - [`type SearchableSelect`](#type-searchableselect)
     - [`func (SearchableSelect) Render`](#func-searchableselect-render)
+- [`type TagInput`](#type-taginput)
+    - [`func (TagInput) Render`](#func-taginput-render)
 - [`type TimePicker`](#type-timepicker)
     - [`func (TimePicker) Render`](#func-timepicker-render)
 
@@ -83,6 +85,14 @@ const ConcernPasswordFieldInert = "password-field-inert"
 ```
 
 <small>[comps/password_field.go:12](https://github.com/rohanthewiz/grmob/blob/master/comps/password_field.go#L12)</small>
+
+ConcernTagInputInert is raised, in debug builds only, when a TagInput has no OnChange. Typing a tag and pressing return clears the draft and adds nothing, and a ✕ removes nothing — a field that swallows what it is given and looks exactly like one that is working until the form is submitted without the tags. The bar PasswordField's inert case is reported against.
+
+```go
+const ConcernTagInputInert = "tag-input-inert"
+```
+
+<small>[comps/tag_input.go:16](https://github.com/rohanthewiz/grmob/blob/master/comps/tag_input.go#L16)</small>
 
 ConcernTimePickerInert is raised, in debug builds only, when a TimePicker has no OnChange. The pickers still open and still take a choice, and the choice goes nowhere: the field goes on reporting the time it was handed, so it either snaps back or, on a target that keeps the picked option until a patch says otherwise, shows a time the application does not hold. Neither looks broken on screen, which is the bar DateRangePicker's and PINInput's inert cases are reported against.
 
@@ -1508,6 +1518,106 @@ func (s SearchableSelect) Render(ctx *core.Context) *core.Node
 Render builds Column(SearchField, listbox?, status) as drawn in the type doc.
 
 <small>[comps/searchable_select.go:200](https://github.com/rohanthewiz/grmob/blob/master/comps/searchable_select.go#L200)</small>
+
+### type TagInput
+
+```go
+type TagInput struct {
+	// Tags are the committed tags, owned by the caller.
+	Tags []string
+
+	// OnChange receives the whole new set after every commit or removal.
+	// Nil reports ConcernTagInputInert.
+	OnChange func([]string)
+
+	// Placeholder is drawn in the empty input.
+	Placeholder string
+
+	// Label names the input for assistive technology ("Labels"). It is not
+	// drawn; a FormField around the widget is the visible label.
+	Label string
+
+	// Max caps the number of tags; 0 means no cap.
+	Max int
+
+	// Separators are the characters that commit the draft when typed; empty
+	// gives ",".
+	Separators string
+
+	// RemoveLabel prefixes each ✕'s accessible name; empty gives "Remove".
+	RemoveLabel string
+
+	// Disabled disables the input and every ✕.
+	Disabled bool
+
+	// Style is applied to the outer column after its defaults.
+	Style []core.StyleProp
+}
+```
+
+TagInput is a set of short strings the reader types one at a time: email recipients, labels on a note, interests on a profile. The tags wrap above the input, and each has its own ✕.
+
+	comps.TagInput{
+	    Tags:        tags.Get(),
+	    OnChange:    tags.Set,
+	    Label:       "Labels",
+	    Placeholder: "Add a label",
+	}
+
+	┌ Column ─────────────────────────────────────────────┐
+	│ ┌ Row  role=list  wrap ───────────────────────────┐ │
+	│ │ ( design  ✕ ) ( urgent  ✕ ) ( q3 roadmap  ✕ )   │ │  one listitem
+	│ │ ( later  ✕ )                                    │ │  per tag
+	│ └─────────────────────────────────────────────────┘ │
+	│ ┌ InputWithSubmit ────────────────────────────────┐ │
+	│ │ Add a label                                     │ │  return or ","
+	│ └─────────────────────────────────────────────────┘ │  commits the draft
+	└─────────────────────────────────────────────────────┘
+
+#### Committing a tag
+
+A tag is committed by the keyboard's return / done action, or by typing a separator (Separators, "," by default). The two paths are one rule over the input's text:
+
+	"design"          nothing yet; the draft is "design"
+	"design,"         commit "design"; the draft is ""
+	"a, b, c"         (a paste) commit "a" and "b"; the draft is " c"
+	"a, b, c,"        commit all three; the draft is ""
+	return on " c"    commit "c"; the draft is ""
+
+Every committed piece is trimmed, and empty pieces and exact duplicates of a tag already held are dropped — the tag is on screen already, so the reader sees the result they wanted. Once Max tags are held the rest of a paste is discarded and the input is disabled; it stays visible so its label and placeholder still say what the field is for.
+
+#### The ✕ is its own button; the tag is not one
+
+Chip has exactly one tap target. A ✕ inside it would be a button inside a button, which no accessibility tree can represent, and a chip that removed itself when tapped would bind the tag's largest surface to a destructive action. So a tag is a pill Row holding the text and a ghost ✕ Button named "Remove design"; the text is inert.
+
+#### The draft is the widget's
+
+The half-typed text is held here, in a hook, and not by the caller. It is DateRangePicker's test: no application wants a half-made tag — a form submits the set, and "desi" is not a member of it. Owning it means the hook rules apply: render a TagInput unconditionally, in a stable position.
+
+There is no "backspace in an empty input removes the last tag". The input reports its text, not its keys, and the text of an empty input does not change when backspace is pressed — PINInput met the same wall.
+
+#### Accessibility
+
+The strip is a RoleList and each tag a listitem, so a reader hears "list, 3 items" and then each tag followed by its "Remove …" button. Neither the list nor the items are given a name: an item's name would stand in for its children on the targets that merge a labelled container, and the ✕ button inside it would stop being reachable. The input is named by Label.
+
+#### Theme roles read
+
+	Pill       Colors.Surface fill, ColorPalette.BorderColor hairline
+	Tag text   Typography.Body
+	✕          a ghost Button (Primary's on-light tone)
+	Gaps       Spacing.XS between tags and between the strip and the input
+
+<small>[comps/tag_input.go:90](https://github.com/rohanthewiz/grmob/blob/master/comps/tag_input.go#L90)</small>
+
+#### func (TagInput) Render
+
+```go
+func (in TagInput) Render(ctx *core.Context) *core.Node
+```
+
+Render draws the tags and the input. It takes one hook, the draft.
+
+<small>[comps/tag_input.go:123](https://github.com/rohanthewiz/grmob/blob/master/comps/tag_input.go#L123)</small>
 
 ### type TimePicker
 

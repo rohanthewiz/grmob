@@ -1743,6 +1743,41 @@ like an empty field), and a `Value` longer than the field raises
 `comps.ConcernPINValueTooLong` (the extra characters are never drawn and can
 never be typed away).
 
+## TagInput
+
+A set of short strings typed one at a time — recipients, labels, interests.
+
+```go
+comps.FormField{
+    Label: "Labels",
+    Input: comps.TagInput{
+        Tags:        tags.Get(),
+        OnChange:    tags.Set,     // the whole new set, after each commit or removal
+        Label:       "Labels",
+        Placeholder: "Add a label",
+        Max:         6,
+    },
+}
+// ( design ✕ ) ( urgent ✕ )
+// [ Add a label                ]
+```
+
+- **Return or a separator commits.** `Separators` defaults to ",". Everything
+  before the last separator is committed and what follows stays in the input,
+  so a pasted "a, b, c" commits "a" and "b" and leaves " c". Pieces are
+  trimmed; empties and duplicates are dropped.
+- **The ✕ is its own button, the tag's text is not.** A ✕ inside a Chip would
+  be a button inside a button. Each ✕ is named "Remove *tag*"
+  (`RemoveLabel` changes the prefix).
+- **The draft is the widget's**, so TagInput holds a hook — render it
+  unconditionally. The set is the caller's.
+- `Max` stops a paste part-way and disables the input once reached.
+- No "backspace on empty removes the last tag": the input reports text, not
+  keys, and an empty input's text does not change.
+- A `RoleList` of listitems. The items are deliberately unnamed, so the ✕
+  inside each stays reachable on targets that merge a labelled container.
+  `ConcernTagInputInert` for a missing `OnChange`.
+
 ## DateRangePicker
 
 A two-date field: a tappable summary of the chosen span that opens a
