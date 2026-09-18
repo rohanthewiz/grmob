@@ -1,6 +1,7 @@
 package tutorial
 
 import (
+	"fmt"
 	"github.com/rohanthewiz/grmob/comps"
 	"github.com/rohanthewiz/grmob/core"
 )
@@ -411,13 +412,56 @@ comps.Screen{
 					stepper("BorderRadius", radius, 0, 28, 4),
 					checkRow("Shadow", shadow),
 				),
+				prose("A Scroll's position belongs to the platform, and Go never reads it. To take "+
+					"the reader somewhere, name the node with core.ScrollTarget and issue "+
+					"core.ScrollIntoView from a handler: the host scrolls the least that shows it, "+
+					"the way each platform's own bring-into-view does."),
+				codeBlock(`core.Row(core.ScrollTarget("row-10"), core.Text("Row 10"))
+core.Button("Jump to row 10", func() { core.ScrollIntoView(ctx, "row-10") })`),
+				demoPanel("A short Scroll of twelve rows; the buttons move it, not your finger.",
+					scrollRows(),
+					core.Row(
+						core.Gap(8),
+						core.FlexWrap(true),
+						comps.Button{Label: "Jump to row 10", Emphasis: comps.EmphasisOutlined,
+							OnTap: func() { core.ScrollIntoView(ctx, "surfaces-row-10") }},
+						comps.Button{Label: "Back to row 1", Emphasis: comps.EmphasisGhost,
+							OnTap: func() { core.ScrollIntoView(ctx, "surfaces-row-1") }},
+					),
+				),
 				keyPoints(
 					"Box is the escape hatch with no theme base; Card is the themed surface.",
 					"Per-use style props layer over the theme's component base and win.",
 					"comps.Screen is the root scaffold: safe area, optional scroll region, content column.",
 					"Use Scroll for short content and core.List for long data-driven collections — never nest them.",
+					"core.ScrollTarget names a node; core.ScrollIntoView brings it into view, once per call.",
 				),
 			)
 		},
 	}
+}
+
+// scrollRows is the scroll-to demo's box: a Scroll with a points height, so
+// it is a viewport of its own inside the lesson's, holding twelve named rows.
+// The rows are the Scroll's direct children, which is what SwiftUI's
+// scrollTo needs to find them (Renderer.swift, GrMobBringIntoView).
+func scrollRows() core.View {
+	return core.ComponentFunc(func(ctx *core.Context) *core.Node {
+		th := ctx.Theme()
+		rows := []core.PropsAndChildren{
+			core.Height("160px"),
+			core.BorderColor(th.Colors.BorderColor()),
+			core.BorderWidth(1),
+			core.BorderRadius(8),
+		}
+		for i := 1; i <= 12; i++ {
+			rows = append(rows, core.Row(
+				core.ScrollTarget(fmt.Sprintf("surfaces-row-%d", i)),
+				core.PaddingHorizontal(12),
+				core.PaddingVertical(10),
+				core.Text(fmt.Sprintf("Row %d", i)),
+			))
+		}
+		return core.Scroll(rows...).Render(ctx)
+	})
 }

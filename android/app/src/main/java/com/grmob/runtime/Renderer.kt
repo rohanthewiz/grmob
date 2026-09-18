@@ -5,6 +5,8 @@ import androidx.compose.animation.Animatable
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
@@ -71,6 +73,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.ProvidedValue
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.withFrameNanos
 // The Float Animatable, aliased because androidx.compose.animation.Animatable
 // (the Color one, above) has the same simple name.
 import androidx.compose.animation.core.Animatable as FloatAnimatable
@@ -107,6 +110,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.core.view.WindowCompat
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.withLink
+import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -319,7 +324,11 @@ fun RenderNode(node: GrMobNode, extra: Modifier = Modifier) {
     // flow left to right, so an inset written before verticalScroll shrinks
     // the *viewport*, while one written after would pad the scrolled content
     // and leave the viewport still claiming the rows the keyboard covers.
-    val mods = extra.keyboardInset(node)
+    var mods = extra.keyboardInset(node)
+    // core.ScrollIntoView's target (core/scroll_to.go). Only a stamped node
+    // pays for the requester; the `if` is its own group, as onBack's is.
+    val scrollEpoch = node.intProp("scrollEpoch")
+    if (scrollEpoch > 0) mods = mods.then(scrollCommand(scrollEpoch))
 
     // Opening the disabled scope here, once, rather than inside every control
     // means a container's flag reaches leaves it does not know about — and
@@ -349,12 +358,40 @@ fun RenderNode(node: GrMobNode, extra: Modifier = Modifier) {
     }
 }
 
+/**
+ * core.ScrollIntoView, for the node carrying [epoch]: brought into view once,
+ * the first time this app meets an epoch that high (see
+ * GrMobRuntime.scrollEpochApplied).
+ *
+ * bringIntoView is Compose's own "scroll the least that shows this", through
+ * every scrollable parent: the meaning core gives the command, and the one the
+ * web's scrollIntoView({block: "nearest"}) and SwiftUI's scrollTo(id) have as
+ * well. One frame is awaited first, because the command can name a node
+ * composed in this very pass, which has no layout coordinates yet, and a
+ * requester whose node is not placed does nothing.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun scrollCommand(epoch: Int): Modifier {
+    val runtime = LocalGrMobRuntime.current
+    val requester = remember { BringIntoViewRequester() }
+    LaunchedEffect(epoch) {
+        if (epoch <= runtime.scrollEpochApplied) return@LaunchedEffect
+        runtime.scrollEpochApplied = epoch
+        withFrameNanos { }
+        requester.bringIntoView()
+    }
+    return Modifier.bringIntoViewRequester(requester)
+}
+
 @Composable
 private fun RenderNodeContent(node: GrMobNode, extra: Modifier) {
     val style = node.style
 
     when (node.type) {
         "Text" -> GrMobText(node, extra)
+        // core.Paragraph: runs of one flow of text; see GrMobParagraph.
+        "Paragraph" -> GrMobParagraph(node, extra)
         "Button" -> GrMobButton(node, extra)
 
         "Input" -> GrMobTextField(node, extra)
@@ -859,6 +896,62 @@ private fun GrMobText(node: GrMobNode, extra: Modifier) {
     )
 }
 
+/**
+ * core.Paragraph: one Text of an AnnotatedString, a span per run.
+ *
+ * The runs prop is a list of maps with core/paragraph.go's keys: t, and b, i,
+ * u, s, c (bold, italic, underline, strike, code) present as 1, fg a colour,
+ * cb a void callback ID. The paragraph's own style is the base TextStyle, as a
+ * Text's is, and each run's SpanStyle layers over it.
+ *
+ * A run with a callback is a LinkAnnotation.Clickable around its span, which
+ * is Compose's own inline link: TalkBack lists it among the paragraph's links
+ * and activates it, and a tap on its glyphs runs the listener. The tag is the
+ * callback ID, which is unique within the paragraph (IDs are per pass and per
+ * registration). No link style is passed: Go has already resolved the run's
+ * colour (core draws a link in the theme's Primary unless the run names one),
+ * and the marks are the caller's, underline included.
+ */
+@Composable
+private fun GrMobParagraph(node: GrMobNode, extra: Modifier) {
+    val runtime = LocalGrMobRuntime.current
+    val s = animatedStyle(node.style)
+    val runs = node.props["runs"] as? List<*> ?: emptyList<Any?>()
+    val text = buildAnnotatedString {
+        for (raw in runs) {
+            val run = raw as? Map<*, *> ?: continue
+            val on = { key: String -> (run[key] as? Number)?.toInt()?.let { it != 0 } ?: (run[key] == true) }
+            val decorations = mutableListOf<TextDecoration>()
+            if (on("u")) decorations.add(TextDecoration.Underline)
+            if (on("s")) decorations.add(TextDecoration.LineThrough)
+            val style = SpanStyle(
+                color = GrMobStyle.parseColor(run["fg"] as? String) ?: Color.Unspecified,
+                fontWeight = if (on("b")) FontWeight.Bold else null,
+                fontStyle = if (on("i")) FontStyle.Italic else null,
+                fontFamily = if (on("c")) FontFamily.Monospace else null,
+                textDecoration = if (decorations.isEmpty()) null else TextDecoration.combine(decorations),
+            )
+            val t = run["t"] as? String ?: ""
+            val cb = run["cb"] as? String ?: ""
+            if (cb.isNotEmpty()) {
+                withLink(LinkAnnotation.Clickable(tag = cb) { runtime.click(cb) }) {
+                    withStyle(style) { append(t) }
+                }
+            } else {
+                withStyle(style) { append(t) }
+            }
+        }
+    }
+    val cap = s?.maxLines ?: 0
+    Text(
+        text = text,
+        modifier = s.boxModifier(extra, gestureModifier(node)),
+        style = textStyle(s),
+        maxLines = if (cap > 0) cap else Int.MAX_VALUE,
+        overflow = if (cap > 0) TextOverflow.Ellipsis else TextOverflow.Clip,
+    )
+}
+
 // internal rather than private so GrMobCodeEditor.kt can build its own style on
 // top of this one: a code editor is this style plus a monospace family and a
 // smaller default pitch, and restating the whole conversion over there would be
@@ -948,14 +1041,14 @@ private fun GrMobMaterialButton(node: GrMobNode, extra: Modifier, compact: Boole
     // Style properties the Go theme owns are fed into material3's slots
     // instead of boxModifier: Button draws its own container, so background/
     // radius/padding must go through its API to keep ripple + a11y correct.
-    val box = marginAndSize(s, extra)
+    val box = buttonBox(s, extra)
     Button(
         onClick = { if (onClick.isNotEmpty()) runtime.click(onClick) },
         modifier = if (compact) box.heightIn(min = 1.dp).widthIn(min = 1.dp) else box,
         // The platform disabled state: material3 stops dispatching, drops the
         // ripple, and marks the node disabled for TalkBack.
         enabled = !node.isDisabled(),
-        shape = RoundedCornerShape((s?.borderRadius ?: 8f).dp),
+        shape = grMobShape(s, defaultRadius = 8f) ?: RoundedCornerShape(8.dp),
         // The border goes through material3's own slot for the same reason
         // background and padding do: marginAndSize strips the box-drawing
         // fields, so boxModifier's Modifier.border never runs for a Button and
@@ -984,6 +1077,9 @@ private fun GrMobMaterialButton(node: GrMobNode, extra: Modifier, compact: Boole
     ) {
         Text(
             node.stringProp("label"),
+            // The node's accessible name, stated where material3's clickable
+            // merges it; see contentSemantics.
+            modifier = s.contentSemantics(node.stringProp("label")),
             fontSize = if ((s?.fontSize ?: 0f) > 0f) s!!.fontSize.sp else 17.sp,
             fontWeight = if ((s?.fontWeight ?: 0) > 0) FontWeight(s!!.fontWeight) else null,
         )
@@ -1017,12 +1113,12 @@ private fun GrMobLongPressButton(node: GrMobNode, extra: Modifier) {
     val onLongPress = node.stringProp("onLongPress")
 
     Surface(
-        modifier = marginAndSize(s, extra).combinedClickable(
+        modifier = buttonBox(s, extra).combinedClickable(
             enabled = !node.isDisabled(),
             onClick = { if (onClick.isNotEmpty()) runtime.click(onClick) },
             onLongClick = { runtime.click(onLongPress) },
         ),
-        shape = RoundedCornerShape((s?.borderRadius ?: 8f).dp),
+        shape = grMobShape(s, defaultRadius = 8f) ?: RoundedCornerShape(8.dp),
         color = s?.background ?: MaterialTheme.colorScheme.primary,
         contentColor = s?.textColor ?: MaterialTheme.colorScheme.onPrimary,
         // The same border the material3 path takes, through Surface's own slot
@@ -1043,6 +1139,9 @@ private fun GrMobLongPressButton(node: GrMobNode, extra: Modifier) {
         ) {
             Text(
                 node.stringProp("label"),
+                // The node's accessible name, stated where the clickable
+                // merges it; see contentSemantics.
+                modifier = s.contentSemantics(node.stringProp("label")),
                 fontSize = if ((s?.fontSize ?: 0f) > 0f) s!!.fontSize.sp else 17.sp,
                 fontWeight = if ((s?.fontWeight ?: 0) > 0) FontWeight(s!!.fontWeight) else null,
             )
@@ -1076,12 +1175,28 @@ private fun borderStroke(s: GrMobStyle?): BorderStroke? {
  * Checkbox does, so it wants the margin and the size and none of the fill. A
  * second copy there would be the thing this function exists to avoid.
  */
+/**
+ * marginAndSize for the two Button paths: the same box, without the
+ * accessibility statement, which those paths make on their content instead
+ * (GrMobStyle.contentSemantics explains the caption it left in the reading).
+ * Hidden is kept: clearAndSetSemantics on the box is still the right way to
+ * drop the whole control from the tree.
+ */
+internal fun buttonBox(s: GrMobStyle?, extra: Modifier): Modifier = marginAndSize(
+    s?.copy(
+        accessibilityLabel = "", accessibilityHint = "", accessibilitySelected = "",
+        accessibilityCurrent = "",
+        accessibilityValue = GrMobStyle.ValueRange(null, null, null, ""),
+    ),
+    extra,
+)
+
 internal fun marginAndSize(s: GrMobStyle?, extra: Modifier): Modifier {
     if (s == null) return extra
     // Reuse boxModifier's ordering by building a margin/size-only style.
     val trimmed = s.copy(
         background = null, borderColor = null, borderWidth = 0f,
-        borderRadius = 0f, shadow = 0f,
+        borderRadius = 0f, corners = null, shadow = 0f,
         padding = GrMobStyle.Edges(0, 0, 0, 0),
     )
     return trimmed.boxModifier(extra)
@@ -1524,10 +1639,22 @@ private fun GrMobTextField(
     }
 
     val keyboard = KeyboardOptions(
+        // core.Keyboard asks a text field for a keyboard by name; a password
+        // field keeps the password type (its masking is the field's), except
+        // for digits, where NumberPassword is Android's digits-and-masked pad:
+        // a device PIN. NumericInput is the node type that picks its own.
         keyboardType = when {
             numeric -> KeyboardType.Number
-            password -> KeyboardType.Password
-            else -> KeyboardType.Text
+            password -> if (node.stringProp("keyboard") == "digits") KeyboardType.NumberPassword
+                else KeyboardType.Password
+            else -> when (node.stringProp("keyboard")) {
+                "digits" -> KeyboardType.Number
+                "decimal" -> KeyboardType.Decimal
+                "phone" -> KeyboardType.Phone
+                "email" -> KeyboardType.Email
+                "url" -> KeyboardType.Uri
+                else -> KeyboardType.Text
+            }
         },
         // A submit-carrying field advertises Done so the IME's action key
         // reads as "act on this", mirroring the iOS submitLabel; a field

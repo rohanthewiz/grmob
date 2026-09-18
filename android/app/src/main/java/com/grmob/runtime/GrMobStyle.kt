@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.AbsoluteRoundedCornerShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -22,6 +23,7 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
@@ -240,8 +242,19 @@ data class GrMobStyle(
     /** Parsed Transition duration; 0 means "no transition, snap changes". */
     val transitionMs: Int,
     val transitionEasing: Easing,
+    /**
+     * Go's core.Corners: a radius per corner, or null when the node named
+     * none and [borderRadius] is the shape. Defaulted, like the accessibility
+     * fields above, so a GrMobStyle built by hand needs no new argument. Read
+     * through [grMobShape], never directly, so the precedence lives in one
+     * place.
+     */
+    val corners: Corners? = null,
 ) {
     data class Edges(val top: Int, val right: Int, val bottom: Int, val left: Int)
+
+    /** Four physical radii in dp, CSS's order (core.Corners). */
+    data class Corners(val topLeft: Float, val topRight: Float, val bottomRight: Float, val bottomLeft: Float)
 
     /**
      * Go's core.ValueRange: where a valued control sits inside its range.
@@ -386,7 +399,20 @@ data class GrMobStyle(
                 disabled = obj.optBoolean("Disabled", false),
                 transitionMs = parseTransitionMs(obj.optString("Transition")),
                 transitionEasing = parseTransitionEasing(obj.optString("Transition")),
+                corners = parseCorners(obj.optJSONObject("Corners")),
             )
+        }
+
+        /** core.Corners, or null for a node that named no corner: all four
+         *  zero is Go's "not stated" (Corners.Set), and the fields are
+         *  omitzero, so an absent key is a zero. */
+        private fun parseCorners(obj: JSONObject?): Corners? {
+            if (obj == null) return null
+            val c = Corners(
+                obj.optDouble("TopLeft", 0.0).toFloat(), obj.optDouble("TopRight", 0.0).toFloat(),
+                obj.optDouble("BottomRight", 0.0).toFloat(), obj.optDouble("BottomLeft", 0.0).toFloat(),
+            )
+            return if (c.topLeft == 0f && c.topRight == 0f && c.bottomRight == 0f && c.bottomLeft == 0f) null else c
         }
 
         /**
@@ -535,6 +561,72 @@ data class GrMobStyle(
  * padding, making the whole visible box — padding included, margin excluded —
  * the touch target, with the ripple clipped to the node's shape.
  */
+/**
+ * The node's accessibility statement, for the *content* of a control that
+ * draws its own clickable (a material3 Button, or the long-press Surface), as
+ * opposed to boxModifier's, which annotates the box from outside.
+ *
+ * # What boxModifier's semantics did to a Button
+ *
+ * boxModifier states a labelled node with `semantics(mergeDescendants = true)`
+ * on the modifier the caller passes in. On a Button that lands on the same
+ * node as material3's clickable, so the name was on the node TalkBack
+ * activates. But the label Text inside stayed a child of it, and TalkBack read
+ * both, the name and then the caption:
+ *
+ *	  measured on the emulator (lesson 4.7's Copy; TalkBack's utterance
+ *	  logged with no TTS engine, focus moved with Tab)
+ *	  before  "Copy code. Copies to the clipboard" "Copy" "Button"
+ *	  after   "Copy code. Copies to the clipboard" "Button"
+ *
+ * On the web aria-label *replaces* an element's contents as its name, and
+ * SwiftUI's labelled element does the same, so Android was the one target
+ * reading a labelled button's caption twice over.
+ *
+ * A uiautomator dump of the old tree looks like two nodes, a clickable one
+ * with no description and a labelled one that is not clickable. The labelled
+ * one is Compose's *fake* child: a merging node with children publishes its
+ * contentDescription as an extra child so the description reads in order with
+ * them, and a fake node is never a TalkBack stop of its own. It is not a split.
+ *
+ * # The fix: state it inside, replacing the caption
+ *
+ * The clickable merges its descendants, so semantics stated on the content
+ * with no merge flag of their own are folded into the clickable's node.
+ * `clearAndSetSemantics` replaces the label Text's own text rather than
+ * joining it.
+ *
+ * Role and disabled are left to material3, which states both on the clickable
+ * itself. Only the facts it cannot know are stated here.
+ *
+ * Returns the empty Modifier when there is nothing to state, so the Text keeps
+ * its own semantics and an unlabelled button reads its caption as before.
+ *
+ * `caption` is the visible label, used as the name when the node states a hint
+ * or a state but no label: a contentDescription replaces the text in
+ * TalkBack's reading, so a hint alone would otherwise erase the button's name.
+ */
+internal fun GrMobStyle?.contentSemantics(caption: String): Modifier {
+    if (this == null || accessibilityHidden) return Modifier
+    val selectedState = accessibilitySelected
+    val currentKind = accessibilityCurrent
+    val valueRange = accessibilityValue
+    if (accessibilityLabel.isEmpty() && accessibilityHint.isEmpty() &&
+        selectedState.isEmpty() && currentKind.isEmpty() && !valueRange.stated()
+    ) return Modifier
+    val name = accessibilityLabel.ifEmpty { caption }
+    val description = listOf(grMobCurrentLabel(name, currentKind, valueRange.text), accessibilityHint)
+        .filter { it.isNotEmpty() }.joinToString(". ")
+    val currentState = grMobCurrentState(name, currentKind, valueRange.text)
+    return Modifier.clearAndSetSemantics {
+        if (description.isNotEmpty()) contentDescription = description
+        grMobSelected(selectedState)
+        grMobCurrent(currentKind, selectedState)
+        grMobValue(valueRange)
+        if (currentState.isNotEmpty()) stateDescription = currentState
+    }
+}
+
 fun GrMobStyle?.boxModifier(extra: Modifier = Modifier, gestures: Modifier = Modifier): Modifier {
     var m: Modifier = extra
     if (this == null) return m.then(gestures)
@@ -674,7 +766,7 @@ fun GrMobStyle?.boxModifier(extra: Modifier = Modifier, gestures: Modifier = Mod
     // Guarded like rotate, so a still node gains no layout node.
     if (spinMs != 0) m = m.then(SpinElement(spinMs))
 
-    val shape = if (borderRadius > 0f) RoundedCornerShape(borderRadius.dp) else null
+    val shape = grMobShape(this)
     if (shadow > 0f) {
         m = m.shadow(elevation = shadow.dp, shape = shape ?: RoundedCornerShape(0.dp))
     }
@@ -714,6 +806,24 @@ fun GrMobStyle?.boxModifier(extra: Modifier = Modifier, gestures: Modifier = Mod
 }
 
 private val Edges0 = GrMobStyle.Edges(0, 0, 0, 0)
+
+/**
+ * The shape a style's box is drawn in: its four corners when it named them
+ * (core.CornerRadii), else its one radius, else [defaultRadius], or null for
+ * a square box. core's Style.Radii states the same precedence.
+ *
+ * AbsoluteRoundedCornerShape rather than RoundedCornerShape for the corners:
+ * core's corners are physical (left and right of the screen, as CSS's
+ * border-radius is), and RoundedCornerShape's are start and end, which a
+ * right-to-left layout would mirror.
+ */
+internal fun grMobShape(style: GrMobStyle?, defaultRadius: Float = 0f): Shape? {
+    style?.corners?.let {
+        return AbsoluteRoundedCornerShape(it.topLeft.dp, it.topRight.dp, it.bottomRight.dp, it.bottomLeft.dp)
+    }
+    val radius = if ((style?.borderRadius ?: 0f) > 0f) style!!.borderRadius else defaultRadius
+    return if (radius > 0f) RoundedCornerShape(radius.dp) else null
+}
 
 /**
  * Maps a Go dimension string onto a size modifier. Supported forms: "120px"

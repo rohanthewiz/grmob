@@ -211,6 +211,9 @@ internal class GrMobRichTextState {
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: Editable?) {
                 if (applying || s == null) return
+                // Before the read, so the face on screen and the kind in the
+                // document agree about the text just typed at a block's end.
+                GrMobRichMapper.stretchBlocks(s)
                 doc = GrMobRichMapper.document(s)
                 send()
             }
@@ -527,6 +530,61 @@ internal object GrMobRichMapper {
 
     private fun span(out: SpannableStringBuilder, what: Any, from: Int) {
         out.setSpan(what, from, out.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+    }
+
+    /** The span classes [paragraphSpans] draws a block kind with. A block's
+     *  drawing spans are recognised as these classes over exactly the range of
+     *  its GrMobBlockSpan, which is how [spannable] lays them down. */
+    private fun isBlockDrawing(span: Any): Boolean =
+        span is RelativeSizeSpan || span is GrMobBlockBoldSpan ||
+            span is GrMobBlockMonospaceSpan || span is LeadingMarginSpan.Standard ||
+            span is QuoteSpan
+
+    /**
+     * Stretches every block's spans to the end of the paragraph they end in.
+     *
+     * # Why
+     *
+     * The block spans are EXCLUSIVE_EXCLUSIVE, so text typed at a heading's
+     * very end lands outside them. The document was right regardless, because
+     * [document] reads a paragraph's kind at its *first* character, but the
+     * typed text drew in the body face until the next rebuild.
+     *
+     * # Why not INCLUSIVE flags instead
+     *
+     * An inclusive end would also swallow the "\n" of Enter pressed at a
+     * heading's end, and everything typed on the new line after it, making the
+     * new paragraph a heading as well. Every editor this model is compared with
+     * starts a body paragraph there. Stretching after the edit gets both: the
+     * "\n" is still outside the span (EXCLUSIVE), so the span already ends at a
+     * paragraph boundary and is left alone.
+     *
+     *	  "Title|"  + "s"   → span "Title", text "Titles"  → stretched to "Titles"
+     *	  "Title|"  + "\n"  → span "Title", next char "\n" → left alone
+     *	  "Ti|tle"  + "x"   → interior insert, span already grew → left alone
+     *
+     * Only the end moves. A span never shrinks here, so an Enter typed *inside*
+     * a heading still leaves both halves headings, which is what [document]
+     * reads too.
+     */
+    fun stretchBlocks(text: Editable) {
+        for (block in text.getSpans(0, text.length, GrMobBlockSpan::class.java)) {
+            val start = text.getSpanStart(block)
+            val end = text.getSpanEnd(block)
+            if (start < 0 || end >= text.length || text[end] == '\n') continue
+            var paragraphEnd = text.indexOf('\n', end)
+            if (paragraphEnd < 0) paragraphEnd = text.length
+            // Collected before any is moved: the drawing spans are found by
+            // their range equalling the marker's, and moving the marker first
+            // would leave nothing to compare with.
+            val drawing = text.getSpans(start, end, Any::class.java).filter {
+                isBlockDrawing(it) && text.getSpanStart(it) == start && text.getSpanEnd(it) == end
+            }
+            text.setSpan(block, start, paragraphEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            for (span in drawing) {
+                text.setSpan(span, start, paragraphEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+        }
     }
 
     /**

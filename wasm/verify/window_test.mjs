@@ -106,3 +106,55 @@ test("no viewport, no report", () => {
     rt.GrMob.windowMetrics.report();
     assert.deepEqual(reports, []);
 });
+
+// --- A page that names the app's window --------------------------------------
+//
+// The tutorial shows the app inside a phone frame on a wider page, so the
+// viewport is not the app's window. A page names the element that is
+// (window.GrMobViewport), and the report is that element's box.
+
+// A stand-in element: a box, and nothing else the runtime reads.
+const box = (width, height) => ({ getBoundingClientRect: () => ({ width, height }) });
+
+test("a named element is the window: its box, and no fold", () => {
+    const h = harness({
+        width: 1400, height: 900,
+        segments: [rect(0, 0, 700, 900), rect(700, 0, 700, 900)], posture: "folded",
+    });
+    h.rt.window.GrMobViewport = () => box(376.4, 812.6);
+    h.wm.report();
+    assert.deepEqual(h.reports, [{ width: 376, height: 813 }]);
+});
+
+// Asked again on every report, because the element is the app's own tree
+// and a layout switch replaces it; null or a box not laid out falls back to
+// the browser's viewport rather than reporting a zero-sized window.
+test("the page is asked each time, and a missing or empty box is the viewport", () => {
+    const h = harness({ width: 1400, height: 900 });
+    let el = null;
+    h.rt.window.GrMobViewport = () => el;
+    h.wm.report();
+    el = box(0, 0);
+    h.wm.report();
+    el = box(400, 800);
+    h.wm.report();
+    h.rt.window.GrMobViewport = () => { throw new Error("page bug"); };
+    h.wm.report();
+    assert.deepEqual(h.reports, [
+        { width: 1400, height: 900 }, { width: 1400, height: 900 },
+        { width: 400, height: 800 }, { width: 1400, height: 900 },
+    ]);
+});
+
+// track re-asks after a mount or a patch batch and reports only when the
+// answer changed: a batch that left the element alone sends nothing.
+test("track reports when the element changes, and only then", () => {
+    const h = harness({ width: 1400, height: 900 });
+    const phone = box(376, 812);
+    h.rt.window.GrMobViewport = () => phone;
+    h.wm.track();
+    h.wm.track();
+    h.rt.window.GrMobViewport = () => null;
+    h.wm.track();
+    assert.deepEqual(h.reports, [{ width: 376, height: 812 }, { width: 1400, height: 900 }]);
+});

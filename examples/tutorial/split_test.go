@@ -18,9 +18,10 @@ func setLayout(mode string) {
 	core.ReceiveHostEvent(layoutEvent, map[string]any{"mode": mode})
 }
 
-// newSplitApp is newApp in the split layout. It renders once before asking,
-// because the app takes its subscription during its first render — which is
-// also the page's order: it sends the mode after the mount.
+// newSplitApp is newApp in the split layout, switched after the first render:
+// the path a live tree takes on the toggle and on a resize. The page's boot
+// sends the mode before the first render instead, which
+// TestAModeSentBeforeTheFirstRenderIsTheFirstFrame covers.
 func newSplitApp(t *testing.T) *render.Manager {
 	t.Helper()
 	mgr := newApp(t)
@@ -49,6 +50,33 @@ func panes(t *testing.T, root *node) (guide, phone *node) {
 
 // isDemoPanel reports a demo panel's root, by the key demoPanel gives it.
 func isDemoPanel(n *node) bool { return strings.HasPrefix(n.Key, demoKeyPrefix) }
+
+// The page sends the mode before RenderInitial, so a wide window's first frame
+// is the split rather than one frame of the phone layout and then a patch.
+// And a mode is the boot value of the app it was sent to, never of the next
+// one: once that app closes, the following app boots in the phone layout.
+func TestAModeSentBeforeTheFirstRenderIsTheFirstFrame(t *testing.T) {
+	setLayout("split")
+	mgr := newApp(t)
+	if byID(tree(t, mgr), splitID) == nil {
+		t.Fatal("a mode sent before the first render should be the first frame's layout")
+	}
+	mgr.Close()
+
+	next := newApp(t)
+	if byID(tree(t, next), splitID) != nil {
+		t.Fatal("the closed app's mode leaked into the next app's boot")
+	}
+	// A live tree's mode is its own state: sent now, it switches this tree
+	// and is not recorded as anyone's boot value.
+	setLayout("split")
+	if byID(tree(t, next), splitID) == nil {
+		t.Fatal("a mode sent to a live tree should switch it")
+	}
+	if bootSplit() {
+		t.Fatal("a mode sent while a tree listens must not become a boot value")
+	}
+}
 
 // Without a layout event nothing changes: the phone layout is the default on
 // every host, and it is the Navigator's tree untouched.
@@ -184,13 +212,72 @@ func TestPushedDemoScreenRunsOnThePhone(t *testing.T) {
 	if !hasTextContaining(guide, "Screens are a stack") {
 		t.Fatal("the guide should name the lesson underneath")
 	}
+	// The covered lesson itself, not a note about it: its Next button is
+	// there, switched off, and nothing in the guide carries a callback ID,
+	// which would name one of the pushed screen's handlers by now.
+	next := findNode(guide, func(n *node) bool { return n.Type == "Button" && n.Props["label"] == "Next ›" })
+	if next == nil || next.Style == nil || !next.Style.Disabled {
+		t.Fatal("the covered lesson's controls should be in the guide, disabled")
+	}
+	if cb := findNode(guide, func(n *node) bool {
+		for k, v := range n.Props {
+			if id, ok := v.(string); ok && id != "" && strings.HasPrefix(k, "on") {
+				return true
+			}
+		}
+		return false
+	}); cb != nil {
+		t.Fatalf("a %s in the covered guide still carries a callback", cb.Type)
+	}
+	// The lesson keeps slot 0 of the pane and its key, and the bar comes
+	// after it: the reconciler matches by position, so this is what keeps the
+	// guide's scroll position across the push and the pop.
+	pane := byID(tree(t, mgr), guideID)
+	if len(pane.Children) != 2 || !strings.HasSuffix(pane.Children[0].Key, "/"+lessonRootKey) ||
+		byID(pane.Children[1], guideNoteID) == nil {
+		t.Fatalf("expected [lesson, note] in the guide pane, got %d children", len(pane.Children))
+	}
 
 	tap(t, mgr, "‹ Pop back to the lesson")
 	guide, _ = panes(t, tree(t, mgr))
-	if findNode(guide, func(n *node) bool { return n.Type == "Button" && n.Props["label"] == "Next ›" }) == nil {
-		t.Fatal("popping back should bring the lesson's guide back")
+	live := findNode(guide, func(n *node) bool { return n.Type == "Button" && n.Props["label"] == "Next ›" })
+	if live == nil || live.Props["onClick"] == nil {
+		t.Fatal("popping back should bring the live lesson's guide back")
 	}
 	assertNoConcerns(t)
+}
+
+// inert copies: the tree it is given is frozen, like liftDemos'.
+func TestInertCopiesAndDisables(t *testing.T) {
+	button := &core.Node{Type: "Button", Props: map[string]any{"label": "Go", "onClick": "cb_3", "focusEpoch": 2}}
+	text := &core.Node{Type: "Text", Props: map[string]any{"text": "hi"}}
+	root := &core.Node{Type: "Column", Key: "k", Children: []*core.Node{text, button}}
+
+	out := inert(root)
+	if button.Props["onClick"] != "cb_3" || button.Style != nil || button.Props["focusEpoch"] != 2 {
+		t.Fatal("inert wrote into its input")
+	}
+	if out.Key != "k" || len(out.Children) != 2 || out.Children[0].Props["text"] != "hi" {
+		t.Fatal("inert must keep keys, order and every non-callback prop")
+	}
+	b := out.Children[1]
+	if _, ok := b.Props["onClick"]; ok || b.Style == nil || !b.Style.Disabled {
+		t.Fatalf("the copy's button should have no callback and be disabled: %+v", b.Props)
+	}
+	if _, ok := b.Props["focusEpoch"]; ok {
+		t.Fatal("a focus command would fire again on a host that rebuilds the copy")
+	}
+	if out.Children[0].Style != nil {
+		t.Fatal("a node with no callback should not be marked disabled")
+	}
+
+	// A Paragraph's link runs carry their callbacks a level down.
+	runs := []map[string]any{{"t": "see "}, {"t": "terms", "cb": "cb_9", "fg": "#00f"}}
+	para := inert(&core.Node{Type: "Paragraph", Props: map[string]any{"runs": runs}})
+	got := para.Props["runs"].([]map[string]any)
+	if _, ok := got[1]["cb"]; ok || got[1]["fg"] != "#00f" || runs[1]["cb"] != "cb_9" {
+		t.Fatalf("the copy's link run should lose only its callback, and the input keep it: %v / %v", got, runs)
+	}
 }
 
 // liftDemos never writes the tree it is given: a rendered node is frozen, and
@@ -226,4 +313,43 @@ func TestLiftDemosCopiesOnWrite(t *testing.T) {
 	if same, _, _ := liftDemos(untouched, nil); same != untouched {
 		t.Fatal("a tree with no demo in it should be returned as is")
 	}
+}
+
+// A guide pointer brings its own panel into view on the phone: tapping the
+// second pointer of a two-demo lesson stamps the second panel, and only it,
+// with a scroll command (core.ScrollIntoView). Which element the host then
+// scrolls is the host's; the stamp is what Go promises.
+func TestAPointerScrollsThePhoneToItsPanel(t *testing.T) {
+	mgr := newSplitApp(t)
+	openLesson(t, mgr, "Controlled inputs")
+
+	guide, _ := panes(t, tree(t, mgr))
+	pointers := findNodes(guide, func(n *node) bool {
+		return n.Style != nil && strings.HasPrefix(n.Style.AccessibilityLabel, "Show on the phone: ")
+	})
+	if len(pointers) != 2 {
+		t.Fatalf("lesson 2.3 should leave two pointers in the guide, found %d", len(pointers))
+	}
+	if pointers[1].Style.AccessibilityRole != string(core.RoleButton) {
+		t.Fatal("a pointer is a button to accessibility")
+	}
+	id, _ := pointers[1].Props["onClick"].(string)
+	if id == "" {
+		t.Fatal("a pointer should be tappable")
+	}
+	mgr.DispatchCallback(id)
+
+	_, phone := panes(t, tree(t, mgr))
+	panels := findNodes(phone, isDemoPanel)
+	if len(panels) != 2 {
+		t.Fatalf("expected both panels on the phone, found %d", len(panels))
+	}
+	if _, ok := panels[0].Props["scrollEpoch"]; ok {
+		t.Fatal("the first panel was stamped for the second pointer")
+	}
+	// A number off the wire: the test tree is decoded JSON.
+	if e, _ := panels[1].Props["scrollEpoch"].(float64); e < 1 {
+		t.Fatalf("the second panel should carry the scroll command, got %#v", panels[1].Props)
+	}
+	assertNoConcerns(t)
 }

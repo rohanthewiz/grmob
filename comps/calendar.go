@@ -102,11 +102,11 @@ const ConcernCalendarRangeReversed = "calendar-range-reversed"
 //     trailing adjacent days, which *do* carry the band: dimming them and then
 //     cutting the band at the 1st would stop it somewhere the reader can see
 //     no reason for.
-//   - The rounded endpoint meets the square band with a small notch. core has
-//     one border radius and not four, so the alternative would be a second Box
-//     per cell in all 42 — a structural change to every calendar in the tree to
-//     round two corners. Material's range picker draws the same notch on
-//     purpose, the endpoint being a circle over a rectangle.
+//   - An endpoint is rounded on its outside and square on the band's side, so
+//     the fill runs into the band with no notch at the join. It used to be
+//     rounded all round, which left a notch at both ends, because core had one
+//     border radius and not four; core.CornerRadii is the fix. A lone
+//     endpoint, a one-day range and a Selected day keep the full rounding.
 //   - Today's ring survives inside the band and goes square with it. Losing it
 //     would be the one place the grid stopped saying what day it is, and a
 //     range that happens to cover today is the common case, not the odd one.
@@ -664,6 +664,18 @@ func (c Calendar) dayCell(ctx *core.Context, day time.Time, month time.Month) co
 		ink = inkOn(t, t.Colors.Primary)
 		dot = ink
 		items = append(items, core.BackgroundColor(t.Colors.Primary))
+		// An endpoint with a band beside it is square on the band's side, so
+		// the fill runs into the band with no notch between them (see "A range
+		// of days is a band"). Only then: a lone endpoint, a one-day range and
+		// Selected keep the pill.
+		if r := float64(t.Spacing.SM); c.hasBand() {
+			switch {
+			case startsRange && !endsRange:
+				items = append(items, core.CornerRadii(r, 0, 0, r))
+			case endsRange && !startsRange:
+				items = append(items, core.CornerRadii(0, r, r, 0))
+			}
+		}
 	case interior:
 		// A day inside the band: the same colour, thinned, and square, so the
 		// run of them tiles into one shape. The radius is restated rather
@@ -923,6 +935,18 @@ func (c Calendar) rangeRole(day time.Time) (startsRange, endsRange, interior boo
 		interior = d > ymd(c.RangeStart.In(loc)) && d < ymd(c.RangeEnd.In(loc))
 	}
 	return startsRange, endsRange, interior
+}
+
+// hasBand reports whether the range has days between its endpoints to draw
+// a band over: both ends set, the end after the start. A reversed range has
+// nothing between them (ConcernCalendarRangeReversed), and neither does a
+// half-made one.
+func (c Calendar) hasBand() bool {
+	if c.RangeStart.IsZero() || c.RangeEnd.IsZero() {
+		return false
+	}
+	loc := c.RangeStart.Location()
+	return ymd(c.RangeEnd.In(loc)) > ymd(c.RangeStart)
 }
 
 // rangeBand is the fill a day inside the span takes: Primary, thinned.

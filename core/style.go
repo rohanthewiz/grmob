@@ -91,35 +91,39 @@ package core
 // See TestWhatWindowingWouldSave in examples/tutorial for that profile and for
 // what it is still waiting on.
 type Style struct {
-	FontSize     float64     `json:",omitzero"`
-	FontWeight   Weight      `json:",omitzero"`
-	TextColor    string      `json:",omitzero"`
-	Background   string      `json:",omitzero"`
-	Padding      EdgeInsets  `json:",omitzero"`
-	Margin       EdgeInsets  `json:",omitzero"`
-	BorderRadius float64     `json:",omitzero"`
-	Shadow       float64     `json:",omitzero"`
-	Align        Alignment   `json:",omitzero"`
-	Display      DisplayMode `json:",omitzero"`
-	Width        string      `json:",omitzero"`
-	Height       string      `json:",omitzero"`
-	BorderColor  string      `json:",omitzero"`
-	BorderWidth  float64     `json:",omitzero"`
-	Position     Position    `json:",omitzero"`
-	Top          string      `json:",omitzero"`
-	Left         string      `json:",omitzero"`
-	Right        string      `json:",omitzero"`
-	Bottom       string      `json:",omitzero"`
-	ZIndex       int         `json:",omitzero"`
-	Overflow     string      `json:",omitzero"` // "hidden", "scroll", "visible"
-	WhiteSpace   string      `json:",omitzero"` // "nowrap", "normal", "pre-line"
-	LineHeight   int         `json:",omitzero"`
-	MaxLines     int         `json:",omitzero"` // a Text's line cap; see core.MaxLines
-	MaxWidth     string      `json:",omitzero"`
-	MaxHeight    string      `json:",omitzero"`
-	Gap          float64     `json:",omitzero"`
-	Transition   string      `json:",omitzero"` // "all 0.3s ease"
-	Animation    string      `json:",omitzero"` // "bounce 2s infinite"
+	FontSize     float64    `json:",omitzero"`
+	FontWeight   Weight     `json:",omitzero"`
+	TextColor    string     `json:",omitzero"`
+	Background   string     `json:",omitzero"`
+	Padding      EdgeInsets `json:",omitzero"`
+	Margin       EdgeInsets `json:",omitzero"`
+	BorderRadius float64    `json:",omitzero"`
+	// Corners, when any of its four is non-zero, replaces BorderRadius with a
+	// radius per corner; see CornerRadii for the rules and the two widgets
+	// that were waiting for it.
+	Corners     Corners     `json:",omitzero"`
+	Shadow      float64     `json:",omitzero"`
+	Align       Alignment   `json:",omitzero"`
+	Display     DisplayMode `json:",omitzero"`
+	Width       string      `json:",omitzero"`
+	Height      string      `json:",omitzero"`
+	BorderColor string      `json:",omitzero"`
+	BorderWidth float64     `json:",omitzero"`
+	Position    Position    `json:",omitzero"`
+	Top         string      `json:",omitzero"`
+	Left        string      `json:",omitzero"`
+	Right       string      `json:",omitzero"`
+	Bottom      string      `json:",omitzero"`
+	ZIndex      int         `json:",omitzero"`
+	Overflow    string      `json:",omitzero"` // "hidden", "scroll", "visible"
+	WhiteSpace  string      `json:",omitzero"` // "nowrap", "normal", "pre-line"
+	LineHeight  int         `json:",omitzero"`
+	MaxLines    int         `json:",omitzero"` // a Text's line cap; see core.MaxLines
+	MaxWidth    string      `json:",omitzero"`
+	MaxHeight   string      `json:",omitzero"`
+	Gap         float64     `json:",omitzero"`
+	Transition  string      `json:",omitzero"` // "all 0.3s ease"
+	Animation   string      `json:",omitzero"` // "bounce 2s infinite"
 
 	// Rotate turns the node clockwise by this many degrees about its own
 	// centre. It is a paint-time transform on all four targets, not a layout
@@ -1050,6 +1054,11 @@ func (s Style) applyTo(target *Style) {
 	// Borders, corners, elevation.
 	if s.BorderRadius != 0 {
 		target.BorderRadius = s.BorderRadius
+	}
+	// Whole, not per corner: four radii are one shape, and a later style
+	// that names its corners means all four of them, square ones included.
+	if s.Corners.Set() {
+		target.Corners = s.Corners
 	}
 	if s.BorderColor != "" {
 		target.BorderColor = s.BorderColor

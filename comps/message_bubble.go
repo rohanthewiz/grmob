@@ -35,13 +35,23 @@ import "github.com/rohanthewiz/grmob/core"
 //
 // # What it is not
 //
-//   - **Not a thread.** A conversation opens at its newest message, which is
-//     a scroll offset, and no host reports or accepts one (Carousel's wall).
+//   - **Not a thread.** A conversation opens at its newest message and loads
+//     older ones as the reader scrolls up. core.ScrollIntoView can do the
+//     first, but no host reports a scroll offset, so nothing can do the
+//     second (Carousel's wall).
 //     A caller lays bubbles out in its own Column or core.List, as
 //     examples/chat does, and the spacing between them is the caller's too.
-//   - **No tail.** The little point on a bubble's corner is one sharp corner
-//     on a rounded box, and core has one radius, not four — DateRangePicker's
-//     notch again.
+//
+// # The tail
+//
+// The bottom corner on the sender's side is nearly square (4 against 16):
+// bottom-right on the reader's own messages, bottom-left on everyone else's.
+// It is the shape every chat app uses to say whose a bubble is without a
+// drawn point, and it costs nothing but a radius per corner
+// (core.CornerRadii). Every bubble has it, not only the last of a run: a run
+// is the caller's layout, and a bubble cannot see its neighbours. The
+// corners are physical, so a right-to-left transcript that lines the
+// reader's messages up on the left mirrors Mine itself.
 //
 // # Accessibility
 //
@@ -86,6 +96,12 @@ type MessageBubble struct {
 
 // Render builds Row(justify, Column(sender?, text, time?)). It takes no hook
 // slot.
+// bubbleRadius is a bubble's rounding and bubbleTail its one sharp corner.
+const (
+	bubbleRadius = 16
+	bubbleTail   = 4
+)
+
 func (m MessageBubble) Render(ctx *core.Context) *core.Node {
 	t := ctx.Theme()
 
@@ -114,11 +130,18 @@ func (m MessageBubble) Render(ctx *core.Context) *core.Node {
 		name += ", " + m.Time
 	}
 
+	// The tail: the bottom corner on the sender's side, nearly square, so the
+	// bubble points at whose it is (core.CornerRadii; see "The tail").
+	tail := core.CornerRadii(bubbleRadius, bubbleRadius, bubbleRadius, bubbleTail)
+	if m.Mine {
+		tail = core.CornerRadii(bubbleRadius, bubbleRadius, bubbleTail, bubbleRadius)
+	}
 	bubble := []core.PropsAndChildren{
 		core.Gap(2),
 		core.PaddingVertical(8),
 		core.PaddingHorizontal(12),
-		core.BorderRadius(16),
+		core.BorderRadius(bubbleRadius),
+		tail,
 		core.BackgroundColor(fill),
 		// A bubble that could span the row would read as a banner, and the
 		// empty margin on the far side is what says whose message it is.

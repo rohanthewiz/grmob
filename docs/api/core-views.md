@@ -4,9 +4,9 @@
 import "github.com/rohanthewiz/grmob/core"
 ```
 
-View, Node, Context and state slots; conditionals, caching, error boundaries and debug-mode concerns.
+View, Node, Context and state slots; text and inline runs; conditionals, caching, error boundaries and debug-mode concerns.
 
-One of 11 topic pages of [package core](core.md), which has the package overview and an index of every topic. This page documents the declarations in `core/view.go`, `core/node.go`, `core/text.go`, `core/context.go`, `core/cleanup.go`, `core/cached.go`, `core/conditionals.go`, `core/error_boundary.go`, `core/render_manager.go`, `core/debug.go`.
+One of 11 topic pages of [package core](core.md), which has the package overview and an index of every topic. This page documents the declarations in `core/view.go`, `core/node.go`, `core/text.go`, `core/paragraph.go`, `core/context.go`, `core/cleanup.go`, `core/cached.go`, `core/conditionals.go`, `core/error_boundary.go`, `core/render_manager.go`, `core/debug.go`.
 
 ## Index
 
@@ -62,6 +62,7 @@ One of 11 topic pages of [package core](core.md), which has the package overview
 - [`type RenderManager`](#type-rendermanager)
     - [`func NewRenderManager`](#func-newrendermanager)
     - [`func (*RenderManager) TriggerRender`](#func-rendermanager-triggerrender)
+- [`type Span`](#type-span)
 - [`type State`](#type-state)
     - [`func NewState`](#func-newstate)
     - [`func (*State) Get`](#func-state-get)
@@ -76,6 +77,7 @@ One of 11 topic pages of [package core](core.md), which has the package overview
     - [`func Keyed`](#func-keyed)
     - [`func Match`](#func-match)
     - [`func MatchBool`](#func-matchbool)
+    - [`func Paragraph`](#func-paragraph)
     - [`func SafeRender`](#func-saferender)
     - [`func Text`](#func-text)
 - [`type WhenClause`](#type-whenclause)
@@ -241,7 +243,7 @@ SetDebugMode turns the debug checks on or off. Zero overhead when off: every che
 func WithConfigOpt(c *AppConfig) func(*Context)
 ```
 
-<small>[core/context.go:326](https://github.com/rohanthewiz/grmob/blob/master/core/context.go#L326)</small>
+<small>[core/context.go:333](https://github.com/rohanthewiz/grmob/blob/master/core/context.go#L333)</small>
 
 ### func WithThemeOpt
 
@@ -249,7 +251,7 @@ func WithConfigOpt(c *AppConfig) func(*Context)
 func WithThemeOpt(t *Theme) func(*Context)
 ```
 
-<small>[core/context.go:320](https://github.com/rohanthewiz/grmob/blob/master/core/context.go#L320)</small>
+<small>[core/context.go:327](https://github.com/rohanthewiz/grmob/blob/master/core/context.go#L327)</small>
 
 ## Types
 
@@ -266,7 +268,7 @@ type AppConfig struct {
 }
 ```
 
-<small>[core/context.go:121](https://github.com/rohanthewiz/grmob/blob/master/core/context.go#L121)</small>
+<small>[core/context.go:124](https://github.com/rohanthewiz/grmob/blob/master/core/context.go#L124)</small>
 
 ### type ComponentFunc
 
@@ -325,7 +327,7 @@ type Context struct {
 func NewContext() *Context
 ```
 
-<small>[core/context.go:130](https://github.com/rohanthewiz/grmob/blob/master/core/context.go#L130)</small>
+<small>[core/context.go:133](https://github.com/rohanthewiz/grmob/blob/master/core/context.go#L133)</small>
 
 #### func UseChildContext
 
@@ -333,7 +335,7 @@ func NewContext() *Context
 func UseChildContext(ctx *Context) *Context
 ```
 
-<small>[core/context.go:161](https://github.com/rohanthewiz/grmob/blob/master/core/context.go#L161)</small>
+<small>[core/context.go:166](https://github.com/rohanthewiz/grmob/blob/master/core/context.go#L166)</small>
 
 #### func (*Context) BeginRenderPass
 
@@ -351,7 +353,7 @@ BeginRenderPass starts a callback ID pass for this context tree; see callbackReg
 func (ctx *Context) ClearDirty()
 ```
 
-<small>[core/context.go:115](https://github.com/rohanthewiz/grmob/blob/master/core/context.go#L115)</small>
+<small>[core/context.go:118](https://github.com/rohanthewiz/grmob/blob/master/core/context.go#L118)</small>
 
 #### func (*Context) Close
 
@@ -369,7 +371,7 @@ Close stops every background resource registered on this context tree since the 
 func (ctx *Context) Config() *AppConfig
 ```
 
-<small>[core/context.go:198](https://github.com/rohanthewiz/grmob/blob/master/core/context.go#L198)</small>
+<small>[core/context.go:203](https://github.com/rohanthewiz/grmob/blob/master/core/context.go#L203)</small>
 
 #### func (*Context) EndRenderPass
 
@@ -398,7 +400,7 @@ func (ctx *Context) IsDirty() bool
 
 IsDirty reports whether the tree has changes no pass has consumed yet. It answers for the whole app, not for the context it is called on.
 
-<small>[core/context.go:109](https://github.com/rohanthewiz/grmob/blob/master/core/context.go#L109)</small>
+<small>[core/context.go:112](https://github.com/rohanthewiz/grmob/blob/master/core/context.go#L112)</small>
 
 #### func (*Context) MarkDirty
 
@@ -408,7 +410,7 @@ func (ctx *Context) MarkDirty()
 
 MarkDirty records that the tree needs re-rendering, without notifying anyone. Callers that want a render to actually happen want RequestRender, which does this and nudges the render manager; MarkDirty alone is for paths where a pass is already guaranteed to follow.
 
-<small>[core/context.go:101](https://github.com/rohanthewiz/grmob/blob/master/core/context.go#L101)</small>
+<small>[core/context.go:104](https://github.com/rohanthewiz/grmob/blob/master/core/context.go#L104)</small>
 
 #### func (*Context) NewChildContext
 
@@ -416,7 +418,7 @@ MarkDirty records that the tree needs re-rendering, without notifying anyone. Ca
 func (ctx *Context) NewChildContext() *Context
 ```
 
-<small>[core/context.go:144](https://github.com/rohanthewiz/grmob/blob/master/core/context.go#L144)</small>
+<small>[core/context.go:148](https://github.com/rohanthewiz/grmob/blob/master/core/context.go#L148)</small>
 
 #### func (*Context) OnClose
 
@@ -480,7 +482,7 @@ RequestRender marks the tree dirty and notifies the registered render driver. Th
 func (ctx *Context) Reset()
 ```
 
-<small>[core/context.go:332](https://github.com/rohanthewiz/grmob/blob/master/core/context.go#L332)</small>
+<small>[core/context.go:339](https://github.com/rohanthewiz/grmob/blob/master/core/context.go#L339)</small>
 
 #### func (*Context) Scope
 
@@ -498,7 +500,7 @@ Refreshing here is cheap (two pointer assignments) and safe: Scope is called dur
 
 It is also the correct semantics. theme and config are \*inherited\* state, not state the scope owns; hook slots are what the scope owns, and those are deliberately left alone.
 
-<small>[core/context.go:382](https://github.com/rohanthewiz/grmob/blob/master/core/context.go#L382)</small>
+<small>[core/context.go:389](https://github.com/rohanthewiz/grmob/blob/master/core/context.go#L389)</small>
 
 #### func (*Context) Theme
 
@@ -506,7 +508,7 @@ It is also the correct semantics. theme and config are \*inherited\* state, not 
 func (ctx *Context) Theme() *Theme
 ```
 
-<small>[core/context.go:191](https://github.com/rohanthewiz/grmob/blob/master/core/context.go#L191)</small>
+<small>[core/context.go:196](https://github.com/rohanthewiz/grmob/blob/master/core/context.go#L196)</small>
 
 #### func (*Context) TriggerBoolCallback
 
@@ -558,7 +560,7 @@ TriggerTextEdit dispatches one keystroke's worth of text from a native field: Tr
 
 Unknown IDs are silent no-ops, as for every Trigger\* method.
 
-<small>[core/text_edit.go:281](https://github.com/rohanthewiz/grmob/blob/master/core/text_edit.go#L281)</small>
+<small>[core/text_edit.go:286](https://github.com/rohanthewiz/grmob/blob/master/core/text_edit.go#L286)</small>
 
 #### func (*Context) With
 
@@ -566,7 +568,7 @@ Unknown IDs are silent no-ops, as for every Trigger\* method.
 func (ctx *Context) With(opts ...func(*Context)) *Context
 ```
 
-<small>[core/context.go:313](https://github.com/rohanthewiz/grmob/blob/master/core/context.go#L313)</small>
+<small>[core/context.go:320](https://github.com/rohanthewiz/grmob/blob/master/core/context.go#L320)</small>
 
 #### func (*Context) WithConfig
 
@@ -574,7 +576,7 @@ func (ctx *Context) With(opts ...func(*Context)) *Context
 func (ctx *Context) WithConfig(cfg *AppConfig) *Context
 ```
 
-<small>[core/context.go:219](https://github.com/rohanthewiz/grmob/blob/master/core/context.go#L219)</small>
+<small>[core/context.go:224](https://github.com/rohanthewiz/grmob/blob/master/core/context.go#L224)</small>
 
 #### func (*Context) WithTheme
 
@@ -582,7 +584,7 @@ func (ctx *Context) WithConfig(cfg *AppConfig) *Context
 func (ctx *Context) WithTheme(theme *Theme) *Context
 ```
 
-<small>[core/context.go:243](https://github.com/rohanthewiz/grmob/blob/master/core/context.go#L243)</small>
+<small>[core/context.go:249](https://github.com/rohanthewiz/grmob/blob/master/core/context.go#L249)</small>
 
 ### type MatchCase
 
@@ -729,6 +731,32 @@ TriggerRender invokes the handler registered under id, if any.
 
 <small>[core/render_manager.go:31](https://github.com/rohanthewiz/grmob/blob/master/core/render_manager.go#L31)</small>
 
+### type Span
+
+```go
+type Span struct {
+	Text string
+
+	Bold      bool
+	Italic    bool
+	Underline bool
+	Strike    bool
+	// Code is a monospace run inside the sentence.
+	Code bool
+
+	// Color replaces the paragraph's TextColor for this run: "#rrggbb" or
+	// any value a Style colour takes. Empty inherits.
+	Color string
+
+	// OnTap makes the run a link. Nil is plain text.
+	OnTap func()
+}
+```
+
+Span is one run of a Paragraph.
+
+<small>[core/paragraph.go:69](https://github.com/rohanthewiz/grmob/blob/master/core/paragraph.go#L69)</small>
+
 ### type State
 
 ```go
@@ -737,7 +765,7 @@ type State[T any] struct {
 }
 ```
 
-<small>[core/context.go:178](https://github.com/rohanthewiz/grmob/blob/master/core/context.go#L178)</small>
+<small>[core/context.go:183](https://github.com/rohanthewiz/grmob/blob/master/core/context.go#L183)</small>
 
 #### func NewState
 
@@ -749,7 +777,7 @@ NewState allocates (or on re-render, re-binds) the hook slot at the current curs
 
 Slot access is guarded by ctx.lock because reads and writes come from different goroutines: renders run on the manager/pump goroutine (or a native event thread), while Set may be called from timers, network handlers, or any goroutine the app spawns. Render passes themselves are serialized by render.Manager, so the lock's job is only to make individual slot accesses atomic against concurrent Sets — a Set landing mid-render yields a tree mixing old and new values for one pass, which is benign: the Set also nudges the pump, so a follow-up pass renders the settled state.
 
-<small>[core/context.go:273](https://github.com/rohanthewiz/grmob/blob/master/core/context.go#L273)</small>
+<small>[core/context.go:280](https://github.com/rohanthewiz/grmob/blob/master/core/context.go#L280)</small>
 
 #### func (*State) Get
 
@@ -757,7 +785,7 @@ Slot access is guarded by ctx.lock because reads and writes come from different 
 func (s *State[T]) Get() T
 ```
 
-<small>[core/context.go:183](https://github.com/rohanthewiz/grmob/blob/master/core/context.go#L183)</small>
+<small>[core/context.go:188](https://github.com/rohanthewiz/grmob/blob/master/core/context.go#L188)</small>
 
 #### func (*State) Set
 
@@ -765,7 +793,7 @@ func (s *State[T]) Get() T
 func (s *State[T]) Set(val T)
 ```
 
-<small>[core/context.go:187](https://github.com/rohanthewiz/grmob/blob/master/core/context.go#L187)</small>
+<small>[core/context.go:192](https://github.com/rohanthewiz/grmob/blob/master/core/context.go#L192)</small>
 
 ### type View
 
@@ -896,6 +924,18 @@ func MatchBool(clauses ...WhenClause) View
 ```
 
 <small>[core/conditionals.go:43](https://github.com/rohanthewiz/grmob/blob/master/core/conditionals.go#L43)</small>
+
+#### func Paragraph
+
+```go
+func Paragraph(runs []Span, props ...PropsAndChildren) View
+```
+
+Paragraph renders runs as one wrapping flow of text; see the file doc. props are the paragraph's own: style props for its base text and box, and behaviour props (an AccessibilityLabel, a key).
+
+Empty runs are dropped: a run with no text draws nothing on any host, and a link with no text would be a tap target nobody can see.
+
+<small>[core/paragraph.go:93](https://github.com/rohanthewiz/grmob/blob/master/core/paragraph.go#L93)</small>
 
 #### func SafeRender
 

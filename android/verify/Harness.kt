@@ -237,6 +237,48 @@ fun main() {
         kotlin.system.exitProcess(1)
     }
     println("OK: ${canvasCases.size} canvas drawings map and decode as Go's do")
+
+    // And for the text-edit rebase.
+    if (rebaseCases.size < 10) {
+        System.err.println("FAIL: only ${rebaseCases.size} rebase cases were generated")
+        kotlin.system.exitProcess(1)
+    }
+
+    val rebaseProblems = checkRebase(rebaseCases)
+    if (rebaseProblems.isNotEmpty()) {
+        System.err.println("FAIL: the Kotlin text-edit rebase disagrees with Go:")
+        rebaseProblems.forEach { System.err.println("  $it") }
+        kotlin.system.exitProcess(1)
+    }
+    println("OK: ${rebaseCases.size} rewrites replay the typing and place the caret as Go's reference does")
+}
+
+/**
+ * One case from internal/rebasefixture: a rewrite arriving at a focused field,
+ * and the text and caret Go's reference gives. The rule runs on the host
+ * alone, which is why its only executable statement outside the two hosts is
+ * that Go package.
+ */
+data class RebaseCase(
+    val name: String,
+    val basis: String,
+    val local: String,
+    val rewrite: String,
+    val caret: Int,
+    val want: String,
+    val wantCaret: Int,
+)
+
+/** Runs each case through [rebaseEdit] and [rebaseCaret]. */
+fun checkRebase(cases: List<RebaseCase>): List<String> {
+    val problems = ArrayList<String>()
+    for (c in cases) {
+        val got = rebaseEdit(c.basis, c.local, c.rewrite)
+        if (got != c.want) problems.add("${c.name}: rebaseEdit gave \"$got\", Go \"${c.want}\"")
+        val caret = rebaseCaret(c.basis, c.local, c.rewrite, c.caret)
+        if (caret != c.wantCaret) problems.add("${c.name}: rebaseCaret gave $caret, Go ${c.wantCaret}")
+    }
+    return problems
 }
 
 /** One case from internal/canvasfixture: inputs, then Go's mapping and calls. */

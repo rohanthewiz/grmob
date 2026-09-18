@@ -152,8 +152,8 @@ var Packages = []Pkg{
 		Topics: []Topic{{
 			Slug:  "views",
 			Title: "Views & state",
-			Blurb: "View, Node, Context and state slots; conditionals, caching, error boundaries and debug-mode concerns.",
-			Files: []string{"view.go", "node.go", "text.go", "context.go", "cleanup.go", "cached.go",
+			Blurb: "View, Node, Context and state slots; text and inline runs; conditionals, caching, error boundaries and debug-mode concerns.",
+			Files: []string{"view.go", "node.go", "text.go", "paragraph.go", "context.go", "cleanup.go", "cached.go",
 				"conditionals.go", "error_boundary.go", "render_manager.go", "debug.go"},
 		}, {
 			Slug:  "layout",
@@ -175,8 +175,8 @@ var Packages = []Pkg{
 		}, {
 			Slug:  "style-props",
 			Title: "Styling: style props",
-			Blurb: "The StyleProp constructors: spacing and per-side insets, flex, typography, colour, borders and animation.",
-			Files: []string{"style_props.go", "margin_sides.go", "padding_sides.go", "animation.go"},
+			Blurb: "The StyleProp constructors: spacing and per-side insets, flex, typography, colour, borders, per-corner radii and animation.",
+			Files: []string{"style_props.go", "margin_sides.go", "padding_sides.go", "corners.go", "animation.go"},
 		}, {
 			Slug:  "theme",
 			Title: "Theming",
@@ -186,7 +186,7 @@ var Packages = []Pkg{
 			Slug:  "controls",
 			Title: "Controls",
 			Blurb: "Buttons, text inputs, switches, sliders, selects, images, tab views, text grids and vector canvases.",
-			Files: []string{"button.go", "input.go", "switch.go", "slider.go", "select_menu.go", "image.go",
+			Files: []string{"button.go", "input.go", "keyboard_kind.go", "switch.go", "slider.go", "select_menu.go", "image.go",
 				"tabview.go", "textgrid.go", "canvas.go"},
 		}, {
 			Slug:  "editors",
@@ -196,9 +196,9 @@ var Packages = []Pkg{
 		}, {
 			Slug:  "events",
 			Title: "Events & focus",
-			Blurb: "Event props, host and system events, focus refs and focus order.",
+			Blurb: "Event props, host and system events, focus refs and focus order, and scrolling a node into view.",
 			Files: []string{"event.go", "behavioral_props.go", "host_events.go", "sys_events.go", "focus.go",
-				"focus_order.go"},
+				"focus_order.go", "scroll_to.go"},
 		}, {
 			Slug:  "navigation",
 			Title: "Navigation & overlays",
@@ -259,7 +259,7 @@ var Packages = []Pkg{
 			Title: "Inputs & pickers",
 			Blurb: "Form fields, password fields, one-time code fields, tag inputs, search, searchable selects, radio groups, dates, date ranges, times and calendars, and the two editors.",
 			Files: []string{"form_field.go", "password_field.go", "pin_input.go", "tag_input.go", "search_field.go", "searchable_select.go", "radio_group.go",
-				"date_picker.go", "date_range_picker.go", "time_picker.go", "calendar.go", "code_editor.go", "rich_text_editor.go"},
+				"date_picker.go", "date_range_picker.go", "time_picker.go", "calendar.go", "code_editor.go", "rich_text_editor.go", "rich_text_view.go"},
 		}, {
 			Slug:  "actions",
 			Title: "Buttons & choices",

@@ -109,6 +109,8 @@ const FULL_STYLE = {
     TranslateX: "-100%", TranslateY: "3px",
     MinWidth: "1px", MinHeight: "2px", MaxWidth: "300px", MaxHeight: "400px", WhiteSpace: "nowrap",
     MaxLines: 2,
+    AccentColor: "#123456",
+    Corners: { TopLeft: 1, TopRight: 2, BottomRight: 3, BottomLeft: 4 },
 };
 
 // Every node type the runtime draws.

@@ -28,7 +28,7 @@ const ConcernPINValueTooLong = "pin-value-too-long"
 const defaultPINLength = 6
 
 // PINInput is the boxed one-character-per-cell field a one-time code is typed
-// into: N single-character inputs in a row, with the cursor moving itself.
+// into: a row of boxes showing the code, over one field that holds it.
 //
 //	comps.PINInput{
 //	    Length:     6,
@@ -37,182 +37,117 @@ const defaultPINLength = 6
 //	    OnComplete: func(c string) { verify(c) },
 //	}
 //
-//	┌───┐ ┌───┐ ┌───┐ ┌───┐ ┌───┐ ┌───┐
-//	│ 4 │ │ 1 │ │ 7 │ │ 2 │ │   │ │   │
-//	└───┘ └───┘ └───┘ └───┘ └───┘ └───┘
-//	                          ▲ the cursor, put there by the cell before it
+//	┌───┐ ┌───┐ ┌───┐ ┌───┐ ┏━━━┓ ┌───┐
+//	│ 4 │ │ 1 │ │ 7 │ │ 2 │ ┃   ┃ │   │
+//	└───┘ └───┘ └───┘ └───┘ ┗━━━┛ └───┘
+//	                          ▲ the next box to fill, marked while focused
 //
-// It is the first widget in the package to drive core's focus system, and
-// that is the whole of what it adds over a Row of fields: a character typed
-// into a cell moves the cursor to the next one, so a six-digit code is six
-// keystrokes rather than six keystrokes and six taps.
+// # One field owns the code
 //
-// # The value is one string, and therefore a prefix
+// The boxes are drawing, and the typing goes into a single text field under
+// them that holds the whole code. Tapping anywhere on the row puts the caret
+// in that field (core.Focus); every key, paste, backspace and autofill is an
+// ordinary edit of one string, and the boxes redraw from it.
 //
-// Value is the whole code, not a cell array: cell i draws the i-th character
-// and empty cells are the ones past the end. A plain string cannot hold a
-// gap, so the cells fill strictly left to right and the two edits follow from
-// that with no cases left over:
+// It used to be six fields, one per box, with the widget moving the caret
+// from each to the next as a character landed. That lost digits, and not in
+// a way any bookkeeping could fix. On the Android emulator, keys typed about
+// 130ms apart:
 //
-//	typing    Value = code[:i] + typed + whatever was past the typed run
-//	clearing  Value = code[:i]        — everything from cell i on is dropped
+//	"3" in box 0, "1" in box 0 before the caret moved     → spread: "31"
+//	the "4" typed while focus was on its way to box 2     → never reached a field
+//	box 0 blurred before Go's rewrite of it arrived       → nothing left to replay "314"
 //
-// Clearing is the asymmetric one and it is worth being plain about. A cleared
-// middle cell has to either shift the tail left — so cells the finger never
-// touched change under it — or drop the tail. Dropping is the one a person
-// can predict, because it is what "start again from here" means, and it is
-// what backspacing through an OTP field amounts to on every platform that has
-// one.
+// Keys typed during a focus move have nowhere to go, and a per-box rewrite
+// can only be replayed by the box that was typed into, which has already been
+// left. One field has no focus moves and no per-box rewrites: the code is one
+// value under the text-edit protocol (core/text_edit.go) like any other
+// field's, so a burst of keys is replayed onto Go's text as it is in a search
+// box. It is also what the platforms' own OTP fields are: one hidden input,
+// which is what SMS autofill and a password manager fill.
 //
-// The same invariant answers a question the cells can otherwise ask: a
-// character typed into a cell past the end of the code (the web lets a click
-// land anywhere) lands at the end instead, because there is no position for
-// it to occupy.
+// # The rules that fall out
 //
-// # A paste and a second character are the same event
+//   - Value is the field's text, capped at Length: a paste of a longer string
+//     keeps its first Length characters.
+//   - Backspace deletes the last character, wherever the reader tapped, and an
+//     empty field's backspace does nothing: the field's own behaviour.
+//   - OnComplete fires on every change that leaves the code full, including a
+//     correction to a code that was already full, and never for a Value that
+//     merely arrived complete (a restored screen does not resubmit itself). A
+//     change that produces the value already held is an echo: no OnChange, no
+//     OnComplete.
 //
-// A cell whose OnChange arrives with more than one character is a paste — the
-// whole code dropped into the first box — and it is also what typing into an
-// already-full cell looks like, since the field is controlled and reports its
-// entire contents. Both are handled as one rule: **the incoming string is
-// written from this cell forward, and the cursor lands after the last cell it
-// filled.** A six-character paste into cell 0 fills the field; a "2" typed
-// into a cell already holding "1" arrives as "12", rewrites cell 0 with the
-// character that was already there and puts the new one in cell 1. Characters
-// past the last cell are dropped.
+// # The field
 //
-// The one case it reads wrongly is a character inserted *before* an existing
-// one (the caret parked at the left edge of a full cell), which arrives as
-// "21" and is written in that order. Nothing in the event says where the caret
-// was, so no widget here can tell the two apart.
+// A core.Input (core.InputPassword when Secure), one point square, with no
+// frame, fill or ink, in a ZStack layer under the boxes: present, focusable,
+// and filled by the keyboard, but nothing a reader sees or taps directly. It
+// asks for the number pad with core.Keyboard(core.KeyboardDigits), which on
+// iOS also marks it as a one-time code field, so the system offers a code from
+// a text message above the keyboard. The pad is a hint: a hardware keyboard or
+// a paste can still put letters in, and they are drawn as typed, because a
+// code is not always digits.
 //
-// # Backspace on an empty cell does nothing, and cannot
+// # It holds hooks
 //
-// There are no key events in this framework — a field reports its text, not
-// the keys that produced it — so a backspace in an *empty* cell changes
-// nothing and is therefore never reported. The cursor stays where it is, and
-// clearing a run of cells means one backspace per cell with a tap in between,
-// or one backspace in the leftmost filled cell, which drops everything after
-// it by the rule above. Document it to callers rather than working around it:
-// the workaround is a key channel, and that is a renderer change.
-//
-// # OnComplete fires on every change that leaves the code full
-//
-// Not once per crossing, which is what Countdown.OnDone does and is
-// deliberately not what this does. A caller's OnComplete is "submit the code",
-// and a person who mistypes one digit of a full code, corrects it, and gets
-// silence has a field that will not submit. So a complete code re-reports
-// whenever it changes.
-//
-// It fires from the change handler rather than from an effect, so it never
-// fires for a Value that merely arrived complete — a screen restored with a
-// code already in it does not resubmit itself on mount.
-//
-// A change that produces the value already held is treated as an echo: no
-// OnChange, no cursor move, no OnComplete. Both natives can report their own
-// text back after a Go-side update, and none of the three is worth doing
-// twice.
-//
-// # It holds hooks, so it is not conditional-safe
-//
-// One FocusRef per cell, and refs must be stable across passes or a focus
-// command aims at last pass's identity. So this is a hook caller with
-// Accordion's rule: render it in a stable position every pass rather than
-// inside a core.If.
-//
-// The hook count does not follow Length. It follows the largest Length this
-// widget has ever been rendered with, held in one slot of its own, because a
-// Length that shrank between passes would otherwise retire hook slots from
-// the middle of the sequence and drift every cursor after them. Growing is
-// safe — new slots are appended past the ones already bound — and never
-// shrinking is what makes it so. The cost is a handful of FocusRefs that
-// nothing points at, which cost a slice entry each and are never stamped onto
-// a node.
-//
-// # What the cells are, and what they are not
-//
-// Each cell is an ordinary core.Input (core.InputPassword when Secure), so it
-// wears the theme's field frame and matches the text inputs above it in a
-// form. They divide the row equally — core.FlexGrow with a zero core.FlexBasis,
-// the pair Calendar's day cells use, which is what makes the four targets
-// agree on "equal shares" rather than "equal shares of the leftovers". The row
-// therefore fills the width it is given; cap it with Style.
-//
-// They take the platform's text keyboard, not its number pad. The keyboard
-// type is chosen by node type on both natives — "NumericInput" is the numeric
-// one — and that node carries an int value, which cannot express an empty
-// cell: clearing one would report nothing at all, so backspace would stop
-// working entirely. A digits-only keyboard needs a keyboard-type prop on
-// core.Input, which is a renderer change and not this widget's to make.
+// A FocusRef for the field and whether the field has focus (so the next box
+// can be marked). So it has Accordion's rule: render it in a stable position
+// every pass rather than inside a core.If.
 //
 // # Accessibility
 //
-// The row is a core.RoleGroup named by Label, and each cell is named
-// "<Label>, N of M" so a reader moving between them says which box it is in.
-// Label is the accessible name only — there is no visible caption, as with
-// InputRow; wrap this in a FormField when one is wanted.
+// The field is the control, named "<Label>, N of M entered", so a reader
+// moving onto it hears how far the code has got; the boxes are hidden, being
+// a picture of what the field holds. The row is a core.RoleGroup named by
+// Label. Label is the accessible name only; wrap this in a FormField when a
+// visible caption is wanted.
 //
 // # Theme roles read
 //
-//	Cells   Components.Input — the same frame every other field in the form has
-//	Gap     Spacing.SM between cells
+//	Boxes     Components.Input: the frame every other field in the form has
+//	Marker    Colors.Primary: the next box's border while the field has focus
+//	Gap       Spacing.SM between boxes
 type PINInput struct {
-	// Length is the number of cells. Zero means six, the one-time code length.
+	// Length is the number of boxes. Zero means six, the one-time code length.
 	Length int
 
-	// Value is the code so far, in full. The field is controlled: it draws
-	// exactly this, one character per cell from the left, and OnChange is the
-	// only way it changes.
+	// Value is the code so far, in full. The field is controlled: the boxes
+	// draw exactly this, one character per box from the left, and OnChange is
+	// the only way it changes.
 	Value string
 
-	// OnChange receives the whole code after every edit, never a single cell.
+	// OnChange receives the whole code after every edit.
 	// Without it the field is read-only and reports ConcernPINInputInert.
 	OnChange func(string)
 
 	// OnComplete receives the code on every edit that leaves it as long as
-	// the field — including an edit to a code that was already complete. Nil
+	// the field, including an edit to a code that was already complete. Nil
 	// is a field the caller reads from Value instead.
 	OnComplete func(string)
 
 	// Secure masks the characters, as a device PIN rather than an emailed
-	// code. The cells become core.InputPassword.
+	// code: the boxes draw a dot, and the field is core.InputPassword.
 	Secure bool
 
-	// Label is the accessible name of the group and the stem of each cell's
+	// Label is the accessible name of the group and the stem of the field's
 	// name. Empty means "Code". It draws nothing.
 	Label string
 
 	// Style is applied to the row, after the gap and the accessibility pair,
-	// so a caller can override any of them — or cap the width, which is the
-	// common one: MaxWidth stops four cells from spreading across a tablet.
+	// so a caller can override any of them, or cap the width, which is the
+	// common one: MaxWidth stops four boxes from spreading across a tablet.
 	Style []core.StyleProp
 }
 
-// Render allocates the refs, declares their order and draws the cells.
+// Render draws the boxes and the field under them.
 func (p PINInput) Render(ctx *core.Context) *core.Node {
 	t := ctx.Theme()
 	n := p.length()
 
-	// The high-water mark, in a slot of its own ahead of the refs so the
-	// sequence below it never moves. A pointer rather than the slot's value
-	// because it is bumped during a render pass: State.Set would request a
-	// render of the whole tree for a number no tree reads. See "It holds
-	// hooks" for why the count may only grow.
-	//
-	// The two-step through a variable is UseFocusRef's: State's accessors
-	// have pointer receivers and NewState's return value is not addressable.
-	slot := core.NewState(ctx, new(int))
-	high := slot.Get()
-	if n > *high {
-		*high = n
-	}
-	refs := make([]*core.FocusRef, *high)
-	for i := range refs {
-		refs[i] = core.UseFocusRef(ctx)
-	}
-	// Only the live cells are in the order, so the keyboard's Next key walks
-	// the field and stops at its end rather than at the high-water mark.
-	core.UseFocusOrder(ctx, refs[:n]...)
+	field := core.UseFocusRef(ctx)
+	focusedState := core.NewState(ctx, false)
+	focused := focusedState.Get()
 
 	code := []rune(p.Value)
 	if core.IsDebugMode() {
@@ -222,14 +157,12 @@ func (p PINInput) Render(ctx *core.Context) *core.Node {
 		}
 		if len(code) > n {
 			core.ReportConcern(ConcernPINValueTooLong, fmt.Sprintf(
-				"PINInput has %d cells and a Value of %d characters: the last %d are never drawn and cannot be edited",
+				"PINInput has %d boxes and a Value of %d characters: the last %d are never drawn and cannot be edited",
 				n, len(code), len(code)-n))
 		}
 	}
 	if len(code) > n {
-		// Drawn as the field can hold it. The concern above is the report;
-		// truncating here is what keeps the cells and the cursor arithmetic
-		// working off one length.
+		// Drawn as the field can hold it. The concern above is the report.
 		code = code[:n]
 	}
 
@@ -238,44 +171,113 @@ func (p PINInput) Render(ctx *core.Context) *core.Node {
 		label = "Code"
 	}
 
-	items := make([]core.PropsAndChildren, 0, len(p.Style)+n+4)
-	items = append(items,
-		// Row's theme padding is screen-level and would inset the cells away
-		// from whatever is above them; the gap is the widget's own layout, as
-		// InputRow's is.
+	// The next box to fill: the one after the code, or the last when full.
+	next := len(code)
+	if next >= n {
+		next = n - 1
+	}
+
+	base := t.Components.Input
+	boxes := make([]core.PropsAndChildren, 0, n+4)
+	boxes = append(boxes,
 		core.Padding(0),
 		core.Gap(float64(t.Spacing.SM)),
-		core.AccessibilityRole(core.RoleGroup),
-		core.AccessibilityLabel(label),
+		// The ZStack's width, stated: the natives stretch a layer to its
+		// stack and the web's grid places it at its content width, which drew
+		// six narrow boxes in the browser (the outer ZStack says the same).
+		core.Width("100%"),
+		// A tap anywhere on the row is a tap on the field.
+		core.OnClick(func() { core.Focus(field) }),
 	)
-	items = append(items, asProps(p.Style)...)
-
 	for i := 0; i < n; i++ {
 		ch := ""
 		if i < len(code) {
 			ch = string(code[i])
+			if p.Secure {
+				ch = "•"
+			}
 		}
-		cell := []core.PropsAndChildren{
+		box := []core.PropsAndChildren{
+			core.UseStyle(base),
 			// Equal shares on all four targets: the natives divide the axis
 			// by weight and ignore the basis, CSS divides only the leftover
-			// and needs the zero to start from. Without it a filled cell
+			// and needs the zero to start from. Without it a filled box
 			// would be a hair wider than an empty one and the boxes would
 			// shuffle as the code is typed.
 			core.FlexGrow(1),
 			core.FlexBasis("0"),
-			core.Align(core.AlignCenter),
-			core.FocusTarget(refs[i]),
-			core.AccessibilityLabel(fmt.Sprintf("%s, %d of %d", label, i+1, n)),
+			core.AlignItemsProp(core.AlignItemsCenter),
+			core.AccessibilityHidden(),
 		}
-		onChange := p.cellChanged(code, refs, i)
-		if p.Secure {
-			items = append(items, core.InputPassword(ch, "", onChange, cell...))
-		} else {
-			items = append(items, core.Input(ch, "", onChange, cell...))
+		if focused && i == next {
+			box = append(box, core.BorderColor(t.Colors.Primary), core.BorderWidth(2))
 		}
+		// A space rather than "" in an empty box, so every box has the one
+		// line of text height a filled one has on every host.
+		shown := ch
+		if shown == "" {
+			shown = " "
+		}
+		box = append(box, core.Text(shown,
+			core.FontSize(base.FontSize),
+			core.TextColor(base.TextColor),
+			core.Align(core.AlignCenter)))
+		boxes = append(boxes, core.Box(box...))
 	}
 
-	return core.Row(items...).Render(ctx)
+	input := []core.PropsAndChildren{
+		core.FocusTarget(field),
+		// The number pad (core.Keyboard); on iOS also the SMS code offered
+		// above it.
+		core.Keyboard(core.KeyboardDigits),
+		core.OnFocus(func() { focusedState.Set(true) }),
+		core.OnBlur(func() { focusedState.Set(false) }),
+		// One point, no frame, no fill, no ink: in the tree and focusable,
+		// not seen.
+		core.Width("1px"),
+		core.Height("1px"),
+		// Bottom-start, not top-start. A platform scrolls a focused field
+		// into view above its keyboard, and it scrolls the least that shows
+		// the *field*: at the top corner that was one point of the row, and
+		// on the Android emulator the boxes sat behind the keyboard. At the
+		// bottom corner, the row's whole height comes up with it.
+		//
+		// Inset into the first box, and under the row (it is the ZStack's
+		// first layer): the box's own fill covers it, so the focus ring a
+		// browser draws round a focused input, and the caret a native draws
+		// in it, are behind the box rather than a dot beside it (seen in the
+		// browser before this). The row, on top, takes every tap and focuses
+		// the field itself.
+		core.MarginLeft(8),
+		core.MarginBottom(8),
+		core.Padding(0),
+		core.BorderWidth(0),
+		core.BackgroundColor(ColorTransparent),
+		core.TextColor(ColorTransparent),
+		core.StackAlign(core.StackAlignBottomStart),
+		core.AccessibilityLabel(fmt.Sprintf("%s, %d of %d entered", label, len(code), n)),
+	}
+	onChange := p.changed(string(code))
+	var control core.View
+	if p.Secure {
+		control = core.InputPassword(string(code), "", onChange, input...)
+	} else {
+		control = core.Input(string(code), "", onChange, input...)
+	}
+
+	outer := make([]core.PropsAndChildren, 0, len(p.Style)+5)
+	outer = append(outer,
+		core.Padding(0),
+		// The width it is given, on every target (a caller's MaxWidth in
+		// Style still caps it): the natives stretch a ZStack in a column, and
+		// the web's grid is as wide as its content unless told.
+		core.Width("100%"),
+		core.AccessibilityRole(core.RoleGroup),
+		core.AccessibilityLabel(label),
+	)
+	outer = append(outer, asProps(p.Style)...)
+	outer = append(outer, control, core.Row(boxes...))
+	return core.ZStack(outer...).Render(ctx)
 }
 
 // length is Length with its default applied.
@@ -286,69 +288,26 @@ func (p PINInput) length() int {
 	return p.Length
 }
 
-// cellChanged builds cell i's handler. code is the pass's drawn code and refs
-// its cells, both captured rather than re-read: a handler dispatched from the
-// registry runs against the tree that registered it, which is exactly the
-// state the user was looking at when they typed.
-func (p PINInput) cellChanged(code []rune, refs []*core.FocusRef, i int) func(string) {
+// changed builds the field's handler. held is the pass's drawn code, captured
+// rather than re-read: a handler dispatched from the registry runs against the
+// tree that registered it, which is the state the reader was looking at.
+func (p PINInput) changed(held string) func(string) {
+	n := p.length()
 	return func(typed string) {
-		next, last := p.write(code, i, typed)
-		if next == string(code) {
-			// An echo, or a retyped character: nothing changed, so nothing
-			// happens — including the cursor, which must not jump on a
-			// renderer's own report of the text Go just gave it.
+		next := []rune(typed)
+		if len(next) > n {
+			// A paste longer than the field keeps what fits.
+			next = next[:n]
+		}
+		if string(next) == held {
+			// An echo, or a paste that fits to what was already there.
 			return
 		}
 		if p.OnChange != nil {
-			p.OnChange(next)
+			p.OnChange(string(next))
 		}
-		if last >= 0 {
-			// Off the end of the order this is a no-op, which is what keeps
-			// the cursor in the last cell once the code is full.
-			core.FocusNext(refs[last])
-		}
-		if p.OnComplete != nil && len([]rune(next)) == p.length() {
-			p.OnComplete(next)
+		if p.OnComplete != nil && len(next) == n {
+			p.OnComplete(string(next))
 		}
 	}
-}
-
-// write applies typed at cell i and returns the new code, together with the
-// index of the last cell it filled — or -1 when it filled none, which is the
-// cleared case and the one where the cursor stays put.
-//
-// code must already be no longer than the field; Render truncates it.
-func (p PINInput) write(code []rune, i int, typed string) (string, int) {
-	n := p.length()
-	// No holes: a cell past the end of the code has no position of its own,
-	// so an edit aimed at one is an edit at the end. Clamping here rather
-	// than at each use keeps the two branches below reading as the rule.
-	if i > len(code) {
-		i = len(code)
-	}
-
-	in := []rune(typed)
-	if len(in) == 0 {
-		// Cleared: the tail goes with it. See "The value is one string".
-		return string(code[:i]), -1
-	}
-
-	// The run this write covers, clipped to the field. A paste longer than
-	// the cells left loses its overflow rather than wrapping or growing the
-	// value past what the widget can show.
-	end := i + len(in)
-	if end > n {
-		end = n
-		in = in[:end-i]
-	}
-
-	out := make([]rune, 0, n)
-	out = append(out, code[:i]...)
-	out = append(out, in...)
-	if end < len(code) {
-		// Whatever the run did not cover survives: typing over one cell of a
-		// full code replaces that cell and nothing else.
-		out = append(out, code[end:]...)
-	}
-	return string(out), end - 1
 }

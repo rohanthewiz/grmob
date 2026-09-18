@@ -1,11 +1,12 @@
-/// core.Focus / core.DismissKeyboard, for the two editors that host a UIKit
-/// text view inside SwiftUI.
+/// core.Focus / core.DismissKeyboard, for the fields and editors that host a
+/// UIKit text view or text field inside SwiftUI (GrMobTextField, the code
+/// editor and the rich-text editor).
 ///
 /// # Why this is not the modifier Renderer.swift uses
 ///
-/// Every other focusable node in this runtime is a SwiftUI control, so its
-/// focus command goes through `@FocusState`: the renderer sets a Bool and
-/// SwiftUI moves the responder. Both editors are `UIViewRepresentable`s over a
+/// A SwiftUI control takes its focus command through `@FocusState`: the
+/// renderer sets a Bool and SwiftUI moves the responder. The text fields and
+/// both editors are `UIViewRepresentable`s over a `UITextField` or a
 /// `UITextView`, and a `.focused($flag)` on a representable does nothing —
 /// SwiftUI has no idea the hosted view is a text control, and the responder
 /// chain is UIKit's. So the command is applied to the responder directly.
@@ -22,8 +23,8 @@
 /// deliberately: this one *does* fire the first time it sees a non-zero epoch.
 /// That is the case worth supporting — "push a screen and put the cursor in its
 /// editor" issues the command in the handler that navigates, one pass before
-/// the editor it names exists — and it is the same asymmetry the SwiftUI field
-/// spells as an `.onAppear` beside its `.onChange`.
+/// the editor it names exists. The text field, when it was SwiftUI's, spelled
+/// the same rule as an `.onAppear` beside its `.onChange`.
 ///
 /// # Why it hops to the next runloop turn
 ///
@@ -62,7 +63,7 @@ struct GrMobEditorFocus {
     /// "blur" is guarded on this view actually being first responder, because a
     /// dismiss reaches every focusable leaf on screen and exactly one of them
     /// holds the keyboard.
-    mutating func apply(epoch: Int, action: String, to view: UITextView?) {
+    mutating func apply(epoch: Int, action: String, to view: UIView?) {
         guard epoch != 0, epoch != applied else { return }
         applied = epoch
         guard action == "focus" || action == "blur" else { return }

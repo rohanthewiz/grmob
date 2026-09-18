@@ -99,7 +99,60 @@ const (
 	phoneScreenID = "tutorial-phone-screen"
 	// phoneContentID wraps whatever the phone is showing; see phoneScreen.
 	phoneContentID = "tutorial-phone-content"
+	// guideNoteID is the bar under a covered lesson; see pushedScreenBar.
+	guideNoteID = "tutorial-guide-note"
 )
+
+// bootLayout is the layout the page asked for before the app's first render.
+//
+// # Why there is a boot value at all
+//
+// The page learns the window's width and the reader's choice before it has
+// mounted anything, but useLayoutMode subscribes during the first render, so
+// the page used to mount first and send the mode after. Every wide-screen boot
+// therefore drew one frame of the phone layout, bezel and all, and then
+// re-drew the split when the event's patch arrived:
+//
+//	RenderInitial ─▶ mount (phone layout) ─▶ HostEvent("layout") ─▶ patch (split)
+//	                 └── the frame this removes
+//
+// So a package-level subscriber takes the event before any tree exists, and
+// App seeds its split state from it. The page sends the mode first:
+//
+//	HostEvent("layout") ─▶ bootLayout ─▶ RenderInitial ─▶ mount (split)
+//
+// # Only while no tree is listening
+//
+// Once a tree has subscribed, the mode is that tree's state and this value is
+// left alone. Otherwise a mode sent to one app would become the boot mode of
+// the next one built in the same process, which is every test in this package
+// after the first split test. A tree that closes stops counting, so a
+// hot-reloaded module (a fresh process anyway) and a test's next app both boot
+// from what was sent to them, or from the phone layout if nothing was.
+var bootLayout struct {
+	mu    sync.Mutex
+	trees int // live useLayoutMode subscriptions
+	split bool
+}
+
+func init() {
+	core.OnHostEvent(layoutEvent, func(data map[string]any) {
+		mode, _ := data["mode"].(string)
+		bootLayout.mu.Lock()
+		defer bootLayout.mu.Unlock()
+		if bootLayout.trees == 0 {
+			bootLayout.split = mode == "split"
+		}
+	})
+}
+
+// bootSplit is the split state an app starts in: what the page sent before
+// the first render, or the phone layout.
+func bootSplit() bool {
+	bootLayout.mu.Lock()
+	defer bootLayout.mu.Unlock()
+	return bootLayout.split
+}
 
 // layoutRecord is the hook-slot memory of useLayoutMode, the same shape and
 // for the same reason as useDeepLinks' routeRecord: App runs every pass, and
@@ -124,6 +177,9 @@ func (t *tutorial) useLayoutMode(ctx *core.Context) {
 		return
 	}
 
+	bootLayout.mu.Lock()
+	bootLayout.trees++
+	bootLayout.mu.Unlock()
 	cancel := core.OnHostEvent(layoutEvent, func(data map[string]any) {
 		mode, _ := data["mode"].(string)
 		split := mode == "split"
@@ -139,6 +195,14 @@ func (t *tutorial) useLayoutMode(ctx *core.Context) {
 		rec.mu.Lock()
 		rec.subscribed = false
 		rec.mu.Unlock()
+		bootLayout.mu.Lock()
+		bootLayout.trees--
+		// The next tree boots from what is sent to it, not from this one's
+		// mode (see bootLayout).
+		if bootLayout.trees == 0 {
+			bootLayout.split = false
+		}
+		bootLayout.mu.Unlock()
 	})
 }
 
@@ -153,13 +217,18 @@ func (t *tutorial) useLayoutMode(ctx *core.Context) {
 //	a screen a demo pushed      guide: a note           phone: that screen
 //
 // The last row is chapter 6's navigation demos, whose pushed screens are real
-// frames on the tutorial's own stack. The lesson underneath is not rendered
-// while they are up (Navigator renders only the top frame), so the guide
-// cannot show it; it says where the reader is instead, and the pushed screen
-// — which carries its own way back — runs on the phone, where it belongs.
+// frames on the tutorial's own stack. The pushed screen, which carries its
+// own way back, runs on the phone, where it belongs. The lesson underneath is
+// not rendered while it is up (Navigator renders only the top frame), so the
+// guide shows the last rendering of it, made inert (see pushedScreenGuide).
 func (t *tutorial) withLayout(nav core.View) core.View {
 	return core.ComponentFunc(func(ctx *core.Context) *core.Node {
 		n := nav.Render(ctx)
+		// In either layout, so a reader who switches to the split while a
+		// pushed screen is up still gets the lesson in the guide.
+		if n != nil && strings.HasSuffix(n.Key, "/"+lessonRootKey) {
+			t.lastLesson.Get().remember(t.current.Get(), n)
+		}
 		if !t.split.Get() || n == nil {
 			return n
 		}
@@ -171,8 +240,8 @@ func (t *tutorial) withLayout(nav core.View) core.View {
 		default:
 			// The pushed screen's root keeps its frame key, so each push is a
 			// fresh screen on the phone exactly as it is in the phone layout.
-			return splitView(ctx, t.pushedScreenNote(ctx).Render(ctx),
-				phoneScreen("pushed", nil, nodeView{n}, nil))
+			guide, tail := t.pushedScreenGuide(ctx)
+			return splitView(ctx, guide, phoneScreen("pushed", nil, nodeView{n}, nil), tail...)
 		}
 	})
 }
@@ -216,15 +285,23 @@ func (t *tutorial) splitLesson(ctx *core.Context, n *core.Node) *core.Node {
 //
 // The panes carry only identity and semantics here; their sizes and looks
 // are the page's (wasm/index.html), which is why there are no style props.
-func splitView(ctx *core.Context, guide *core.Node, phone core.View) *core.Node {
+//
+// guideTail goes into the guide pane AFTER the guide, never before it: the
+// reconciler matches children by position, and anything in front of the guide
+// would move it to another slot and rebuild it, scroll position and all.
+func splitView(ctx *core.Context, guide *core.Node, phone core.View, guideTail ...core.View) *core.Node {
+	pane := []core.PropsAndChildren{
+		core.AccessibilityID(guideID),
+		core.AccessibilityRole(core.RoleGroup),
+		core.AccessibilityLabel("Lesson guide"),
+		nodeView{guide},
+	}
+	for _, v := range guideTail {
+		pane = append(pane, v)
+	}
 	return core.Row(
 		core.AccessibilityID(splitID),
-		core.Column(
-			core.AccessibilityID(guideID),
-			core.AccessibilityRole(core.RoleGroup),
-			core.AccessibilityLabel("Lesson guide"),
-			nodeView{guide},
-		),
+		core.Column(pane...),
 		core.Column(
 			core.AccessibilityID(phoneID),
 			core.AccessibilityRole(core.RoleGroup),
@@ -316,10 +393,20 @@ func liftDemos(n *core.Node, pointer func(hint string) *core.Node) (guide *core.
 // and hint, and an arrow to where the panel went. It keeps the panel's
 // hairline border, so the guide still shows *where* in the lesson the demo
 // sits — the prose around it often says "toggle the pieces below".
+//
+// Tapping it brings its panel into view on the phone (core.ScrollIntoView,
+// the name demoPanel gives itself). A lesson with five demos stacks five
+// panels on the phone, and the one the guide's prose is talking about is not
+// always the one showing. It is a button to every host's accessibility: the
+// role, and a name that says where it goes rather than its three texts in a
+// row.
 func demoPointer(hint string) core.View {
 	return core.ComponentFunc(func(ctx *core.Context) *core.Node {
 		th := ctx.Theme()
 		return core.Row(
+			core.OnClick(func() { core.ScrollIntoView(ctx, demoKeyPrefix+hint) }),
+			core.AccessibilityRole(core.RoleButton),
+			core.AccessibilityLabel("Show on the phone: "+hint),
 			core.Gap(10),
 			core.AlignItemsProp(core.AlignItemsCenter),
 			core.BorderColor(th.Colors.BorderColor()),
@@ -381,10 +468,178 @@ func phoneSplash() core.View {
 	)
 }
 
+// coveredLesson is the last lesson tree the layout saw, held for the guide to
+// show while a screen a demo pushed covers the lesson.
+//
+// A pointer in a state slot, written during render without a Set, for
+// layoutRecord's reason: it is bookkeeping, and a Set would ask for a pass.
+type coveredLesson struct {
+	mu sync.Mutex
+	// lesson is t.current when node was rendered: the memo stands for that
+	// lesson only.
+	lesson string
+	node   *core.Node
+}
+
+func (m *coveredLesson) remember(lesson string, n *core.Node) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.lesson, m.node = lesson, n
+}
+
+func (m *coveredLesson) recall(lesson string) *core.Node {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.lesson != lesson {
+		return nil
+	}
+	return m.node
+}
+
+// pushedScreenGuide fills the guide while a demo's pushed screen is on the
+// phone: the lesson underneath, as it was last drawn and made inert, with a
+// bar under it saying why it does not respond.
+//
+// # Why the lesson, and why inert
+//
+// The guide used to show a note naming the lesson, so pushing a screen from a
+// chapter 6 demo blanked the text the reader was following, the text that
+// says what to try on the pushed screen. The lesson is not rendered while it
+// is covered, and rendering it anyway would run its hooks a second time. Its
+// last rendering is still a valid tree (a rendered Node is frozen), but its
+// callback IDs are not: IDs are positional within a pass (see
+// callbackRegistry), and by now they name the pushed screen's handlers. So the
+// copy has every callback taken out (see inert) and its controls disabled.
+// Reading is all a covered lesson is for, and the pushed screen's own back
+// button brings the live one back.
+//
+// # Why the scroll position survives
+//
+// The copy keeps the lesson's root key and every node's type and position,
+// and the bar goes after it in the pane (see splitView). So covering and
+// uncovering the lesson changes its props and nothing else, the host patches
+// the same elements in place, and the reader is where they were in the guide
+// both times.
+//
+// Without a memo for the current lesson (the page switched to the split while
+// the pushed screen was already up, before this lesson had been drawn),
+// pushedScreenNote says where the reader is instead.
+func (t *tutorial) pushedScreenGuide(ctx *core.Context) (*core.Node, []core.View) {
+	lesson := t.lastLesson.Get().recall(t.current.Get())
+	if lesson == nil {
+		return t.pushedScreenNote(ctx).Render(ctx), nil
+	}
+	guide, _, _ := liftDemos(lesson, func(hint string) *core.Node {
+		return demoPointer(hint).Render(ctx)
+	})
+	return inert(guide), []core.View{pushedScreenBar()}
+}
+
+// pushedScreenBar sits under the covered lesson in the guide. The page keeps
+// it at its natural height (#tutorial-guide-note in wasm/index.html), where the
+// guide's other child takes the rest.
+func pushedScreenBar() core.View {
+	return core.Column(
+		core.AccessibilityID(guideNoteID),
+		comps.Banner{
+			Text: "A demo's screen is open on the phone. Its back button returns you " +
+				"here; until then this guide is for reading.",
+			Variant: comps.VariantDefault,
+		},
+	)
+}
+
+// inertCommands are node props that are not callbacks but would act again if
+// a host met them on a node for the first time: a focus command fires on a
+// field that mounts while it is the target (core/focus.go). The copy inert
+// makes keeps its nodes in place, so this is belt and braces, for a host that
+// rebuilds rather than patches.
+var inertCommands = []string{"focusEpoch", "focusAction"}
+
+// inert copies a rendered tree with every callback taken out: each prop named
+// on… whose value is a callback ID is dropped, and a node that had one is
+// marked core.Style.Disabled, so every host draws and announces it as the
+// control it is, switched off. Keys, types and children are kept exactly,
+// which is what lets a host patch the live tree into this one in place.
+//
+// The input is never written: every node is copied, props and style with it.
+func inert(n *core.Node) *core.Node {
+	if n == nil {
+		return nil
+	}
+	cp := *n
+	if len(n.Props) > 0 {
+		props := make(map[string]any, len(n.Props))
+		dropped := false
+		for k, v := range n.Props {
+			if id, ok := v.(string); ok && id != "" && strings.HasPrefix(k, "on") {
+				dropped = true
+				continue
+			}
+			// A core.Paragraph's link runs carry their callbacks inside the
+			// runs prop, one level down; see inertRuns.
+			if k == "runs" {
+				if runs, ok := v.([]map[string]any); ok {
+					if cp, had := inertRuns(runs); had {
+						props[k] = cp
+						continue
+					}
+				}
+			}
+			props[k] = v
+		}
+		for _, k := range inertCommands {
+			if _, ok := props[k]; ok {
+				delete(props, k)
+			}
+		}
+		cp.Props = props
+		if dropped {
+			var st core.Style
+			if n.Style != nil {
+				st = *n.Style
+			}
+			st.Disabled = true
+			cp.Style = &st
+		}
+	}
+	if len(n.Children) > 0 {
+		cp.Children = make([]*core.Node, len(n.Children))
+		for i, c := range n.Children {
+			cp.Children[i] = inert(c)
+		}
+	}
+	return &cp
+}
+
+// inertRuns copies a Paragraph's runs without their callbacks, reporting
+// whether any run had one. The link keeps its colour and marks, so the covered
+// sentence reads as it did; it just stops being a link.
+func inertRuns(runs []map[string]any) ([]map[string]any, bool) {
+	found := false
+	out := make([]map[string]any, len(runs))
+	for i, r := range runs {
+		if _, ok := r["cb"]; !ok {
+			out[i] = r
+			continue
+		}
+		found = true
+		cp := make(map[string]any, len(r))
+		for k, v := range r {
+			if k != "cb" {
+				cp[k] = v
+			}
+		}
+		out[i] = cp
+	}
+	return out, found
+}
+
 // pushedScreenNote fills the guide while a demo's pushed screen is on the
-// phone. It names the lesson the reader is in and says how to get back to it;
-// the pushed screen's own back button is that way (navDemoScreen requires
-// every one to have one).
+// phone and there is no memo of the lesson under it (see pushedScreenGuide).
+// It names the lesson the reader is in and says how to get back to it; the
+// pushed screen's own back button is that way (navDemoScreen requires every
+// one to have one).
 func (t *tutorial) pushedScreenNote(ctx *core.Context) core.View {
 	items := []core.PropsAndChildren{
 		core.Gap(14),

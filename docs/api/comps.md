@@ -36,8 +36,8 @@ Package comps's reference is split into 7 topic pages by source file. The index 
 | --- | --- | --- |
 | [Screens & structure](comps-structure.md) | Screen, app and bottom bars, the FAB, tabs, drawers, step indicators, two-pane and foldable layouts, cards, accordions, headings, breadcrumbs and separators, labelled or not. | 17 types, 13 functions and methods |
 | [Lists & tables](comps-lists.md) | List rows, the settings-row family (switch, checkbox, select and slider), input rows, key-value lists, bullet lists, grouped and paged lists, data tables and timelines. | 21 types, 16 functions and methods |
-| [Inputs & pickers](comps-inputs.md) | Form fields, password fields, one-time code fields, tag inputs, search, searchable selects, radio groups, dates, date ranges, times and calendars, and the two editors. | 16 types, 15 functions and methods |
-| [Buttons & choices](comps-actions.md) | Buttons and their variants, copy buttons, links, chips, segmented controls, steppers, ratings and badges. | 12 types, 12 functions and methods |
+| [Inputs & pickers](comps-inputs.md) | Form fields, password fields, one-time code fields, tag inputs, search, searchable selects, radio groups, dates, date ranges, times and calendars, and the two editors. | 17 types, 16 functions and methods |
+| [Buttons & choices](comps-actions.md) | Buttons and their variants, copy buttons, links, chips, segmented controls, steppers, ratings and badges. | 12 types, 13 functions and methods |
 | [Overlays & feedback](comps-overlays.md) | Dialogs, lightboxes, action sheets, menus, snackbars, banners, progress, spinners, skeletons and empty states. | 13 types, 10 functions and methods |
 | [Data display & maps](comps-display.md) | Avatars and avatar stacks, stat tiles, the compass, clocks, countdowns and alarms, an audio player, message bubbles, expandable text, QR codes, map panels and static maps. | 21 types, 23 functions and methods |
 | [Charts](comps-charts.md) | Sparklines, line, area, bar and scatter charts, histograms, heatmaps and calendar heatmaps, donuts and pies, and gauges, drawn on core.Canvas. | 16 types, 12 functions and methods |
@@ -98,6 +98,7 @@ Package comps's reference is split into 7 topic pages by source file. The index 
     - [`type RadioGroup`](comps-inputs.md#type-radiogroup)
     - [`type RadioOption`](comps-inputs.md#type-radiooption)
     - [`type RichTextEditor`](comps-inputs.md#type-richtexteditor)
+    - [`type RichTextView`](comps-inputs.md#type-richtextview)
     - [`type RichToolItem`](comps-inputs.md#type-richtoolitem)
     - [`type RichToolbar`](comps-inputs.md#type-richtoolbar)
         - [`func UseRichToolbar`](comps-inputs.md#func-userichtoolbar)

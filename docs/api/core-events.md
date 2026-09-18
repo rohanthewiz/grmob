@@ -4,9 +4,9 @@
 import "github.com/rohanthewiz/grmob/core"
 ```
 
-Event props, host and system events, focus refs and focus order.
+Event props, host and system events, focus refs and focus order, and scrolling a node into view.
 
-One of 11 topic pages of [package core](core.md), which has the package overview and an index of every topic. This page documents the declarations in `core/event.go`, `core/behavioral_props.go`, `core/host_events.go`, `core/sys_events.go`, `core/focus.go`, `core/focus_order.go`.
+One of 11 topic pages of [package core](core.md), which has the package overview and an index of every topic. This page documents the declarations in `core/event.go`, `core/behavioral_props.go`, `core/host_events.go`, `core/sys_events.go`, `core/focus.go`, `core/focus_order.go`, `core/scroll_to.go`.
 
 ## Index
 
@@ -17,6 +17,7 @@ One of 11 topic pages of [package core](core.md), which has the package overview
 - [`func HasSystemEventHandler`](#func-hassystemeventhandler)
 - [`func OnHostEvent`](#func-onhostevent)
 - [`func ReceiveHostEvent`](#func-receivehostevent)
+- [`func ScrollIntoView`](#func-scrollintoview)
 - [`func SendSystemEvent`](#func-sendsystemevent)
 - [`func SetSystemEventHandler`](#func-setsystemeventhandler)
 - [`func UseFocusOrder`](#func-usefocusorder)
@@ -29,6 +30,7 @@ One of 11 topic pages of [package core](core.md), which has the package overview
     - [`func OnFocus`](#func-onfocus)
     - [`func OnLongPress`](#func-onlongpress)
     - [`func OnTouch`](#func-ontouch)
+    - [`func ScrollTarget`](#func-scrolltarget)
 - [`type FocusRef`](#type-focusref)
     - [`func UseFocusRef`](#func-usefocusref)
 
@@ -138,6 +140,18 @@ ReceiveHostEvent delivers one event from the host. Names core owns are consumed 
 An event nobody consumes is logged rather than dropped silently — unlike an unknown system event, which a host drops because a newer app may legitimately send what an older shell does not understand, an unknown host event means the shell is sending traffic the app never asked for, which is worth a line in the log during development.
 
 <small>[core/host_events.go:93](https://github.com/rohanthewiz/grmob/blob/master/core/host_events.go#L93)</small>
+
+### func ScrollIntoView
+
+```go
+func ScrollIntoView(ctx *Context, name string)
+```
+
+ScrollIntoView brings the node named name into view, as of the next render pass. Called from an event handler, or from anywhere a State.Set may be: it requests a pass itself.
+
+A name no node carries scrolls nothing, and the command still takes an epoch: it happened, and had no target on screen, as a Focus on an absent ref does.
+
+<small>[core/scroll_to.go:103](https://github.com/rohanthewiz/grmob/blob/master/core/scroll_to.go#L103)</small>
 
 ### func SendSystemEvent
 
@@ -335,6 +349,16 @@ OnTouch fires the moment a finger (or pen, or mouse button) goes down on the nod
 Web only today. The DOM runtime maps it to pointerdown; neither native renderer reads the prop, so a node carrying it on iOS or Android simply never hears from it. (It used to be worse: the DOM's event-name fallback derived "touch", which is not a DOM event either, so the prop attached a listener nothing could ever fire on any target.)
 
 <small>[core/behavioral_props.go:39](https://github.com/rohanthewiz/grmob/blob/master/core/behavioral_props.go#L39)</small>
+
+#### func ScrollTarget
+
+```go
+func ScrollTarget(name string) BehaviorProp
+```
+
+ScrollTarget names the node it is applied to, so ScrollIntoView can bring it into view. An empty name is no target.
+
+<small>[core/scroll_to.go:73](https://github.com/rohanthewiz/grmob/blob/master/core/scroll_to.go#L73)</small>
 
 ### type FocusRef
 

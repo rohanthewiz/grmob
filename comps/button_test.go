@@ -2,9 +2,11 @@ package comps
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/rohanthewiz/grmob/core"
+	"github.com/rohanthewiz/grmob/htmlout"
 )
 
 // The load-bearing property of both new axes: their zero values contribute
@@ -184,6 +186,33 @@ func TestButtonOutlinedAndGhostAreTransparentWithVariantInk(t *testing.T) {
 			t.Errorf("no theme in the matrix gives variant %q a tone that differs from its "+
 				"fill; the assertions for it would pass on a widget that spent v.Color", v)
 		}
+	}
+}
+
+// The transparent treatments cast no shadow. The theme's Button base has an
+// elevation, and a shadow with no fill above it is only a halo round the
+// label: every ghost crumb of a Breadcrumb drew a faint frame in htmlout's
+// export. The filled button keeps the base's elevation, which is what shows
+// the zero here is the treatment's and not the theme's.
+func TestTransparentButtonsCastNoShadow(t *testing.T) {
+	ctx := core.NewContext().WithTheme(core.DefaultTheme)
+	ctx.BeginRenderPass()
+	if core.DefaultTheme.Components.Button.Shadow == 0 {
+		t.Fatal("the theme's Button base has no shadow, so this test proves nothing")
+	}
+	filled := Button{Label: "Save"}.Render(ctx)
+	if filled.Style.Shadow == 0 {
+		t.Error("a filled button lost the theme's elevation")
+	}
+	for _, e := range []Emphasis{EmphasisOutlined, EmphasisGhost} {
+		n := Button{Label: "Skip", Emphasis: e}.Render(ctx)
+		if n.Style.Shadow != 0 {
+			t.Errorf("%s button casts a shadow of %v with no fill to cast it", e, n.Style.Shadow)
+		}
+	}
+	crumbs := Breadcrumb{Items: []string{"Home", "Orders", "Order 42"}, OnTap: func(int) {}}.Render(ctx)
+	if html := htmlout.ExportHTML(crumbs); strings.Contains(html, "box-shadow") {
+		t.Error("a Breadcrumb's exported crumbs still carry a box-shadow")
 	}
 }
 

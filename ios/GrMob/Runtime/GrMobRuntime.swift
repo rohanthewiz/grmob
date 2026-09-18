@@ -73,6 +73,12 @@ final class GrMobRuntime {
     /// The last sequence number handed to a text edit; see textEdited.
     private var lastEditSeq = 0
 
+    /// The highest core.ScrollIntoView epoch this app has acted on, app-wide
+    /// for the reason core/scroll_to.go gives: the target keeps its stamp,
+    /// and a node built again later must not be scrolled to again. Written
+    /// by Renderer.swift's GrMobBringIntoView.
+    var scrollEpochApplied = 0
+
     init(bridge: GrMobBridge) {
         self.bridge = bridge
     }

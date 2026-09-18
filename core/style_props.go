@@ -194,6 +194,9 @@ func Padding(all int) StyleProp {
 func BorderRadius(px float64) StyleProp {
 	return styleFunc(func(s *Style) {
 		s.BorderRadius = px
+		// One radius for all four corners, so an earlier CornerRadii is
+		// replaced: the later prop is the shape (see CornerRadii).
+		s.Corners = Corners{}
 	})
 }
 

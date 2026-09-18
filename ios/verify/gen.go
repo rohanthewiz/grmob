@@ -28,6 +28,7 @@ import (
 	"github.com/rohanthewiz/grmob/internal/canvasfixture"
 	"github.com/rohanthewiz/grmob/internal/menufixture"
 	"github.com/rohanthewiz/grmob/internal/pinfixture"
+	"github.com/rohanthewiz/grmob/internal/rebasefixture"
 	"github.com/rohanthewiz/grmob/mobile"
 
 	// Imported for its init: registers the demo app with the bridge, the same
@@ -44,6 +45,11 @@ type transcript struct {
 	// and ride along in the same file because the harness is one executable.
 	// See internal/menufixture.
 	MenuCases []menufixture.Case `json:"menuCases"`
+
+	// The text-edit rebase cases: how a focused field replays typing Go has
+	// not seen onto Go's rewrite. rebase.swift runs GrMobTextEdits.swift's
+	// copy of the rule against internal/rebasefixture's answers.
+	RebaseCases []rebasefixture.Case `json:"rebaseCases"`
 
 	// The band cases, riding along for the same reason and with even less to
 	// do with the replay: they are pure geometry, solved by band.swift through
@@ -227,9 +233,10 @@ func main() {
 	defer rec.mu.Unlock()
 	out, err := json.Marshal(transcript{
 		Initial: initial, Steps: rec.steps, Final: final,
-		MenuCases: menufixture.Cases(),
-		BandCases: bandfixture.Cases(),
-		PinCases:  pinfixture.Cases(),
+		MenuCases:   menufixture.Cases(),
+		RebaseCases: rebasefixture.Cases(),
+		BandCases:   bandfixture.Cases(),
+		PinCases:    pinfixture.Cases(),
 
 		CanvasCases: canvasCases(),
 	})

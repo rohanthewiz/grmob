@@ -182,6 +182,11 @@ func demoPanel(hint string, children ...core.View) core.View {
 	return core.ComponentFunc(func(ctx *core.Context) *core.Node {
 		t := ctx.Theme()
 		items := []core.PropsAndChildren{
+			// The name the split layout's pointer scrolls the phone to
+			// (split.go, demoPointer). The key's string, because the key is
+			// already the panel's one unique name; it is a no-op until some
+			// pointer issues the command.
+			core.ScrollTarget(demoKeyPrefix + hint),
 			core.BorderColor(t.Colors.BorderColor()),
 			core.BorderWidth(1),
 			core.BorderRadius(12),

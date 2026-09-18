@@ -1007,6 +1007,31 @@ func TestCalendarBandFillsTheDaysBetweenTheEndpoints(t *testing.T) {
 	}
 }
 
+// An endpoint with a band beside it is square on the band's side and rounded
+// on the outside (core.CornerRadii), which is what takes the notch out of the
+// join. A one-day range, a half-made one and a Selected day keep the pill.
+func TestCalendarRangeEndpointsAreSquareTowardTheBand(t *testing.T) {
+	r := float64(core.DefaultTheme.Spacing.SM)
+	cells := sepCells(t, Calendar{RangeStart: sepDay(14), RangeEnd: sepDay(20)})
+	if got, want := cellFor(t, cells, 2, 14).Style.Radii(), (core.Corners{TopLeft: r, BottomLeft: r}); got != want {
+		t.Errorf("start corners = %+v, want rounded left and square right %+v", got, want)
+	}
+	if got, want := cellFor(t, cells, 2, 20).Style.Radii(), (core.Corners{TopRight: r, BottomRight: r}); got != want {
+		t.Errorf("end corners = %+v, want square left and rounded right %+v", got, want)
+	}
+	pill := core.Corners{TopLeft: r, TopRight: r, BottomRight: r, BottomLeft: r}
+	for name, cal := range map[string]Calendar{
+		"one day":  {RangeStart: sepDay(14), RangeEnd: sepDay(14)},
+		"half":     {RangeStart: sepDay(14)},
+		"reversed": {RangeStart: sepDay(20), RangeEnd: sepDay(14)},
+		"selected": {Selected: sepDay(14)},
+	} {
+		if got := cellFor(t, sepCells(t, cal), 2, 14).Style.Radii(); got != pill {
+			t.Errorf("%s: corners = %+v, want the full pill %+v", name, got, pill)
+		}
+	}
+}
+
 // There is one "this day is chosen" look in the grid. A Selected day and a
 // range endpoint are drawn identically on purpose, so a caller that sets both
 // gets no third case to reason about.

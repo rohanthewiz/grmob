@@ -93,6 +93,15 @@ class GrMobRuntime(private val bridge: GrMobBridge) {
     var startupStats: MountStats? = null
         private set
 
+    /**
+     * The highest core.ScrollIntoView epoch this app has acted on. App-wide
+     * rather than per node, for the reason core/scroll_to.go gives: the target
+     * keeps its stamp, and a node composed again later (a list re-keyed, a
+     * screen come back) must not scroll the screen to it a second time. Read
+     * and written on the main thread only, by Renderer.kt's scrollCommand.
+     */
+    var scrollEpochApplied = 0
+
     /** Time spent inside `bridge.renderInitial()` on the [start] call, in nanoseconds. */
     var startupBridgeNanos: Long = 0
         private set

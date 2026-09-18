@@ -34,6 +34,9 @@ type Context struct {
 	// endReached is OnEndReached's debounce ledger; see endReachedState in
 	// list.go for why it is per-tree rather than a package global.
 	endReached *endReachedState
+	// scrollTo is ScrollIntoView's command record, shared app-wide like
+	// focus; see scroll_to.go.
+	scrollTo *scrollToState
 
 	// hooks is set only on the lightweight copies produced by WithTheme and
 	// WithConfig, and points at the context that actually owns the hook
@@ -138,6 +141,7 @@ func NewContext() *Context {
 		dirty:         newDirtyFlag(),
 		focus:         newFocusState(),
 		endReached:    newEndReachedState(),
+		scrollTo:      &scrollToState{},
 		scopes:        make(map[string]*Context),
 	}
 }
@@ -154,6 +158,7 @@ func (ctx *Context) NewChildContext() *Context {
 		dirty:         ctx.dirty,
 		focus:         ctx.focus,
 		endReached:    ctx.endReached,
+		scrollTo:      ctx.scrollTo,
 		parent:        ctx,
 		scopes:        make(map[string]*Context),
 	}
@@ -230,6 +235,7 @@ func (ctx *Context) WithConfig(cfg *AppConfig) *Context {
 		dirty:         ctx.dirty,
 		focus:         ctx.focus,
 		endReached:    ctx.endReached,
+		scrollTo:      ctx.scrollTo,
 		// Share the scope table rather than leaving it nil: this is the same
 		// context wearing a different config, so a scope reached through it
 		// must be the same scope reached through the original. A nil map here
@@ -253,6 +259,7 @@ func (ctx *Context) WithTheme(theme *Theme) *Context {
 		dirty:         ctx.dirty,
 		focus:         ctx.focus,
 		endReached:    ctx.endReached,
+		scrollTo:      ctx.scrollTo,
 		// See WithConfig: the scope table is shared, not re-created, so
 		// ctx.Scope works (and resolves to the same scopes) on a themed copy.
 		scopes: ctx.scopes,

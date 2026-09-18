@@ -397,9 +397,10 @@ comps.Link{Text: "Forgot password?", OnTap: showReset}
   `ConcernLinkInert`.
 - Drawn in `Primary`'s on-light tone, hugging its text (`AlignSelf(start)`) so
   the empty width beside it is not a target.
-- **Not underlined**: core's Style has no text decoration. **Not inline**: a
-  link inside a sentence is an inline span, which core does not have. Give it a
-  line of its own.
+- **Not underlined** on its own line, where being a line of link colour is what
+  says it is a link. **Inline**, inside a sentence, use `Link.Span(ctx)`: a run
+  of a `core.Paragraph`, in the same colour, underlined (there the colour is the
+  only other signal), with the same tap.
 
 ## InputRow
 
@@ -1653,8 +1654,8 @@ comps.FormField{
 
 ## PINInput
 
-The boxed one-character-per-cell field a one-time code is typed into, with the
-cursor moving itself:
+The boxed one-character-per-box field a one-time code is typed into: a row of
+boxes drawn over **one field that holds the whole code**.
 
 ```go
 comps.PINInput{
@@ -1666,85 +1667,59 @@ comps.PINInput{
 ```
 
 ```
-┌───┐ ┌───┐ ┌───┐ ┌───┐ ┌───┐ ┌───┐
-│ 4 │ │ 1 │ │ 7 │ │ 2 │ │   │ │   │
-└───┘ └───┘ └───┘ └───┘ └───┘ └───┘
-                          ▲ put there by the cell before it
+┌───┐ ┌───┐ ┌───┐ ┌───┐ ┏━━━┓ ┌───┐
+│ 4 │ │ 1 │ │ 7 │ │ 2 │ ┃   ┃ │   │
+└───┘ └───┘ └───┘ └───┘ ┗━━━┛ └───┘
+                          ▲ the next box to fill, marked while focused
 ```
 
-It is the first widget in the package to drive core's [focus
-traversal](concepts/events.md#focus-traversal): one `core.FocusRef` per cell, one
-`core.UseFocusOrder` over them, `core.FocusNext` after every character it
-writes. That is the whole of what it adds over a `Row` of fields — and it also
-gives each cell but the last the keyboard's **Next** action, for free, because
-that is what declaring an order does.
+A tap anywhere on the row puts the caret in the field (`core.Focus`). Every
+key, paste, backspace and SMS autofill is an ordinary edit of one string, and
+the boxes redraw from it. The field is a `core.Input` (`core.InputPassword`
+when `Secure`), one point square with no frame, fill or ink, in a `ZStack`
+layer over the boxes: present, focusable, not seen.
 
-**`Value` is the whole code as one string, and therefore a prefix.** Cell *i*
-draws the *i*-th character and the empty cells are the ones past the end. A
-string cannot hold a gap, so the cells fill strictly left to right and there
-are exactly two edits:
+**Why one field.** It used to be six fields, one per box, with the caret moved
+from each to the next as a character landed. On the Android emulator, keys
+typed about 130 ms apart were lost two ways. A key typed while the caret was on
+its way between boxes reached no field. And a box that had already been left
+could not replay a key onto Go's rewrite of it. One field has no caret moves,
+and its code is one value under the text-edit
+protocol (`core/text_edit.go`) like any other field's. It is also what the
+platforms' own OTP fields are, and what autofill fills.
 
-| edit | result |
-| --- | --- |
-| typing at cell *i* | `Value` = `code[:i]` + what was typed + whatever the typed run did not cover |
-| clearing cell *i* | `Value` = `code[:i]` — cell *i* and everything after it goes |
+The rules fall out of the field:
 
-Clearing is the asymmetric one. A cleared middle cell has to either shift the
-tail left — so cells the finger never touched change under it — or drop the
-tail; dropping is the one a person can predict, because it is what "start again
-from here" means. The same invariant settles a case the cells can otherwise
-raise: a character typed into a cell *past* the end of the code lands at the
-end, there being no position for it to occupy.
+- `Value` is the field's text, capped at `Length`: a longer paste keeps what
+  fits.
+- Backspace deletes the last character, wherever the reader tapped.
+- **`OnComplete` fires on every edit that leaves the code full**, including an
+  edit to a code that was already full. This is deliberately not
+  [`Countdown`](#countdown--stopwatch)'s once-per-crossing reading:
+  `OnComplete` means "submit this", and a corrected code that stays silent is a
+  field that will not submit. It fires from the change handler, so a screen
+  restored with a complete code does not resubmit itself. A change producing
+  the value already held is an echo: no `OnChange`, no `OnComplete`.
 
-**A paste and a second character in a full cell are the same event.** A cell
-reporting more than one character is either the whole code pasted into the
-first box, or a keystroke in a box that already held something — the field is
-controlled, so it reports its entire contents either way. Both are one rule:
-write the incoming string from that cell forward, and put the cursor after the
-last cell it filled. Characters past the last cell are dropped. The one case it
-reads wrongly is a character inserted *before* an existing one, which arrives
-as `"21"` and is written in that order; nothing in the event says where the
-caret was.
+**It holds hooks** (the field's `FocusRef` and whether it has focus), so render
+it in a stable position on every pass rather than inside a `core.If`, as with
+[`Accordion`](#accordion).
 
-**Backspace in an empty cell does nothing, and cannot.** There are no key
-events in this framework — a field reports its text, not the keys that produced
-it — so a backspace that changes nothing is never reported. The cursor stays
-put. Clearing a run of cells is one backspace per cell with a tap in between,
-or one backspace in the leftmost filled cell, which drops the rest by the rule
-above.
+The boxes wear the theme's field frame (`Components.Input`), and the next box
+to fill takes a `Colors.Primary` border while the field has focus. They divide
+the row with `core.FlexGrow` and a zero `core.FlexBasis`, the pair
+`comps.Calendar`'s day cells use. The row fills the width it is given; cap it
+with `Style`.
 
-**`OnComplete` fires on every edit that leaves the code full**, including an
-edit to a code that was already full — deliberately not
-[`Countdown`](#countdown--stopwatch)'s once-per-crossing reading. `OnComplete`
-means "submit this", and someone who mistypes one digit, corrects it and gets
-silence has a field that will not submit. It fires from the change handler
-rather than from an effect, so a screen restored with a complete code in it
-does not resubmit itself on sight. A change producing the value already held is
-treated as an echo: no `OnChange`, no cursor move, no `OnComplete`.
+The field asks for the **number pad** with `core.Keyboard(core.KeyboardDigits)`,
+which on iOS also marks it as a one-time code field, so the system offers a
+code from a text message above the keyboard. The pad is a hint: a hardware
+keyboard or a paste can still put letters in.
 
-**It holds hooks** — one `FocusRef` per cell — so render it in a stable
-position on every pass rather than inside a `core.If`, as with
-[`Accordion`](#accordion). The hook count follows the largest `Length` the
-widget has ever been rendered with, not the current one: a `Length` that shrank
-would otherwise retire slots from the middle of the sequence and drift every
-cursor after them.
-
-The cells are ordinary `core.Input` nodes (`core.InputPassword` when `Secure`),
-so they wear the theme's field frame and match the text inputs above them. They
-divide the row with `core.FlexGrow` and a zero `core.FlexBasis` — the pair
-`comps.Calendar`'s day cells use, which is what makes the four targets
-agree on "equal shares" rather than "equal shares of the leftovers". The row
-fills the width it is given; cap it with `Style`.
-
-They take the platform's **text** keyboard, not its number pad. The keyboard
-type is chosen by node type on both natives, and the numeric node carries an
-`int` value, which cannot express an empty cell — clearing one would report
-nothing at all and backspace would stop working. A digits-only keyboard needs a
-keyboard-type prop on `core.Input`, which is a renderer change.
-
-`Label` is the accessible name only: the row is a `core.RoleGroup` named by it
-and each cell is named "*Label*, N of M". There is no visible caption — wrap it
-in a [`FormField`](#formfield) when one is wanted.
+`Label` is the accessible name only: the row is a `core.RoleGroup` named by it,
+and the field is named "*Label*, N of M entered". The boxes are hidden from
+screen readers, being a picture of what the field holds. There is no visible
+caption; wrap it in a [`FormField`](#formfield) when one is wanted.
 
 In debug builds, a `PINInput` with no `OnChange` raises
 `comps.ConcernPINInputInert` (it is read-only in practice and looks exactly
@@ -3479,8 +3454,12 @@ comps.MessageBubble{Text: "Not yet", Mine: true, Time: "10:42"}
   10:41"). The reader's own messages are named "You, …", and `MineLabel`
   localizes that. Put the bubbles under a `core.RoleLog` container.
 - `Style` goes on the outer row, where a gap between messages belongs.
-- **Not a thread**: opening at the newest message needs a scroll offset.
-  **No tail**: that needs a per-corner radius. Both are renderer work.
+- **The tail** is the bottom corner on the sender's side, nearly square
+  (`core.CornerRadii`): bottom-right on the reader's own, bottom-left on
+  theirs.
+- **Not a thread**: `core.ScrollIntoView` can open a transcript at its newest
+  message, but loading older ones as the reader scrolls up needs a reported
+  scroll offset, which no host sends.
 
 ## ExpandableText
 
@@ -3946,6 +3925,36 @@ Each host does genuinely different work, and it is worth knowing which:
 | WASM | A `contenteditable` `<div>`. Every command is a **pure transformation of the document** — the selection is only read and restored, never operated on, because a `Range` under `contenteditable` is the least predictable surface on the web. No `execCommand`. Paste is intercepted and re-done as a text insertion, so foreign markup dies at the edge. Undo is the runtime's own stack of Docs. |
 | iOS | `UITextView`. Marks are attributes edited straight into the `textStorage`, which preserves the caret and gives "press bold, then type" free through `typingAttributes`; block kinds take the long way round (read out, transform, rebuild, restore), because a prefix and an indent have no in-place spelling. |
 | Android | `EditText` + `Spannable` through `AndroidView` — the one deliberate reach past Compose in the renderer. `Spannable` has had a span type for every mark and every paragraph treatment for a decade; building block structure into one `AnnotatedString` rebuilt per keystroke is the riskiest thing this design could ask for, and the classic-view route removes it. |
+
+## RichTextView
+
+A `richtext.Doc` drawn to be read: the document `RichTextEditor` edits, with no
+editor.
+
+```go
+comps.RichTextView{Doc: note.Get()}
+comps.RichTextView{Doc: doc, OnLink: func(url string) { open(url) }}
+```
+
+Each block is one [`core.Paragraph`](api/core-views.md#func-paragraph): the block's runs as
+runs of one flow of text, so a sentence with a bold word and a link in it wraps
+as one sentence. Headings are bold at the editor's own scale (1.6, 1.35 and
+1.15 of Body) and announced as headings of their level. Consecutive list items
+are one list to a screen reader, numbered from 1 per list. A quote sits beside
+a rule in the secondary ink, and a code block is monospace in a Surface box.
+
+A run's link is a tappable run in `comps.Link`'s colour, underlined. `OnLink`
+receives the URL; nil opens it with `core.OpenURL`.
+
+**When to use it rather than a read-only editor.** A `RichTextEditor` with
+`ReadOnly` and no toolbar also displays a document, but it hosts a platform
+editor per instance (`UITextView`, `EditText`, a `contenteditable`). A list of
+fifty notes wants fifty paragraphs of text, which is what this draws. It holds
+no hooks, so it can be rendered inside a `core.If`.
+
+`comps.Link` has the inline form too: `comps.Link{Text: "terms", URL: u}.Span(ctx)`
+is a run for a `core.Paragraph`, in the link's colour, underlined, with the
+same tap.
 
 ## Writing your own
 

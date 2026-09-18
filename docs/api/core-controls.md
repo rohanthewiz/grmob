@@ -6,7 +6,7 @@ import "github.com/rohanthewiz/grmob/core"
 
 Buttons, text inputs, switches, sliders, selects, images, tab views, text grids and vector canvases.
 
-One of 11 topic pages of [package core](core.md), which has the package overview and an index of every topic. This page documents the declarations in `core/button.go`, `core/input.go`, `core/switch.go`, `core/slider.go`, `core/select_menu.go`, `core/image.go`, `core/tabview.go`, `core/textgrid.go`, `core/canvas.go`.
+One of 11 topic pages of [package core](core.md), which has the package overview and an index of every topic. This page documents the declarations in `core/button.go`, `core/input.go`, `core/keyboard_kind.go`, `core/switch.go`, `core/slider.go`, `core/select_menu.go`, `core/image.go`, `core/tabview.go`, `core/textgrid.go`, `core/canvas.go`.
 
 ## Index
 
@@ -22,6 +22,7 @@ One of 11 topic pages of [package core](core.md), which has the package overview
 - [`func Input`](#func-input)
 - [`func InputPassword`](#func-inputpassword)
 - [`func InputWithSubmit`](#func-inputwithsubmit)
+- [`func Keyboard`](#func-keyboard)
 - [`func NumericInput`](#func-numericinput)
 - [`func OnSliderChangeEnd`](#func-onsliderchangeend)
 - [`func Select`](#func-select)
@@ -44,6 +45,7 @@ One of 11 topic pages of [package core](core.md), which has the package overview
     - [`func Stop`](#func-stop)
 - [`type GridRow`](#type-gridrow)
 - [`type GridRun`](#type-gridrun)
+- [`type KeyboardKind`](#type-keyboardkind)
 - [`type LineCap`](#type-linecap)
 - [`type LineJoin`](#type-linejoin)
 - [`type Path`](#type-path)
@@ -283,6 +285,20 @@ func InputWithSubmit(value string, placeholder string, onChange func(string), on
 InputWithSubmit is Input plus a submit action: pressing the keyboard's return key (iOS) or IME done action (Android) dispatches onSubmit. The submit rides the existing void-callback channel — the renderers read the "onSubmit" prop and dispatch it exactly like a Button's onClick — so the bridge surface is unchanged. A separate builder rather than a variadic change to Input keeps every existing call site compiling untouched.
 
 <small>[core/input.go:39](https://github.com/rohanthewiz/grmob/blob/master/core/input.go#L39)</small>
+
+### func Keyboard
+
+```go
+func Keyboard(kind KeyboardKind) BehaviorProp
+```
+
+Keyboard asks a text field (Input, InputPassword, TextArea) for a keyboard. It travels as the "keyboard" prop; NumericInput ignores it, having its own.
+
+	core.Input(code, "", setCode, core.Keyboard(core.KeyboardDigits))
+
+An empty kind writes nothing, so a tree that never asks is unchanged.
+
+<small>[core/keyboard_kind.go:43](https://github.com/rohanthewiz/grmob/blob/master/core/keyboard_kind.go#L43)</small>
 
 ### func NumericInput
 
@@ -743,6 +759,41 @@ GridRun is a span of one row drawn in one style. Text is the glyphs; Fg and Bg a
 The json tags are the wire shape the renderers read. They are short because a full pane is a few thousand runs a second at diff rate, and the key names are the part of a run that is not content.
 
 <small>[core/textgrid.go:57](https://github.com/rohanthewiz/grmob/blob/master/core/textgrid.go#L57)</small>
+
+### type KeyboardKind
+
+```go
+type KeyboardKind string
+```
+
+KeyboardKind is which software keyboard a text field asks for.
+
+#### Why a prop, and not a node type
+
+The keyboard used to follow the node type alone: NumericInput took the number pad and every other field the text keyboard. NumericInput carries an int, though, and a one-time code, a phone number or a card number is text that happens to be typed on a number pad: "0123" is not 123, and an empty field is not 0. comps.PINInput documented the gap in so many words ("a digits-only keyboard needs a keyboard-type prop on core.Input"). This is that prop.
+
+It is a hint, as every platform treats it: a hardware keyboard and a paste still put any text in the field, so a caller that needs digits only checks the value in its OnChange, as it would anyway.
+
+<small>[core/keyboard_kind.go:18](https://github.com/rohanthewiz/grmob/blob/master/core/keyboard_kind.go#L18)</small>
+
+```go
+const (
+	// KeyboardText is the default, stated.
+	KeyboardText KeyboardKind = ""
+	// KeyboardDigits is the number pad: 0-9 and nothing else where the
+	// platform has such a pad (iOS numberPad, Android TYPE_CLASS_NUMBER, web
+	// inputmode="numeric").
+	KeyboardDigits KeyboardKind = "digits"
+	// KeyboardDecimal adds the decimal separator.
+	KeyboardDecimal KeyboardKind = "decimal"
+	// KeyboardPhone is the telephone pad.
+	KeyboardPhone KeyboardKind = "phone"
+	// KeyboardEmail puts @ and . on the first layer.
+	KeyboardEmail KeyboardKind = "email"
+	// KeyboardURL puts / and . on the first layer.
+	KeyboardURL KeyboardKind = "url"
+)
+```
 
 ### type LineCap
 

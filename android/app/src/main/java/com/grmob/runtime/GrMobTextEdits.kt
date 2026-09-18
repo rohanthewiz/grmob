@@ -65,8 +65,8 @@ internal class TextEditLedger(anchor: String, epoch: Int, private val replay: Bo
 
     /**
      * The text the last rewrite was rebased from: what Go had read before it
-     * rewrote. Kept for [rebaseCaret], which needs the same basis
-     * [rebaseEdit] used to tell typing at the end from typing at the start.
+     * rewrote. Kept for [rebaseCaret], which must merge from the same basis
+     * [rebaseEdit] did, or the two would disagree about where the typing was.
      */
     var lastBasis: String = anchor
         private set
@@ -129,47 +129,132 @@ internal class TextEditLedger(anchor: String, epoch: Int, private val replay: Bo
 /**
  * Replays the typing from [basis] to [local] onto Go's [rewrite].
  *
- * Only insertions at either end are replayed. Those are what outruns a round
- * trip: a run of typed characters at the caret, which is almost always at
- * the end. Anything else (a deletion, an edit in the middle) has no single
- * place on the rewritten text it obviously belongs, and Go's text wins, as
- * it always did.
+ * A three-way merge of two single-span edits. internal/rebasefixture is the
+ * statement of the rule (read its package doc for the reasoning), and
+ * android/verify runs this copy against its case table; ios/verify runs the
+ * Swift copy against the same one.
  *
- *   basis "beta,"   local "beta,gam"   rewrite ""     →  "gam"
- *   basis "ab"      local "xab"        rewrite "AB"   →  "xAB"
- *   basis "hello"   local "hell"       rewrite "Hello" → "Hello"
+ * Each of basis→local (the user's typing) and basis→rewrite (Go's change) is
+ * read as one contiguous span. The user's span is carried across Go's change
+ * and spliced into the rewrite:
+ *
+ *   basis "HELLOaWORLD"  local "HELLOabWORLD"  rewrite "HELLOAWORLD"
+ *   user's span [6,6) → "b"     Go's span [5,6) → "A"
+ *   6 is at the end of Go's span, so it maps to 6   →   "HELLOAbWORLD"
+ *
+ * Where the user's span sits inside text Go replaced with text of another
+ * length, there is no telling where it belongs, and Go's text wins, as it
+ * always did.
+ *
+ *   basis "beta,"   local "beta,gam"   rewrite ""       →  "gam"
+ *   basis "ab"      local "xab"        rewrite "AB"     →  "xAB"
+ *   basis "hello"   local "hell"       rewrite "Hello"  →  "Hell"
+ *   basis "beta,"   local "bet"        rewrite ""       →  ""   (Go wins)
+ *
+ * The first version replayed only an insertion at either end of [basis], and
+ * two keys typed quickly mid-text under an UPPERCASE transform lost the second.
  */
-internal fun rebaseEdit(basis: String, local: String, rewrite: String): String = when {
-    local == basis -> rewrite
-    local.startsWith(basis) -> rewrite + local.substring(basis.length)
-    local.endsWith(basis) -> local.substring(0, local.length - basis.length) + rewrite
-    else -> rewrite
+internal fun rebaseEdit(basis: String, local: String, rewrite: String): String =
+    rebaseMerge(basis, local, rewrite)?.text ?: rewrite
+
+/**
+ * Where the caret goes after [rebaseEdit], for a host that owns its selection
+ * (the code editor; a plain field keeps its caret offset, clamped).
+ * [caret] is the caret in [local].
+ *
+ * It follows the typing, since that is where the user was:
+ *
+ *   before the user's span   mapped through Go's change like any basis offset
+ *   inside the replayed text keeps its place in it
+ *   after the user's span    keeps its place in the text after
+ *   Go's text won, or the    the end of Go's text, which is where a rewrite
+ *   caret sat in text Go     always put the caret before there was a rebase
+ *   replaced
+ */
+internal fun rebaseCaret(basis: String, local: String, rewrite: String, caret: Int): Int {
+    val m = rebaseMerge(basis, local, rewrite) ?: return rewrite.length
+    val at = when {
+        caret <= m.userStart -> mapOffset(caret, basis.length, m.goStart, m.goEnd, rewrite.length)
+        caret < m.userStart + m.replayed.length -> m.spliceStart + (caret - m.userStart)
+        else -> {
+            val mapped = mapOffset(caret - local.length + basis.length, basis.length,
+                m.goStart, m.goEnd, rewrite.length)
+            if (mapped < 0) -1 else mapped - m.spliceEnd + m.spliceStart + m.replayed.length
+        }
+    }
+    return if (at < 0 || at > m.text.length || splitsPair(m.text, at)) m.text.length else at
+}
+
+/** One successful merge and the offsets [rebaseCaret] needs from it. The
+ *  fields are internal/rebasefixture's `merged`, under the same names. */
+private class RebaseMerge(
+    val text: String,
+    /** Where the user's span starts, in basis and local alike. */
+    val userStart: Int,
+    /** The user's text: local's side of the user's span. */
+    val replayed: String,
+    /** Go's span in basis. */
+    val goStart: Int,
+    val goEnd: Int,
+    /** Where the user's span landed in the rewrite. */
+    val spliceStart: Int,
+    val spliceEnd: Int,
+)
+
+/** [rebaseEdit]'s arithmetic; null where Go's text wins. */
+private fun rebaseMerge(basis: String, local: String, rewrite: String): RebaseMerge? {
+    // Nothing typed since the edit Go read: nothing to replay.
+    if (local == basis) return null
+    val (up, us) = commonSpan(basis, local)
+    val (gp, gs) = commonSpan(basis, rewrite)
+    val goEnd = basis.length - gs
+    val spliceStart = mapOffset(up, basis.length, gp, goEnd, rewrite.length)
+    val spliceEnd = mapOffset(basis.length - us, basis.length, gp, goEnd, rewrite.length)
+    // A splice point between the halves of a surrogate pair is no telling
+    // either: the length-kept arm maps one unit at a time.
+    if (spliceStart < 0 || spliceEnd < 0 || spliceStart > spliceEnd ||
+        splitsPair(rewrite, spliceStart) || splitsPair(rewrite, spliceEnd)
+    ) return null
+    val replayed = local.substring(up, local.length - us)
+    return RebaseMerge(
+        text = rewrite.substring(0, spliceStart) + replayed + rewrite.substring(spliceEnd),
+        userStart = up, replayed = replayed, goStart = gp, goEnd = goEnd,
+        spliceStart = spliceStart, spliceEnd = spliceEnd,
+    )
 }
 
 /**
- * Where the caret goes after [rebaseEdit] replayed [local] onto [rewrite],
- * for a host that owns its selection (the code editor; a plain field lets
- * Compose coerce the old one). [caret] is the caret in [local].
- *
- * It follows the typing that was replayed, since that is where the user was:
- *
- *   typed at the end    keep the distance from the end
- *       basis "beta,"  local "beta,ga|"  rebased "ga|"
- *   typed at the start  keep the distance from the start
- *       basis "ab"     local "x|ab"      rebased "x|AB"
- *   Go's text won       the end of Go's text, which is where a rewrite always
- *                       put the caret before there was a rebase
- *
- * The cases are [rebaseEdit]'s, in its order, so the two cannot disagree
- * about which end the typing was at.
+ * Carries basis offset [i] across Go's change of basis[goStart, goEnd), which
+ * made a [basisLen]-unit basis into a [rewriteLen]-unit rewrite; -1 where there
+ * is no telling. "After Go's span" is tested first: where both inserted at one
+ * point, the user's text goes after Go's (comps.PINInput's "14").
  */
-internal fun rebaseCaret(basis: String, local: String, rewrite: String, caret: Int): Int {
-    val rebased = rebaseEdit(basis, local, rewrite)
-    val at = when {
-        local == basis -> rebased.length
-        local.startsWith(basis) -> rebased.length - (local.length - caret)
-        local.endsWith(basis) -> caret
-        else -> rebased.length
-    }
-    return at.coerceIn(0, rebased.length)
+private fun mapOffset(i: Int, basisLen: Int, goStart: Int, goEnd: Int, rewriteLen: Int): Int = when {
+    i >= goEnd -> i + rewriteLen - basisLen
+    i <= goStart -> i
+    // Inside a change that kept the length: a character-for-character
+    // transform such as UPPERCASE, where offset i is still offset i.
+    rewriteLen == basisLen -> i
+    else -> -1
 }
+
+/**
+ * The lengths of [a] and [b]'s common prefix and common suffix, the suffix
+ * limited so the two never overlap, and neither ending inside a surrogate
+ * pair.
+ */
+private fun commonSpan(a: String, b: String): Pair<Int, Int> {
+    val n = minOf(a.length, b.length)
+    var prefix = 0
+    while (prefix < n && a[prefix] == b[prefix]) prefix++
+    if (prefix > 0 && a[prefix - 1].isHighSurrogate()) prefix--
+    var suffix = 0
+    val limit = n - prefix
+    while (suffix < limit && a[a.length - 1 - suffix] == b[b.length - 1 - suffix]) suffix++
+    if (suffix > 0 && a[a.length - suffix].isLowSurrogate()) suffix--
+    return prefix to suffix
+}
+
+/** Whether offset [i] of [s] falls between the two halves of a surrogate pair. */
+private fun splitsPair(s: String, i: Int): Boolean =
+    i > 0 && i < s.length && s[i - 1].isHighSurrogate() && s[i].isLowSurrogate()

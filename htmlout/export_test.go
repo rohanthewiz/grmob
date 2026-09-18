@@ -2307,3 +2307,53 @@ func TestAccentColorBecomesCSSAccentColor(t *testing.T) {
 		t.Fatalf("export of a Switch carries no %q:\n%s", want, out)
 	}
 }
+
+// core.CornerRadii exports as border-radius with four values in CSS's order,
+// in place of the one radius.
+func TestCornerRadiiExportAsFourValues(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+	html := ExportHTML(core.Box(core.BorderRadius(8), core.CornerRadii(12, 0, 3, 12)).Render(ctx))
+	if !strings.Contains(html, "border-radius:12px 0px 3px 12px") {
+		t.Errorf("four corners did not export as four values: %s", html)
+	}
+	if strings.Contains(html, "border-radius:8px") {
+		t.Error("the one radius was exported beside the corners that replace it")
+	}
+}
+
+// core.Paragraph exports its runs as spans on one line, in their marks, with
+// a link run carrying the link role, and user text escaped.
+func TestParagraphExportsItsRuns(t *testing.T) {
+	ctx := core.NewContext().WithTheme(core.DefaultTheme)
+	ctx.BeginRenderPass()
+	html := ExportHTML(core.Paragraph([]core.Span{
+		{Text: "accept the "},
+		{Text: "terms", Underline: true, OnTap: func() {}},
+		{Text: " <b>", Italic: true},
+	}).Render(ctx))
+	for _, want := range []string{
+		`<span>accept the </span><span style="color:` + core.DefaultTheme.Colors.Primary +
+			`; text-decoration:underline" role="link">terms</span>`,
+		`<span style="font-style:italic"> &lt;b&gt;</span>`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Errorf("export lacks %s:\n%s", want, html)
+		}
+	}
+}
+
+// core.Keyboard exports as inputmode; the text keyboard exports nothing.
+func TestKeyboardExportsAsInputMode(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+	html := ExportHTML(core.Input("", "", func(string) {}, core.Keyboard(core.KeyboardDigits)).Render(ctx))
+	if !strings.Contains(html, `inputmode="numeric"`) {
+		t.Errorf("a digits field should export inputmode=numeric:\n%s", html)
+	}
+	for kind, want := range map[string]string{"digits": "numeric", "decimal": "decimal", "phone": "tel", "email": "email", "url": "url", "": ""} {
+		if got := InputModeFor(kind); got != want {
+			t.Errorf("InputModeFor(%q) = %q, want %q", kind, got, want)
+		}
+	}
+}

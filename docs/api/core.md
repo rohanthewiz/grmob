@@ -45,14 +45,14 @@ Package core's reference is split into 11 topic pages by source file. The index 
 
 | Topic | What it covers | Declares |
 | --- | --- | --- |
-| [Views & state](core-views.md) | View, Node, Context and state slots; conditionals, caching, error boundaries and debug-mode concerns. | 11 types, 59 functions and methods |
+| [Views & state](core-views.md) | View, Node, Context and state slots; text and inline runs; conditionals, caching, error boundaries and debug-mode concerns. | 12 types, 60 functions and methods |
 | [Layout](core-layout.md) | Rows, columns, stacks, scrolls and lists, and the alignment vocabulary they are placed with. | 2 types, 25 functions and methods |
-| [Styling: the Style struct](core-style.md) | Style and the value types its fields take: alignment, flex, position, weights and edge insets. | 11 types, 10 functions and methods |
-| [Styling: style props](core-style-props.md) | The StyleProp constructors: spacing and per-side insets, flex, typography, colour, borders and animation. | 1 types, 70 functions and methods |
+| [Styling: the Style struct](core-style.md) | Style and the value types its fields take: alignment, flex, position, weights and edge insets. | 11 types, 11 functions and methods |
+| [Styling: style props](core-style-props.md) | The StyleProp constructors: spacing and per-side insets, flex, typography, colour, borders, per-corner radii and animation. | 2 types, 72 functions and methods |
 | [Theming](core-theme.md) | Themes, palettes, typography and spacing scales, and per-component defaults. | 5 types, 17 functions and methods |
-| [Controls](core-controls.md) | Buttons, text inputs, switches, sliders, selects, images, tab views, text grids and vector canvases. | 18 types, 45 functions and methods |
+| [Controls](core-controls.md) | Buttons, text inputs, switches, sliders, selects, images, tab views, text grids and vector canvases. | 19 types, 46 functions and methods |
 | [Editors](core-editors.md) | The code editor and the rich text editor, and the refs and commands that drive them. | 2 types, 15 functions and methods |
-| [Events & focus](core-events.md) | Event props, host and system events, focus refs and focus order. | 2 types, 19 functions and methods |
+| [Events & focus](core-events.md) | Event props, host and system events, focus refs and focus order, and scrolling a node into view. | 2 types, 21 functions and methods |
 | [Navigation & overlays](core-navigation.md) | The navigator stack, modals, toasts, deep links and opening URLs. | 4 types, 19 functions and methods |
 | [Accessibility](core-accessibility.md) | Roles, selected, expanded and current states, value ranges and the accessibility audit. | 9 types, 19 functions and methods |
 | [Device services](core-device.md) | Audio, camera, clipboard, haptics, local notifications, compass heading, location, maps, the app lifecycle, and the window's size and fold. | 19 types, 70 functions and methods |
@@ -84,6 +84,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
         - [`func Guard`](core-views.md#func-guard)
     - [`type RenderManager`](core-views.md#type-rendermanager)
         - [`func NewRenderManager`](core-views.md#func-newrendermanager)
+    - [`type Span`](core-views.md#type-span)
     - [`type State`](core-views.md#type-state)
         - [`func NewState`](core-views.md#func-newstate)
     - [`type View`](core-views.md#type-view)
@@ -96,6 +97,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
         - [`func Keyed`](core-views.md#func-keyed)
         - [`func Match`](core-views.md#func-match)
         - [`func MatchBool`](core-views.md#func-matchbool)
+        - [`func Paragraph`](core-views.md#func-paragraph)
         - [`func SafeRender`](core-views.md#func-saferender)
         - [`func Text`](core-views.md#func-text)
     - [`type WhenClause`](core-views.md#type-whenclause)
@@ -175,6 +177,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
     - [`func BorderRadius`](core-style-props.md#func-borderradius)
     - [`func Bottom`](core-style-props.md#func-bottom)
     - [`func ColumnGap`](core-style-props.md#func-columngap)
+    - [`func CornerRadii`](core-style-props.md#func-cornerradii)
     - [`func Disabled`](core-style-props.md#func-disabled)
     - [`func Display`](core-style-props.md#func-display)
     - [`func FlexBasis`](core-style-props.md#func-flexbasis)
@@ -221,6 +224,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
     - [`func WhiteSpace`](core-style-props.md#func-whitespace)
     - [`func Width`](core-style-props.md#func-width)
     - [`func ZIndex`](core-style-props.md#func-zindex)
+    - [`type Corners`](core-style-props.md#type-corners)
     - [`type Easing`](core-style-props.md#type-easing)
 - [Theming](core-theme.md)
     - [Constants](core-theme.md#constants) — `FallbackBorder`, `FallbackControlBorder`, `FallbackSuccess`, `FallbackWarning`
@@ -249,6 +253,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
     - [`func Input`](core-controls.md#func-input)
     - [`func InputPassword`](core-controls.md#func-inputpassword)
     - [`func InputWithSubmit`](core-controls.md#func-inputwithsubmit)
+    - [`func Keyboard`](core-controls.md#func-keyboard)
     - [`func NumericInput`](core-controls.md#func-numericinput)
     - [`func OnSliderChangeEnd`](core-controls.md#func-onsliderchangeend)
     - [`func Select`](core-controls.md#func-select)
@@ -270,6 +275,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
         - [`func Stop`](core-controls.md#func-stop)
     - [`type GridRow`](core-controls.md#type-gridrow)
     - [`type GridRun`](core-controls.md#type-gridrun)
+    - [`type KeyboardKind`](core-controls.md#type-keyboardkind)
     - [`type LineCap`](core-controls.md#type-linecap)
     - [`type LineJoin`](core-controls.md#type-linejoin)
     - [`type Path`](core-controls.md#type-path)
@@ -319,6 +325,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
     - [`func HasSystemEventHandler`](core-events.md#func-hassystemeventhandler)
     - [`func OnHostEvent`](core-events.md#func-onhostevent)
     - [`func ReceiveHostEvent`](core-events.md#func-receivehostevent)
+    - [`func ScrollIntoView`](core-events.md#func-scrollintoview)
     - [`func SendSystemEvent`](core-events.md#func-sendsystemevent)
     - [`func SetSystemEventHandler`](core-events.md#func-setsystemeventhandler)
     - [`func UseFocusOrder`](core-events.md#func-usefocusorder)
@@ -331,6 +338,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
         - [`func OnFocus`](core-events.md#func-onfocus)
         - [`func OnLongPress`](core-events.md#func-onlongpress)
         - [`func OnTouch`](core-events.md#func-ontouch)
+        - [`func ScrollTarget`](core-events.md#func-scrolltarget)
     - [`type FocusRef`](core-events.md#type-focusref)
         - [`func UseFocusRef`](core-events.md#func-usefocusref)
 - [Navigation & overlays](core-navigation.md)

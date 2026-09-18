@@ -36,10 +36,14 @@ import "sort"
 // separate, and says so: a Switch and a Checkbox are the same type attribute
 // and differ by one more.
 var tags = map[string]string{
-	"Text":     "span",
-	"Button":   "button",
-	"Image":    "img",
-	"TextArea": "textarea",
+	"Text": "span",
+	// A block of inline runs (core.Paragraph): a <div> of <span>s. A <div>
+	// rather than a <p>, as on the web runtime, so an unset margin is zero and
+	// not the UA's 1em.
+	"Paragraph": "div",
+	"Button":    "button",
+	"Image":     "img",
+	"TextArea":  "textarea",
 
 	// The picker (core.Select). Its <option> elements are built from the
 	// options prop rather than from child nodes, so they are not in this

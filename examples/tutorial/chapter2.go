@@ -209,6 +209,10 @@ func lessonInputs() Lesson {
 		Body: func(ctx *core.Context) core.View {
 			name := core.NewState(ctx, "")
 			upper := core.NewState(ctx, false)
+			// The multiline demo's value. Seeded with two lines so the first
+			// thing a reader sees is that a TextArea holds newlines as
+			// ordinary characters of the one string.
+			notes := core.NewState(ctx, "Milk\nEggs  ")
 
 			return core.Column(
 				core.Gap(14),
@@ -242,6 +246,19 @@ core.Input(name.Get(), "Your name", func(v string) {
 					comps.Button{Label: "Clear", Emphasis: comps.EmphasisOutlined,
 						OnTap: func() { name.Set("") }},
 				),
+				prose("A TextArea is the same contract over several lines. Return inserts a "+
+					"newline rather than submitting, and the newline is just a character of the "+
+					"string you hold, so counting lines is strings.Split and tidying them is a "+
+					"loop that Sets the result."),
+				codeBlock(`core.TextArea(notes.Get(), notes.Set, 4) // 4 rows tall at rest`),
+				demoPanel("Several lines, one string: type, press return, then tidy from outside the field.",
+					core.TextArea(notes.Get(), notes.Set, 4,
+						core.Placeholder("One item per line…"),
+						core.AccessibilityLabel("Shopping list")),
+					caption(lineSummary(notes.Get())),
+					comps.Button{Label: "Tidy lines", Emphasis: comps.EmphasisOutlined,
+						OnTap: func() { notes.Set(tidyLines(notes.Get())) }},
+				),
 				keyPoints(
 					"Inputs are controlled: value in, intent out — state is the single source of truth.",
 					"Transform or validate in the onChange callback; what you Set is what the field shows.",
@@ -251,6 +268,38 @@ core.Input(name.Get(), "Your name", func(v string) {
 			)
 		},
 	}
+}
+
+// lineSummary is the TextArea demo's caption: how many lines and characters
+// the value holds, read straight from state. An empty value is zero lines, not
+// the one empty line strings.Split would report, because that is what a reader
+// looking at an empty box would say.
+func lineSummary(v string) string {
+	if v == "" {
+		return "Empty: zero lines."
+	}
+	lines := strings.Count(v, "\n") + 1
+	noun := "lines"
+	if lines == 1 {
+		noun = "line"
+	}
+	return fmt.Sprintf("%d %s, %d characters, straight from state", lines, noun, utf8.RuneCountInString(v))
+}
+
+// tidyLines is the TextArea demo's write from outside the field: trailing
+// spaces trimmed from every line and blank lines dropped. It exists to put a
+// multi-line rewrite through the echo guard, the case a single-line field
+// never produces: Go's value differs from the field's in the middle of the
+// string, not only at its end.
+func tidyLines(v string) string {
+	var kept []string
+	for _, line := range strings.Split(v, "\n") {
+		line = strings.TrimRight(line, " \t")
+		if line != "" {
+			kept = append(kept, line)
+		}
+	}
+	return strings.Join(kept, "\n")
 }
 
 // --- 2.4 -----------------------------------------------------------------

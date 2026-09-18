@@ -22,7 +22,15 @@ func (t *tutorial) lessonRoute(index int) func(*core.Context) core.View {
 		return core.ComponentFunc(func(*core.Context) *core.Node {
 			n := comps.Screen{
 				Scroll: true,
-				Gap:    16,
+				// The lesson's scroll ends above the software keyboard, so a
+				// field a demo focuses is scrolled up into view on Android
+				// (core.KeyboardAware). Without it the viewport kept the rows
+				// the keyboard covers, and a field near a lesson's end, 5.7's
+				// code boxes on the emulator, stayed under the keyboard with
+				// nothing able to bring it up. iOS insets for the keyboard
+				// whether asked or not, and adds the drag-to-dismiss.
+				KeyboardAware: true,
+				Gap:           16,
 				Children: []core.View{
 					t.lessonTopBar(ctx, e),
 					lessonHeader(e),

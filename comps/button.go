@@ -274,6 +274,12 @@ func (b Button) colorProps(t *core.Theme) []core.StyleProp {
 	// would turn into.
 	ink := b.Variant.OnLight(t)
 
+	// Both transparent treatments also drop the theme base's elevation
+	// (Components.Button.Shadow). A shadow is cast by a fill, and these have
+	// none, so all it drew was a hairline halo around the label: a Breadcrumb
+	// of ghost buttons exported by htmlout showed every crumb in a faint frame
+	// (box-shadow 0 0.33px 0.5px on a transparent button). Outlined has a
+	// rule to say where its edge is; Ghost is meant to have no edge at all.
 	switch b.Emphasis {
 	case EmphasisOutlined:
 		return []core.StyleProp{
@@ -281,11 +287,13 @@ func (b Button) colorProps(t *core.Theme) []core.StyleProp {
 			core.TextColor(ink),
 			core.BorderColor(ink),
 			core.BorderWidth(1),
+			core.Shadow(0),
 		}
 	case EmphasisGhost:
 		return []core.StyleProp{
 			core.BackgroundColor(ColorTransparent),
 			core.TextColor(ink),
+			core.Shadow(0),
 		}
 	}
 

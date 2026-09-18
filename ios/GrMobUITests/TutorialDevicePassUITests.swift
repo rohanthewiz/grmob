@@ -4,8 +4,8 @@ import XCTest
 /// D6's range band (4.25), D7's TimePicker menus (4.26), Tier E's small
 /// pieces (4.27), Tier F's heat canvases (4.28), and round three's CopyButton,
 /// Link, BulletList, AudioPlayer, MessageBubble, ExpandableText, half-star
-/// Rating (4.29–4.32) and TagInput (5.8), and the theme accent on a
-/// Toggle and a Slider (2.6, 6.8).
+/// Rating (4.29–4.32) and TagInput (5.8), the theme accent on a
+/// Toggle and a Slider (2.6, 6.8), and 2.3's TextArea.
 ///
 /// Mostly a driver for screenshots: what these widgets can get wrong on a
 /// native is how they *draw* (a notch, a menu, a canvas star), which no
@@ -447,6 +447,197 @@ final class TutorialDevicePassUITests: XCTestCase {
         XCTAssertEqual(first.replacingOccurrences(of: "ok !", with: ""),
                        "// Try me: edit, and the colours follow.",
                        "the first line changed beyond the typing: \(first)")
+    }
+
+    // MARK: 2.3 — a TextArea on a device
+
+    /// The multiline path of the text field, which no lesson exercised until
+    /// 2.3 grew a TextArea: return must insert a newline (not submit), the
+    /// newlines must reach Go as characters of the one string, and a rewrite
+    /// that changes the *middle* of the value (Tidy lines trims each line and
+    /// drops the blank one) must land while the field keeps focus, with
+    /// typing after it continuing at the end.
+    func testTextAreaTakesLinesAndATidyRewrite() throws {
+        let app = XCUIApplication()
+        open(app, lesson: "2.3")
+        // A text view: a TextArea is a UITextView (GrMobTextInput.swift).
+        let area = app.textViews.matching(NSPredicate(format: "value BEGINSWITH 'Milk'")).firstMatch
+        scroll(app, to: area)
+        lift(app)
+        XCTAssertTrue(area.exists, "2.3's TextArea has no text view holding the seeded list")
+        // Below the last line: UIKit puts the caret at the end of the text.
+        area.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.95)).tap()
+        sleep(1)
+        XCTAssertEqual(app.keyboards.count, 1, "tapping the TextArea raised no keyboard")
+        app.typeText("\nBread \n\nJam")
+        sleep(1)
+        XCTAssertTrue(any(app, beginningWith: "5 lines, 23 characters").waitForExistence(timeout: 3),
+                      "Go's value did not hold the typed lines")
+        shot("dp-2.3-typed")
+
+        let tidy = button(app, "Tidy lines")
+        XCTAssertTrue(tidy.isHittable, "Tidy lines is not reachable with the keyboard up")
+        tidy.tap()
+        XCTAssertTrue(any(app, beginningWith: "4 lines, 19 characters").waitForExistence(timeout: 3),
+                      "the rewrite did not reach state")
+        let focused = app.textViews.matching(NSPredicate(format: "hasKeyboardFocus == true")).firstMatch
+        let value = (focused.exists ? focused.value : area.value) as? String ?? ""
+        XCTAssertEqual(value, "Milk\nEggs\nBread\nJam", "the field did not take Go's rewrite")
+        if focused.exists {
+            // Typing after a focused rewrite goes where the caret was, clamped
+            // to the shorter text: the end.
+            app.typeText("Z")
+            sleep(1)
+            XCTAssertEqual(focused.value as? String, "Milk\nEggs\nBread\nJamZ",
+                           "typing after the rewrite landed somewhere other than the end")
+        }
+        shot("dp-2.3-tidied")
+    }
+
+    /// A field whose onChange rewrites every key (2.3's UPPERCASE), typed
+    /// into in one `typeText` call, which is fast enough that keys arrive
+    /// while their predecessors' rewrites are landing.
+    ///
+    /// The SwiftUI TextField this runtime used lost keys to it: its binding is
+    /// a second copy of the text, and a key reaching UIKit between a rewrite
+    /// and SwiftUI pushing it down was overwritten unreported. "hello world"
+    /// came out "HELLO WOD". The field is a UITextField now (see
+    /// GrMobTextInput.swift), with one buffer.
+    ///
+    /// Then the caret: typing mid-text must stay where it is typed, not jump
+    /// to the end on each rewrite.
+        func testUppercaseMidTextKeepsTheCaretWithTheTyping() throws {
+        let app = XCUIApplication()
+        open(app, lesson: "2.3")
+        let upper = app.switches.matching(NSPredicate(format: "label == 'UPPERCASE on the way in'")).firstMatch
+        scroll(app, to: upper)
+        upper.tap()
+        let field = app.textFields.matching(NSPredicate(format: "placeholderValue BEGINSWITH 'Type your name'")).firstMatch
+        XCTAssertTrue(field.exists, "2.3's name field is not on screen")
+        field.tap()
+        sleep(1)
+        app.typeText("hello world")
+        sleep(1)
+        shot("dp-2.3-upper-typed")
+        dump(app, "dp-2.3-upper-typed")
+        // Re-found by value: the placeholder that found it is gone once the
+        // field holds text, and the query re-resolves on every read.
+        let typed = app.textFields.matching(NSPredicate(format: "value BEGINSWITH 'HELLO'")).firstMatch
+        XCTAssertTrue(typed.waitForExistence(timeout: 3), "the transform did not run on the way in")
+        XCTAssertEqual(typed.value as? String, "HELLO WORLD", "the transform did not run on the way in")
+        // At the space: UIKit puts a tap's caret on a word boundary, and the
+        // space is the only one inside the text.
+        typed.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0.5))
+            .withOffset(CGVector(dx: widthOfHello(typed), dy: 0)).tap()
+        sleep(1)
+        app.typeText("abc")
+        sleep(1)
+        let value = (typed.value as? String) ?? ""
+        shot("dp-2.3-upper-midtext")
+        XCTAssertTrue(value == "HELLOABC WORLD" || value == "HELLO ABCWORLD",
+                      "the typing left the caret's place: \(value)")
+    }
+
+    /// Where the space in "HELLO WORLD" sits, from the field's left edge:
+    /// the field's text starts at its leading padding and the two words are
+    /// about the same width, so the gap is a little under half the text.
+    private func widthOfHello(_ field: XCUIElement) -> CGFloat {
+        // 17pt system caps are ~11.5pt wide; HELLO is five of them, plus the
+        // field's 12pt leading inset, plus half a space.
+        12 + 5 * 11.5 + 2
+    }
+
+    // MARK: 1.5 — core.ScrollIntoView
+
+    /// Lesson 1.5's short Scroll of twelve named rows: "Jump to row 10"
+    /// brings row 10 into the box's viewport through the ScrollViewReader
+    /// GrMobScroll now provides, and "Back to row 1" brings row 1 back.
+    ///
+    /// Judged against the box's own frame, re-read after each jump: SwiftUI's
+    /// scrollTo also scrolls the lesson's scroll view around the box when the
+    /// box itself is not fully showing, so a position measured before the
+    /// jump is not where the box is after it.
+    func testScrollIntoViewJumpsInsideAScroll() throws {
+        let app = XCUIApplication()
+        open(app, lesson: "1.5")
+        let jump = button(app, "Jump to row 10")
+        scroll(app, to: jump)
+        lift(app)
+        let row1 = any(app, labelled: "Row 1"), row10 = any(app, labelled: "Row 10")
+        XCTAssertTrue(row1.exists && row10.exists, "the demo's rows are not on screen")
+
+        // The box: the smallest scroll view holding the rows.
+        func box() -> CGRect {
+            let views = app.scrollViews
+                .containing(NSPredicate(format: "label == 'Row 10'")).allElementsBoundByIndex
+            return views.map(\.frame).min { $0.height < $1.height } ?? .zero
+        }
+        func inside(_ row: XCUIElement) -> Bool {
+            let b = box()
+            return row.frame.minY >= b.minY - 1 && row.frame.maxY <= b.maxY + 1
+        }
+        // A known start first: the swipes that brought the demo up can land
+        // on the box and scroll it too.
+        button(app, "Back to row 1").tap()
+        sleep(2)
+        XCTAssertTrue(inside(row1), "row 1 did not come into the box: \(row1.frame) in \(box())")
+        XCTAssertFalse(inside(row10), "row 10 is in view with row 1: \(row10.frame) in \(box())")
+        jump.tap()
+        sleep(2)
+        shot("dp-1.5-jumped")
+        XCTAssertTrue(inside(row10), "row 10 did not come into the box: \(row10.frame) in \(box())")
+        XCTAssertFalse(inside(row1), "the box did not move off row 1")
+    }
+
+    // MARK: 4.14 — core.Paragraph through comps.RichTextView
+
+    /// The read-only view under 4.14's editor draws each block as one
+    /// core.Paragraph: the sentence is one text element holding its marks, and
+    /// its link run is a link VoiceOver can reach on its own.
+    func testRichTextViewDrawsARunOfMarksWithALink() throws {
+        let app = XCUIApplication()
+        open(app, lesson: "4.14")
+        let caption = any(app, beginningWith: "The same document, read-only")
+        scroll(app, to: caption)
+        lift(app)
+        shot("dp-4.14-richtextview")
+        dump(app, "dp-4.14-richtextview")
+        let sentence = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Some bold and some italic'")).firstMatch
+        XCTAssertTrue(sentence.exists, "the paragraph is not one text element holding its runs")
+        XCTAssertTrue(app.links.matching(NSPredicate(format: "label == 'link'")).firstMatch.exists,
+                      "the link run is not exposed as a link")
+    }
+
+    // MARK: 5.7 — PINInput, one field under the boxes
+
+    /// A tap on the boxes focuses the one field, which brings up the number
+    /// pad (core.Keyboard); a code typed in one burst lands whole, and a
+    /// backspace deletes the last digit. The six-field version lost digits
+    /// typed faster than the caret moved between boxes.
+    func testPINInputTakesABurstThroughOneField() throws {
+        let app = XCUIApplication()
+        open(app, lesson: "5.7")
+        let caption = any(app, beginningWith: "Value = ")
+        scroll(app, to: caption)
+        lift(app)
+        dump(app, "dp-5.7-start")
+        let field = app.textFields.matching(NSPredicate(format: "label BEGINSWITH 'One-time code,'")).firstMatch
+        XCTAssertTrue(field.exists, "the one field is not there")
+        // The boxes sit just above the caption; tap the middle of the row.
+        caption.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0)).withOffset(CGVector(dx: 0, dy: -30)).tap()
+        sleep(1)
+        XCTAssertEqual(app.keyboards.count, 1, "tapping the boxes raised no keyboard")
+        XCTAssertFalse(app.keyboards.buttons["return"].exists && app.keyboards.keys["q"].exists,
+                       "the text keyboard came up, not the number pad")
+        app.typeText("314159")
+        XCTAssertTrue(any(app, beginningWith: "Value = \"314159\"").waitForExistence(timeout: 3),
+                      "the burst did not land whole")
+        XCTAssertTrue(any(app, beginningWith: "Value = \"314159\"   ·   OnComplete fired 1 time").exists,
+                      "a full code should complete once")
+        shot("dp-5.7-burst")
+        app.typeText(XCUIKeyboardKey.delete.rawValue)
+        XCTAssertTrue(any(app, beginningWith: "Value = \"31415\"").waitForExistence(timeout: 3),
+                      "backspace did not delete the last digit")
     }
 
     // MARK: 2.6, 6.8 — the theme accent on platform controls

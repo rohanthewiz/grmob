@@ -26,6 +26,16 @@ extension EnvironmentValues {
         get { self[GrMobRuntimeKey.self] }
         set { self[GrMobRuntimeKey.self] = newValue }
     }
+    /// The nearest GrMobScroll's ScrollViewReader proxy, for core.ScrollIntoView
+    /// (see GrMobBringIntoView). nil outside every Scroll.
+    var grMobScrollProxy: ScrollViewProxy? {
+        get { self[GrMobIntoViewProxyKey.self] }
+        set { self[GrMobIntoViewProxyKey.self] = newValue }
+    }
+}
+
+private struct GrMobIntoViewProxyKey: EnvironmentKey {
+    static let defaultValue: ScrollViewProxy? = nil
 }
 
 struct GrMobRoot: View {
@@ -63,12 +73,22 @@ struct RenderNode: View {
     var grow: GrMobGrow = .none
 
     var body: some View {
+        // Unconditional, so a node the command stamps keeps its view identity
+        // (a conditional modifier would be two view types, and switching
+        // between them rebuilds the subtree, a text field's focus with it).
+        // An unstamped node pays one Int comparison. See GrMobBringIntoView.
+        content.modifier(GrMobBringIntoView(epoch: node.intProp("scrollEpoch"), id: node.viewID))
+    }
+
+    @ViewBuilder private var content: some View {
         let style = node.style
         if style?.display == "none" {
             // Not rendered at all; "hidden" keeps space via opacity(0) in grMobBox.
         } else {
             switch node.type {
             case "Text": GrMobText(node: node, grow: grow)
+            // core.Paragraph: runs of one flow of text; see GrMobParagraph.
+            case "Paragraph": GrMobParagraph(node: node, grow: grow)
             case "Button": GrMobButton(node: node, grow: grow)
 
             case "Input": GrMobTextField(node: node, grow: grow)
@@ -237,6 +257,46 @@ private func grMobScaled(_ image: Image, mode: String) -> some View {
         // Absent (core.imageNode omits the prop entirely) or a mode this build
         // of the runtime predates. Same drawing as "fit" above.
         image.resizable().scaledToFit()
+    }
+}
+
+/// core.ScrollIntoView (core/scroll_to.go), on the node carrying `epoch`: the
+/// nearest GrMobScroll scrolls to it, once, the first time this app meets an
+/// epoch that high.
+///
+/// # Finding the node
+///
+/// ScrollViewProxy.scrollTo looks a view up by identity, and every GrMob child
+/// is built inside `ForEach(…, id: \.viewID)`, so the node's viewID already is
+/// that identity. No `.id()` is added, which would give every node a second,
+/// explicit identity for the sake of the one a command might name. A node
+/// that is not a ForEach child (the root) cannot be found, and the command
+/// scrolls nothing, as core says of a name no node carries.
+///
+/// # Once
+///
+/// The node keeps its stamp, so the mark is the runtime's, app-wide
+/// (GrMobRuntime.scrollEpochApplied), for the reason core gives: a node built
+/// again later must not pull its scroll view back to it.
+///
+/// `scrollTo` with no anchor is SwiftUI's "the least scrolling that shows it",
+/// the meaning core gives the command on every host. Deferred one turn of the
+/// main loop, because a command can name a node built in this very update,
+/// which the scroll view has not laid out yet.
+private struct GrMobBringIntoView: ViewModifier {
+    let epoch: Int
+    let id: AnyHashable
+    @Environment(\.grMobScrollProxy) private var proxy
+    @Environment(\.grMobRuntime) private var runtime
+
+    func body(content: Content) -> some View {
+        content.onChange(of: epoch, initial: true) { _, epoch in
+            guard epoch > 0, let runtime, let proxy, epoch > runtime.scrollEpochApplied else { return }
+            runtime.scrollEpochApplied = epoch
+            DispatchQueue.main.async {
+                withAnimation { proxy.scrollTo(id) }
+            }
+        }
     }
 }
 
@@ -1224,19 +1284,26 @@ private struct GrMobScroll: View {
     /// plain Row: nothing to divide, and no row that already draws moves.
     @ViewBuilder private var horizontal: some View {
         let grows = node.children.contains { ($0.style?.flexGrow ?? 0) > 0 }
-        ScrollView(.horizontal, showsIndicators: false) {
-            if grows {
-                GrMobStripContentLayout(viewport: viewport) {
-                    GrMobFlexStack(axis: .horizontal, style: node.style) {
-                        FlexChildren(node: node, axis: .horizontal)
+        // The reader is what core.ScrollIntoView scrolls with; its proxy
+        // reaches the content through the environment (GrMobBringIntoView).
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                Group {
+                    if grows {
+                        GrMobStripContentLayout(viewport: viewport) {
+                            GrMobFlexStack(axis: .horizontal, style: node.style) {
+                                FlexChildren(node: node, axis: .horizontal)
+                            }
+                        }
+                    } else {
+                        HStack(alignment: .top, spacing: node.style?.horizontalGap ?? 0) {
+                            ForEach(node.children, id: \.viewID) { child in
+                                RenderNode(node: child, grow: .none)
+                            }
+                        }
                     }
                 }
-            } else {
-                HStack(alignment: .top, spacing: node.style?.horizontalGap ?? 0) {
-                    ForEach(node.children, id: \.viewID) { child in
-                        RenderNode(node: child, grow: .none)
-                    }
-                }
+                .environment(\.grMobScrollProxy, proxy)
             }
         }
         // The viewport width, for the grower branch. `viewport` holds a
@@ -1260,18 +1327,22 @@ private struct GrMobScroll: View {
 
     private var vertical: some View {
         let stretch = columnStretches(crossAxisValue(node.style))
-        return ScrollView {
-            // spacing, not a hard 0: a Scroll is a flex column on both web
-            // targets (the WASM runtime lists it in STACK_CONTAINERS and
-            // htmlout emits gap for it), so core.Gap on a Scroll spaced its
-            // children in the browser and was silently dropped here.
-            VStack(alignment: .leading, spacing: node.style?.verticalGap ?? 0) {
-                ForEach(node.children, id: \.viewID) { child in
-                    let grows = (child.style?.flexGrow ?? 0) > 0
-                    RenderNode(node: child, grow: GrMobGrow(
-                        fillWidth: stretch && !hugsContent(child.style),
-                        minHeight: grows ? viewport : 0))
+        // The reader is what core.ScrollIntoView scrolls with; see horizontal.
+        return ScrollViewReader { proxy in
+            ScrollView {
+                // spacing, not a hard 0: a Scroll is a flex column on both web
+                // targets (the WASM runtime lists it in STACK_CONTAINERS and
+                // htmlout emits gap for it), so core.Gap on a Scroll spaced its
+                // children in the browser and was silently dropped here.
+                VStack(alignment: .leading, spacing: node.style?.verticalGap ?? 0) {
+                    ForEach(node.children, id: \.viewID) { child in
+                        let grows = (child.style?.flexGrow ?? 0) > 0
+                        RenderNode(node: child, grow: GrMobGrow(
+                            fillWidth: stretch && !hugsContent(child.style),
+                            minHeight: grows ? viewport : 0))
+                    }
                 }
+                .environment(\.grMobScrollProxy, proxy)
             }
         }
         .background(GeometryReader { geo in
@@ -1638,6 +1709,92 @@ private struct GrMobText: View {
     }
 }
 
+/// core.Paragraph: one Text of an AttributedString, a run per part.
+///
+/// The runs prop is a list of maps with core/paragraph.go's keys: t, and b, i,
+/// u, s, c (bold, italic, underline, strike, code) present as 1, fg a colour,
+/// cb a void callback ID. The paragraph's own style is the base, applied by
+/// grMobTextStyle exactly as a Text's is; bold, italic and code are
+/// presentation intents, so they take the base font and change only its
+/// weight, slant or pitch.
+///
+/// # Links
+///
+/// A run with a callback is a link: its `link` attribute is a `grmob-run:`
+/// URL naming the callback, and the OpenURLAction below catches that scheme
+/// and dispatches the callback instead of opening anything. That is the one
+/// way SwiftUI's Text lets a range of it be tapped, and it gives VoiceOver the
+/// run as a link, in the rotor with the paragraph's others, for free.
+///
+/// SwiftUI draws link runs in the tint rather than their own colour, so the
+/// tint is set to the first link's colour, which Go has already resolved
+/// (the theme's Primary unless the run named one). Links of different colours
+/// in one paragraph therefore all draw in the first one's here, a limit of
+/// this platform's Text that the other targets do not share.
+private struct GrMobParagraph: View {
+    let node: GrMobNode
+    let grow: GrMobGrow
+    @Environment(\.grMobRuntime) private var runtime
+
+    private static let scheme = "grmob-run"
+
+    var body: some View {
+        let runs = node.props["runs"] as? [[String: Any]] ?? []
+        let cap = node.style?.maxLines ?? 0
+        Text(Self.attributed(runs))
+            .grMobTextStyle(node.style)
+            .lineLimit(cap > 0 ? cap : nil)
+            .truncationMode(.tail)
+            .tint(Self.linkTint(runs))
+            .environment(\.openURL, OpenURLAction { url in
+                guard url.scheme == Self.scheme else { return .systemAction }
+                let id = String(url.absoluteString.dropFirst(Self.scheme.count + 1))
+                    .removingPercentEncoding ?? ""
+                if !id.isEmpty { runtime?.click(id) }
+                return .handled
+            })
+            .grMobBox(node.style, grow: grow,
+                        onTap: node.stringProp("onClick"),
+                        onLongPress: node.stringProp("onLongPress"))
+    }
+
+    private static func on(_ run: [String: Any], _ key: String) -> Bool {
+        if let n = run[key] as? NSNumber { return n.intValue != 0 }
+        return (run[key] as? Bool) ?? false
+    }
+
+    static func attributed(_ runs: [[String: Any]]) -> AttributedString {
+        var out = AttributedString()
+        for run in runs {
+            let text = run["t"] as? String ?? ""
+            guard !text.isEmpty else { continue }
+            var part = AttributedString(text)
+            var intent: InlinePresentationIntent = []
+            if on(run, "b") { intent.insert(.stronglyEmphasized) }
+            if on(run, "i") { intent.insert(.emphasized) }
+            if on(run, "c") { intent.insert(.code) }
+            if !intent.isEmpty { part.inlinePresentationIntent = intent }
+            if on(run, "u") { part.underlineStyle = .single }
+            if on(run, "s") { part.strikethroughStyle = .single }
+            if let fg = GrMobStyle.parseColor(run["fg"] as? String) { part.foregroundColor = fg }
+            if let cb = run["cb"] as? String, !cb.isEmpty,
+               let encoded = cb.addingPercentEncoding(withAllowedCharacters: .alphanumerics),
+               let url = URL(string: "\(scheme):\(encoded)") {
+                part.link = url
+            }
+            out += part
+        }
+        return out
+    }
+
+    private static func linkTint(_ runs: [[String: Any]]) -> Color? {
+        for run in runs where (run["cb"] as? String).map({ !$0.isEmpty }) ?? false {
+            return GrMobStyle.parseColor(run["fg"] as? String)
+        }
+        return nil
+    }
+}
+
 extension View {
     /// Text styling shared by Text and the input fields.
     func grMobTextStyle(_ s: GrMobStyle?, defaultSize: CGFloat = 17) -> some View {
@@ -1697,6 +1854,8 @@ private struct GrMobButton: View {
     let node: GrMobNode
     let grow: GrMobGrow
     @Environment(\.grMobRuntime) private var runtime
+    /// For grMobShape: core's corners are physical, SwiftUI's leading/trailing.
+    @Environment(\.layoutDirection) private var layoutDirection
 
     /// Set by the long-press gesture so the tap that follows the release is
     /// swallowed rather than firing onClick as well.
@@ -1737,7 +1896,8 @@ private struct GrMobButton: View {
         }
         .buttonStyle(GrMobButtonStyle(
             background: s?.background ?? .accentColor,
-            radius: (s?.borderRadius ?? 0) > 0 ? s!.borderRadius : 8,
+            // The Button's own default of 8, and corners when it named them.
+            shape: grMobShape(s, defaultRadius: 8, direction: layoutDirection) ?? UnevenRoundedRectangle(),
             // The border travels with the other container fields rather than
             // through grMobBox, which this view is handed a stripped style for
             // (marginAndSizeOnly). Without it core.BorderColor/BorderWidth were
@@ -1782,7 +1942,7 @@ private struct GrMobButton: View {
 
 private struct GrMobButtonStyle: ButtonStyle {
     let background: Color
-    let radius: CGFloat
+    let shape: UnevenRoundedRectangle
     /// nil / 0 mean "no border", which is grMobBorder's identity case and the
     /// state every button was in before this pair was carried.
     let borderColor: Color?
@@ -1791,13 +1951,13 @@ private struct GrMobButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .background(background)
-            .clipShape(RoundedRectangle(cornerRadius: radius))
+            .clipShape(shape)
             // After the clip and on the same shape, so the stroke lands exactly
             // on the edge the fill was cut to. strokeBorder insets it inward
             // rather than straddling the edge, which is the placement
             // Modifier.border gives it on Compose and the one grMobBox already
             // uses for every other node.
-            .grMobBorder(RoundedRectangle(cornerRadius: radius), color: borderColor, width: borderWidth)
+            .grMobBorder(shape, color: borderColor, width: borderWidth)
             // The platform has no ripple; dimming on press is the SwiftUI idiom.
             .opacity(configuration.isPressed ? 0.65 : 1)
     }
@@ -1812,6 +1972,7 @@ private func marginAndSizeOnly(_ s: GrMobStyle?) -> GrMobStyle? {
     t.borderColor = nil
     t.borderWidth = 0
     t.borderRadius = 0
+    t.corners = nil
     t.shadow = 0
     t.padding = .zero
     return t
@@ -2343,203 +2504,9 @@ private struct GrMobGridRow: View {
     }
 }
 
-/// The controlled-input compromise: Go owns the value, but the keyboard needs
-/// its keystrokes echoed instantly, and the Go round trip is asynchronous. So
-/// the field is locally-owned *while focused* (every edit is sent upstream
-/// but late echoes never snap the cursor back), and Go-owned when not focused
-/// (an async upstream change — validation rewrites, state restores — lands
-/// the moment the user isn't mid-typing).
-///
-/// The one upstream change that must land mid-focus is a deliberate rewrite —
-/// Go clearing the draft after a submit, a validator normalizing the text.
-/// Echoes and rewrites are told apart by bookkeeping, not heuristics: every
-/// edit goes to Go with a sequence number and the rewrite epoch this field
-/// has adopted, and Go stamps the field with the last edit it applied and its
-/// own rewrite count. A higher epoch is a rewrite and wins even while
-/// focused; anything else is an echo. Moving the cursor then is correct: the
-/// text under it was replaced. See TextEditLedger (GrMobTextEdits.swift) for
-/// the rule and core/text_edit.go for the protocol.
-///
-/// It used to be a queue of sent values, with any upstream value not in the
-/// queue read as a rewrite. That lost keystrokes typed faster than the round
-/// trip (seen on the Android emulator, which has the same bookkeeping): the
-/// rewrite arrived after later keystrokes had been sent on the old text, and
-/// Go applied those as if they were new. The epoch lets Go drop them, and the
-/// ledger replays them onto the rewrite.
-private struct GrMobTextField: View {
-    let node: GrMobNode
-    let grow: GrMobGrow
-    var password = false
-    var numeric = false
-    var multiline = false
-
-    @Environment(\.grMobRuntime) private var runtime
-    @FocusState private var focused: Bool
-    @State private var text = ""
-    @State private var ledger = TextEditLedger()
-
-    var body: some View {
-        let upstream = node.stringProp("value")
-        let onChange = node.stringProp("onChange")
-        let onSubmit = node.stringProp("onSubmit")
-        // The keyboard's action key, decided in Go from core.UseFocusOrder:
-        // "next" on every field of a declared order but the last. Go also
-        // wired the onSubmit above to advance the focus, so this prop only
-        // chooses the label — the action itself is an ordinary submit.
-        let imeAction = node.stringProp("imeAction")
-        let onFocus = node.stringProp("onFocus")
-        let onBlur = node.stringProp("onBlur")
-        // The imperative half: core.Focus / core.DismissKeyboard reach the
-        // screen as these two props. See applyFocusCommand and core/focus.go.
-        let focusEpoch = node.intProp("focusEpoch")
-        let focusAction = node.stringProp("focusAction")
-        let prompt = Text(node.stringProp("placeholder"))
-        // Go's edit stamps: the last edit it applied and its rewrite count. Both
-        // are 0 on a field no edit has reached. See core/text_edit.go.
-        let editSeq = node.intProp("editSeq")
-        let editEpoch = node.intProp("editEpoch")
-        // Whether Go stamped this field at all; see TextEditLedger.
-        let stamped = node.props["editEpoch"] != nil
-
-        // While focused the local buffer is authoritative; otherwise render
-        // straight from Go. The buffer is seeded from upstream at the moment
-        // focus arrives, so editing always starts from the Go value.
-        let value = Binding<String>(
-            get: { focused ? text : upstream },
-            set: { v in
-                text = v
-                send(v, onChange)
-            }
-        )
-
-        field(value: value, prompt: prompt)
-            .focused($focused)
-            // The return key dispatches onSubmit as a plain void event — the
-            // same channel as a Button tap — and advertises what it will do:
-            // "next" for a field with somewhere to go (core.UseFocusOrder),
-            // "done" for one that acts on return, and the plain return key
-            // for a field that does neither.
-            //
-            // Next is tested first because it is the more specific claim: Go
-            // only stamps it on a field whose onSubmit it wired itself, so the
-            // label and the action can never disagree.
-            //
-            // Deliberately not a chained @FocusState enum walked by this
-            // renderer: that would make the order SwiftUI's idea of it, which
-            // is derived from layout and differs from Compose's. The order is
-            // declared in Go and stays there — the platform only reports that
-            // the key was pressed.
-            .submitLabel(imeAction == "next" ? .next : (onSubmit.isEmpty ? .return : .done))
-            .onSubmit { if !onSubmit.isEmpty { runtime?.click(onSubmit) } }
-            // The focus edges. This is also where the local buffer is seeded,
-            // and the seeding goes first: a dispatch into Go can land a render
-            // before this closure returns, and the buffer must already agree
-            // with upstream when it does.
-            //
-            // Both edges ride the void channel, like onSubmit above.
-            //
-            // No blur is dispatched at mount: onChange(of:) fires on a
-            // *change*, not on the initial value, so the field's starting
-            // unfocused state is never reported as having lost focus. The
-            // Compose side has to arrange that explicitly — see the seenFocus
-            // flag in GrMobTextField — because collectIsFocusedAsState emits
-            // its initial false.
-            .onChange(of: focused) { _, isFocused in
-                if isFocused {
-                    text = node.stringProp("value")
-                    ledger.reset(text, epoch: node.intProp("editEpoch"))
-                    if !onFocus.isEmpty { runtime?.click(onFocus) }
-                } else if !onBlur.isEmpty {
-                    runtime?.click(onBlur)
-                }
-            }
-            // Go's focus *commands*, the other direction from the edges
-            // above. Keyed on the epoch alone, never on the action: the
-            // action is what to do, the epoch is when — and a second
-            // core.Focus on the already-focused field has to re-fire, which
-            // only a changed value can express.
-            //
-            // Two modifiers where Compose needs one. onChange(of:) does not
-            // fire for the initial value — the same asymmetry that lets this
-            // renderer skip Compose's seenFocus flag above — so a field that
-            // mounts while it is already the target would never hear its
-            // command without the onAppear. That case is the one worth
-            // supporting: "push a screen and put the cursor in its search
-            // box" issues the command in the handler that navigates, one pass
-            // before the field it names exists.
-            .onAppear { applyFocusCommand(epoch: focusEpoch, action: focusAction) }
-            .onChange(of: focusEpoch) { _, epoch in
-                applyFocusCommand(epoch: epoch, action: focusAction)
-            }
-            // Keyed on all three, because each can change alone: an echo
-            // moves only the ack, and Go refusing an edit moves the ack and
-            // the epoch and leaves the value where it was.
-            .onChange(of: EditStamp(value: upstream, seq: editSeq, epoch: editEpoch,
-                                    stamped: stamped)) { _, stamp in
-                guard focused else { return }
-                if let next = ledger.upstream(stamp.value, ack: stamp.seq, goEpoch: stamp.epoch,
-                                              local: text, stamped: stamp.stamped) {
-                    text = next
-                    // Typing Go has not seen yet, replayed onto its rewrite.
-                    if next != stamp.value { send(next, onChange) }
-                }
-            }
-            .textFieldStyle(.plain)
-            .grMobTextStyle(node.style)
-            .grMobBox(node.style, grow: grow)
-    }
-
-    /// Go's answer to this field's edits, as one value `onChange(of:)` can
-    /// watch.
-    private struct EditStamp: Equatable {
-        let value: String
-        let seq: Int
-        let epoch: Int
-        let stamped: Bool
-    }
-
-    /// Every edit leaves by this one path, so the ledger records exactly
-    /// what Go was sent and under which epoch.
-    private func send(_ value: String, _ onChange: String) {
-        guard !onChange.isEmpty, let runtime else { return }
-        ledger.sent(runtime.textEdited(onChange, value, epoch: ledger.epoch), value)
-    }
-
-    /// Runs one focus command from Go.
-    ///
-    /// Epoch 0 means no command has ever been issued (Go stamps nothing at
-    /// all), so a screen that never touches focus passes through here on
-    /// every appear and does nothing.
-    ///
-    /// "blur" is guarded on this field actually holding focus: @FocusState is
-    /// per-field, so a dismiss reaches every field on screen and exactly one
-    /// of them is the one to release. Only the target acts on "focus"; every
-    /// other field is told "" and does nothing, because setting focus over
-    /// there already takes it from here — having both sides act would make
-    /// the outcome depend on the order SwiftUI happens to run two closures in.
-    private func applyFocusCommand(epoch: Int, action: String) {
-        guard epoch != 0 else { return }
-        switch action {
-        case "focus": focused = true
-        case "blur": if focused { focused = false }
-        default: break
-        }
-    }
-
-    @ViewBuilder
-    private func field(value: Binding<String>, prompt: Text) -> some View {
-        if password {
-            SecureField(text: value, prompt: prompt) { EmptyView() }
-        } else if multiline {
-            let rows = node.intProp("rows")
-            TextField(text: value, prompt: prompt, axis: .vertical) { EmptyView() }
-                .lineLimit(rows > 0 ? rows : 3, reservesSpace: true)
-        } else {
-            TextField(text: value, prompt: prompt) { EmptyView() }
-                .grMobKeyboard(numeric: numeric)
-        }
-    }
-}
+// core.Input, InputPassword, NumericInput and TextArea are GrMobTextField,
+// in GrMobTextInput.swift: a UIKit field, because SwiftUI's TextField kept a
+// second copy of the text and lost keys to it (see that file).
 
 extension View {
     /// Go's core.KeyboardAware, applied to the two scrolling node types.
@@ -2573,13 +2540,6 @@ extension View {
         }
     }
 
-    @ViewBuilder fileprivate func grMobKeyboard(numeric: Bool) -> some View {
-        #if os(iOS)
-        keyboardType(numeric ? .decimalPad : .default)
-        #else
-        self
-        #endif
-    }
 }
 
 // ---------------------------------------------------------------------------

@@ -83,7 +83,9 @@ func TestSwiftGivesAButtonItsBorder(t *testing.T) {
 				"grMobBox ever sees it, so this is the only route left"},
 		{"borderWidth: s?.borderWidth ?? 0",
 			"the width, which grMobBorder needs as well — either half missing is no border"},
-		{".grMobBorder(RoundedRectangle(cornerRadius: radius), color: borderColor, width: borderWidth)",
+		{".clipShape(shape)",
+			"the fill cut to the button's shape, one radius or four (core.CornerRadii)"},
+		{".grMobBorder(shape, color: borderColor, width: borderWidth)",
 			"the stroke itself, on the same shape the fill was clipped to, so the rule lands " +
 				"on the edge rather than inside or outside it"},
 	} {

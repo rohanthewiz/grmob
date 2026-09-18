@@ -144,9 +144,11 @@ final class TutorialNativeFloorsUITests: XCTestCase {
         sleep(1)
         shot(app, "i_4.14_link")
 
-        // core.AccessibilityLabel on a core.Input names the field's box; the
-        // UITextField inside carries only the placeholder.
-        let field = app.otherElements["Link address"]
+        // core.AccessibilityLabel on a core.Input names the text field itself.
+        // It used to name a SwiftUI element wrapped round the field, with the
+        // field inside carrying only its placeholder, and this query looked
+        // for that wrapper; see GrMobTextField.boxStyle.
+        let field = app.textFields["Link address"]
         XCTAssertTrue(field.waitForExistence(timeout: 5), "the link prompt did not open")
         // The prompt's Column is floored at 280pt and padded by the theme's
         // MD step on both sides; the field stretches across what is left, so

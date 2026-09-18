@@ -4,7 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rohanthewiz/grmob/comps"
 	"github.com/rohanthewiz/grmob/core"
 	"github.com/rohanthewiz/grmob/render"
 	"github.com/rohanthewiz/grmob/richtext"
@@ -238,50 +237,82 @@ func changesFor(t *testing.T, out, target string) map[string]any {
 	return nil
 }
 
-// comps.PINInput typed at about 130ms a key on the Android emulator lost
-// digits: 314159 arrived as 3 1 4 5 9. Two fields are involved, and the one
-// that loses the key has never been edited, which is why a ledger made by a
-// field's first edit could not see it. This is the emulator's sequence, one
-// dispatch per host edit, and what the host's rebase sends.
+// comps.PINInput, when it was one field per box, typed at about 130ms a key on
+// the Android emulator lost digits: 314159 arrived as 3 1 4 5 9. Two fields
+// are involved, and the one that loses the key has never been edited, which is
+// why a ledger made by a field's first edit could not see it.
+//
+// PINInput is one field now (comps/pin_input.go), but the rule this pins is
+// core's and any screen can hit it: a field Go rewrites before its first edit.
+// So a three-box field is built here, with the mechanics the old widget had:
+// a second character typed into box 0 spills into box 1. The sequence is the
+// emulator's, one dispatch per host edit, and what the host's rebase sends.
 func TestAFieldGoRewroteBeforeItsFirstEditDropsTheStaleKey(t *testing.T) {
 	var code string
+	at := func(i int) string {
+		r := []rune(code)
+		if i < len(r) {
+			return string(r[i])
+		}
+		return ""
+	}
+	// Box i writes what it reports from position i on, capped at three.
+	write := func(i int) func(string) {
+		return func(v string) {
+			r := []rune(code)
+			if i > len(r) {
+				i = len(r)
+			}
+			next := string(r[:i]) + v
+			if len([]rune(next)) > 3 {
+				next = string([]rune(next)[:3])
+			}
+			code = next
+		}
+	}
 	app := func(ctx *core.Context) core.View {
-		return core.Column(comps.PINInput{Value: code, OnChange: func(v string) { code = v }})
+		return core.Column(
+			core.Input(at(0), "", write(0)),
+			core.Input(at(1), "", write(1)),
+			core.Input(at(2), "", write(2)),
+		)
 	}
 	mgr := render.New(core.NewContext(), app)
 	defer mgr.Close()
 	if initial := mgr.RenderInitial(); strings.Contains(initial, "editSeq") {
 		t.Fatal("no field is stamped before the host has sent an edit")
 	}
-	cell0, cell1 := "txt_cb_0", "txt_cb_1"
+	box0, box1 := "txt_cb_0", "txt_cb_1"
 
-	// "3" into cell 0. From here the host is sequenced, and every cell is
+	// "3" into box 0. From here the host is sequenced, and every field is
 	// stamped from the render on.
-	out := mgr.DispatchTextEdit(cell0, "3", 1, 0)
-	if c := changesFor(t, out, "root/0/1"); c == nil || c["editEpoch"] != float64(0) {
-		t.Fatalf("cell 1 should be stamped at epoch 0 once the host is sequenced: %v in %s", c, out)
+	out := mgr.DispatchTextEdit(box0, "3", 1, 0)
+	if c := changesFor(t, out, "root/1"); c == nil || c["editEpoch"] != float64(0) {
+		t.Fatalf("box 1 should be stamped at epoch 0 once the host is sequenced: %v in %s", c, out)
 	}
 
-	// "1" lands in cell 0 too, because focus has not moved yet: a paste of
-	// "31" at cell 0. Go writes the "1" into cell 1, which is a rewrite of a
-	// field the host shows as "".
-	out = mgr.DispatchTextEdit(cell0, "31", 2, 0)
+	// "1" lands in box 0 too, because focus has not moved yet: box 0 reports
+	// "31". Go writes the "1" into box 1, which is a rewrite of a field the
+	// host shows as "".
+	out = mgr.DispatchTextEdit(box0, "31", 2, 0)
 	if code != "31" {
 		t.Fatalf("code = %q, want 31", code)
 	}
-	if c := changesFor(t, out, "root/0/1"); c == nil || c["value"] != "1" || c["editEpoch"] != float64(1) {
-		t.Fatalf("cell 1 = %v, want value 1 at epoch 1; got %s", c, out)
+	if c := changesFor(t, out, "root/1"); c == nil || c["value"] != "1" || c["editEpoch"] != float64(1) {
+		t.Fatalf("box 1 = %v, want value 1 at epoch 1; got %s", c, out)
 	}
 
-	// "4", typed into cell 1 before that render reached the host. On the old
-	// text, so it must not reach the handler: applied, it overwrites the 1.
-	mgr.DispatchTextEdit(cell1, "4", 3, 0)
+	// "4", typed into box 1 before that render reached the host. On the old
+	// text, so it must not reach the handler: applied, it would overwrite the 1.
+	mgr.DispatchTextEdit(box1, "4", 3, 0)
 	if code != "31" {
 		t.Fatalf("stale key applied: code = %q, want 31", code)
 	}
 
-	// The host's rebase of "4" onto cell 1's "1": a paste of "14" at cell 1.
-	mgr.DispatchTextEdit(cell1, "14", 4, 1)
+	// The host's rebase of "4" onto box 1's "1" (internal/rebasefixture's "a
+	// PIN cell Go filled under a typed key"): box 1 reports "14", which the
+	// field writes from box 1 on.
+	mgr.DispatchTextEdit(box1, "14", 4, 1)
 	if code != "314" {
 		t.Fatalf("rebased key: code = %q, want 314", code)
 	}

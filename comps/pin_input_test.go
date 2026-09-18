@@ -8,64 +8,35 @@ import (
 )
 
 // The harness is select_row_test.go's: one context, one pass per render, the
-// protocol a Manager performs. PINInput holds hooks — a FocusRef per cell —
-// for the same reason SelectRow does, so its tests cannot call Render bare
-// either, and a focus command issued by a handler is only visible on the pass
-// after it.
+// protocol a Manager performs. PINInput holds hooks (the field's FocusRef and
+// whether it has focus), so its tests cannot call Render bare.
 
-// cellsOf returns the field's cells in order. Both node types are collected so
-// one helper serves the Secure case too.
-func cellsOf(n *core.Node) []*core.Node {
-	var out []*core.Node
-	var walk func(*core.Node)
-	walk = func(n *core.Node) {
-		if n == nil {
-			return
-		}
-		if n.Type == "Input" || n.Type == "InputPassword" {
-			out = append(out, n)
-		}
-		for _, c := range n.Children {
-			walk(c)
-		}
-	}
-	walk(n)
-	return out
+// pinParts is the widget's anatomy: the boxes, in order, and the one field.
+type pinParts struct {
+	boxes []*core.Node
+	field *core.Node
 }
 
-// typeInto dispatches cell i's change with what the field would now report,
-// then re-renders so a focus command issued by the handler lands on nodes.
-func typeInto(t *testing.T, h *pinHarness, i int, text string) {
+func partsOf(t *testing.T, n *core.Node) pinParts {
 	t.Helper()
-	cells := cellsOf(h.node)
-	if i >= len(cells) {
-		t.Fatalf("cell %d of %d", i, len(cells))
+	if n.Type != "ZStack" || len(n.Children) != 2 {
+		t.Fatalf("expected a ZStack of the field and the boxes, got %s with %d children", n.Type, len(n.Children))
 	}
-	id, ok := cells[i].Props["onChange"].(string)
-	if !ok {
-		t.Fatalf("cell %d carries no onChange", i)
+	// The field is the first layer, under the boxes; see Render.
+	field, row := n.Children[0], n.Children[1]
+	if row.Type != "Row" || (field.Type != "Input" && field.Type != "InputPassword") {
+		t.Fatalf("expected [Input, Row], got [%s, %s]", field.Type, row.Type)
 	}
-	h.ctx.TriggerTextCallback(id, text)
-	h.render()
+	return pinParts{boxes: row.Children, field: field}
 }
 
-// focused reports which cell the last focus command named, or -1 when no
-// command has been issued at all. "focus" is the action exactly one cell
-// carries; see core/focus.go for why the others are told "" rather than
-// false.
-func focused(t *testing.T, h *pinHarness) int {
-	t.Helper()
-	for i, c := range cellsOf(h.node) {
-		if c.Props["focusAction"] == "focus" {
-			return i
-		}
-	}
-	return -1
+// shown is the text box i draws.
+func shown(b *core.Node) string {
+	return b.Children[0].Props["content"].(string)
 }
 
-// pinHarness is the shape nearly every test here wants: a value that the
-// widget's OnChange writes back, so re-rendering shows what a real caller
-// would show, plus a record of what the two callbacks were handed.
+// pinHarness: a value that the widget's OnChange writes back, so re-rendering
+// shows what a real caller would show, plus a record of both callbacks.
 type pinHarness struct {
 	*rowHarness
 	value     string
@@ -88,285 +59,162 @@ func newPINHarness(t *testing.T, build func(p *pinHarness) PINInput) *pinHarness
 	return p
 }
 
-func TestPINInputIsAGroupOfEquallyDividedNamedCells(t *testing.T) {
-	h := newPINHarness(t, func(*pinHarness) PINInput {
-		return PINInput{Length: 4, Label: "One-time code"}
-	})
+// typeField reports the field's whole text, as the host does after an edit.
+func typeField(t *testing.T, h *pinHarness, text string) {
+	t.Helper()
+	id, ok := partsOf(t, h.node).field.Props["onChange"].(string)
+	if !ok {
+		t.Fatal("the field carries no onChange")
+	}
+	h.ctx.TriggerTextCallback(id, text)
+	h.render()
+}
 
-	row := h.node
-	if row.Type != "Row" {
-		t.Fatalf("root = %q, want the Row of cells", row.Type)
+func TestPINInputIsBoxesOverOneField(t *testing.T) {
+	h := newPINHarness(t, func(*pinHarness) PINInput { return PINInput{Length: 4, Label: "SMS code"} })
+	root := h.node
+	if root.Style.AccessibilityRole != core.RoleGroup || root.Style.AccessibilityLabel != "SMS code" {
+		t.Errorf("the widget should be a group named by Label: %+v", root.Style)
 	}
-	if row.Style.AccessibilityRole != core.RoleGroup {
-		t.Errorf("row role = %q, want group so the name below is legal on the web",
-			row.Style.AccessibilityRole)
+	parts := partsOf(t, root)
+	if len(parts.boxes) != 4 {
+		t.Fatalf("%d boxes, want Length", len(parts.boxes))
 	}
-	if row.Style.AccessibilityLabel != "One-time code" {
-		t.Errorf("row label = %q, want Label", row.Style.AccessibilityLabel)
-	}
-
-	cells := cellsOf(row)
-	if len(cells) != 4 {
-		t.Fatalf("%d cells, want Length", len(cells))
-	}
-	for i, c := range cells {
-		// The pair that makes the four targets agree on equal shares rather
-		// than on equal shares of the leftovers.
-		if c.Style.FlexGrow != 1 || c.Style.FlexBasis != "0" {
-			t.Errorf("cell %d divides the row as grow %v basis %q, want 1 and \"0\"",
-				i, c.Style.FlexGrow, c.Style.FlexBasis)
+	for i, b := range parts.boxes {
+		if !b.Style.AccessibilityHidden {
+			t.Errorf("box %d should be hidden: the field is the control", i)
 		}
-		if c.Style.Align != core.AlignCenter {
-			t.Errorf("cell %d align = %q, want the glyph centred", i, c.Style.Align)
+		if b.Style.FlexGrow != 1 || b.Style.FlexBasis != "0" {
+			t.Errorf("box %d should take an equal share (grow 1, basis 0)", i)
 		}
-		if want := "One-time code, " + string(rune('1'+i)) + " of 4"; c.Style.AccessibilityLabel != want {
-			t.Errorf("cell %d label = %q, want %q", i, c.Style.AccessibilityLabel, want)
-		}
+	}
+	f := parts.field
+	if f.Style.Width != "1px" || f.Style.Height != "1px" || f.Style.TextColor != ColorTransparent {
+		t.Errorf("the field should be one invisible point: %+v", f.Style)
+	}
+	if f.Props["keyboard"] != "digits" {
+		t.Errorf("the field should ask for the number pad, keyboard = %v", f.Props["keyboard"])
+	}
+	if f.Style.AccessibilityLabel != "SMS code, 0 of 4 entered" {
+		t.Errorf("field name = %q", f.Style.AccessibilityLabel)
 	}
 }
 
-// Length's default and Label's, in the widget a caller writes with neither.
-func TestPINInputDefaultsToSixCellsNamedCode(t *testing.T) {
+func TestPINInputDefaultsToSixBoxesNamedCode(t *testing.T) {
 	h := newPINHarness(t, func(*pinHarness) PINInput { return PINInput{} })
-
-	cells := cellsOf(h.node)
-	if len(cells) != defaultPINLength {
-		t.Errorf("%d cells, want the %d a one-time code has", len(cells), defaultPINLength)
-	}
-	if h.node.Style.AccessibilityLabel != "Code" {
-		t.Errorf("row label = %q, want the default name", h.node.Style.AccessibilityLabel)
+	parts := partsOf(t, h.node)
+	if len(parts.boxes) != 6 || h.node.Style.AccessibilityLabel != "Code" {
+		t.Errorf("got %d boxes named %q", len(parts.boxes), h.node.Style.AccessibilityLabel)
 	}
 }
 
-// The value is a prefix: cell i draws character i and the rest are empty.
-func TestPINInputDrawsTheValueOneCharacterPerCell(t *testing.T) {
-	h := newPINHarness(t, func(*pinHarness) PINInput { return PINInput{Length: 6} })
-	h.value = "417"
-	h.render()
-
-	want := []string{"4", "1", "7", "", "", ""}
-	for i, c := range cellsOf(h.node) {
-		if c.Props["value"] != want[i] {
-			t.Errorf("cell %d = %v, want %q", i, c.Props["value"], want[i])
+// The boxes draw the field's text one character each, and the field holds the
+// whole code.
+func TestPINInputDrawsTheValueOneCharacterPerBox(t *testing.T) {
+	h := newPINHarness(t, func(*pinHarness) PINInput { return PINInput{Length: 4} })
+	typeField(t, h, "41")
+	parts := partsOf(t, h.node)
+	if parts.field.Props["value"] != "41" {
+		t.Errorf("the field should hold the code, got %v", parts.field.Props["value"])
+	}
+	for i, want := range []string{"4", "1", " ", " "} {
+		if got := shown(parts.boxes[i]); got != want {
+			t.Errorf("box %d shows %q, want %q", i, got, want)
 		}
 	}
+	if parts.field.Style.AccessibilityLabel != "Code, 2 of 4 entered" {
+		t.Errorf("field name = %q", parts.field.Style.AccessibilityLabel)
+	}
 }
 
-func TestPINInputTypingFillsACellAndMovesTheCursorOn(t *testing.T) {
+// Every edit is the field's: a key, a paste, a backspace from anywhere. A
+// paste longer than the field keeps what fits, and OnComplete fires whenever
+// a change leaves the code full, a correction to a full code included.
+func TestPINInputEditsAreTheFieldsText(t *testing.T) {
 	h := newPINHarness(t, func(*pinHarness) PINInput { return PINInput{Length: 4} })
-
-	if focused(t, h) != -1 {
-		t.Fatal("no focus command should exist before anything is typed")
-	}
-	typeInto(t, h, 0, "4")
-
-	if h.value != "4" {
-		t.Errorf("value = %q, want the character in the first cell", h.value)
-	}
-	if len(h.changes) != 1 {
-		t.Errorf("OnChange fired %d times, want exactly one per keystroke", len(h.changes))
-	}
-	if got := focused(t, h); got != 1 {
-		t.Errorf("cursor at cell %d, want cell 1: the point of the widget", got)
-	}
-	if len(h.completes) != 0 {
-		t.Error("OnComplete fired on an unfinished code")
-	}
-}
-
-// A paste and an overflowing keystroke are the same event, and this is the
-// paste half: the whole code arrives in the first cell and is spread.
-func TestPINInputSpreadsAPastedCodeAcrossTheCells(t *testing.T) {
-	h := newPINHarness(t, func(*pinHarness) PINInput { return PINInput{Length: 6} })
-
-	typeInto(t, h, 0, "417293")
-
-	if h.value != "417293" {
-		t.Errorf("value = %q, want the whole pasted code", h.value)
-	}
-	for i, c := range cellsOf(h.node) {
-		if want := string("417293"[i]); c.Props["value"] != want {
-			t.Errorf("cell %d = %v, want %q", i, c.Props["value"], want)
-		}
-	}
-	if len(h.completes) != 1 || h.completes[0] != "417293" {
-		t.Errorf("OnComplete got %v, want one call with the full code", h.completes)
-	}
-	// Nothing to advance to, so no command is issued at all — which is what
-	// keeps the cursor in the last cell rather than nowhere.
-	if got := focused(t, h); got != -1 {
-		t.Errorf("a full paste moved the cursor to cell %d, want no command", got)
-	}
-}
-
-// The other half: a second character in a cell that already holds one arrives
-// as both of them, which is the same spread starting at that cell.
-func TestPINInputSecondCharacterInAFullCellLandsInTheNextOne(t *testing.T) {
-	h := newPINHarness(t, func(*pinHarness) PINInput { return PINInput{Length: 4} })
-	h.value = "1"
-	h.render()
-
-	typeInto(t, h, 0, "12")
-
-	if h.value != "12" {
-		t.Errorf("value = %q, want the old character kept and the new one after it", h.value)
-	}
-	// Two cells were filled, so the cursor lands after the second of them.
-	if got := focused(t, h); got != 2 {
-		t.Errorf("cursor at cell %d, want cell 2 — after the last cell filled", got)
-	}
-}
-
-// Characters past the last cell are dropped rather than growing the value.
-func TestPINInputDropsWhatWillNotFit(t *testing.T) {
-	h := newPINHarness(t, func(*pinHarness) PINInput { return PINInput{Length: 4} })
-
-	typeInto(t, h, 0, "417293")
-
+	typeField(t, h, "4")
+	typeField(t, h, "41729")
 	if h.value != "4172" {
-		t.Errorf("value = %q, want the code clipped to the field", h.value)
+		t.Fatalf("a long paste should keep the first four, got %q", h.value)
 	}
-	if len(h.completes) != 1 || h.completes[0] != "4172" {
-		t.Errorf("OnComplete got %v, want the clipped code once", h.completes)
+	typeField(t, h, "417")
+	typeField(t, h, "4173")
+	want := []string{"4", "4172", "417", "4173"}
+	if strings.Join(h.changes, ",") != strings.Join(want, ",") {
+		t.Errorf("changes = %v, want %v", h.changes, want)
 	}
-}
-
-// The asymmetric edit, stated in the type doc: a cleared cell takes the tail
-// with it, because a string cannot hold the gap that keeping it would need.
-func TestPINInputClearingACellDropsEverythingAfterIt(t *testing.T) {
-	h := newPINHarness(t, func(*pinHarness) PINInput { return PINInput{Length: 6} })
-	h.value = "4172"
-	h.render()
-
-	typeInto(t, h, 1, "")
-
-	if h.value != "4" {
-		t.Errorf("value = %q, want everything from the cleared cell on dropped", h.value)
-	}
-	// Clearing is where a person is going backwards; moving them forwards
-	// would fight them.
-	if got := focused(t, h); got != -1 {
-		t.Errorf("clearing moved the cursor to cell %d, want it left where it is", got)
+	if strings.Join(h.completes, ",") != "4172,4173" {
+		t.Errorf("completes = %v, want the two full codes", h.completes)
 	}
 }
 
-// Typing over one cell of a full code replaces that cell and keeps the rest,
-// and the corrected code reports again — which is the whole reason
-// OnComplete is not keyed on a crossing.
-func TestPINInputOverwritesOneCellAndReportsTheCorrectedCode(t *testing.T) {
-	h := newPINHarness(t, func(*pinHarness) PINInput { return PINInput{Length: 6} })
-	h.value = "417293"
-	h.render()
-
-	typeInto(t, h, 2, "9")
-
-	if h.value != "419293" {
-		t.Errorf("value = %q, want only the third character changed", h.value)
-	}
-	if len(h.completes) != 1 || h.completes[0] != "419293" {
-		t.Errorf("OnComplete got %v, want the corrected code", h.completes)
-	}
-}
-
-// A report of the text Go just handed the field is not an edit.
-func TestPINInputIgnoresAnEchoOfTheValueItAlreadyHas(t *testing.T) {
-	h := newPINHarness(t, func(*pinHarness) PINInput { return PINInput{Length: 6} })
-	h.value = "417"
-	h.render()
-
-	typeInto(t, h, 0, "4")
-
-	if len(h.changes) != 0 {
-		t.Errorf("OnChange fired %v on an echo", h.changes)
-	}
-	if len(h.completes) != 0 {
-		t.Errorf("OnComplete fired %v on an echo", h.completes)
-	}
-	if got := focused(t, h); got != -1 {
-		t.Errorf("an echo moved the cursor to cell %d", got)
-	}
-}
-
-// There are no holes, so a cell past the end of the code has no position of
-// its own and an edit aimed at one is an edit at the end.
-func TestPINInputTypingPastTheEndLandsAtTheEnd(t *testing.T) {
-	h := newPINHarness(t, func(*pinHarness) PINInput { return PINInput{Length: 6} })
-	h.value = "4"
-	h.render()
-
-	typeInto(t, h, 3, "7")
-
-	if h.value != "47" {
-		t.Errorf("value = %q, want the character appended rather than stranded", h.value)
-	}
-	if got := focused(t, h); got != 2 {
-		t.Errorf("cursor at cell %d, want cell 2 — after the cell actually filled", got)
-	}
-}
-
-// UseFocusOrder's half of the wiring: the keyboard's action key advances,
-// and the last cell keeps nothing to advance to.
-func TestPINInputCellsAdvertiseTheKeyboardsNextAction(t *testing.T) {
+// A report of the text already held is an echo: nothing happens.
+func TestPINInputIgnoresAnEcho(t *testing.T) {
 	h := newPINHarness(t, func(*pinHarness) PINInput { return PINInput{Length: 4} })
-
-	cells := cellsOf(h.node)
-	for i, c := range cells[:len(cells)-1] {
-		if c.Props["imeAction"] != "next" {
-			t.Errorf("cell %d advertises %v, want next", i, c.Props["imeAction"])
-		}
-		if _, ok := c.Props["onSubmit"].(string); !ok {
-			t.Errorf("cell %d has no onSubmit for its Next key to dispatch", i)
-		}
-	}
-	if last := cells[len(cells)-1]; last.Props["imeAction"] != "" {
-		t.Errorf("the last cell advertises %v, want nothing to advance to", last.Props["imeAction"])
+	typeField(t, h, "4172")
+	typeField(t, h, "4172")
+	typeField(t, h, "41729") // capped to what is held
+	if len(h.changes) != 1 || len(h.completes) != 1 {
+		t.Errorf("an echo was reported: changes %v, completes %v", h.changes, h.completes)
 	}
 }
 
-func TestPINInputSecureMasksTheCells(t *testing.T) {
-	h := newPINHarness(t, func(*pinHarness) PINInput {
-		return PINInput{Length: 4, Secure: true}
-	})
-
-	for i, c := range cellsOf(h.node) {
-		if c.Type != "InputPassword" {
-			t.Errorf("cell %d = %q, want the masked field", i, c.Type)
-		}
+// A tap on the boxes is a tap on the field: it focuses it.
+func TestPINInputTapFocusesTheField(t *testing.T) {
+	h := newPINHarness(t, func(*pinHarness) PINInput { return PINInput{Length: 4} })
+	row := h.node.Children[1]
+	id, _ := row.Props["onClick"].(string)
+	if id == "" {
+		t.Fatal("the boxes take no tap")
+	}
+	h.ctx.TriggerCallback(id)
+	h.render()
+	if got := partsOf(t, h.node).field.Props["focusAction"]; got != "focus" {
+		t.Errorf("a tap should focus the field, focusAction = %v", got)
 	}
 }
 
-// The hook decision, pinned where it can actually fail: a state allocated
-// after the widget must keep its slot when Length shrinks. Without the
-// high-water mark the sentinel below would land on a FocusRef's slot and the
-// typed accessor would panic.
-func TestPINInputKeepsItsHookSlotsWhenLengthShrinks(t *testing.T) {
-	core.SetDebugMode(true)
-	core.ClearConcerns()
-	t.Cleanup(func() { core.SetDebugMode(false); core.ClearConcerns() })
-
-	length := 6
-	ctx := core.NewContext()
-	var sentinel string
-	pass := func() {
-		ctx.BeginRenderPass()
-		ctx.Reset()
-		PINInput{Length: length, Value: "", OnChange: func(string) {}}.Render(ctx)
-		// Allocated after the widget, exactly as a component's own state
-		// would be if it rendered a PINInput above it.
-		slot := core.NewState(ctx, "kept")
-		sentinel = slot.Get()
-		ctx.EndRenderPass()
+// While the field has focus the next box to fill is marked; blurred, none is.
+func TestPINInputMarksTheNextBoxWhileFocused(t *testing.T) {
+	h := newPINHarness(t, func(*pinHarness) PINInput { return PINInput{Length: 4} })
+	marked := func() int {
+		for i, b := range partsOf(t, h.node).boxes {
+			if b.Style.BorderWidth == 2 {
+				return i
+			}
+		}
+		return -1
 	}
-
-	pass()
-	length = 4
-	pass()
-
-	if sentinel != "kept" {
-		t.Errorf("the state after the widget reads %q, want its own value", sentinel)
+	if marked() != -1 {
+		t.Fatal("a box is marked before the field has focus")
 	}
-	if dump := core.DumpConcerns(); dump != "" {
-		t.Errorf("shrinking Length raised concerns:\n%s", dump)
+	f := partsOf(t, h.node).field
+	h.ctx.TriggerCallback(f.Props["onFocus"].(string))
+	h.render()
+	typeField(t, h, "41")
+	if marked() != 2 {
+		t.Errorf("box %d is marked, want 2, the next to fill", marked())
+	}
+	typeField(t, h, "4172")
+	if marked() != 3 {
+		t.Errorf("a full code should mark the last box, got %d", marked())
+	}
+	h.ctx.TriggerCallback(partsOf(t, h.node).field.Props["onBlur"].(string))
+	h.render()
+	if marked() != -1 {
+		t.Error("a blurred field should mark no box")
+	}
+}
+
+func TestPINInputSecureMasksTheBoxes(t *testing.T) {
+	h := newPINHarness(t, func(*pinHarness) PINInput { return PINInput{Length: 4, Secure: true} })
+	typeField(t, h, "41")
+	parts := partsOf(t, h.node)
+	if parts.field.Type != "InputPassword" {
+		t.Errorf("a secure field should be an InputPassword, got %s", parts.field.Type)
+	}
+	if shown(parts.boxes[0]) != "•" || shown(parts.boxes[2]) != " " {
+		t.Errorf("boxes = %q %q", shown(parts.boxes[0]), shown(parts.boxes[2]))
 	}
 }
 
@@ -374,13 +222,12 @@ func TestPINInputReportsAFieldNothingCanBeTypedInto(t *testing.T) {
 	h := newQuietRowHarness(t, func() core.View {
 		return PINInput{Length: 4, Value: "12"}
 	})
-
 	if !strings.Contains(core.DumpConcerns(), ConcernPINInputInert) {
 		t.Errorf("a PINInput with no OnChange should raise %s, got:\n%s",
 			ConcernPINInputInert, core.DumpConcerns())
 	}
 	// Still draws what it was given: the concern is the report, not a refusal.
-	if cellsOf(h.node)[0].Props["value"] != "1" {
+	if shown(partsOf(t, h.node).boxes[0]) != "1" {
 		t.Error("an inert field should still show its Value")
 	}
 }
@@ -389,17 +236,13 @@ func TestPINInputReportsAValueLongerThanTheField(t *testing.T) {
 	h := newQuietRowHarness(t, func() core.View {
 		return PINInput{Length: 4, Value: "417293", OnChange: func(string) {}}
 	})
-
 	if !strings.Contains(core.DumpConcerns(), ConcernPINValueTooLong) {
-		t.Errorf("a Value past the last cell should raise %s, got:\n%s",
+		t.Errorf("a Value past the last box should raise %s, got:\n%s",
 			ConcernPINValueTooLong, core.DumpConcerns())
 	}
-	cells := cellsOf(h.node)
-	if len(cells) != 4 {
-		t.Fatalf("%d cells, want Length", len(cells))
-	}
-	if cells[3].Props["value"] != "2" {
-		t.Errorf("last cell = %v, want the fourth character: the rest are undrawable",
-			cells[3].Props["value"])
+	parts := partsOf(t, h.node)
+	if len(parts.boxes) != 4 || shown(parts.boxes[3]) != "2" || parts.field.Props["value"] != "4172" {
+		t.Errorf("the field should draw and hold the first four: box 3 %q, field %v",
+			shown(parts.boxes[3]), parts.field.Props["value"])
 	}
 }

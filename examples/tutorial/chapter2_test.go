@@ -1,6 +1,7 @@
 package tutorial
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/rohanthewiz/grmob/render"
@@ -156,6 +157,52 @@ func TestInputDemoEchoesTransformsAndClears(t *testing.T) {
 		t.Fatal("Clear should return the demo to its empty state")
 	}
 	assertNoConcerns(t)
+}
+
+// The TextArea demo: newlines are characters of the one string, the caption
+// reads the same state, and Tidy lines rewrites the middle of the value from
+// outside the field.
+func TestTextAreaDemoCountsLinesAndTidiesThem(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Controlled inputs")
+
+	area := findNode(tree(t, mgr), func(n *node) bool { return n.Type == "TextArea" })
+	if area == nil {
+		t.Fatal("lesson 2.3 should hold a TextArea")
+	}
+	if got := area.Props["value"]; got != "Milk\nEggs  " {
+		t.Fatalf("the TextArea should start on its seeded two lines, got %q", got)
+	}
+	if !hasTextContaining(tree(t, mgr), "2 lines, 11 characters") {
+		t.Fatal("the caption should count the seeded value's lines and characters")
+	}
+
+	mgr.DispatchTextCallback(area.Props["onChange"].(string), "Milk\n\nEggs  \nBread ")
+	if !hasTextContaining(tree(t, mgr), "4 lines") {
+		t.Fatal("typed newlines should count as lines")
+	}
+
+	tap(t, mgr, "Tidy lines")
+	area = findNode(tree(t, mgr), func(n *node) bool { return n.Type == "TextArea" })
+	if got := area.Props["value"]; got != "Milk\nEggs\nBread" {
+		t.Fatalf("Tidy lines should trim each line and drop the blank one, got %q", got)
+	}
+	assertNoConcerns(t)
+}
+
+func TestLineSummaryAndTidyLines(t *testing.T) {
+	for _, c := range []struct{ in, summary, tidy string }{
+		{"", "Empty: zero lines.", ""},
+		{"one", "1 line, 3 characters", "one"},
+		{"a \n\n\tb\t", "3 lines", "a\n\tb"},
+	} {
+		if got := lineSummary(c.in); !strings.Contains(got, c.summary) {
+			t.Errorf("lineSummary(%q) = %q, want it to contain %q", c.in, got, c.summary)
+		}
+		if got := tidyLines(c.in); got != c.tidy {
+			t.Errorf("tidyLines(%q) = %q, want %q", c.in, got, c.tidy)
+		}
+	}
 }
 
 // --- 2.4 Conditional rendering --------------------------------------------

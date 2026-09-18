@@ -100,3 +100,25 @@ func TestMessageBubblePassesTheAudit(t *testing.T) {
 		}
 	}
 }
+
+// The tail is the bottom corner on the sender's side: bottom-right on the
+// reader's own messages, bottom-left on anyone else's.
+func TestMessageBubbleTailPointsAtTheSender(t *testing.T) {
+	ctx := core.NewContext().WithTheme(core.DefaultTheme)
+	ctx.BeginRenderPass()
+	bubbleOf := func(m MessageBubble) *core.Node {
+		row := m.Render(ctx)
+		if len(row.Children) == 0 {
+			t.Fatal("the row holds no bubble")
+		}
+		return row.Children[0]
+	}
+	mine := bubbleOf(MessageBubble{Text: "hi", Mine: true}).Style.Radii()
+	if want := (core.Corners{TopLeft: 16, TopRight: 16, BottomRight: 4, BottomLeft: 16}); mine != want {
+		t.Errorf("mine = %+v, want the tail bottom-right %+v", mine, want)
+	}
+	theirs := bubbleOf(MessageBubble{Text: "hi", Sender: "Ana"}).Style.Radii()
+	if want := (core.Corners{TopLeft: 16, TopRight: 16, BottomRight: 16, BottomLeft: 4}); theirs != want {
+		t.Errorf("theirs = %+v, want the tail bottom-left %+v", theirs, want)
+	}
+}

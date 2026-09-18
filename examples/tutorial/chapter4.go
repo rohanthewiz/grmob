@@ -2787,6 +2787,8 @@ func lessonRichText() Lesson {
 								Height:   "150px",
 							},
 						),
+						caption("The same document, read-only, as comps.RichTextView:"),
+						comps.RichTextView{Doc: note.Get()},
 					),
 				),
 				prose("That second panel is the same document through Doc.Markdown(), "+
@@ -2809,10 +2811,11 @@ comps.RichTextEditor{
 					"anything holding one must be rendered unconditionally. A note being "+
 					"*displayed* — a comment, a description, the body of a card in a list — "+
 					"is the thing rendered inside an `if`, so the read-only editor has to be "+
-					"free of hook obligations. ReadOnly with no toolbar is the display half, "+
-					"and there is no separate \"RichTextView\" node because there does not "+
-					"need to be one: the renderer's own text engine draws the document either "+
-					"way."),
+					"free of hook obligations. ReadOnly with no toolbar is one display half. "+
+					"comps.RichTextView, under the editor above, is the lighter one: each "+
+					"block is a core.Paragraph, plain text runs with their marks and "+
+					"tappable links, with no editor hosted per note, which is what a list "+
+					"of fifty notes wants."),
 				comps.Separator{},
 				prose("Which buttons look pressed is the one thing Go cannot work out. Go "+
 					"owns the document and the host owns the caret, so \"is the text under "+
@@ -4578,9 +4581,9 @@ func lessonDateRange() Lesson {
 					"fill — there is one \"this day is chosen\" look in the grid and it stays one "+
 					"look — and the days between wear the same colour thinned to 20% and give up "+
 					"their corner radius, which is the whole of what makes a run of them read as "+
-					"one shape rather than as a row of pills. The rounded endpoint meets the "+
-					"square band with a small notch, because core has one border radius and not "+
-					"four."),
+					"one shape rather than as a row of pills. Each endpoint is rounded on its "+
+					"outside and square toward the band (core.CornerRadii), so the fill runs "+
+					"into the band with no notch at the join."),
 				codeBlock(`comps.Calendar{RangeStart: from, RangeEnd: to, Today: today}
 
 // │ 15  16 [17]▓18▓▓19▓▓20▓[21] 22 │   [n] endpoint, ▓ interior`),
@@ -5310,15 +5313,17 @@ comps.MessageBubble{Text: "Not yet", Mine: true, Time: "10:42"}`),
 				prose("Each bubble is one stop for a screen reader, named who-what-when: \"Ana, Did you "+
 					"see the new release?, 10:41\". Your own are named \"You, …\" — MineLabel "+
 					"localizes it. Put the bubbles under a RoleLog container so new ones are announced."),
-				prose("It is not a thread. A conversation opens at its newest message, which is a scroll "+
-					"offset, and no host reports or accepts one — the wall the carousel hit. And it "+
-					"has no tail: a tail is one sharp corner on a rounded box, and core has one radius, "+
-					"not four."),
+				prose("The tail is a corner, not a point: the bottom corner on the sender's side is "+
+					"nearly square, drawn with core.CornerRadii (a radius per corner). It is not a "+
+					"thread, though. A transcript that opens at its newest message can bring it into "+
+					"view with core.ScrollIntoView, but no host reports a scroll offset back, so "+
+					"\"load older messages when the reader reaches the top\" still has nothing to "+
+					"listen to."),
 				keyPoints(
 					"MessageBubble: Mine on the trailing side in Primary; theirs on the leading side in Surface with a hairline.",
 					"Sender is drawn on theirs only; leave it empty when the speaker has not changed.",
 					"One spoken stop per message, who-what-when; use a RoleLog container for the transcript.",
-					"Not a thread (no scroll offset) and no tail (one corner radius): both are renderer walls.",
+					"The tail is one nearly square corner (core.CornerRadii); a thread still waits on a reported scroll offset.",
 				),
 			)
 		},

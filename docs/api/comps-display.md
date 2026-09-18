@@ -1213,8 +1213,11 @@ Mine is the theme's Primary with the ink chosen by contrast against it (Variant.
 
 #### What it is not
 
-  - \*\*Not a thread.\*\* A conversation opens at its newest message, which is a scroll offset, and no host reports or accepts one (Carousel's wall). A caller lays bubbles out in its own Column or core.List, as examples/chat does, and the spacing between them is the caller's too.
-  - \*\*No tail.\*\* The little point on a bubble's corner is one sharp corner on a rounded box, and core has one radius, not four — DateRangePicker's notch again.
+  - \*\*Not a thread.\*\* A conversation opens at its newest message and loads older ones as the reader scrolls up. core.ScrollIntoView can do the first, but no host reports a scroll offset, so nothing can do the second (Carousel's wall). A caller lays bubbles out in its own Column or core.List, as examples/chat does, and the spacing between them is the caller's too.
+
+#### The tail
+
+The bottom corner on the sender's side is nearly square (4 against 16): bottom-right on the reader's own messages, bottom-left on everyone else's. It is the shape every chat app uses to say whose a bubble is without a drawn point, and it costs nothing but a radius per corner (core.CornerRadii). Every bubble has it, not only the last of a run: a run is the caller's layout, and a bubble cannot see its neighbours. The corners are physical, so a right-to-left transcript that lines the reader's messages up on the left mirrors Mine itself.
 
 #### Accessibility
 
@@ -1228,7 +1231,7 @@ The bubble is one stop named "Ana, Já viste a nova versão?, 10:42" — who, wh
 	Text       Typography.Body
 	Time       Typography.Caption; TextSecondary on theirs, the ink on mine
 
-<small>[comps/message_bubble.go:62](https://github.com/rohanthewiz/grmob/blob/master/comps/message_bubble.go#L62)</small>
+<small>[comps/message_bubble.go:72](https://github.com/rohanthewiz/grmob/blob/master/comps/message_bubble.go#L72)</small>
 
 #### func (MessageBubble) Render
 
@@ -1236,9 +1239,7 @@ The bubble is one stop named "Ana, Já viste a nova versão?, 10:42" — who, wh
 func (m MessageBubble) Render(ctx *core.Context) *core.Node
 ```
 
-Render builds Row(justify, Column(sender?, text, time?)). It takes no hook slot.
-
-<small>[comps/message_bubble.go:89](https://github.com/rohanthewiz/grmob/blob/master/comps/message_bubble.go#L89)</small>
+<small>[comps/message_bubble.go:105](https://github.com/rohanthewiz/grmob/blob/master/comps/message_bubble.go#L105)</small>
 
 ### type QRCode
 

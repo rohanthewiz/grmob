@@ -1128,3 +1128,38 @@ func TestAChapterBandCountsItsLessons(t *testing.T) {
 		t.Errorf("chapter 1's band is missing %q after opening one lesson", want)
 	}
 }
+
+// Lesson 1.5's scroll-to demo: "Jump to row 10" stamps row 10 with a scroll
+// command and nothing else; "Back to row 1" moves the stamp to row 1 with a
+// higher epoch. The scrolling itself is each host's (core/scroll_to.go).
+func TestSurfacesJumpStampsItsRow(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Surfaces")
+
+	stamped := func() (string, float64) {
+		n := findNode(tree(t, mgr), func(n *node) bool { _, ok := n.Props["scrollEpoch"]; return ok })
+		if n == nil {
+			return "", 0
+		}
+		label := ""
+		if txt := findNode(n, func(c *node) bool { return c.Type == "Text" }); txt != nil {
+			label, _ = txt.Props["content"].(string)
+		}
+		e, _ := n.Props["scrollEpoch"].(float64)
+		return label, e
+	}
+	if label, _ := stamped(); label != "" {
+		t.Fatalf("nothing should be stamped before a jump, found %q", label)
+	}
+	tap(t, mgr, "Jump to row 10")
+	label, first := stamped()
+	if label != "Row 10" {
+		t.Fatalf("the jump should stamp Row 10, stamped %q", label)
+	}
+	tap(t, mgr, "Back to row 1")
+	label, second := stamped()
+	if label != "Row 1" || second <= first {
+		t.Fatalf("back should stamp Row 1 with a newer epoch, got %q at %v after %v", label, second, first)
+	}
+	assertNoConcerns(t)
+}

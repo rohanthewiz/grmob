@@ -263,6 +263,8 @@ const GrMob = (() => {
                     applySliderBound(el, key, value, node.Props.value);
                 } else if (key === "placeholder") {
                     el.placeholder = value;
+                } else if (key === "keyboard") {
+                    el.inputMode = inputModeFor(value);
                 } else if (key === "content") {
                     el.textContent = value;
                 }
@@ -279,6 +281,11 @@ const GrMob = (() => {
                 }
                 else if (key === "rows") {
                     applyRows(el, value);
+                }
+                else if (key === "runs" && node.Type === "Paragraph") {
+                    // A paragraph's runs, not a grid row's: see
+                    // applyParagraphRuns.
+                    applyParagraphRuns(el, value);
                 }
                 else if (key === "runs") {
                     // Remembered on the element as well as drawn, because a
@@ -303,6 +310,9 @@ const GrMob = (() => {
                     // the whole new map, not just the keys that changed).
                     el.dataset.focusEpoch = value;
                     applyFocusCommand(el, value, node.Props.focusAction);
+                }
+                else if (key === "scrollEpoch") {
+                    applyScrollCommand(el, value);
                 }
 
             }
@@ -4105,6 +4115,54 @@ const GrMob = (() => {
     }
 
 
+    // --- Paragraph -----------------------------------------------------------
+    //
+    // core.Paragraph (core/paragraph.go): one <div> of inline <span>s, one per
+    // run, redrawn whole whenever the runs prop changes. The runs are chrome
+    // of the node, like a grid row's, so they carry no data-node-path and no
+    // patch is ever addressed to one.
+    //
+    //	<div data-node-type="Paragraph">
+    //	  <span>By continuing you accept the </span>
+    //	  <span role="link" tabindex="0">terms</span>     a run with a callback
+    //	  <span>.</span>
+    //
+    // A link is a span with the link role rather than an <a>: an <a> with no
+    // href is not focusable and not a link to a screen reader, and one with a
+    // made-up href would navigate or show a URL in the status bar. The role
+    // and a tab stop are what make it a link to both, and Enter presses it as
+    // it presses a real one (Space does not, for links, in every browser).
+    function applyParagraphRuns(el, runs) {
+        el.innerHTML = "";
+        if (!Array.isArray(runs)) return;
+        for (const run of runs) {
+            const span = document.createElement("span");
+            span.textContent = run.t ?? "";
+            if (run.fg) span.style.color = run.fg;
+            if (run.b) span.style.fontWeight = "700";
+            if (run.i) span.style.fontStyle = "italic";
+            const lines = [];
+            if (run.u) lines.push("underline");
+            if (run.s) lines.push("line-through");
+            if (lines.length) span.style.textDecoration = lines.join(" ");
+            if (run.c) span.style.fontFamily = "ui-monospace, SFMono-Regular, Menlo, monospace";
+            if (run.cb) {
+                const id = run.cb;
+                span.setAttribute("role", "link");
+                span.tabIndex = 0;
+                span.style.cursor = "pointer";
+                span.addEventListener("click", () => window.GoInvokeCallback(id, {}));
+                span.addEventListener("keydown", (e) => {
+                    if (e.key === "Enter") {
+                        e.preventDefault();
+                        window.GoInvokeCallback(id, {});
+                    }
+                });
+            }
+            el.appendChild(span);
+        }
+    }
+
     // --- CodeEditor ----------------------------------------------------------
     //
     // core.CodeEditor is a transparent <textarea> laid over a mirror of
@@ -5987,6 +6045,58 @@ const GrMob = (() => {
     // And on one exception: a combobox that a pick was just made from with
     // Enter keeps its focus through the dismiss that pick issues. See "A
     // keyboard pick keeps focus in the field", under the combobox pattern.
+    // core.ScrollIntoView (core/scroll_to.go): the node carrying a scroll
+    // epoch higher than any this page has applied is brought into view.
+    //
+    // The mark is app-wide rather than per element, and that is the rule, not
+    // a shortcut: nothing consumes the stamp, so the target keeps its epoch,
+    // and an element rebuilt later (a layout switch, a list re-keyed) would
+    // otherwise scroll the page back to it every time it was built. mount()
+    // resets it, because a fresh mount is a fresh app whose epochs start at 1
+    // again (the dev server's hot reload swaps the module under this runtime).
+    let scrollEpochApplied = 0;
+
+    // core.Style's corners as CSS border-radius: four values when the node
+    // named them (core.CornerRadii, CSS's own order), one otherwise, "" for
+    // none, which the totality rule in styleToCSS needs so a radius that
+    // returns to zero is cleared. The same precedence as core's Style.Radii.
+    //
+    // The two fields are passed in rather than the style read here, so both
+    // reads stay inside styleFromGrMob, where wasm/verify's totality census
+    // looks for every Style field the mapping reads.
+    function radiusCSS(c, radius) {
+        if (c && (c.TopLeft || c.TopRight || c.BottomRight || c.BottomLeft)) {
+            return `${c.TopLeft || 0}px ${c.TopRight || 0}px ${c.BottomRight || 0}px ${c.BottomLeft || 0}px`;
+        }
+        return radius ? `${radius}px` : "";
+    }
+
+    // core.Keyboard as HTML's inputmode, the attribute a mobile browser reads
+    // to choose its software keyboard; "" is the text keyboard. The same
+    // table as htmlout's InputModeFor.
+    function inputModeFor(kind) {
+        return ({ digits: "numeric", decimal: "decimal", phone: "tel", email: "email", url: "url" })[kind] || "";
+    }
+
+    function applyScrollCommand(el, epoch) {
+        const n = Number(epoch);
+        if (!(n > scrollEpochApplied)) return;
+        scrollEpochApplied = n;
+        // After layout: an element built in this batch is not in the document
+        // yet, and one whose content just changed has not been measured.
+        requestAnimationFrame(() => {
+            if (!el.isConnected || typeof el.scrollIntoView !== "function") return;
+            // "nearest" is the least scrolling that shows the whole element,
+            // or its start when it cannot all fit: the same thing Compose's
+            // bringIntoView and SwiftUI's scrollTo(id) do by default, which
+            // is why core defines the command by it. Smooth unless the reader
+            // asked the system for less motion.
+            const reduce = typeof window.matchMedia === "function" &&
+                window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+            el.scrollIntoView({ block: "nearest", inline: "nearest", behavior: reduce ? "auto" : "smooth" });
+        });
+    }
+
     function applyFocusCommand(el, epoch, action) {
         if (!epoch) return;
         if (action !== "focus" && action !== "blur") return;
@@ -6285,7 +6395,7 @@ const GrMob = (() => {
         // divergence in the other direction.
         out.padding = style.Padding ? edgeToCSS(style.Padding) : "";
         out.margin = style.Margin ? edgeToCSS(style.Margin) : "";
-        out.borderRadius = style.BorderRadius ? `${style.BorderRadius}px` : "";
+        out.borderRadius = radiusCSS(style.Corners, style.BorderRadius);
         // Rotation. Assigned unconditionally like everything else here: a
         // compass whose heading passes through 0 sends Rotate: 0 in the patch,
         // and a guarded write would leave the last angle standing on the live
@@ -6808,6 +6918,10 @@ const GrMob = (() => {
     function tagForType(type) {
         return {
             Text: "span",
+            // A block of inline runs (core.Paragraph). A <div> rather than a
+            // <p>: the style pass assigns margin on every node and clears it
+            // with "", which would hand a <p> back the UA's 1em margins.
+            Paragraph: "div",
             Button: "button",
             Image: "img",
             TextArea: "textarea",
@@ -7499,6 +7613,8 @@ const GrMob = (() => {
 
     function mount(jsonTree, mountPointId = "app") {
         const tree = typeof jsonTree === "string" ? JSON.parse(jsonTree) : jsonTree;
+        // A fresh app: its scroll commands count from 1 (applyScrollCommand).
+        scrollEpochApplied = 0;
         const root = renderNode(tree, "root");
         rootElement = document.getElementById(mountPointId);
         rootElement.innerHTML = "";
@@ -7511,6 +7627,8 @@ const GrMob = (() => {
         // After the append: a claim counts only once its element is in the
         // document. See syncBrowserBack.
         syncBrowserBack();
+        // The page's window element may be part of the tree just drawn.
+        windowMetrics.track();
     }
 
     function patch(patchList) {
@@ -7631,6 +7749,8 @@ const GrMob = (() => {
                         } else if (k === "placeholder") {
                             if (el.placeholder === v) continue;
                             el.placeholder = v;
+                        } else if (k === "keyboard") {
+                            el.inputMode = inputModeFor(v);
                         } else if (k === "checked") {
                             // No echo guard, unlike value above: assigning a
                             // boolean back onto a checkbox costs nothing,
@@ -7639,6 +7759,8 @@ const GrMob = (() => {
                             el.checked = !!v;
                         } else if (k === "rows") {
                             applyRows(el, v);
+                        } else if (k === "runs" && el.dataset.nodeType === "Paragraph") {
+                            applyParagraphRuns(el, v);
                         } else if (k === "runs") {
                             el.__grmobRuns = v;
                             applyGridRuns(el, v);
@@ -7670,6 +7792,11 @@ const GrMob = (() => {
                             // Handled with focusEpoch above; on its own it
                             // says when nothing, only what.
                             continue;
+                        } else if (k === "scrollEpoch") {
+                            // The app-wide high-water mark in
+                            // applyScrollCommand is what keeps a props patch
+                            // carrying the same stamp from scrolling again.
+                            applyScrollCommand(el, v);
                         } else if (k === "visible" && el.dataset.nodeType === "Modal") {
                             // This IS the modal open/close path: toggling
                             // core.Visible reaches the page as a prop patch,
@@ -7828,6 +7955,9 @@ const GrMob = (() => {
         // Truly last: whether any back claim is still on screen is a question
         // about the tree this whole batch produced, removals included.
         syncBrowserBack();
+        // And whether the page's window element is still the one being
+        // watched: a batch can replace it (see windowMetrics.track).
+        windowMetrics.track();
     }
 
     // --- Toast overlay -------------------------------------------------------
@@ -8756,10 +8886,44 @@ const GrMob = (() => {
             };
         }
 
+        // The element the app's window is, when the page names one.
+        //
+        // An app's window is usually the browser's viewport, and then
+        // innerWidth/innerHeight are its size. A page that shows the app in
+        // a frame of its own is the exception, and the tutorial is one: in
+        // its phone layout the app runs inside a 400px bezel on a 1400px
+        // page, and in its split layout the demos run on a phone beside a
+        // reading pane. hooks.UseWindow reported the whole page in both, so
+        // a demo of size classes on "a phone" said "expanded".
+        //
+        // So a page may define window.GrMobViewport, a function returning
+        // the element whose box is the app's window (or null for the
+        // browser's). It is asked on every report and after every mount and
+        // patch batch (see track), because the element is usually part of
+        // the app's own tree and changes with it.
+        //
+        // A named element reports its size and never a fold: viewport
+        // segments are in window coordinates, and a frame inside the page
+        // is not the thing a hinge crosses.
+        function target() {
+            if (typeof window === "undefined" || typeof window.GrMobViewport !== "function") return null;
+            let el = null;
+            try { el = window.GrMobViewport(); } catch { return null; }
+            return el && typeof el.getBoundingClientRect === "function" ? el : null;
+        }
+
         // measure reads the page into a payload, or null when there is no
         // viewport to measure (the verify harness's minimal DOM, a worker).
         function measure() {
             if (typeof window === "undefined") return null;
+            const el = target();
+            if (el) {
+                const box = el.getBoundingClientRect();
+                const w = Math.round(box.width), h = Math.round(box.height);
+                // A frame not laid out yet (display: none, not attached) is
+                // no window at all; the browser's is the better answer.
+                if (w > 0 && h > 0) return { width: w, height: h };
+            }
             const width = window.innerWidth, height = window.innerHeight;
             if (typeof width !== "number" || typeof height !== "number") return null;
             const payload = { width, height };
@@ -8789,7 +8953,30 @@ const GrMob = (() => {
             navigator.devicePosture.addEventListener("change", report);
         }
 
-        return { foldFrom, measure, report };
+        // A named element resizes without the window resizing (the tutorial's
+        // layout switch, the phone's height following the page's), so it is
+        // watched itself. Created lazily: the verify harness's minimal DOM
+        // has no ResizeObserver, and the window path needs none.
+        let observed = null;
+        let observer = null;
+
+        // track re-asks the page which element is the window, after a mount
+        // or a patch batch has had a chance to replace it, and reports when
+        // the answer changed. The observer then reports every resize of the
+        // new element, including its first measurement.
+        function track() {
+            const el = target();
+            if (el === observed) return;
+            if (observer && observed) observer.unobserve(observed);
+            observed = el;
+            if (el && typeof ResizeObserver === "function") {
+                if (!observer) observer = new ResizeObserver(() => report());
+                observer.observe(el);
+            }
+            report();
+        }
+
+        return { foldFrom, measure, report, track };
     })();
 
     const notifications = (() => {

@@ -179,10 +179,32 @@ func TestTheReadingNamesAgreeWithCore(t *testing.T) {
 // --- SwiftUI: the words reach a modifier -----------------------------------
 
 func TestSwiftAppliesTheValueTextThroughAccessibilityValue(t *testing.T) {
+	// The words go through a ViewModifier that states a value only when there
+	// is one: accessibilityValue("") blanks a text field's own value (its
+	// text), which is what VoiceOver read for every core.Input until the
+	// modifier went conditional. So the chain is function → modifier →
+	// accessibilityValue, and both links are pinned.
 	body := codeOf(t, swiftStyle, "fileprivate func grMobValueText(")
-	if !strings.Contains(body, "accessibilityValue(Text(") {
-		t.Errorf("%s: grMobValueText never reaches accessibilityValue — the words are "+
-			"parsed and then dropped", swiftStyle)
+	if !strings.Contains(body, "GrMobValueTextModifier(text: text)") {
+		t.Errorf("%s: grMobValueText never reaches GrMobValueTextModifier — the words "+
+			"are parsed and then dropped", swiftStyle)
+	}
+	// From the struct to the end of the file: codeOf cuts at the next
+	// declaration, which is the modifier's own `func body`, before the code.
+	code := codeIn(t, swiftStyle)
+	at := strings.Index(code, "private struct GrMobValueTextModifier")
+	if at < 0 {
+		t.Fatalf("%s: no GrMobValueTextModifier in code — if it was renamed, update this test",
+			swiftStyle)
+	}
+	modifier := code[at:]
+	if !strings.Contains(modifier, "accessibilityValue(Text(text))") {
+		t.Errorf("%s: GrMobValueTextModifier never reaches accessibilityValue", swiftStyle)
+	}
+	if !strings.Contains(modifier, "if text.isEmpty") {
+		t.Errorf("%s: GrMobValueTextModifier states a value even when there is none — "+
+			"an empty accessibilityValue blanks a text field's contents for VoiceOver",
+			swiftStyle)
 	}
 	if src := codeIn(t, swiftStyle); !strings.Contains(src, ".grMobValueText(s)") {
 		t.Errorf("%s: grMobBox's chain never applies grMobValueText — the mapping "+

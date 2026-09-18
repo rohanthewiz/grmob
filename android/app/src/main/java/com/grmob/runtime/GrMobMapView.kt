@@ -177,8 +177,8 @@ internal fun GrMobMapView(node: GrMobNode, extra: Modifier) {
  * than left to it.
  */
 private fun mapClip(style: GrMobStyle?): Modifier {
-    val radius = style?.borderRadius ?: 0f
-    if (radius > 0f) return Modifier.clip(RoundedCornerShape(radius.dp))
+    // Corners included (core.CornerRadii): the same shape the box would draw.
+    grMobShape(style)?.let { return Modifier.clip(it) }
     return Modifier.clipToBounds()
 }
 

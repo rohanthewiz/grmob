@@ -33,15 +33,13 @@ const ConcernLinkInert = "link-inert"
 // tap calls core.OpenURL(URL), which hands the address to the platform — the
 // browser, or the app registered for the scheme (mailto:, tel:).
 //
-// # What it cannot do
+// # On its own line, and inside a sentence
 //
-//   - **It is not underlined.** core.Style has no text decoration, so the link
-//     colour and the role carry the whole distinction. That is enough for a
-//     link on a line of its own, which is the only kind this can be.
-//   - **It cannot sit inside a sentence.** A link in running text is an inline
-//     span, and core has no inline span node (see the RichTextView entry on
-//     the round-two plan's blocked list). Put the link on its own line, or
-//     after the sentence.
+// Rendered, a Link is a line of its own, not underlined: the link colour and
+// the role carry the distinction, which is enough for a line that is nothing
+// but the link. Inside running text use Link.Span, a run of a core.Paragraph
+// in the same colour and underlined, because there the colour is the only
+// other thing that says which words are the link.
 //
 // # Theme roles read
 //
@@ -66,6 +64,39 @@ type Link struct {
 }
 
 // Render draws the link. It takes no hook slot.
+// Span is this link as a run of a core.Paragraph: the same colour, underlined,
+// and the same tap (OnTap, else opening URL), inside a sentence rather than
+// on a line of its own.
+//
+//	core.Paragraph([]core.Span{
+//	    {Text: "By continuing you accept the "},
+//	    comps.Link{Text: "terms", URL: termsURL}.Span(ctx),
+//	    {Text: "."},
+//	})
+//
+// Underlined where the standalone Link is not: on its own line a link is
+// told apart by being a line of its own in the link colour, and inside a
+// sentence the colour is the only thing left, which a reader who cannot see
+// it would miss (WCAG 1.4.1).
+func (l Link) Span(ctx *core.Context) core.Span {
+	tap := l.OnTap
+	if tap == nil && l.URL != "" {
+		url := l.URL
+		tap = func() { core.OpenURL(url) }
+	}
+	if tap == nil {
+		// Still a link, for the reason Render gives: a run that looks like a
+		// link and cannot be pressed is worse than one that does nothing.
+		tap = func() {}
+	}
+	return core.Span{
+		Text:      l.Text,
+		Underline: true,
+		Color:     VariantDefault.OnLight(ctx.Theme()),
+		OnTap:     tap,
+	}
+}
+
 func (l Link) Render(ctx *core.Context) *core.Node {
 	t := ctx.Theme()
 

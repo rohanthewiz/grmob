@@ -103,6 +103,11 @@ import "github.com/rohanthewiz/grmob/richtext"
 // epoch, the "4" (epoch 0) is dropped, and the host replays it onto "1" as
 // "14", which PINInput reads as a paste at cell 1: code "314".
 //
+// PINInput has since become one field (comps/pin_input.go), for the losses
+// no ledger could fix. The rule stands for any field Go rewrites before its
+// first edit; render/text_edit_test.go replays the sequence on a field of
+// three boxes built for the purpose.
+//
 // A host tells stamps from no stamps by the presence of editEpoch, not by a
 // nonzero editSeq: a field stamped from its render has editSeq 0 until its
 // first edit, and its rewrites must still be read as rewrites.

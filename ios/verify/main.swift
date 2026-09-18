@@ -15,6 +15,9 @@ struct Transcript: Decodable {
     /// ride along in the same file because this harness is one executable.
     /// See selectmenu.swift.
     let menuCases: [MenuCase]
+    /// The text-edit rebase cases: typing replayed onto a rewrite from Go,
+    /// with internal/rebasefixture's answers. See rebase.swift.
+    let rebaseCases: [RebaseCase]
     /// The band-inset cases, which have even less to do with the replay: they
     /// are pure geometry solved through GrMobFlexSolver. See band.swift.
     let bandCases: [BandCase]
@@ -209,6 +212,18 @@ func run() -> Int32 {
     } else {
         print("FAIL: \(menuProblems.count) picker menu difference(s)")
         for p in menuProblems { print("  " + p) }
+        return 1
+    }
+
+    // The text-edit rebase, before the replay for the reason the picker menu
+    // is: a pure function over the transcript's own table.
+    let rebaseProblems = checkRebase(transcript.rebaseCases)
+    if rebaseProblems.isEmpty {
+        print("OK: \(transcript.rebaseCases.count) rewrites replay the typing and place "
+            + "the caret as internal/rebasefixture does")
+    } else {
+        print("FAIL: \(rebaseProblems.count) text-edit rebase difference(s)")
+        for p in rebaseProblems { print("  " + p) }
         return 1
     }
 

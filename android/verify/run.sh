@@ -9,6 +9,12 @@
 #   GrMobSelectMenu.kt  how a flat option list becomes a picker menu
 #   GrMobProgress.kt    what a core.ValueRange's three numbers amount to
 #
+# and since then two more files that import nothing:
+#
+#   GrMobCanvasGeometry.kt  a canvas viewBox and its path opcodes
+#   GrMobTextEdits.kt       typing replayed onto a rewrite from Go
+#                           (internal/rebasefixture)
+#
 # This is the Android analog of ios/verify's selectmenu pass, and it closes the
 # gap that file's own doc used to record: GrMobSelectMenu.kt imports nothing
 # precisely so a JVM harness could execute it, and until now no such harness
@@ -148,7 +154,7 @@ esac
 # because this is the line that needs a Go.
 go run . > "$out/Cases.kt"
 
-SRC="../app/src/main/java/com/grmob/runtime/GrMobSelectMenu.kt ../app/src/main/java/com/grmob/runtime/GrMobProgress.kt ../app/src/main/java/com/grmob/runtime/GrMobCanvasGeometry.kt Harness.kt $out/Cases.kt"
+SRC="../app/src/main/java/com/grmob/runtime/GrMobSelectMenu.kt ../app/src/main/java/com/grmob/runtime/GrMobProgress.kt ../app/src/main/java/com/grmob/runtime/GrMobCanvasGeometry.kt ../app/src/main/java/com/grmob/runtime/GrMobTextEdits.kt Harness.kt $out/Cases.kt"
 
 if [ "${verdict%%:*}" = kotlinc ]; then
   # shellcheck disable=SC2086

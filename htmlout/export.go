@@ -6,6 +6,7 @@ package htmlout
 
 import (
 	"fmt"
+	"html"
 	"math"
 	"strconv"
 	"strings"
@@ -479,6 +480,11 @@ func renderNode(b *element.Builder, node *core.Node, from imposed, path string) 
 		case getStr(node.Props["onSubmit"]) != "":
 			attrs = append(attrs, "enterkeyhint", "done")
 		}
+		// core.Keyboard: the software keyboard a text field asks for, as the
+		// attribute a mobile browser reads for the same question.
+		if mode := InputModeFor(getStr(node.Props["keyboard"])); mode != "" {
+			attrs = append(attrs, "inputmode", mode)
+		}
 	}
 
 	switch node.Type {
@@ -576,6 +582,8 @@ func renderNode(b *element.Builder, node *core.Node, from imposed, path string) 
 		renderContainer(b, node, attrs, path)
 	case "Text":
 		b.Span(attrs...).TE(getStr(node.Props["content"]))
+	case "Paragraph":
+		renderParagraph(b, node, attrs)
 	case "GridRow":
 		renderGridRow(b, node, attrs)
 	case "Canvas":
@@ -830,6 +838,117 @@ func renderGridRow(b *element.Builder, node *core.Node, attrs []string) {
 		span.TE(run.Text)
 	}
 	e.R()
+}
+
+// InputModeFor maps a core.KeyboardKind to HTML's inputmode: the attribute a
+// mobile browser reads to choose its software keyboard. "" is no attribute,
+// the browser's text keyboard. Exported for the WASM runtime's table to be
+// checked against, as InputTypeFor is.
+func InputModeFor(kind string) string {
+	switch kind {
+	case "digits":
+		return "numeric"
+	case "decimal":
+		return "decimal"
+	case "phone":
+		return "tel"
+	case "email":
+		return "email"
+	case "url":
+		return "url"
+	}
+	return ""
+}
+
+// renderParagraph writes a core.Paragraph: one <div> holding a <span> per run,
+// in the run's marks. A static page has no Go to call, so a link run is drawn
+// as a link (its colour, and the link role, so a reader still hears it as
+// one) and does nothing when pressed, as every exported Button does.
+//
+// # The spaces between the runs
+//
+// A sentence's runs meet mid-sentence: "accept the " then "terms". Anything
+// between the two </span><span> is text to the browser, so the runs are
+// written into one string and handed to the builder whole rather than as
+// child elements, which the pretty-printer would put on lines of their own
+// and the browser would read as a space between every pair of runs.
+func renderParagraph(b *element.Builder, node *core.Node, attrs []string) {
+	var sb strings.Builder
+	for _, run := range paragraphRuns(node.Props["runs"]) {
+		text, _ := run["t"].(string)
+		if text == "" {
+			continue
+		}
+		var decls []string
+		if fg, _ := run["fg"].(string); fg != "" {
+			decls = append(decls, "color:"+fg)
+		}
+		if truthy(run["b"]) {
+			decls = append(decls, "font-weight:700")
+		}
+		if truthy(run["i"]) {
+			decls = append(decls, "font-style:italic")
+		}
+		var lines []string
+		if truthy(run["u"]) {
+			lines = append(lines, "underline")
+		}
+		if truthy(run["s"]) {
+			lines = append(lines, "line-through")
+		}
+		if len(lines) > 0 {
+			decls = append(decls, "text-decoration:"+strings.Join(lines, " "))
+		}
+		if truthy(run["c"]) {
+			decls = append(decls, "font-family:ui-monospace, SFMono-Regular, Menlo, monospace")
+		}
+		sb.WriteString("<span")
+		if len(decls) > 0 {
+			sb.WriteString(` style="` + html.EscapeString(strings.Join(decls, "; ")) + `"`)
+		}
+		if cb, _ := run["cb"].(string); cb != "" {
+			sb.WriteString(` role="link"`)
+		}
+		sb.WriteString(">")
+		sb.WriteString(html.EscapeString(text))
+		sb.WriteString("</span>")
+	}
+	// Written raw: every run's text and style went through html.EscapeString
+	// above, and nothing else reaches the string.
+	b.Div(attrs...).T(sb.String())
+}
+
+// paragraphRuns reads the runs prop in either shape it arrives in: the
+// []map[string]any core.Paragraph builds, or the []any of maps a tree decoded
+// from JSON holds.
+func paragraphRuns(v any) []map[string]any {
+	switch runs := v.(type) {
+	case []map[string]any:
+		return runs
+	case []any:
+		out := make([]map[string]any, 0, len(runs))
+		for _, r := range runs {
+			if m, ok := r.(map[string]any); ok {
+				out = append(out, m)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+// truthy is a run mark's presence: 1 as core writes it, true as a hand-built
+// tree might, or a float from decoded JSON.
+func truthy(v any) bool {
+	switch x := v.(type) {
+	case bool:
+		return x
+	case int:
+		return x != 0
+	case float64:
+		return x != 0
+	}
+	return false
 }
 
 // spaceRefs rewrites a white-space-only string as numeric character
@@ -1869,7 +1988,12 @@ func styleValue(s *core.Style, nodeType string) string {
 	if s.FlexGrow != 0 {
 		styles = append(styles, fmt.Sprintf("flex-grow:%g", s.FlexGrow))
 	}
-	if s.BorderRadius != 0 {
+	// Four values when the corners were named (core.CornerRadii), CSS's own
+	// order and the one core.Corners keeps; one otherwise.
+	if c := s.Corners; c.Set() {
+		styles = append(styles, fmt.Sprintf("border-radius:%gpx %gpx %gpx %gpx",
+			c.TopLeft, c.TopRight, c.BottomRight, c.BottomLeft))
+	} else if s.BorderRadius != 0 {
 		styles = append(styles, fmt.Sprintf("border-radius:%gpx", s.BorderRadius))
 	}
 	// Rotation is a paint transform, so it goes out whatever the display mode

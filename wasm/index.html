@@ -201,6 +201,11 @@
     box-shadow: 0 10px 30px rgba(0,0,0,.18), 0 0 0 1px var(--edge);
   }
   #tutorial-guide > * { flex: 1; min-height: 0; }
+  /* The bar under a lesson that a demo's pushed screen covers (split.go,
+     pushedScreenBar): its natural height, under the lesson, which keeps the
+     rest. After the lesson in the tree, not before it, so the lesson keeps its
+     slot and its scroll position while it is covered. */
+  #tutorial-guide > #tutorial-guide-note { flex: none; padding: .6rem .8rem .8rem; }
   #tutorial-guide [data-node-type="Scroll"] > *,
   #tutorial-guide [data-node-type="List"] > * {
     width: 100%; max-width: 820px; margin-inline: auto;
@@ -447,6 +452,15 @@
     // is still downloading, and the app is told once it exists (boot).
     sendLayout();
 
+    // The app's window, for hooks.UseWindow (the runtime's windowMetrics asks
+    // this on every report and after every patch). Not the browser's: the
+    // demos run on a phone. In the split that is the phone's content area
+    // (split.go, phoneScreen); in the phone layout it is #app inside the
+    // bezel, which on a real phone's browser is the viewport anyway. So 4.21's
+    // size classes describe the phone the reader is looking at.
+    window.GrMobViewport = () =>
+        document.getElementById("tutorial-phone-content") || document.getElementById("app");
+
     // --- Boot ---------------------------------------------------------------
     // One function rather than a run-once script, because it runs more than
     // once: the dev server's hot reload (serve -dev) calls GrMobHost.boot again
@@ -474,12 +488,13 @@
         // Not awaited: the promise settles only when main returns, which for
         // a module that is never hot-reloaded is never.
         const exited = go.run(result.instance);
+        // Before the first render: the tutorial holds a mode sent now and
+        // starts in it (examples/tutorial/split.go, bootLayout), so a wide
+        // window's first frame is already the split. It used to be sent after
+        // the mount, which drew one frame of the phone layout first.
+        sendLayout();
         const patch = window.GrMobWASM.RenderInitial();
         GrMob.mount(patch);
-        // After the mount, because the app takes its subscription to the
-        // event during its first render; the rearranged tree then arrives as
-        // a pushed patch, like any other state change.
-        sendLayout();
         // The app has just mounted on the contents; a hash present at boot
         // pushes the lesson on top of it, exactly as a row tap would.
         if (lessonFromHash()) sendRoute();

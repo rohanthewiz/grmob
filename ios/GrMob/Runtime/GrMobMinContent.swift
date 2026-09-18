@@ -152,6 +152,16 @@ enum GrMobMinContent {
             // slot core.MaxLines exists to keep a label inside.
             if (node.style?.maxLines ?? 0) > 0 { return 0 }
             inner = textWidth(node.stringProp("content"), style: node.style)
+        case "Paragraph":
+            // core.Paragraph wraps like a Text, so it floors like one: at its
+            // widest word, measured over the runs' text joined in run order
+            // (a word can straddle two runs, "re" + "run"), in the base font.
+            // A bold or monospace run is a little wider than that measure; the
+            // floor is a minimum, and a word a few points past it wraps
+            // inside its run as it would in a browser.
+            if (node.style?.maxLines ?? 0) > 0 { return 0 }
+            let runs = node.props["runs"] as? [[String: Any]] ?? []
+            inner = textWidth(runs.map { $0["t"] as? String ?? "" }.joined(), style: node.style)
         // A row lays its children out on one line, so its minimum is all of
         // theirs plus the gaps, which do not shrink. `horizontalGap` is the
         // same read GrMobFlexStack makes for the same axis.
@@ -231,8 +241,8 @@ enum GrMobMinContent {
     ///                                         the content is taller
     ///   any other Height ("50%")       no     resolves against the column
     ///                                         being sized
-    ///   Text, Button, Spacer           yes    the base is their lines (a
-    ///                                         Spacer's is empty)
+    ///   Text, Paragraph, Button,       yes    the base is their lines (a
+    ///   Spacer                                Spacer's is empty)
     ///   Row/Column/Card/Box/           yes    only when every child is: one
     ///   Fragment/Theme                        child in doubt is squeezable
     ///                                         height inside the base
@@ -259,7 +269,7 @@ enum GrMobMinContent {
             return GrMobMaxWidth.fixedLimit(height) != nil
         }
         switch node.type {
-        case "Text", "Button", "Spacer":
+        case "Text", "Paragraph", "Button", "Spacer":
             return true
         case "Row", "Column", "Card", "Box", "Fragment", "Theme":
             return node.children.allSatisfy(floorsHeightAtContent)

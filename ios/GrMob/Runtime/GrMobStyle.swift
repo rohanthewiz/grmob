@@ -68,6 +68,10 @@ struct GrMobStyle: Equatable {
     }
     var margin: Edges = .zero
     var borderRadius: CGFloat = 0
+    /// Go's core.Corners: a radius per corner, or nil when the node named
+    /// none and borderRadius is the shape. Read through grMobShape, never
+    /// directly, so the precedence lives in one place.
+    var corners: GrMobCorners? = nil
     var shadow: CGFloat = 0
     /// core.Rotate: clockwise degrees about the node's own centre. A paint
     /// transform, not a layout one — `.rotationEffect` turns the rendered view
@@ -83,7 +87,7 @@ struct GrMobStyle: Equatable {
     var translateX: GrMobShift = .zero
     var translateY: GrMobShift = .zero
     /// core.Overflow. Only "hidden" is read, as a clip to the box (see
-    /// RoundedCornerShapeIfAny): it keeps a child translated out of its parent
+    /// grMobShape): it keeps a child translated out of its parent
     /// (a Drawer's shut panel) from drawing over what sits beside the parent.
     var overflow: String = ""
     var align: String = ""
@@ -272,6 +276,7 @@ struct GrMobStyle: Equatable {
         s.padding = parseEdges(obj["Padding"] as? [String: Any])
         s.margin = parseEdges(obj["Margin"] as? [String: Any])
         s.borderRadius = num("BorderRadius")
+        s.corners = GrMobCorners.parse(obj["Corners"] as? [String: Any])
         s.shadow = num("Shadow")
         s.rotate = num("Rotate")
         s.spin = int("Spin")
@@ -697,6 +702,11 @@ struct GrMobBoxModifier: ViewModifier {
     let onLongPress: String
     let axis: Axis?
 
+    /// Which side leading is, because core's corners are physical (left and
+    /// right, as CSS's are) and SwiftUI's are leading and trailing. See
+    /// grMobShape.
+    @Environment(\.layoutDirection) private var layoutDirection
+
     /// The system's Reduce Motion setting. Read here, once per box, rather
     /// than folded into GrMobStyle.swiftUIAnimation, because the style is
     /// parsed from the wire and has no environment; reading it in the view
@@ -709,8 +719,7 @@ struct GrMobBoxModifier: ViewModifier {
         // Bound once so the chain below reads exactly as it did when it was
         // a chain of extensions on `self`.
         let s = style
-        let shape = RoundedCornerShapeIfAny(radius: s?.borderRadius ?? 0,
-                                            clips: s?.overflow == "hidden")
+        let shape = grMobShape(s, clips: s?.overflow == "hidden", direction: layoutDirection)
         let alignment = grMobFrameAlignment(s, axis: axis)
         return content
             // Padding plus the border's width: see GrMobStyle.contentInsets.
@@ -999,13 +1008,22 @@ extension View {
     /// here; the framework is not stricter than the platform it is addressing.
     ///
     /// Hidden wins, as it does over the role and the traits: a pruned subtree
-    /// has no element for a value to belong to. Applied unconditionally
-    /// because an empty string is the identity case — accessibilityValue("")
-    /// leaves the announcement alone — which keeps this off grMobBox's
-    /// opaque-type tower, the same reason grMobRole is written the way it is.
+    /// has no element for a value to belong to.
+    ///
+    /// # Only when there is a value to state
+    ///
+    /// This was applied unconditionally, on the belief that an empty string
+    /// is the identity case and `accessibilityValue("")` leaves the
+    /// announcement alone. For a text field it does not: it replaces the
+    /// field's own value, which is its text, with nothing. XCUITest on the
+    /// iOS 26.5 simulator read lesson 2.3's name field holding "HELLO WORLD"
+    /// as a TextField with a placeholder and no value, so VoiceOver had no
+    /// contents to read for any core.Input. Behind a ViewModifier rather than
+    /// an if/else here, which keeps grMobBox's opaque-type tower one type
+    /// deep, the reason grMobRole is written the way it is.
     fileprivate func grMobValueText(_ s: GrMobStyle?) -> some View {
         let text = (s?.accessibilityHidden ?? true) ? "" : s?.accessibilityValue.text ?? ""
-        return accessibilityValue(Text(text))
+        return modifier(GrMobValueTextModifier(text: text))
     }
 
     /// Conditional label for the Image "alt" fallback (internal because the
@@ -1014,7 +1032,7 @@ extension View {
         if label.isEmpty { self } else { accessibilityLabel(label) }
     }
 
-    @ViewBuilder fileprivate func grMobClip(_ shape: RoundedRectangle?) -> some View {
+    @ViewBuilder fileprivate func grMobClip(_ shape: UnevenRoundedRectangle?) -> some View {
         // Clipping is strictly conditional: a radius-0 clipShape would still
         // cut off child overflow (e.g. shadows), which un-clipped boxes allow.
         if let shape { clipShape(shape) } else { self }
@@ -1026,12 +1044,12 @@ extension View {
     /// reaches grMobBox — which is how core.BorderWidth/BorderColor came to be
     /// dropped on Buttons alone, and why the rule comps.Button's
     /// EmphasisOutlined documents drew on the web and not on device.
-    @ViewBuilder func grMobBorder(_ shape: RoundedRectangle?, color: Color?, width: CGFloat) -> some View {
+    @ViewBuilder func grMobBorder(_ shape: UnevenRoundedRectangle?, color: Color?, width: CGFloat) -> some View {
         if let color, width > 0 {
             // strokeBorder insets the stroke fully inside the shape — the
             // Compose Modifier.border behavior — where a plain stroke would
             // straddle the edge and get half clipped away.
-            overlay((shape ?? RoundedRectangle(cornerRadius: 0)).strokeBorder(color, lineWidth: width))
+            overlay((shape ?? UnevenRoundedRectangle()).strokeBorder(color, lineWidth: width))
         } else {
             self
         }
@@ -1231,9 +1249,56 @@ func grMobFrameAlignment(_ s: GrMobStyle?, axis: Axis? = nil) -> Alignment {
 /// overflow (shadows, a translated child) that CSS's default visible allows.
 /// A square shape changes nothing about the border, which strokes a
 /// zero-radius rectangle when given nil anyway.
-private func RoundedCornerShapeIfAny(radius: CGFloat, clips: Bool = false) -> RoundedRectangle? {
-    if radius > 0 { return RoundedRectangle(cornerRadius: radius) }
-    return clips ? RoundedRectangle(cornerRadius: 0) : nil
+/// Go's core.Corners: four physical radii, CSS's order.
+struct GrMobCorners: Equatable {
+    var topLeft: CGFloat
+    var topRight: CGFloat
+    var bottomRight: CGFloat
+    var bottomLeft: CGFloat
+
+    /// nil for a node that named no corner: all four zero is Go's "not
+    /// stated" (Corners.Set), and the fields are omitzero, so an absent key
+    /// is a zero.
+    static func parse(_ obj: [String: Any]?) -> GrMobCorners? {
+        guard let obj else { return nil }
+        func num(_ k: String) -> CGFloat { CGFloat((obj[k] as? NSNumber)?.doubleValue ?? 0) }
+        let c = GrMobCorners(topLeft: num("TopLeft"), topRight: num("TopRight"),
+                             bottomRight: num("BottomRight"), bottomLeft: num("BottomLeft"))
+        return c == GrMobCorners(topLeft: 0, topRight: 0, bottomRight: 0, bottomLeft: 0) ? nil : c
+    }
+}
+
+/// The shape a style's box is drawn in: its four corners when it named them
+/// (core.CornerRadii), else its one radius, else `defaultRadius`; nil for a
+/// square box unless it `clips`, which wants a square shape to clip to.
+/// core's Style.Radii states the same precedence.
+///
+/// Always an UnevenRoundedRectangle, which with four equal radii is the
+/// RoundedRectangle every box used to be drawn in (the same `.circular`
+/// corner, RoundedRectangle's default), so a box that names no corners draws
+/// exactly as before, and one type serves both cases: strokeBorder needs an
+/// InsettableShape, which a type-erased shape is not.
+///
+/// core's corners are physical and SwiftUI's are leading and trailing, so a
+/// right-to-left layout swaps them back: a bubble's tail points at the same
+/// side of the screen on every target.
+func grMobShape(_ s: GrMobStyle?, defaultRadius: CGFloat = 0, clips: Bool = false,
+                direction: LayoutDirection = .leftToRight) -> UnevenRoundedRectangle? {
+    if let c = s?.corners {
+        let rtl = direction == .rightToLeft
+        return UnevenRoundedRectangle(
+            topLeadingRadius: rtl ? c.topRight : c.topLeft,
+            bottomLeadingRadius: rtl ? c.bottomRight : c.bottomLeft,
+            bottomTrailingRadius: rtl ? c.bottomLeft : c.bottomRight,
+            topTrailingRadius: rtl ? c.topLeft : c.topRight,
+            style: .circular)
+    }
+    let r = (s?.borderRadius ?? 0) > 0 ? s!.borderRadius : defaultRadius
+    if r > 0 {
+        return UnevenRoundedRectangle(topLeadingRadius: r, bottomLeadingRadius: r,
+                                      bottomTrailingRadius: r, topTrailingRadius: r, style: .circular)
+    }
+    return clips ? UnevenRoundedRectangle() : nil
 }
 
 /// One axis of core.Translate: an amount in points and a fraction of the
@@ -2086,6 +2151,20 @@ struct GrMobVisibleChord: ViewModifier {
             content
         } else {
             content.keyboardShortcut(key, modifiers: modifiers)
+        }
+    }
+}
+
+/// grMobValueText's modifier: a stated value, or nothing at all. See there
+/// for why nothing is not `accessibilityValue("")`.
+private struct GrMobValueTextModifier: ViewModifier {
+    let text: String
+
+    func body(content: Content) -> some View {
+        if text.isEmpty {
+            content
+        } else {
+            content.accessibilityValue(Text(text))
         }
     }
 }
