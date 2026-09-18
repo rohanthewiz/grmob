@@ -56,6 +56,7 @@ func chapter4() Chapter {
 			lessonFAB(),
 			lessonQRCode(),
 			lessonTimers(),
+			lessonDateRange(),
 		},
 	}
 }
@@ -4450,4 +4451,167 @@ comps.Stopwatch{Since: startedAt.Get(), Elapsed: banked.Get(), Running: running.
 			)
 		},
 	}
+}
+
+// --- 4.25 ----------------------------------------------------------------
+
+// tutorialStayMarked is the demo hotel's fully-booked nights: the two days in
+// the middle of March 2026 the reader will find dotted, so the grid in the
+// sheet is carrying information while they pick around it rather than being a
+// bare month.
+var tutorialStayMarked = map[string]int{"2026-03-18": 1, "2026-03-19": 2}
+
+// 4.25 — a range of days, which is two dates and one question: who holds the
+// half-made one. The lesson's spine is that the answer is not the same as
+// every other widget's in this chapter, and why: the pending start is the one
+// piece of state an application genuinely does not want, because holding it in
+// the caller would make backing out of the sheet destroy the range the reader
+// opened it to look at.
+//
+// The demo shows both halves of D6 on one screen — the picker that runs the
+// protocol, and a static grid underneath wearing the same band with no
+// OnSelect at all — because the two fields on Calendar are display and the
+// picker is only their packaging.
+//
+// Appended at the end of the chapter for the reason 4.15, 4.22, 4.23 and 4.24
+// were: lesson numbers already in deep links do not move.
+func lessonDateRange() Lesson {
+	return Lesson{
+		Title:   "Picking a span of days",
+		Summary: "comps.DateRangePicker and Calendar's band: one rule over a pending start, and why the widget holds it.",
+		Body: func(ctx *core.Context) core.View {
+			// The span, as the two dates it is. Held here — a completed range
+			// is exactly the state an application wants — while the half-made
+			// one stays inside the widget.
+			from := core.NewState(ctx, time.Time{})
+			to := core.NewState(ctx, time.Time{})
+
+			// What the sheet's grid dots: nights the demo hotel has already
+			// let. A count, as 4.9's was.
+			marked := func(d time.Time) int { return tutorialStayMarked[d.Format("2006-01-02")] }
+
+			// The reading under the field. Both ends are midday in the same
+			// location, so the subtraction is a whole number of days and the
+			// nights are one fewer than the days the band covers.
+			reading := "Nothing booked. Tap a day, then tap another — either way round."
+			if f, tt := from.Get(), to.Get(); !f.IsZero() && !tt.IsZero() {
+				nights := int(tt.Sub(f).Hours() / 24)
+				reading = fmt.Sprintf("%s → %s · %d night%s",
+					f.Format("Mon 2 Jan"), tt.Format("Mon 2 Jan"), nights, plural(nights))
+			}
+
+			return core.Column(
+				core.Gap(14),
+				prose("A date range is two dates, and picking one is two taps. Everything "+
+					"awkward about it lives in the gap between them: after the first tap there "+
+					"is a range that is half made, and something has to hold it. "+
+					"comps.DateRangePicker holds it itself — the third piece of state it owns, "+
+					"after the open sheet and the browsed month 4.9's DatePicker already had."),
+				codeBlock(`comps.DateRangePicker{
+    Start:    from.Get(),
+    End:      to.Get(),
+    OnChange: func(a, b time.Time) { from.Set(a); to.Set(b) },  // once, on the second tap
+    Calendar: comps.Calendar{Today: today, Min: today},         // the template
+}`),
+				prose("That is the opposite of the call SliderRow made in 6.8, and for the same "+
+					"test applied to a different answer: hold state in the widget only when no "+
+					"application wants it. A form's field is a span of days or it is nothing — "+
+					"\"from the 14th, no end yet\" is a value it would have to invent a way to "+
+					"hold and a way to draw. Worse, a caller holding it would find the first tap "+
+					"had already overwritten the range they opened the sheet to check, so the "+
+					"backdrop, the ✕ and the back gesture would all be traps."),
+				prose("What the widget does with that state is one rule, and the rule is the whole "+
+					"protocol: no pending start, and this tap becomes it; a pending start, and this "+
+					"tap is the other end. Everything a range picker is usually specified with "+
+					"falls out of those two lines. The third tap starts a new range, because "+
+					"completing one clears the pending start. Tapping one day twice is a one-day "+
+					"range. And tapping the earlier day second orders the pair rather than "+
+					"throwing the tap away — \"the other end\" is not a claim about which end."),
+				demoPanel("Tap a day, then another. Then reopen and tap a third time: the old span leaves the grid and a new one begins.",
+					comps.FormField{
+						Label: "Stay dates",
+						Hint:  "Two taps. The sheet closes on the one that completes the range.",
+						Input: comps.DateRangePicker{
+							Start:       from.Get(),
+							End:         to.Get(),
+							Placeholder: "Choose your nights",
+							Title:       "Stay dates",
+							OnChange: func(a, b time.Time) {
+								from.Set(a)
+								to.Set(b)
+							},
+							OnClear: func() {
+								from.Set(time.Time{})
+								to.Set(time.Time{})
+							},
+							Calendar: comps.Calendar{
+								Today:  tutorialToday,
+								Min:    tutorialCalMin,
+								Max:    tutorialCalMax,
+								Marked: marked,
+							},
+						},
+					},
+					caption(reading),
+					// The same two fields on a grid that takes no taps at all:
+					// RangeStart and RangeEnd are display, and the picker is
+					// their packaging. No OnMonthChange either, so this one
+					// draws no arrows — the static case from 4.9.
+					comps.Calendar{
+						RangeStart: from.Get(),
+						RangeEnd:   to.Get(),
+						Today:      tutorialToday,
+						DayLabel: func(d time.Time) string {
+							return d.Format("2 January 2006") + ", summary"
+						},
+					},
+					caption("The same span on a grid with no OnSelect — the fields are display, and this one is a picture."),
+				),
+				prose("Calendar draws the band itself. The two endpoints wear the selected day's "+
+					"fill — there is one \"this day is chosen\" look in the grid and it stays one "+
+					"look — and the days between wear the same colour thinned to 20% and give up "+
+					"their corner radius, which is the whole of what makes a run of them read as "+
+					"one shape rather than as a row of pills. The rounded endpoint meets the "+
+					"square band with a small notch, because core has one border radius and not "+
+					"four."),
+				codeBlock(`comps.Calendar{RangeStart: from, RangeEnd: to, Today: today}
+
+// │ 15  16 [17]▓18▓▓19▓▓20▓[21] 22 │   [n] endpoint, ▓ interior`),
+				prose("Three edges the band has opinions about. It runs through the leading and "+
+					"trailing adjacent days rather than stopping at the 1st, because cutting it "+
+					"where the month happens to end would stop it somewhere the reader can see no "+
+					"reason for. It breaks at the end of each week row, which is where a calendar "+
+					"breaks. And today's ring survives inside it, going square with the cells it "+
+					"sits in: a range covering today is the common case, not the odd one, and "+
+					"losing the ring there would be the one place the grid stopped saying what day "+
+					"it is."),
+				prose("For a screen reader every day of the span is announced as selected, not "+
+					"only its two ends — ARIA's own date-range grid marks the whole band, and the "+
+					"nights between the taps are as chosen as the days that named them. The ends "+
+					"are then named in the cell's label, \", start of range\" and \", end of "+
+					"range\". That is a suffix rather than a state for the one reason the "+
+					"calendar accepts a suffix at all: no target has a property for it, so the "+
+					"alternative is fourteen identically named selected days with no findable "+
+					"edge."),
+				keyPoints(
+					"A range is two dates and one question: who holds the half-made one. The widget does.",
+					"Holding the pending start is what makes backing out of the sheet harmless — every way out discards it.",
+					"One rule — no pending start begins one, a pending start ends one — gives the third tap, the one-day range and the out-of-order pair for free.",
+					"OnChange fires once per completed range, always with start ≤ end.",
+					"Calendar.RangeStart and RangeEnd are display: a grid can wear the band with no OnSelect at all.",
+					"The band is the selected fill at both ends and that colour thinned, square, between them; today keeps its ring inside it.",
+					"Every day of the span is announced as selected; the two ends are named, because no platform has a property that could say it.",
+				),
+			)
+		},
+	}
+}
+
+// plural is the "1 night" / "2 nights" branch, spelled out rather than
+// printed as "night(s)": the caption is prose the reader is meant to read.
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
 }

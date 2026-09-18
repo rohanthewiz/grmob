@@ -1564,6 +1564,125 @@ like an empty field), and a `Value` longer than the field raises
 `comps.ConcernPINValueTooLong` (the extra characters are never drawn and can
 never be typed away).
 
+## DateRangePicker
+
+A two-date field: a tappable summary of the chosen span that opens a
+[`Calendar`](api/comps-inputs.md#type-calendar) in a modal sheet and closes again on
+the tap that completes the range.
+
+```go
+comps.FormField{
+    Label: "Stay dates",
+    Input: comps.DateRangePicker{
+        Start:    from.Get(),
+        End:      to.Get(),
+        OnChange: func(a, b time.Time) { from.Set(a); to.Set(b) },
+        Calendar: comps.Calendar{Today: today, Min: today},   // the template
+    },
+}
+```
+
+It is `DatePicker`'s shape with one date more and one rule more. The trigger,
+the sheet, the two ways out and the Calendar-as-template are the same, so a
+form holding one of each looks like a form rather than like two widgets.
+
+### One rule makes the whole protocol
+
+The sheet's grid reports one tapped day at a time, as `Calendar` always does.
+What turns that into a range is a single piece of state the widget owns — a
+*pending start* — and one rule over it:
+
+| state | what a tap means |
+| --- | --- |
+| no pending start | this tap becomes the pending start |
+| a pending start | this tap is the other end; the range is reported |
+
+Everything a range picker is usually specified with falls out of those two
+lines:
+
+- **The third tap starts a new range.** Completing one clears the pending
+  start, so the next tap finds none and begins again. There is no "is this
+  nearer the start or the end" arithmetic.
+- **Tapping one day twice is a one-day range**, start and end on one cell.
+- **The second tap may be the earlier one.** The pair is ordered before it is
+  reported, so `OnChange` always receives start ≤ end. Treating an earlier
+  second tap as a restart would throw away a tap the reader made on purpose,
+  and "the other end" is not a claim about which end.
+
+### The pending start is the widget's; the range is not
+
+This is the package's third state-owning widget, after `Accordion` and
+`DatePicker`, and it owns one piece more than `DatePicker`: the sheet is open,
+the month being browsed, and the half-made range. So render it unconditionally,
+in a stable position, every pass.
+
+The third one is state no application wants — the test [`SliderRow`](#sliderrow)
+states. A form's field is a span of days or it is nothing, and "from the 14th,
+no end yet" is a value it would have to invent a way to hold and a way to draw.
+Worse, holding it in the caller would make closing the sheet mid-pick
+*destructive*: the first tap would already have overwritten the range the
+reader opened the sheet to look at, and the backdrop, the ✕ and the back
+gesture would all be traps. `OnChange` therefore fires once per completed
+range, never mid-pick, and every way out of the sheet discards the pending
+start.
+
+While the range is half made the sheet shows the pending start alone, as one
+lit day with no band, and the caller's own span leaves the grid — so the old
+range and the new start are never both lit.
+
+`Start` and `End` are the caller's to hold. A `Start` with no `End` is drawn as
+that one day and summarized as that one date; it is not a state this widget
+produces. `Format` writes each half (default `"Jan 2, 2006"`, `DatePicker`'s)
+and `Separator` joins them (default `" – "`). `OnClear` puts a Clear button in
+the sheet, as it does on `DatePicker`.
+
+In debug builds, a `DateRangePicker` with no `OnChange` raises
+`comps.ConcernDateRangePickerInert`: it takes every tap, completes a range and
+hands it to nobody, which looks exactly like a picker nobody has finished
+using.
+
+### Calendar's band
+
+The drawing is `Calendar`'s, through two fields the picker drives and any grid
+may set for itself:
+
+```go
+comps.Calendar{RangeStart: from, RangeEnd: to, Today: today}   // no OnSelect: a picture
+
+// │ 15  16 [17]▓18▓▓19▓▓20▓[21] 22 │   [n] endpoint, ▓ interior
+```
+
+The two endpoints wear the selected day's fill — there is one "this day is
+chosen" look in the grid and it stays one look — and the days between wear the
+same colour thinned to 20% and give up their corner radius, which is the whole
+of what makes a run of them read as one shape rather than as a row of pills.
+The rounded endpoint meets the square band with a small notch, because `core`
+has one border radius and not four; Material's range picker draws the same
+notch on purpose.
+
+Three edges worth knowing:
+
+- The band **runs through the leading and trailing adjacent days** rather than
+  stopping at the 1st. They stay dimmed and inert; cutting the band where the
+  month happens to end would stop it somewhere the reader can see no reason
+  for.
+- It **breaks at the end of each week row**, which is where a calendar breaks.
+- **Today's ring survives inside it** and goes square with the cells it sits
+  in. A range covering today is the common case, and losing the ring there
+  would be the one place the grid stopped saying what day it is.
+
+For assistive technology every day of the span is announced as selected, not
+only its two ends — ARIA's own date-range grid marks the whole band. The two
+ends are then named in the cell's label, `", start of range"` and `", end of
+range"` (or `", start and end of range"` for a one-day span). That is a suffix
+rather than a state for the one reason this calendar accepts a suffix at all:
+no target has a property for it, so the alternative is fourteen identically
+named selected days with no findable edge.
+
+A `RangeEnd` before its `RangeStart` has nothing between the two to fill, so
+the grid shows two lone endpoints and raises
+`comps.ConcernCalendarRangeReversed` in debug builds.
+
 ## Accordion
 
 A collapsible section — tappable chevron header, content shown while

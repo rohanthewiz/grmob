@@ -1,8 +1,8 @@
 # Low-hanging fruit for `comps`, round two
 
 **Status:** drafted 2026-09-17. D1 `FAB` + `Screen.Floating`, D2 `QRCode`,
-D4 `SelectRow` + `SliderRow`, D3 `Countdown` + `Stopwatch` and D5 `PINInput`
-all landed the same day. Everything else is unstarted.
+D4 `SelectRow` + `SliderRow`, D3 `Countdown` + `Stopwatch`, D5 `PINInput` and
+D6 `DateRangePicker` all landed the same day. Everything else is unstarted.
 
 The first round (`comps-low-hanging-fruit.md`) landed entire on 2026-09-12:
 Tiers A through C, fifteen widgets, one carousel left blocked on a scroll
@@ -263,13 +263,66 @@ Two concerns, both the "permanently wrong and looks ordinary" bar:
 `ConcernPINValueTooLong` for characters past the last cell, which are never
 drawn and can never be typed away.
 
-### D6. `DateRangePicker`
+### D6. `DateRangePicker` — **landed 2026-09-17**
 
 `Calendar` gains `RangeStart`, `RangeEnd time.Time` and draws the fill between
 them; the picker is `DatePicker`'s sheet with the two-tap protocol.
 
 - **Decision:** the third tap, with a range already set, starts a new range at
   that day rather than moving the nearer end. Simpler to state and to test.
+- `DateRangePicker{Start, End, OnChange func(start, end time.Time), OnClear,
+  Placeholder, Format, Separator, Calendar, Title, ClearLabel, CloseLabel,
+  Disabled, AccessibilityLabel, AccessibilityHint, Style}`.
+
+**What the sketch left for the build.** Four things.
+
+- **The decision turned out to be a *consequence*, not a rule.** The widget
+  holds one piece of state — a pending start — and the whole protocol is one
+  line over it: no pending start and this tap becomes it, a pending start and
+  this tap is the other end. The third tap starts a new range because
+  completing one clears the pending start; a day tapped twice is a one-day
+  range because the second tap is the other end wherever it falls. Neither
+  needed a case of its own, and there is no "nearer end" arithmetic anywhere.
+- **The second tap may be the earlier one, and the pair is ordered rather than
+  restarted.** "The other end" is not a claim about which end, and a restart
+  would throw away a tap the reader made on purpose — the third tap is already
+  the way to start over. `OnChange` therefore promises start ≤ end.
+- **The pending start is the widget's, which is the opposite of `SliderRow`'s
+  call and the same test.** Hold state in the widget only when no application
+  wants it: a form's field is a span or it is nothing, and "from the 14th, no
+  end yet" is a value it would have to invent a way to hold and to draw. The
+  decisive half is that a caller holding it would make the backdrop, the ✕ and
+  the back gesture *destructive* — the first tap would already have overwritten
+  the range the reader opened the sheet to check. So this is the package's
+  third hook-owning widget, with three states to `DatePicker`'s two, and every
+  way out of the sheet discards the pending one.
+- **The band is a third fill, and the corner radius is what makes it a band.**
+  Endpoints wear the selected day's fill — one "this day is chosen" look in the
+  grid, so `Selected` and an endpoint are deliberately indistinguishable — and
+  the interior wears `Primary` at 20% with `BorderRadius(0)`, which is the
+  whole of what stops a run of cells reading as a row of pills. The rounded
+  endpoint meets the square band with a notch, because `core` has one radius
+  and not four and the alternative was a second `Box` in all 42 cells;
+  Material draws the same notch. Today's ring came out of the fill switch so it
+  survives inside the band, and the band runs through the adjacent days rather
+  than stopping at the 1st.
+
+Two more things the build settled. The range joins `Calendar`'s **anchor
+chain** ahead of `Today`, which is what lets the picker open on the span while
+clearing `Selected` and holding `Month` at zero. And the ends of a range are
+the one thing this calendar announces as a **name suffix** rather than as a
+state: `AccessibilitySelected` goes on every day of the band (ARIA's own
+date-range grid), and no target has a property that could tell the two ends
+from the days between, so the alternative is fourteen identically named
+selected days with no findable edge.
+
+Two concerns: `ConcernDateRangePickerInert` for a picker with no `OnChange`,
+and `ConcernCalendarRangeReversed` on `Calendar` — a `RangeEnd` before its
+`RangeStart` has nothing between them, so the grid draws two lone endpoints,
+which looks exactly like two days picked out. `rangeBand` also refuses to thin
+a `Primary` it cannot parse and leaves the span unfilled rather than painting
+an opaque brand colour over the day numbers, with a test that the three bundled
+themes are not in that case.
 
 ### D7. `TimePicker`
 
@@ -325,7 +378,7 @@ wheel (node type), a clipboard copy button (no clipboard bridge).
 | 2 | D2 `QRCode` | the roadmap's pairing flow has nothing to show |
 | 3 | D4 `SelectRow`, `SliderRow` | completes a family, zero decisions |
 | 4 | D3 `Countdown`, `Stopwatch` | alarms exist and cannot show time left |
-| 5 | ~~D5 `PINInput`~~, D6 `DateRangePicker`, D7 `TimePicker` | in any order |
+| 5 | ~~D5 `PINInput`~~, ~~D6 `DateRangePicker`~~, D7 `TimePicker` | in any order |
 | 6 | Tier E as one bundle with one lesson | |
 | 7 | Tier F once its theme or core prerequisite lands | |
 

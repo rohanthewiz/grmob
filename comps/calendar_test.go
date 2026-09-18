@@ -1,6 +1,7 @@
 package comps
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -924,5 +925,227 @@ func TestCalendarMonthArrowsDeclareThePageKeys(t *testing.T) {
 	walk(n)
 	if found != 2 {
 		t.Fatalf("found %d month arrows, want 2", found)
+	}
+}
+
+// --- A range of days ------------------------------------------------------
+
+// sepDay is midday on day n of September 2026, the month sep2026 anchors.
+func sepDay(n int) time.Time {
+	return time.Date(2026, time.September, n, 12, 0, 0, 0, time.UTC)
+}
+
+// sepCells renders a September 2026 calendar and returns its 42 cells. The 1st
+// is a Tuesday, so day n of the shown month is cells[n+1].
+func sepCells(t *testing.T, c Calendar) []*core.Node {
+	t.Helper()
+	c.Month = sep2026
+	return dayCells(t, renderCalendar(t, c))
+}
+
+// The band is the whole point of the two fields: the ends wear the selected
+// day's fill and keep their corners, the days between wear the thinned fill
+// and give theirs up, and the days on either side of the span wear nothing.
+// The radius is what makes a run of interior cells read as one shape rather
+// than as a row of pills, so it is asserted as hard as the colour.
+func TestCalendarBandFillsTheDaysBetweenTheEndpoints(t *testing.T) {
+	theme := core.DefaultTheme
+	cells := sepCells(t, Calendar{RangeStart: sepDay(14), RangeEnd: sepDay(20)})
+
+	for _, day := range []int{14, 20} {
+		cell := cellFor(t, cells, 2, day)
+		if cell.Style.Background != theme.Colors.Primary {
+			t.Errorf("endpoint %d fill = %q, want Primary", day, cell.Style.Background)
+		}
+		if cell.Style.BorderRadius != float64(theme.Spacing.SM) {
+			t.Errorf("endpoint %d radius = %v, want the cell's own %v — only the band squares off",
+				day, cell.Style.BorderRadius, float64(theme.Spacing.SM))
+		}
+	}
+	for _, day := range []int{15, 16, 17, 18, 19} {
+		cell := cellFor(t, cells, 2, day)
+		if want := rangeBand(theme); cell.Style.Background != want {
+			t.Errorf("interior %d fill = %q, want the thinned Primary %q", day, cell.Style.Background, want)
+		}
+		if cell.Style.BorderRadius != 0 {
+			t.Errorf("interior %d radius = %v, want 0: rounded interiors scallop the band",
+				day, cell.Style.BorderRadius)
+		}
+	}
+	for _, day := range []int{13, 21} {
+		if cell := cellFor(t, cells, 2, day); cell.Style.Background != "" {
+			t.Errorf("day %d is outside the span and carries fill %q", day, cell.Style.Background)
+		}
+	}
+}
+
+// There is one "this day is chosen" look in the grid. A Selected day and a
+// range endpoint are drawn identically on purpose, so a caller that sets both
+// gets no third case to reason about.
+func TestCalendarRangeEndsAreDrawnLikeTheSelectedDay(t *testing.T) {
+	selected := cellFor(t, sepCells(t, Calendar{Selected: sepDay(14)}), 2, 14)
+	endpoint := cellFor(t, sepCells(t, Calendar{RangeStart: sepDay(14), RangeEnd: sepDay(20)}), 2, 14)
+
+	if selected.Style.Background != endpoint.Style.Background {
+		t.Errorf("endpoint fill %q, selected fill %q — the two should be one look",
+			endpoint.Style.Background, selected.Style.Background)
+	}
+	if got, want := endpoint.Children[0].Style.TextColor, selected.Children[0].Style.TextColor; got != want {
+		t.Errorf("endpoint ink %q, selected ink %q — both are resolved against the same fill", got, want)
+	}
+}
+
+// A RangeStart with no RangeEnd is a range still being made — one lit day and
+// no band anywhere. This is what DateRangePicker's sheet shows between its two
+// taps, so a band leaking out of it would light days nobody has picked.
+func TestCalendarHalfRangeLightsOneDayAndNoBand(t *testing.T) {
+	theme := core.DefaultTheme
+	cells := sepCells(t, Calendar{RangeStart: sepDay(14)})
+
+	if got := cellFor(t, cells, 2, 14).Style.Background; got != theme.Colors.Primary {
+		t.Errorf("the pending start's fill = %q, want Primary", got)
+	}
+	for i, cell := range cells {
+		if i == 2+14-1 {
+			continue
+		}
+		if cell.Style.Background != "" {
+			t.Errorf("cell %d (%s) is filled %q, but only the start has been picked",
+				i, dayNumber(t, cell), cell.Style.Background)
+		}
+	}
+}
+
+// A band crossing a month boundary runs through the adjacent days rather than
+// stopping at the 1st. They are dimmed and inert either way; cutting the band
+// there would stop it somewhere the reader can see no reason for.
+func TestCalendarBandRunsThroughTheAdjacentDays(t *testing.T) {
+	theme := core.DefaultTheme
+	// August 30 is the Sunday that opens the grid, so the span's first three
+	// days are the leading adjacent cells 0, 1 and the 1st of September.
+	cells := sepCells(t, Calendar{
+		RangeStart: time.Date(2026, time.August, 30, 12, 0, 0, 0, time.UTC),
+		RangeEnd:   sepDay(2),
+	})
+
+	if got, want := cells[0].Style.Background, theme.Colors.Primary; got != want {
+		t.Errorf("the adjacent August 30 is the span's start and is filled %q, want %q", got, want)
+	}
+	if got, want := cells[1].Style.Background, rangeBand(theme); got != want {
+		t.Errorf("the adjacent August 31 is inside the span and is filled %q, want %q", got, want)
+	}
+	if got, want := cellFor(t, cells, 2, 1).Style.Background, rangeBand(theme); got != want {
+		t.Errorf("September 1 is inside the span and is filled %q, want %q", got, want)
+	}
+	if cells[1].Style.Disabled != true {
+		t.Error("an adjacent day inside the band is still inert: the band is context, not a target")
+	}
+}
+
+// Today's ring is not part of the fill switch. A day inside the band is drawn
+// in ordinary ink, so a Primary ring on it is perfectly visible and today goes
+// on saying which day it is; only a fill hides it, being Primary on Primary.
+func TestCalendarTodayKeepsItsRingInsideTheBand(t *testing.T) {
+	theme := core.DefaultTheme
+	cells := sepCells(t, Calendar{RangeStart: sepDay(14), RangeEnd: sepDay(20), Today: sepDay(17)})
+
+	inside := cellFor(t, cells, 2, 17)
+	if inside.Style.BorderWidth != 1 || inside.Style.BorderColor != theme.Colors.Primary {
+		t.Errorf("today inside the band has border %v/%q, want the 1px Primary ring",
+			inside.Style.BorderWidth, inside.Style.BorderColor)
+	}
+
+	onEnd := cellFor(t, sepCells(t, Calendar{RangeStart: sepDay(14), RangeEnd: sepDay(20), Today: sepDay(14)}), 2, 14)
+	if onEnd.Style.BorderWidth != 0 {
+		t.Error("today on an endpoint draws no ring: Primary on Primary is invisible and the fill already says it")
+	}
+}
+
+// Every day of the span is announced as selected, not only its two ends —
+// ARIA's own date-range grid marks the whole band — and the ends are named,
+// because no target has a property that could tell them from the days between.
+func TestCalendarRangeIsAnnouncedAsSelectedWithNamedEnds(t *testing.T) {
+	cells := sepCells(t, Calendar{RangeStart: sepDay(14), RangeEnd: sepDay(16)})
+
+	for i, cell := range cells {
+		want := core.SelectedOff
+		if i >= 2+14-1 && i <= 2+16-1 {
+			want = core.SelectedOn
+		}
+		if cell.Style.AccessibilitySelected != want {
+			t.Errorf("cell %d (%s) selected = %q, want %q",
+				i, dayNumber(t, cell), cell.Style.AccessibilitySelected, want)
+		}
+	}
+
+	names := map[int]string{
+		14: "Monday, September 14, 2026, start of range",
+		15: "Tuesday, September 15, 2026",
+		16: "Wednesday, September 16, 2026, end of range",
+	}
+	for day, want := range names {
+		if got := cellFor(t, cells, 2, day).Style.AccessibilityLabel; got != want {
+			t.Errorf("day %d is named %q, want %q", day, got, want)
+		}
+	}
+
+	// One day is both ends at once, and says so in one clause: a reader should
+	// not have to parse two before hearing it is a single day.
+	one := cellFor(t, sepCells(t, Calendar{RangeStart: sepDay(14), RangeEnd: sepDay(14)}), 2, 14)
+	if got, want := one.Style.AccessibilityLabel, "Monday, September 14, 2026, start and end of range"; got != want {
+		t.Errorf("a one-day range is named %q, want %q", got, want)
+	}
+}
+
+// A reversed pair has nothing between it, so the grid draws two lone endpoints
+// — which on screen is two days picked out and nothing else. The concern is
+// the only place that mistake surfaces.
+func TestCalendarReversedRangeReportsAConcern(t *testing.T) {
+	core.SetDebugMode(true)
+	core.ClearConcerns()
+	defer func() { core.SetDebugMode(false); core.ClearConcerns() }()
+
+	cells := sepCells(t, Calendar{RangeStart: sepDay(20), RangeEnd: sepDay(14)})
+	if !strings.Contains(core.DumpConcerns(), ConcernCalendarRangeReversed) {
+		t.Errorf("want %s, got:\n%s", ConcernCalendarRangeReversed, core.DumpConcerns())
+	}
+	for _, day := range []int{15, 16, 17, 18, 19} {
+		if got := cellFor(t, cells, 2, day).Style.Background; got != "" {
+			t.Errorf("day %d is between the swapped ends and is filled %q: there is no band to draw", day, got)
+		}
+	}
+}
+
+// The range joins the anchor chain ahead of Today, which is what makes
+// DateRangePicker's sheet open on the span it is showing: the picker
+// overwrites Month with its own browsed month, zero until an arrow is tapped,
+// and leaves Selected empty.
+func TestCalendarWithOnlyARangeOpensOnIt(t *testing.T) {
+	n := renderCalendar(t, Calendar{RangeStart: sepDay(14), RangeEnd: sepDay(20)})
+	if findText(n, "September 2026") == nil {
+		t.Error("a grid given nothing but a span should open on the span's own month")
+	}
+}
+
+// rangeBand refuses to thin a colour it does not understand, and returns a
+// transparent fill rather than an opaque brand colour over the day numbers.
+// That is the graceful half of the information — the endpoints still say where
+// the span is — but it is a band nobody can see, so the three bundled themes
+// must not be landing in it.
+func TestEveryBundledThemeCanThinItsPrimary(t *testing.T) {
+	for name, th := range map[string]*core.Theme{
+		"DefaultTheme":  core.DefaultTheme,
+		"MaterialTheme": core.MaterialTheme,
+		"AmberTheme":    core.AmberTheme,
+	} {
+		band := rangeBand(th)
+		if band == ColorTransparent {
+			t.Errorf("%s: Primary %q cannot carry an alpha byte, so a range draws no band at all",
+				name, th.Colors.Primary)
+			continue
+		}
+		if want := th.Colors.Primary + calendarRangeAlpha; band != want {
+			t.Errorf("%s: band = %q, want %q", name, band, want)
+		}
 	}
 }

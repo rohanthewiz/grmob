@@ -1,9 +1,11 @@
 package tutorial
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rohanthewiz/grmob/core"
 	"github.com/rohanthewiz/grmob/render"
@@ -2475,5 +2477,115 @@ func TestTimersLessonRestartsTheDeadlineAndBanksTheStopwatch(t *testing.T) {
 	if got := digits("remaining"); got != "0:10" {
 		t.Errorf("restarted countdown reads %q, want 0:10", got)
 	}
+	assertNoConcerns(t)
+}
+
+// --- 4.25 Date ranges -----------------------------------------------------
+
+// The three claims of 4.25 that only a running tree can make: two taps produce
+// one report, the tap after a completed range starts a new one rather than
+// moving an end, and Calendar's two fields draw a band on a grid that takes no
+// taps at all.
+func TestDateRangeLessonMakesASpanInTwoTapsAndRestartsOnTheThird(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Picking a span of days")
+
+	// The summary grid's cells are named by the demo's own DayLabel, which is
+	// what tells them from the picker sheet's cells: both grids carry a cell
+	// for every day of March 2026, and findNode is depth-first.
+	summaryCell := func(day int) *node {
+		t.Helper()
+		want := fmt.Sprintf("%d March 2026, summary", day)
+		n := findNode(tree(t, mgr), func(n *node) bool {
+			return n.Style != nil && strings.HasPrefix(n.Style.AccessibilityLabel, want)
+		})
+		if n == nil {
+			t.Fatalf("no cell on the summary grid named %q", want)
+		}
+		return n
+	}
+	// A cell in the picker's sheet: the same date, under the default naming.
+	sheetCell := func(day int) *node {
+		t.Helper()
+		want := time.Date(2026, time.March, day, 12, 0, 0, 0, time.UTC).
+			Format("Monday, January 2, 2006")
+		n := findNode(tree(t, mgr), func(n *node) bool {
+			_, clickable := n.Props["onClick"].(string)
+			return clickable && n.Style != nil &&
+				strings.HasPrefix(n.Style.AccessibilityLabel, want)
+		})
+		if n == nil {
+			t.Fatalf("no tappable cell named %q", want)
+		}
+		return n
+	}
+	tapDay := func(day int) {
+		t.Helper()
+		mgr.DispatchCallback(sheetCell(day).Props["onClick"].(string))
+	}
+
+	if !hasTextContaining(tree(t, mgr), "Nothing booked") {
+		t.Fatal("the lesson should open with an empty field")
+	}
+	tapRow(t, mgr, "Choose your nights")
+
+	// One tap reports nothing: the half-made range is the widget's.
+	tapDay(16)
+	if !hasTextContaining(tree(t, mgr), "Nothing booked") {
+		t.Fatal("the first tap must not report a range")
+	}
+
+	// The second completes it, in the order the two taps make sense in
+	// regardless of which was tapped first — this one is deliberately the
+	// earlier day, which is the out-of-order case.
+	tapDay(13)
+	cur := tree(t, mgr)
+	if !hasTextContaining(cur, "Fri 13 Mar → Mon 16 Mar · 3 nights") {
+		t.Fatal("two taps should report one ordered span, and the caption should count its nights")
+	}
+	if !hasTextContaining(cur, "Mar 13, 2026 – Mar 16, 2026") {
+		t.Fatal("the field's trigger should summarize the span the picker just reported")
+	}
+
+	// The band reaches the grid that takes no taps: the two ends wear a fill
+	// and keep their corners, the days between wear one and give theirs up.
+	for _, day := range []int{13, 16} {
+		if cell := summaryCell(day); cell.Style.Background == "" || cell.Style.BorderRadius == 0 {
+			t.Errorf("summary cell %d is fill %q radius %v, want an endpoint's pill",
+				day, cell.Style.Background, cell.Style.BorderRadius)
+		}
+	}
+	for _, day := range []int{14, 15} {
+		cell := summaryCell(day)
+		if cell.Style.Background == "" {
+			t.Errorf("summary cell %d carries no band", day)
+		}
+		if cell.Style.BorderRadius != 0 {
+			t.Errorf("summary cell %d keeps radius %v; the band's interior squares off so a run of it tiles",
+				day, cell.Style.BorderRadius)
+		}
+	}
+	if cell := summaryCell(12); cell.Style.Background != "" {
+		t.Errorf("summary cell 12 is outside the span and is filled %q", cell.Style.Background)
+	}
+	// And nothing on it can be picked, which is the point of drawing it: the
+	// two fields are display. The cells still carry a handler — Calendar pairs
+	// core.Disabled with a registered no-op so a tap already in flight lands
+	// somewhere — so the claim is the disabled state, not a missing callback.
+	if !summaryCell(14).Style.Disabled {
+		t.Error("the summary grid has no OnSelect, so every cell in it should be inert")
+	}
+
+	// The third tap starts a new range rather than moving the nearer end.
+	tapRow(t, mgr, "Mar 13, 2026")
+	tapDay(20)
+	if !hasTextContaining(tree(t, mgr), "Mar 13, 2026 – Mar 16, 2026") {
+		t.Fatal("the tap after a completed range starts a new one and reports nothing yet")
+	}
+	tapDay(22)
+	if !hasTextContaining(tree(t, mgr), "Fri 20 Mar → Sun 22 Mar · 2 nights") {
+		t.Fatal("the fourth tap should complete the new span")
+	}
+
 	assertNoConcerns(t)
 }

@@ -7,6 +7,15 @@ import (
 	"github.com/rohanthewiz/grmob/core"
 )
 
+// ConcernCalendarRangeReversed is raised, in debug builds only, when RangeEnd
+// falls before RangeStart. There is then nothing between them, so the grid
+// draws the two endpoints and no band — which on screen is indistinguishable
+// from a calendar with two days picked out, and is a state DateRangePicker
+// never produces, since it orders the pair before reporting it. A range is a
+// pair the caller holds, so the mistake is a swapped assignment somewhere
+// upstream and it will not announce itself any other way.
+const ConcernCalendarRangeReversed = "calendar-range-reversed"
+
 // Calendar is a controlled month grid: seven weekday captions over six rows of
 // day cells, with a selected day, an optional "today" ring, optional dots for
 // the days that have something on them, and arrows that ask the caller to
@@ -68,6 +77,44 @@ import (
 // There is deliberately no OnDeselect. Two callbacks setting the same piece
 // of state is two things for every consumer to keep in step, and the day a
 // screen wants to tell them apart it can test for the zero it was handed.
+//
+// # A range of days is a band, and the band is a third fill
+//
+// RangeStart and RangeEnd light the span between them, inclusive. The two
+// endpoints wear the selected day's fill; the days between wear a thinned
+// version of it — Primary at calendarRangeAlpha — and give up their corner
+// radius, which is the whole of what makes them read as one band rather than
+// as a row of separate pills:
+//
+//	│ 15  16 [17]▓18▓▓19▓▓20▓[21] 22 │   [n] endpoint, ▓ interior
+//
+// Nothing here is a fourth state to reason about. Selected and the endpoints
+// are drawn identically on purpose — there is one "this day is chosen" look in
+// the grid and it stays one look — so a caller that sets both gets no new
+// case, and DateRangePicker, which has no single selection to show, simply
+// leaves Selected zero.
+//
+// Three consequences worth stating rather than discovering:
+//
+//   - The band breaks at the end of each week row and at the edges of the
+//     month, because the grid has a gap between its rows and no cells outside
+//     it. A span that runs off the visible month stops at the leading or
+//     trailing adjacent days, which *do* carry the band: dimming them and then
+//     cutting the band at the 1st would stop it somewhere the reader can see
+//     no reason for.
+//   - The rounded endpoint meets the square band with a small notch. core has
+//     one border radius and not four, so the alternative would be a second Box
+//     per cell in all 42 — a structural change to every calendar in the tree to
+//     round two corners. Material's range picker draws the same notch on
+//     purpose, the endpoint being a circle over a rectangle.
+//   - Today's ring survives inside the band and goes square with it. Losing it
+//     would be the one place the grid stopped saying what day it is, and a
+//     range that happens to cover today is the common case, not the odd one.
+//
+// A RangeStart with no RangeEnd is one lit endpoint and no band — which is
+// what a half-made range looks like, and is exactly what DateRangePicker shows
+// between the two taps. A RangeEnd *before* its RangeStart has nothing between
+// them and reports ConcernCalendarRangeReversed.
 //
 // # The widget never asks what time it is
 //
@@ -179,6 +226,23 @@ type Calendar struct {
 	// gone — see dayLabel.
 	Deselectable bool
 
+	// RangeStart and RangeEnd light a span of days, inclusive and compared by
+	// calendar day in the calendar's location: the two endpoints take the
+	// selected day's fill and the days between take a thinned one. See "A
+	// range of days is a band".
+	//
+	// They are display, not input: the grid reports taps through OnSelect as
+	// it always does, one day at a time, and whoever holds the pair decides
+	// what a tap means to it. DateRangePicker is that decision packaged as the
+	// two-tap protocol; a screen showing a booking's nights, or a report's
+	// period, sets the pair and leaves OnSelect nil.
+	//
+	// Zero on both draws no band. Zero on RangeEnd alone lights RangeStart and
+	// nothing else, which is a range still being made. A RangeEnd before its
+	// RangeStart reports ConcernCalendarRangeReversed.
+	RangeStart time.Time
+	RangeEnd   time.Time
+
 	// Today rings the current day without selecting it, so "today" and "the
 	// day I picked" can be two different cells and both be visible. Zero
 	// draws no ring; the widget does not consult the clock.
@@ -271,6 +335,16 @@ const (
 // belongs in DayLabel, where a screen reader can read it out.
 const calendarMaxDots = 3
 
+// calendarRangeAlpha is the alpha byte the band between two endpoints carries:
+// Primary at 20%, in the CSS byte order all four targets parse.
+//
+// Twenty percent is the most a fill can take and still leave the day numbers
+// on it reading as ordinary text rather than as text on a coloured chip. It is
+// also enough to survive a phone's auto-brightness, which is the floor a 10%
+// wash fails: the band's whole job is to be seen at a glance, across a row, by
+// somebody checking they picked the right week.
+const calendarRangeAlpha = "33"
+
 func (c Calendar) Render(ctx *core.Context) *core.Node {
 	t := ctx.Theme()
 
@@ -283,6 +357,16 @@ func (c Calendar) Render(ctx *core.Context) *core.Node {
 	}
 	loc := anchor.Location()
 	first := monthFirst(anchor, loc)
+
+	// Both ends read in the grid's own location before being compared, for the
+	// reason inRange gives: a pair stamped in two zones is still one range of
+	// calendar days, and it is the days the band is drawn from.
+	if core.IsDebugMode() && !c.RangeStart.IsZero() && !c.RangeEnd.IsZero() &&
+		ymd(c.RangeEnd.In(loc)) < ymd(c.RangeStart.In(loc)) {
+		core.ReportConcern(ConcernCalendarRangeReversed, fmt.Sprintf(
+			"Calendar has RangeEnd %s before RangeStart %s, so there is nothing between them to fill: the grid shows two lone endpoints and no band",
+			c.RangeEnd.In(loc).Format("2006-01-02"), c.RangeStart.In(loc).Format("2006-01-02")))
+	}
 
 	items := make([]core.PropsAndChildren, 0, len(c.Style)+calendarRows+4)
 	// Shed the theme Column's inset and set the grid's own rhythm: a hairline
@@ -365,10 +449,17 @@ func (c Calendar) Render(ctx *core.Context) *core.Node {
 }
 
 // anchor resolves the month the grid is drawn around: Month, else Selected,
-// else Today. The bool is false when all three are zero, which is the one
-// state with no answer — there is no clock in here to ask.
+// else the range's own ends, else Today. The bool is false when all of them
+// are zero, which is the one state with no answer — there is no clock in here
+// to ask.
+//
+// The range sits ahead of Today so a grid handed nothing but a span opens on
+// the span rather than on the current month, which is what DateRangePicker
+// leans on: it overwrites Month with its own browsed month (zero until an
+// arrow is tapped) and leaves Selected empty, so the fallback is the only
+// thing deciding which month the sheet opens on.
 func (c Calendar) anchor() (time.Time, bool) {
-	for _, t := range []time.Time{c.Month, c.Selected, c.Today} {
+	for _, t := range []time.Time{c.Month, c.Selected, c.RangeStart, c.RangeEnd, c.Today} {
 		if !t.IsZero() {
 			return t, true
 		}
@@ -526,6 +617,14 @@ func (c Calendar) dayCell(ctx *core.Context, day time.Time, month time.Month) co
 	selected := !c.Selected.IsZero() && sameDay(day, c.Selected)
 	isToday := !c.Today.IsZero() && sameDay(day, c.Today)
 
+	// Where this cell falls in the band, if there is one. endpoint days wear
+	// the selected fill and interior days the thinned one; see "A range of
+	// days is a band".
+	startsRange, endsRange, interior := c.rangeRole(day)
+	// One "this day is chosen" look, whether it came from Selected or from an
+	// end of the range. See the same section for why that is deliberate.
+	filled := selected || startsRange || endsRange
+
 	ink := t.Colors.TextPrimary
 	if adjacent || !inRange {
 		ink = t.Colors.TextSecondary
@@ -543,7 +642,7 @@ func (c Calendar) dayCell(ctx *core.Context, day time.Time, month time.Month) co
 
 	dot := t.Colors.Primary
 	switch {
-	case selected:
+	case filled:
 		// The fill is the strongest thing in the grid, so the ink is resolved
 		// against it rather than hard-coded — Primary is a light blue in one
 		// bundled theme and a dark indigo in another, and one literal cannot
@@ -565,10 +664,25 @@ func (c Calendar) dayCell(ctx *core.Context, day time.Time, month time.Month) co
 		ink = inkOn(t, t.Colors.Primary)
 		dot = ink
 		items = append(items, core.BackgroundColor(t.Colors.Primary))
-	case isToday:
+	case interior:
+		// A day inside the band: the same colour, thinned, and square, so the
+		// run of them tiles into one shape. The radius is restated rather
+		// than omitted above because the cell's default was already appended;
+		// the later prop is the one that lands.
+		items = append(items,
+			core.BackgroundColor(rangeBand(t)),
+			core.BorderRadius(0),
+		)
+	}
+	// The ring is not part of the switch, because a band is not a selection:
+	// a day inside one is still drawn in ordinary ink, so Primary on the band
+	// is perfectly visible and today keeps saying so. Only a fill hides it —
+	// Primary on Primary — which is what this condition excludes. Inside the
+	// band the ring inherits the square corners set just above, which is the
+	// honest rendering: the ring is the cell's own edge.
+	if isToday && !filled {
 		// A ring rather than a fill, so today and the selected day are two
-		// distinguishable cells. Under a selection the ring would be Primary
-		// on Primary — invisible — which is why this arm is the fallthrough.
+		// distinguishable cells.
 		items = append(items,
 			core.BorderWidth(1),
 			core.BorderColor(t.Colors.Primary),
@@ -599,7 +713,7 @@ func (c Calendar) dayCell(ctx *core.Context, day time.Time, month time.Month) co
 		)
 	}
 	items = append(items,
-		core.AccessibilityLabel(c.dayLabel(day)),
+		core.AccessibilityLabel(c.dayLabel(day, startsRange, endsRange)),
 		// Which day is chosen, as a state rather than as part of the name.
 		// Paired with the role below: a gridcell's "on" is aria-selected on the
 		// web and the platform's own selected property on the two natives.
@@ -616,7 +730,14 @@ func (c Calendar) dayCell(ctx *core.Context, day time.Time, month time.Month) co
 		// a cell that said nothing about its state would be the one square
 		// the reader could not place, and "not selected" is exactly what an
 		// unselectable day is.
-		core.AccessibilitySelected(core.SelectedWhen(selected)),
+		//
+		// Every day of a range counts, not only its ends. ARIA's own date
+		// range grid marks the whole span aria-selected, and it is the
+		// truthful reading: the twelve nights between the two taps are as
+		// chosen as the two days that named them, and a reader arrowing
+		// across the band would otherwise hear eleven unselected days inside
+		// their own booking.
+		core.AccessibilitySelected(core.SelectedWhen(filled || interior)),
 		// A day cell is a Box with a tap handler, which every renderer draws
 		// as scenery and every screen reader announces as text — the label
 		// above names it and nothing said it could be activated. The role is
@@ -711,7 +832,7 @@ func (c Calendar) dayCell(ctx *core.Context, day time.Time, month time.Month) co
 }
 
 // dayLabel is the cell's spoken name: the caller's DayLabel, or an English
-// date. Nothing is appended to it.
+// date, plus the one suffix that has nowhere else to go.
 //
 // The selection used to be a second suffix here and is not any more: it goes
 // out as core.AccessibilitySelected, which every renderer announces as a
@@ -728,12 +849,84 @@ func (c Calendar) dayCell(ctx *core.Context, day time.Time, month time.Month) co
 // nothing by the move: on the web the screen reader says "current date" in its
 // own language, and on the two natives the runtime appends the same ", today"
 // this function used to, after a caller's DayLabel as before.
-func (c Calendar) dayLabel(day time.Time) string {
+//
+// # Which leaves the ends of a range, which are a suffix
+//
+// Both moves above were made because a platform property turned up that said
+// the thing better than a word in the name could. That is the test, and the
+// ends of a range fail it: no target has a property for "this is where the
+// span begins", and core.AccessibilitySelected — which every day of the band
+// states — cannot tell the two ends from the eleven days between them.
+//
+// A suffix is therefore the only channel there is, and the alternative is
+// silence: a reader arrowing across a booking would hear fourteen identically
+// named selected days and could not find either edge, which is precisely the
+// thing they would be arrowing across to check. It goes after a caller's
+// DayLabel, in the place the natives' ", today" goes, so a translated calendar
+// keeps its own wording for the date and gains one English word for the edge —
+// the same trade the rest of this package's built-in strings make.
+//
+// A one-day range is both ends at once and says so in one clause rather than
+// two, because ", start of range, end of range" is a sentence a reader has to
+// parse before hearing it is about a single day.
+func (c Calendar) dayLabel(day time.Time, startsRange, endsRange bool) string {
 	label := day.Format("Monday, January 2, 2006")
 	if c.DayLabel != nil {
 		label = c.DayLabel(day)
 	}
+	switch {
+	case startsRange && endsRange:
+		return label + ", start and end of range"
+	case startsRange:
+		return label + ", start of range"
+	case endsRange:
+		return label + ", end of range"
+	}
 	return label
+}
+
+// rangeRole places day in the band: whether it is the span's first day, its
+// last, and whether it falls strictly between them.
+//
+// The three are not exclusive — a one-day range starts and ends on the same
+// cell — but interior is exclusive of both, which is what lets dayCell pick a
+// fill with one switch. A RangeStart with no RangeEnd has an ends-nothing
+// start and no interior at all, which is the half-made range DateRangePicker
+// shows between its two taps.
+//
+// Comparison is by calendar day in the *cell's* location, as sameDay and
+// inRange both do: a range stamped in one zone and drawn in another is still a
+// run of days, and the days are what the band is made of.
+func (c Calendar) rangeRole(day time.Time) (startsRange, endsRange, interior bool) {
+	hasStart, hasEnd := !c.RangeStart.IsZero(), !c.RangeEnd.IsZero()
+	if !hasStart && !hasEnd {
+		return false, false, false
+	}
+	startsRange = hasStart && sameDay(day, c.RangeStart)
+	endsRange = hasEnd && sameDay(day, c.RangeEnd)
+	if hasStart && hasEnd && !startsRange && !endsRange {
+		d := ymd(day)
+		loc := day.Location()
+		interior = d > ymd(c.RangeStart.In(loc)) && d < ymd(c.RangeEnd.In(loc))
+	}
+	return startsRange, endsRange, interior
+}
+
+// rangeBand is the fill a day inside the span takes: Primary, thinned.
+//
+// withAlpha understands "#rgb" and "#rrggbb" and hands anything else back
+// unchanged, so a theme whose Primary is a name or an rgba() would get the
+// *opaque* brand colour here — a band that swallows the day numbers it exists
+// to sit behind. Nine characters beginning with "#" is what a thinned colour
+// looks like, and anything else leaves the span unfilled rather than
+// unreadable: the two endpoints still say where it is, which is the graceful
+// half of the information rather than none of it.
+func rangeBand(t *core.Theme) string {
+	band := withAlpha(t.Colors.Primary, calendarRangeAlpha)
+	if len(band) != 9 || band[0] != '#' {
+		return ColorTransparent
+	}
+	return band
 }
 
 // inRange reports whether day falls inside [Min, Max], compared by calendar

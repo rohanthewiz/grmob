@@ -256,9 +256,9 @@ var Packages = []Pkg{
 		}, {
 			Slug:  "inputs",
 			Title: "Inputs & pickers",
-			Blurb: "Form fields, one-time code fields, search, searchable selects, radio groups, dates and calendars, and the two editors.",
+			Blurb: "Form fields, one-time code fields, search, searchable selects, radio groups, dates, date ranges and calendars, and the two editors.",
 			Files: []string{"form_field.go", "pin_input.go", "search_field.go", "searchable_select.go", "radio_group.go",
-				"date_picker.go", "calendar.go", "code_editor.go", "rich_text_editor.go"},
+				"date_picker.go", "date_range_picker.go", "calendar.go", "code_editor.go", "rich_text_editor.go"},
 		}, {
 			Slug:  "actions",
 			Title: "Buttons & choices",

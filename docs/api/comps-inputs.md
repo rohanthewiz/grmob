@@ -4,13 +4,13 @@
 import "github.com/rohanthewiz/grmob/comps"
 ```
 
-Form fields, one-time code fields, search, searchable selects, radio groups, dates and calendars, and the two editors.
+Form fields, one-time code fields, search, searchable selects, radio groups, dates, date ranges and calendars, and the two editors.
 
-One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/form_field.go`, `comps/pin_input.go`, `comps/search_field.go`, `comps/searchable_select.go`, `comps/radio_group.go`, `comps/date_picker.go`, `comps/calendar.go`, `comps/code_editor.go`, `comps/rich_text_editor.go`.
+One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/form_field.go`, `comps/pin_input.go`, `comps/search_field.go`, `comps/searchable_select.go`, `comps/radio_group.go`, `comps/date_picker.go`, `comps/date_range_picker.go`, `comps/calendar.go`, `comps/code_editor.go`, `comps/rich_text_editor.go`.
 
 ## Index
 
-- [Constants](#constants) — `ConcernPINInputInert`, `ConcernPINValueTooLong`, `RichToolLink`
+- [Constants](#constants) — `ConcernCalendarRangeReversed`, `ConcernDateRangePickerInert`, `ConcernPINInputInert`, `ConcernPINValueTooLong`, `RichToolLink`
 - [Variables](#variables) — `RichToolbarDefault`
 - [`type Calendar`](#type-calendar)
     - [`func (Calendar) Render`](#func-calendar-render)
@@ -18,6 +18,8 @@ One of 7 topic pages of [package comps](comps.md), which has the package overvie
     - [`func (CodeEditor) Render`](#func-codeeditor-render)
 - [`type DatePicker`](#type-datepicker)
     - [`func (DatePicker) Render`](#func-datepicker-render)
+- [`type DateRangePicker`](#type-daterangepicker)
+    - [`func (DateRangePicker) Render`](#func-daterangepicker-render)
 - [`type FormField`](#type-formfield)
     - [`func (FormField) Render`](#func-formfield-render)
 - [`type PINInput`](#type-pininput)
@@ -37,6 +39,22 @@ One of 7 topic pages of [package comps](comps.md), which has the package overvie
     - [`func (SearchableSelect) Render`](#func-searchableselect-render)
 
 ## Constants
+
+ConcernCalendarRangeReversed is raised, in debug builds only, when RangeEnd falls before RangeStart. There is then nothing between them, so the grid draws the two endpoints and no band — which on screen is indistinguishable from a calendar with two days picked out, and is a state DateRangePicker never produces, since it orders the pair before reporting it. A range is a pair the caller holds, so the mistake is a swapped assignment somewhere upstream and it will not announce itself any other way.
+
+```go
+const ConcernCalendarRangeReversed = "calendar-range-reversed"
+```
+
+<small>[comps/calendar.go:17](https://github.com/rohanthewiz/grmob/blob/master/comps/calendar.go#L17)</small>
+
+ConcernDateRangePickerInert is raised, in debug builds only, when a DateRangePicker has no OnChange. The sheet still opens and the days still take taps, and the range they complete is handed to nobody — so the grid reopens on the old range every time and the field never changes. On screen that is indistinguishable from a picker nobody has finished using, which is the bar PINInput's own inert case is reported against.
+
+```go
+const ConcernDateRangePickerInert = "date-range-picker-inert"
+```
+
+<small>[comps/date_range_picker.go:15](https://github.com/rohanthewiz/grmob/blob/master/comps/date_range_picker.go#L15)</small>
 
 ConcernPINInputInert is raised, in debug builds only, when a PINInput has no OnChange. The field is then read-only in practice — every keystroke reaches the handler, is discarded, and the next pass paints Value back over it — and on screen an inert PINInput is indistinguishable from one nobody has typed into yet. Disclosure's inert case is reported for the same reason: a widget that cannot do the one thing it exists for should say so somewhere other than in a bug report.
 
@@ -130,6 +148,23 @@ type Calendar struct {
 	// core.Style had no slot for a state. It has one now, and the suffix is
 	// gone — see dayLabel.
 	Deselectable bool
+
+	// RangeStart and RangeEnd light a span of days, inclusive and compared by
+	// calendar day in the calendar's location: the two endpoints take the
+	// selected day's fill and the days between take a thinned one. See "A
+	// range of days is a band".
+	//
+	// They are display, not input: the grid reports taps through OnSelect as
+	// it always does, one day at a time, and whoever holds the pair decides
+	// what a tap means to it. DateRangePicker is that decision packaged as the
+	// two-tap protocol; a screen showing a booking's nights, or a report's
+	// period, sets the pair and leaves OnSelect nil.
+	//
+	// Zero on both draws no band. Zero on RangeEnd alone lights RangeStart and
+	// nothing else, which is a range still being made. A RangeEnd before its
+	// RangeStart reports ConcernCalendarRangeReversed.
+	RangeStart time.Time
+	RangeEnd   time.Time
 
 	// Today rings the current day without selecting it, so "today" and "the
 	// day I picked" can be two different cells and both be visible. Zero
@@ -233,6 +268,22 @@ It is off by default, and the default is the interesting half. A picker asking w
 
 There is deliberately no OnDeselect. Two callbacks setting the same piece of state is two things for every consumer to keep in step, and the day a screen wants to tell them apart it can test for the zero it was handed.
 
+#### A range of days is a band, and the band is a third fill
+
+RangeStart and RangeEnd light the span between them, inclusive. The two endpoints wear the selected day's fill; the days between wear a thinned version of it — Primary at calendarRangeAlpha — and give up their corner radius, which is the whole of what makes them read as one band rather than as a row of separate pills:
+
+	│ 15  16 [17]▓18▓▓19▓▓20▓[21] 22 │   [n] endpoint, ▓ interior
+
+Nothing here is a fourth state to reason about. Selected and the endpoints are drawn identically on purpose — there is one "this day is chosen" look in the grid and it stays one look — so a caller that sets both gets no new case, and DateRangePicker, which has no single selection to show, simply leaves Selected zero.
+
+Three consequences worth stating rather than discovering:
+
+  - The band breaks at the end of each week row and at the edges of the month, because the grid has a gap between its rows and no cells outside it. A span that runs off the visible month stops at the leading or trailing adjacent days, which \*do\* carry the band: dimming them and then cutting the band at the 1st would stop it somewhere the reader can see no reason for.
+  - The rounded endpoint meets the square band with a small notch. core has one border radius and not four, so the alternative would be a second Box per cell in all 42 — a structural change to every calendar in the tree to round two corners. Material's range picker draws the same notch on purpose, the endpoint being a circle over a rectangle.
+  - Today's ring survives inside the band and goes square with it. Losing it would be the one place the grid stopped saying what day it is, and a range that happens to cover today is the common case, not the odd one.
+
+A RangeStart with no RangeEnd is one lit endpoint and no band — which is what a half-made range looks like, and is exactly what DateRangePicker shows between the two taps. A RangeEnd \*before\* its RangeStart has nothing between them and reports ConcernCalendarRangeReversed.
+
 #### The widget never asks what time it is
 
 There is no time.Now() in here, and Today is a field rather than something the widget works out. Three reasons, in ascending order of how much they bite:
@@ -269,7 +320,7 @@ With all three of Month, Selected and Today zero there is no anchor and no clock
 
 Go's time package formats in English only, so MonthLabel, WeekdayLabel and DayLabel are the seams for everything a reader sees as a word. The day \*numbers\* are numerals and are not routed through anything.
 
-<small>[comps/calendar.go:143](https://github.com/rohanthewiz/grmob/blob/master/comps/calendar.go#L143)</small>
+<small>[comps/calendar.go:190](https://github.com/rohanthewiz/grmob/blob/master/comps/calendar.go#L190)</small>
 
 #### func (Calendar) Render
 
@@ -277,7 +328,7 @@ Go's time package formats in English only, so MonthLabel, WeekdayLabel and DayLa
 func (c Calendar) Render(ctx *core.Context) *core.Node
 ```
 
-<small>[comps/calendar.go:274](https://github.com/rohanthewiz/grmob/blob/master/comps/calendar.go#L274)</small>
+<small>[comps/calendar.go:348](https://github.com/rohanthewiz/grmob/blob/master/comps/calendar.go#L348)</small>
 
 ### type CodeEditor
 
@@ -509,6 +560,155 @@ func (p DatePicker) Render(ctx *core.Context) *core.Node
 ```
 
 <small>[comps/date_picker.go:139](https://github.com/rohanthewiz/grmob/blob/master/comps/date_picker.go#L139)</small>
+
+### type DateRangePicker
+
+```go
+type DateRangePicker struct {
+	// Start and End are the chosen span, inclusive; both zero shows
+	// Placeholder. They are the caller's to hold, and the widget only ever
+	// hands them back as a pair through OnChange.
+	//
+	// A Start with no End is drawn as that one day and summarized as that one
+	// date. It is not a state this widget produces — an open-ended range is
+	// not something a month grid can draw — and a caller modelling "from the
+	// 14th onwards" wants a date field and a rule, not this.
+	Start time.Time
+	End   time.Time
+
+	// OnChange fires once per completed range, with start ≤ end, and the
+	// sheet closes. Both values are midday in the calendar's location — see
+	// Calendar's "Dates in, dates out". Nil reports
+	// ConcernDateRangePickerInert: the taps are still taken and the range they
+	// complete goes nowhere.
+	OnChange func(start, end time.Time)
+
+	// OnClear puts a "Clear" button in the sheet that empties the field and
+	// closes it. Nil renders no such button: whether a span is optional is the
+	// form's question, not the picker's.
+	OnClear func()
+
+	// Placeholder is the summary's text when nothing is chosen. Empty leaves
+	// the trigger blank but still tappable.
+	Placeholder string
+
+	// Format is the time layout each half of the summary is written in; empty
+	// gives DatePicker's "Jan 2, 2006", so a range field and a date field on
+	// one screen spell a date the same way.
+	//
+	// Go's time package names months in English only, so a layout carrying a
+	// name is a layout in English; "2006-01-02" reads the same everywhere.
+	Format string
+
+	// Separator joins the two halves of the summary; empty gives " – ". It is
+	// a field because the punctuation a range is set with is a typographic
+	// convention that differs by locale, and because a numeric Format often
+	// wants "/" or "→" rather than a dash that could be read as a minus.
+	Separator string
+
+	// Calendar is the template the sheet's grid is rendered from, exactly as
+	// DatePicker uses it. Today, Min, Max, Marked, WeekStart, the three label
+	// functions, Header and Style all apply. Month, OnMonthChange, RangeStart
+	// and RangeEnd are overwritten, since those are what the picker drives;
+	// Selected is cleared and Deselectable forced off, because a range picker
+	// has no single selection and a tap here always means one of the two ends.
+	Calendar Calendar
+
+	// Title names the sheet. Empty leaves the heading row to the buttons
+	// alone, which is right when the FormField label above the trigger has
+	// already said what is being picked.
+	Title string
+
+	// ClearLabel and CloseLabel caption the sheet's two ways out; empty gives
+	// "Clear" and a ✕ glyph.
+	ClearLabel string
+	CloseLabel string
+
+	// Disabled marks the trigger inert: it neither opens nor announces itself
+	// as actionable. The sheet's own grid is disabled with it, so a tap racing
+	// the patch cannot land in an open picker.
+	Disabled bool
+
+	// AccessibilityLabel names the trigger; empty announces the summary text,
+	// which is the span or the placeholder. AccessibilityHint describes what
+	// tapping does.
+	AccessibilityLabel string
+	AccessibilityHint  string
+
+	// Style is applied to the trigger row after its defaults. The sheet is
+	// styled through Calendar.Style and the theme.
+	Style []core.StyleProp
+}
+```
+
+DateRangePicker is a two-date field: a tappable summary of the chosen span that opens a Calendar in a modal sheet and closes again on the tap that completes the range.
+
+	┌────────────────────────────────┐        ┌───────────────────────────┐
+	│ Sep 14, 2026 – Sep 20, 2026 📅 │  tap → │ Stay dates      Clear  ✕  │
+	└────────────────────────────────┘        │  ‹   September 2026    ›  │
+	                                          │  Su Mo Tu We Th Fr Sa     │
+	                                          │  … [14]▓15▓▓16▓ … [20] …  │
+	                                          └───────────────────────────┘
+
+	comps.FormField{
+	    Label: "Stay dates",
+	    Input: comps.DateRangePicker{
+	        Start:    stay.Get().from,
+	        End:      stay.Get().to,
+	        OnChange: func(from, to time.Time) { stay.Set(span{from, to}) },
+	        Calendar: comps.Calendar{Today: today, Min: today},
+	    },
+	}
+
+It is DatePicker's shape with one date more and one rule more, and both halves of that are deliberate: the trigger, the sheet, the two ways out and the Calendar-as-template are the same, so a form holding one of each looks like a form rather than like two widgets.
+
+#### One rule makes the whole protocol
+
+The sheet's grid reports one tapped day at a time, as Calendar always does. What turns that into a range is a single piece of state the widget owns — a \*pending\* start — and one rule over it:
+
+	no pending start   this tap becomes the pending start
+	a pending start    this tap is the other end; the range is reported
+
+Everything a range picker is usually specified with falls out of those two lines and needs no case of its own:
+
+  - \*\*The third tap starts a new range.\*\* Completing a range clears the pending start, so the next tap finds none and begins again. There is no "is this nearer the start or the end" arithmetic, and no tap that means something different depending on where it lands.
+  - \*\*Tapping the same day twice is a one-day range\*\*, start and end on one cell, because the second tap is the other end wherever it falls.
+  - \*\*The second tap may be the earlier one.\*\* The pair is ordered before it is reported, so OnChange always receives start ≤ end. The alternative — treating an earlier second tap as a restart — throws away a tap the reader made on purpose, and "the other end" is not a claim about which end; a reader who wanted to restart has the third tap for it.
+
+#### Why the pending start is the widget's and the range is not
+
+This is the package's third state-owning widget, after Accordion and DatePicker, and it owns one piece more than DatePicker: the sheet is open, the month being browsed, and the half-made range.
+
+That third one is state no application wants, which is the test SliderRow states and this passes: a form's field is a span of days or it is nothing, and "from the 14th, no end yet" is a value it would have to invent a way to hold and a way to draw. Worse, holding it in the caller would make closing the sheet mid-pick \*destructive\* — the first tap would already have overwritten the range the reader opened the sheet to look at, and the backdrop, the ✕ and the back gesture would all be traps. Owning it keeps the promise DatePicker's sheet makes: a reader who opens this to check which week they booked can leave having changed nothing.
+
+So OnChange fires once per completed range, never mid-pick, and the picker inherits the hook rule with it — render it unconditionally, in a stable position, every pass.
+
+#### What the sheet shows while the range is half made
+
+The pending start, alone, as one lit day with no band: Calendar draws exactly that for a RangeStart with no RangeEnd. The caller's own range is out of the grid from the first tap, which is the feedback that a new one has begun — there is no moment where the old span and the new start are both lit and the reader has to work out which is which.
+
+#### Picking closes it, and there is no Done
+
+The tap that completes the range is the tap that finishes, as DatePicker's single tap is. What the sheet carries instead are the ways \*out\* — the backdrop, the ✕, and Clear when the field is clearable — and all three discard the pending start.
+
+#### Theme roles read
+
+	Trigger   Components.Input — the same frame every other field in the form has
+	Summary   Typography.Body over TextPrimary, or TextSecondary for the placeholder
+	Sheet     Card, over the Modal's own scrim
+	Band      Colors.Primary, thinned — see Calendar's "A range of days is a band"
+
+<small>[comps/date_range_picker.go:113](https://github.com/rohanthewiz/grmob/blob/master/comps/date_range_picker.go#L113)</small>
+
+#### func (DateRangePicker) Render
+
+```go
+func (p DateRangePicker) Render(ctx *core.Context) *core.Node
+```
+
+Render allocates the three states and draws the trigger beside the sheet.
+
+<small>[comps/date_range_picker.go:190](https://github.com/rohanthewiz/grmob/blob/master/comps/date_range_picker.go#L190)</small>
 
 ### type FormField
 
