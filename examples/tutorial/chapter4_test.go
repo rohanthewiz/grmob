@@ -2589,3 +2589,73 @@ func TestDateRangeLessonMakesASpanInTwoTapsAndRestartsOnTheThird(t *testing.T) {
 
 	assertNoConcerns(t)
 }
+
+// --- 4.26 Time of day -----------------------------------------------------
+
+// The claims of 4.26 that only a running tree can make: a pick is reported at
+// once with no sheet and no confirm, a DatePicker and a TimePicker edit one
+// time.Time without disturbing each other's half, and the 24-hour switch
+// reconfigures the field and the clock with the one word.
+func TestTimePickerLessonReportsEachPickAndKeepsTheDate(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Picking a time of day")
+
+	// The field's pickers in order — hour, minute, and the period when the
+	// clock is a 12-hour one. The lesson has no other Select on the screen.
+	selects := func() []*node {
+		return findNodes(tree(t, mgr), func(n *node) bool { return n.Type == "Select" })
+	}
+	pick := func(i int, value string) {
+		t.Helper()
+		sels := selects()
+		if i >= len(sels) {
+			t.Fatalf("select %d of %d", i, len(sels))
+		}
+		mgr.DispatchTextCallback(sels[i].Props["onChange"].(string), value)
+	}
+
+	if !hasTextContaining(tree(t, mgr), "Holding Wed 11 Mar 2026, 09:30") {
+		t.Fatal("the lesson should open holding half past nine on the demo's today")
+	}
+	if n := len(selects()); n != 3 {
+		t.Fatalf("selects = %d, want hour, minute and AM/PM on the 12-hour default", n)
+	}
+
+	// One pick, one report, on the same day: no sheet was opened to make it.
+	pick(0, "4")
+	pick(2, "pm")
+	if !hasTextContaining(tree(t, mgr), "Holding Wed 11 Mar 2026, 16:30") {
+		t.Fatal("an hour pick and a period pick should each land at once, on the same date")
+	}
+
+	// The date half moves the day and leaves the clock alone.
+	tapRow(t, mgr, "Mar 11, 2026")
+	cell := findNode(tree(t, mgr), func(n *node) bool {
+		_, clickable := n.Props["onClick"].(string)
+		return clickable && n.Style != nil &&
+			strings.HasPrefix(n.Style.AccessibilityLabel, "Friday, March 20, 2026")
+	})
+	if cell == nil {
+		t.Fatal("no tappable cell for the 20th in the date sheet")
+	}
+	mgr.DispatchCallback(cell.Props["onClick"].(string))
+	if !hasTextContaining(tree(t, mgr), "Holding Fri 20 Mar 2026, 16:30") {
+		t.Fatal("picking a date should keep the time the TimePicker set")
+	}
+
+	// One word for both: the period picker goes, and the clock's marker with it.
+	// The marker is asserted present first, so its absence below means the
+	// switch removed it rather than that it was never drawn.
+	if !hasText(tree(t, mgr), "PM") {
+		t.Fatal("the 12-hour DigitalClock should draw a PM marker at 16:30")
+	}
+	tapRowTitled(t, mgr, "24-hour clock")
+	cur := tree(t, mgr)
+	if n := len(findNodes(cur, func(n *node) bool { return n.Type == "Select" })); n != 2 {
+		t.Errorf("selects = %d on a 24-hour clock, want hour and minute only", n)
+	}
+	if hasText(cur, "PM") {
+		t.Error("the DigitalClock should drop its marker under the same switch")
+	}
+	assertNoConcerns(t)
+}

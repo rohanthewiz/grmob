@@ -1,8 +1,9 @@
 # Low-hanging fruit for `comps`, round two
 
 **Status:** drafted 2026-09-17. D1 `FAB` + `Screen.Floating`, D2 `QRCode`,
-D4 `SelectRow` + `SliderRow`, D3 `Countdown` + `Stopwatch`, D5 `PINInput` and
-D6 `DateRangePicker` all landed the same day. Everything else is unstarted.
+D4 `SelectRow` + `SliderRow`, D3 `Countdown` + `Stopwatch`, D5 `PINInput`,
+D6 `DateRangePicker` and D7 `TimePicker` all landed the same day — Tier D is
+complete. Everything else is unstarted.
 
 The first round (`comps-low-hanging-fruit.md`) landed entire on 2026-09-12:
 Tiers A through C, fifteen widgets, one carousel left blocked on a scroll
@@ -324,13 +325,46 @@ a `Primary` it cannot parse and leaves the span unfilled rather than painting
 an opaque brand colour over the day numbers, with a test that the three bundled
 themes are not in that case.
 
-### D7. `TimePicker`
+### D7. `TimePicker` — **landed 2026-09-17**
 
 Hour and minute `Stepper`s, or two `Select`s, in the sheet `DatePicker` uses.
 Not a native wheel: that is a node type and stays out.
 
 - `TimePicker{Value time.Time, OnChange, TwentyFourHour bool, MinuteStep int,
   Label, Style}`; `TwentyFourHour` matches `DigitalClock`.
+
+**What the sketch left for the build.** Three things, and the first undid half
+of the sketch.
+
+- **There is no sheet.** The sketch's own either/or — Steppers or Selects — was
+  settled by asking D6's question: is there a half-made value somebody has to
+  hold? For a range there is. For a time there is not: changing only the hour
+  of 9:30 gives 10:30, a real time and the one asked for. So every pick is a
+  complete value, reported at once, and a sheet would only have added a Done
+  button over a draft (or a ✕ that cannot take back a live value). With no
+  draft there is no hook, which makes `TimePicker` stateless like `Stepper` —
+  the opposite of its two date siblings, by the same test. `Select`s rather
+  than `Stepper`s, because each part is then the platform's own picker (and a
+  sheet of those would be a popup opening popups), 9:00 → 17:30 is two picks
+  rather than eight taps, and a clock wraps where a stepper clamps.
+- **`TwentyFourHour` is `Hour24`.** "Matches `DigitalClock`" was read as the
+  word and not only the behaviour: the clock's field is `Hour24`, and the field
+  that sets a clock is configured with the same one. The padding rule came with
+  it — `09` on 24-hour, `9` on 12-hour.
+- **An off-step minute is kept, not rounded.** 9:07 on a 15-minute picker gets
+  `:07` slotted into the list in order. Rounding for display lies about the
+  value; rounding through `OnChange` is a write the reader never made.
+
+Smaller things the build settled: `OnChange` keeps `Value`'s date and location
+and zeroes the seconds, so a `DatePicker` and a `TimePicker` compose into one
+`time.Time` (lesson 4.26 is that composition); a zero `Value` is midnight, with
+no blank option, since a blank is the half-made time back again; the 12-hour
+hour picker's values are 0–11 labelled 12, 1 … 11, so `h24 = h12 + 12·pm` has no
+case for noon or midnight; a re-pick of the shown option reports nothing. One
+concern, `ConcernTimePickerInert`.
+
+Shipped: `TimePicker{Value, OnChange, Hour24, MinuteStep, Label, HourLabel,
+MinuteLabel, PeriodLabel, AMLabel, PMLabel, Disabled, Style}`.
 
 ## Tier E — an hour each, no decisions
 
@@ -378,7 +412,7 @@ wheel (node type), a clipboard copy button (no clipboard bridge).
 | 2 | D2 `QRCode` | the roadmap's pairing flow has nothing to show |
 | 3 | D4 `SelectRow`, `SliderRow` | completes a family, zero decisions |
 | 4 | D3 `Countdown`, `Stopwatch` | alarms exist and cannot show time left |
-| 5 | ~~D5 `PINInput`~~, ~~D6 `DateRangePicker`~~, D7 `TimePicker` | in any order |
+| 5 | ~~D5 `PINInput`~~, ~~D6 `DateRangePicker`~~, ~~D7 `TimePicker`~~ | in any order |
 | 6 | Tier E as one bundle with one lesson | |
 | 7 | Tier F once its theme or core prerequisite lands | |
 

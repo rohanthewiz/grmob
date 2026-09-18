@@ -57,6 +57,7 @@ func chapter4() Chapter {
 			lessonQRCode(),
 			lessonTimers(),
 			lessonDateRange(),
+			lessonTimePicker(),
 		},
 	}
 }
@@ -4614,4 +4615,124 @@ func plural(n int) string {
 		return ""
 	}
 	return "s"
+}
+
+// --- 4.26 ----------------------------------------------------------------
+
+// tutorialAppointment is where 4.26's field starts: half past nine on the
+// demo's "today", so the date half and the time half both have something to
+// show before the reader touches either.
+var tutorialAppointment = time.Date(2026, time.March, 11, 9, 30, 0, 0, time.UTC)
+
+// 4.26 — a time of day, and the sheet it turned out not to need. The lesson's
+// spine is the question 4.25 asked, answered the other way: a range has a
+// half-made state that somebody must hold, and a time has none, so the widget
+// holds nothing and reports every pick at once.
+//
+// The demo composes a DatePicker and a TimePicker into one time.Time, because
+// "the date and location are carried through" is the claim that makes the
+// field useful and it is only visible with a date beside it. A DigitalClock
+// reads the same value under the same Hour24 switch, so the field and the
+// clock are seen to be configured with one word.
+//
+// Appended at the end of the chapter for the reason 4.25 was.
+func lessonTimePicker() Lesson {
+	return Lesson{
+		Title:   "Picking a time of day",
+		Summary: "comps.TimePicker: two or three native pickers in a row, and why a time needs no sheet and no Done.",
+		Body: func(ctx *core.Context) core.View {
+			// One value for both fields. The DatePicker changes its day and
+			// the TimePicker its clock, and neither disturbs the other's half.
+			when := core.NewState(ctx, tutorialAppointment)
+			hour24 := core.NewState(ctx, false)
+
+			// DatePicker reports midday of the tapped day; the clock the
+			// TimePicker set is put back on it here. That is the only line of
+			// glue the pair needs, and it is the DatePicker's half: the
+			// TimePicker already keeps whatever date it is handed.
+			setDay := func(d time.Time) {
+				w := when.Get()
+				when.Set(time.Date(d.Year(), d.Month(), d.Day(), w.Hour(), w.Minute(), 0, 0, w.Location()))
+			}
+
+			return core.Column(
+				core.Gap(14),
+				prose("4.25's range picker held a half-made value, because \"from the 14th, no "+
+					"end yet\" is a state no form wants and a sheet the reader backs out of must "+
+					"not have written it. A time of day asks the same question and gets the other "+
+					"answer. Change only the hour of 9:30 and you have 10:30 — a real time, and "+
+					"exactly the one asked for. There is no half-made time, so there is nothing to "+
+					"hold, nothing to confirm and nothing to discard."),
+				codeBlock(`comps.TimePicker{
+    Value:      when.Get(),
+    OnChange:   when.Set,   // on every pick, with the date kept
+    MinuteStep: 15,
+    Label:      "Start time",
+}`),
+				prose("So there is no sheet. DatePicker needs one because a month grid does not fit "+
+					"in a field; a time's two or three choices do. Each is a core.Select — the "+
+					"platform's own picker — which also rules out a sheet for a second reason: "+
+					"a sheet of pickers is a popup opening popups. And they are Selects rather "+
+					"than Steppers because 9:00 to 17:30 is two picks, where a Stepper wants eight "+
+					"taps on the hour alone and clamps at 23 where a clock wraps."),
+				demoPanel("Pick an hour, a minute, a period — each is reported at once. Change the date: the time stays.",
+					comps.FormField{
+						Label: "Date",
+						Input: comps.DatePicker{
+							Selected: when.Get(),
+							OnSelect: setDay,
+							Title:    "Appointment date",
+							Calendar: comps.Calendar{
+								Today: tutorialToday,
+								Min:   tutorialCalMin,
+								Max:   tutorialCalMax,
+							},
+						},
+					},
+					comps.FormField{
+						Label: "Start time",
+						Hint:  "Every quarter hour.",
+						Input: comps.TimePicker{
+							Value:      when.Get(),
+							OnChange:   when.Set,
+							Hour24:     hour24.Get(),
+							MinuteStep: 15,
+							Label:      "Start time",
+						},
+					},
+					comps.SwitchRow{
+						Title:    "24-hour clock",
+						Subtitle: "One word for the field and the clock",
+						On:       hour24.Get(),
+						OnToggle: hour24.Set,
+					},
+					comps.DigitalClock{Time: when.Get(), Hour24: hour24.Get(), ShowDate: true, Size: 32},
+					caption("Holding "+when.Get().Format("Mon 2 Jan 2006, 15:04")+"."),
+				),
+				prose("OnChange hands back the Value it was given with the hour and minute "+
+					"replaced, on the same date and in the same location, so the two fields above "+
+					"share one time.Time and each edits its own half. The seconds are dropped: the "+
+					"field does not show them, and a value it reports should be one it would draw. "+
+					"A zero Value is midnight rather than a blank, for the same reason there is no "+
+					"sheet — a blank option would bring back the half-made time."),
+				prose("MinuteStep thins the minute list. A time loaded from elsewhere that is off "+
+					"the step — 9:07 on this quarter-hour field — is shown as itself, with :07 "+
+					"slotted into the list in order, rather than rounded: rounding for display "+
+					"would be a lie about the value, and rounding through OnChange would be a "+
+					"write the reader never made."),
+				prose("For a screen reader the row is a group named by Label whose value is the "+
+					"whole time, the shape 4.15's Stepper has, and each picker is named — Hour, "+
+					"Minute, AM/PM — because a picker's own text is only its current option, and "+
+					"\"9, pop-up button\" does not say which part of which time it is."),
+				keyPoints(
+					"A time has no half-made state, so TimePicker holds none: no hooks, no sheet, no Done.",
+					"Every pick is reported at once as a complete time.",
+					"The date and location of Value are kept, so a DatePicker and a TimePicker compose into one time.Time.",
+					"Hour24 is DigitalClock's word; the field and the clock are configured alike.",
+					"An off-step minute is shown as itself, never rounded.",
+					"Built from core.Select, so each part is the platform's own picker.",
+				),
+			)
+		},
+	}
 }

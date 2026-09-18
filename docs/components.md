@@ -1683,6 +1683,85 @@ A `RangeEnd` before its `RangeStart` has nothing between the two to fill, so
 the grid shows two lone endpoints and raises
 `comps.ConcernCalendarRangeReversed` in debug builds.
 
+## TimePicker
+
+A time-of-day field: an hour, a minute and — on a 12-hour clock — an AM/PM,
+each a [`core.Select`](api/core-controls.md#func-select), in one row.
+
+```go
+comps.FormField{
+    Label: "Start time",
+    Input: comps.TimePicker{
+        Value:      start.Get(),
+        OnChange:   start.Set,   // on every pick
+        MinuteStep: 15,
+        Label:      "Start time",
+    },
+}
+
+// [ 9 ▾] : [30 ▾]  [AM ▾]      12-hour, the default
+// [09 ▾] : [30 ▾]              Hour24
+```
+
+### No sheet, because nothing is ever half made
+
+`DatePicker` needs a sheet because a month grid does not fit in a field, and
+its sheet needs no Done button because one tap is the whole choice. A time is
+two or three choices, so a sheet around them would need either a Done button
+and a draft held until it is pressed, or a live value the ✕ cannot take back —
+the trap [`DateRangePicker`](#daterangepicker) exists to avoid.
+
+Neither is needed, because a time has no invalid intermediate. Changing only
+the hour of 9:30 gives 10:30, which is a real time and exactly the one asked
+for; there is no "hour chosen, minute pending" in the way "from the 14th, no
+end yet" is a state. Every pick is a complete value, so every pick is reported
+at once. With no draft there is no hook: `TimePicker` is stateless like
+`Stepper`, and may be rendered conditionally.
+
+It is built from `Select`s rather than `Stepper`s because each part is then
+the platform's own picker, and because 9:00 to 17:30 is two picks where a
+stepper wants eight taps on the hour alone — and clamps at 23 where a clock
+wraps. A sheet of `Select`s would have been a popup opening popups.
+
+### What changes, and what does not
+
+`OnChange` receives `Value` with its hour and minute replaced, **on `Value`'s
+own date and in its own location**, so a `DatePicker` and a `TimePicker` can
+edit one `time.Time` between them — each its own half. The seconds and
+nanoseconds are zeroed, because the field does not show them. A pick of the
+option already shown is not reported.
+
+A zero `Value` is drawn as midnight. There is no blank option and no
+placeholder: a blank would bring back the half-made time. A form where the
+time is optional puts a switch beside the field.
+
+`Hour24` is `DigitalClock.Hour24`'s word, so the clock and the field that sets
+one are configured alike, and it follows the clock's padding rule: `09` on a
+24-hour picker, `9` on a 12-hour one. On a 12-hour picker the hours are listed
+12, 1 … 11, and flipping AM/PM keeps the hour within the period. `AMLabel` and
+`PMLabel` localise the period, since Go spells it in English only.
+
+### A minute off the step is kept, not rounded
+
+`MinuteStep` thins the minute list — 15 gives :00, :15, :30, :45; zero offers
+every minute. A `Value` whose minute is off the step (9:07, loaded from
+somewhere else) has its own minute slotted into the list in order, so the field
+shows 9:07. Rounding for display would be a lie about the value, and rounding
+through `OnChange` would be a write the reader never made. The extra option
+leaves as soon as another minute is picked.
+
+### Accessibility
+
+The row is a group named by `Label`, with the whole time as its value —
+`Stepper`'s shape — so a native reader arriving at it hears "Start time, 9:30
+AM" once. Each picker is named `"Hour"`, `"Minute"` and `"AM/PM"` by default
+(`HourLabel`, `MinuteLabel`, `PeriodLabel` localise them), because a picker's
+own text is only its current option. The colon is hidden.
+
+In debug builds, a `TimePicker` with no `OnChange` raises
+`comps.ConcernTimePickerInert`: every pick goes nowhere, which on screen looks
+like a field that simply has not been changed.
+
 ## Accordion
 
 A collapsible section — tappable chevron header, content shown while
