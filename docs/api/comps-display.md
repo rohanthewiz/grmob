@@ -4,9 +4,9 @@
 import "github.com/rohanthewiz/grmob/comps"
 ```
 
-Avatars and avatar stacks, stat tiles, the compass, clocks, countdowns and alarms, an audio player, message bubbles, QR codes, map panels and static maps.
+Avatars and avatar stacks, stat tiles, the compass, clocks, countdowns and alarms, an audio player, message bubbles, expandable text, QR codes, map panels and static maps.
 
-One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/avatar.go`, `comps/avatar_stack.go`, `comps/stat_tile.go`, `comps/compass.go`, `comps/clock.go`, `comps/timers.go`, `comps/alarm.go`, `comps/audio_player.go`, `comps/message_bubble.go`, `comps/qr_code.go`, `comps/map_panel.go`, `comps/static_map.go`.
+One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/avatar.go`, `comps/avatar_stack.go`, `comps/stat_tile.go`, `comps/compass.go`, `comps/clock.go`, `comps/timers.go`, `comps/alarm.go`, `comps/audio_player.go`, `comps/message_bubble.go`, `comps/expandable_text.go`, `comps/qr_code.go`, `comps/map_panel.go`, `comps/static_map.go`.
 
 ## Index
 
@@ -35,6 +35,8 @@ One of 7 topic pages of [package comps](comps.md), which has the package overvie
 - [`type DigitalClock`](#type-digitalclock)
     - [`func (DigitalClock) Render`](#func-digitalclock-render)
 - [`type ECLevel`](#type-eclevel)
+- [`type ExpandableText`](#type-expandabletext)
+    - [`func (ExpandableText) Render`](#func-expandabletext-render)
 - [`type MapHandoff`](#type-maphandoff)
 - [`type MapPanel`](#type-mappanel)
     - [`func (MapPanel) Render`](#func-mappanel-render)
@@ -977,6 +979,73 @@ const (
 	ECHigh     ECLevel = "H"
 )
 ```
+
+### type ExpandableText
+
+```go
+type ExpandableText struct {
+	// Text is the full text.
+	Text string
+
+	// Lines is the collapsed cap; 0 means 3.
+	Lines int
+
+	// ToggleAfter is the length in runes past which the text is capped and
+	// the toggle shown; 0 means Lines × 40, negative always shows it. See
+	// "When the toggle shows".
+	ToggleAfter int
+
+	// MoreLabel and LessLabel caption the toggle; empty gives "Read more"
+	// and "Read less". MoreLabel is also its accessible name in both states.
+	MoreLabel, LessLabel string
+
+	// Style is applied to the text after its defaults.
+	Style []core.StyleProp
+}
+```
+
+ExpandableText is body text capped at a few lines, with a "Read more" that opens it in place and a "Read less" that closes it again: a product description, a review, the summary of an episode.
+
+	comps.ExpandableText{Text: episode.Summary, Lines: 3}
+
+	┌ Column ────────────────────────────────────────────┐
+	│ The third episode follows the team to the coast,   │  core.MaxLines(3)
+	│ where the survey that was meant to take a week     │  while collapsed
+	│ turns into a month of weather, tides and a …       │
+	│ [ Read more ]                                      │  ghost, aria-expanded
+	└────────────────────────────────────────────────────┘
+
+#### When the toggle shows: a threshold, because nothing measures
+
+The honest rule is "show Read more when the cap actually cut something", and no host can say whether it did: that is a rendered height, the layout measurement Tooltip is blocked on. A toggle that is always there shows "Read more" under a two-line paragraph, which opens onto nothing.
+
+So the rule is a length the caller can tune. The toggle shows when the text has more than ToggleAfter characters (runes) — by default Lines × 40, about what fits a phone's line of body text. A caller who knows better states it: a negative ToggleAfter always shows the toggle, a very large one never does. Where the estimate is wrong the failure is mild in both directions: a toggle that reveals a few more words, or a paragraph a line longer than the cap that is simply shown in full — collapsed with no toggle means no cap, since a cap with no way to lift it would hide the end of the text for good.
+
+#### The open state is the widget's
+
+Whether the text is open is held here, in a hook — no application wants it, PasswordField's test — so render an ExpandableText unconditionally, in a stable position.
+
+#### Accessibility
+
+The text node carries the whole string on every target; the cap is visual only (a screen reader reads a clamped Text in full on the web, and VoiceOver and TalkBack read a lineLimit / maxLines Text's full content). The toggle is a button whose name stays "Read more" and whose expanded state is stated with core.AccessibilityExpanded — aria-expanded — so the name does not flip between two different-sounding buttons. See PasswordField's "Accessibility" for the same rule.
+
+#### Theme roles read
+
+	Text     Typography.Body
+	Toggle   a ghost Button (Primary's on-light tone)
+	Gap      Spacing.XS
+
+<small>[comps/expandable_text.go:60](https://github.com/rohanthewiz/grmob/blob/master/comps/expandable_text.go#L60)</small>
+
+#### func (ExpandableText) Render
+
+```go
+func (e ExpandableText) Render(ctx *core.Context) *core.Node
+```
+
+Render draws the text and, when it is long enough, the toggle. It takes one hook, the open state.
+
+<small>[comps/expandable_text.go:82](https://github.com/rohanthewiz/grmob/blob/master/comps/expandable_text.go#L82)</small>
 
 ### type MapHandoff
 

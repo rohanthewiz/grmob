@@ -93,3 +93,72 @@ func TestRatingNilOnChangeIsDisplayOnlyAndGlyphsOverride(t *testing.T) {
 		t.Error("no OnChange means no handlers")
 	}
 }
+
+// Halves: 3.6 rounds to 3.5 — three full stars, one half, one empty, all
+// drawn as canvases — announced "3.5 of 5".
+func TestRatingHalvesDrawsAHalfStar(t *testing.T) {
+	_, n := renderDebug(t, Rating{Value: 3.6, Halves: true, ReadOnly: true})
+
+	if v := n.Style.AccessibilityValue; v.Text != "3.5 of 5" || v.Now != "3.5" {
+		t.Errorf("value = %+v, want 3.5 of 5", v)
+	}
+	if len(n.Children) != 5 {
+		t.Fatalf("glyphs = %d, want 5", len(n.Children))
+	}
+	on := core.DefaultTheme.Colors.WarningOnLightColor()
+	for i, want := range []string{"full", "full", "full", "half", "empty"} {
+		c := n.Children[i]
+		if c.Type != "Canvas" || !c.Style.AccessibilityHidden {
+			t.Fatalf("glyph %d = %q, want a hidden Canvas", i, c.Type)
+		}
+		shapes := c.Children
+		var got string
+		switch {
+		case len(shapes) == 2 && shapes[0].Props["fill"] == on:
+			got = "half"
+		case len(shapes) == 1 && shapes[0].Props["fill"] == on:
+			got = "full"
+		case len(shapes) == 1 && shapes[0].Props["fill"] == nil:
+			got = "empty"
+		default:
+			got = "unrecognized"
+		}
+		if got != want {
+			t.Errorf("glyph %d is %s, want %s", i, got, want)
+		}
+	}
+}
+
+// Rounding to halves at the edges: 4.74 is 4.5, 4.75 is 5, and a value past
+// Max clamps.
+func TestRatingHalvesRounding(t *testing.T) {
+	for v, want := range map[float64]string{4.74: "4.5 of 5", 4.75: "5 of 5", 0.2: "0 of 5", 0.3: "0.5 of 5", 9: "5 of 5"} {
+		_, n := renderDebug(t, Rating{Value: v, Halves: true, ReadOnly: true})
+		if got := n.Style.AccessibilityValue.Text; got != want {
+			t.Errorf("Value %v announced %q, want %q", v, got, want)
+		}
+	}
+}
+
+// An interactive Halves rating keeps its whole-star buttons, each holding a
+// drawn star, and still reports whole numbers.
+func TestRatingHalvesInteractive(t *testing.T) {
+	var got []int
+	ctx, n := renderDebug(t, Rating{Value: 2.5, Halves: true, OnChange: func(v int) { got = append(got, v) }})
+	btn := n.Children[3]
+	if btn.Style.AccessibilityRole != core.RoleButton || btn.Children[0].Type != "Canvas" {
+		t.Fatalf("glyph 4 = role %q holding %q, want a button around a Canvas", btn.Style.AccessibilityRole, btn.Children[0].Type)
+	}
+	ctx.TriggerCallback(btn.Props["onClick"].(string))
+	if len(got) != 1 || got[0] != 4 {
+		t.Errorf("changes = %v, want [4]", got)
+	}
+}
+
+// Without Halves nothing changed: text glyphs, whole rounding.
+func TestRatingWithoutHalvesIsUnchanged(t *testing.T) {
+	_, n := renderDebug(t, Rating{Value: 3.6, ReadOnly: true})
+	if n.Children[0].Type != "Text" || n.Style.AccessibilityValue.Text != "4 of 5" {
+		t.Errorf("glyph %q value %q, want text glyphs and 4 of 5", n.Children[0].Type, n.Style.AccessibilityValue.Text)
+	}
+}

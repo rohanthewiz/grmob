@@ -109,6 +109,10 @@ type nodeStyle struct {
 	// the tree, so this number is the only place their nesting exists.
 	AccessibilityNestingLevel int
 
+	// The spoken value, for 4.32's half-star rating. A read-only rating's
+	// glyphs are hidden drawings, so "3.5 of 5" exists only here.
+	AccessibilityValue struct{ Text string }
+
 	// The field frame, for chapter 5's picker lesson. The claim there is that
 	// a picker and a text field wear the same edge, and the edge is a style
 	// field on both — there is nothing in the props to compare.

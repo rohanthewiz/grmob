@@ -2881,3 +2881,41 @@ func TestMessageBubblesLessonSendsAndGroups(t *testing.T) {
 	}
 	assertNoConcerns(t)
 }
+
+// 4.32. The long review has a toggle and the short one does not; opening
+// lifts the cap; the rating steps by halves and says so.
+func TestReadMoreAndHalfStarsLesson(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Read more, and half a star")
+
+	toggles := func() []*node {
+		return findNodes(tree(t, mgr), func(n *node) bool {
+			return n.Type == "Button" && n.Style != nil && n.Style.AccessibilityLabel == "Read more"
+		})
+	}
+	if n := len(toggles()); n != 1 {
+		t.Fatalf("Read more toggles = %d, want one, under the long review only", n)
+	}
+	tap(t, mgr, "Read more")
+	if findNode(tree(t, mgr), func(n *node) bool { return n.Type == "Button" && n.Props["label"] == "Read less" }) == nil {
+		t.Error("opening should flip the caption to Read less")
+	}
+
+	rating := func() string {
+		n := findNode(tree(t, mgr), func(n *node) bool {
+			return n.Style != nil && n.Style.AccessibilityLabel == "Average rating"
+		})
+		if n == nil {
+			t.Fatal("the rating is missing")
+		}
+		return n.Style.AccessibilityValue.Text
+	}
+	if got := rating(); got != "3.5 of 5" {
+		t.Errorf("rating = %q, want 3.5 of 5", got)
+	}
+	tap(t, mgr, "+ 0.5")
+	if got := rating(); got != "4 of 5" {
+		t.Errorf("after +0.5 rating = %q, want 4 of 5", got)
+	}
+	assertNoConcerns(t)
+}

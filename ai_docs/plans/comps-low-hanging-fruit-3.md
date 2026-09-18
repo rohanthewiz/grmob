@@ -4,7 +4,9 @@
 same day as one batch, taught by lesson 4.29 "Copy, link and list".
 **G2 `TagInput` landed** next, with lesson 5.8, then **G3 `AudioPlayer`**
 with lesson 4.30 and **G4 `MessageBubble`** with lesson 4.31. Tier G is
-complete.
+complete. **Tier I** was settled: `ExpandableText` and `Rating.Halves` landed
+with lesson 4.32, and the scrolling year-long `CalendarHeatmap` stays blocked.
+Nothing in this file is unstarted.
 
 Round one (`comps-low-hanging-fruit.md`, Tiers A–C) and round two
 (`comps-low-hanging-fruit-2.md`, Tiers D–F) are both complete. This file is
@@ -311,7 +313,35 @@ The sketch, as drafted:
   `Weeks`. This is the cheap half of "53 weeks does not fit a phone". The
   other half is in Tier I.
 
-## Tier I — worth it, with a catch to settle first
+## Tier I — worth it, with a catch to settle first — **settled 2026-09-18**
+
+How each catch was settled:
+
+- **`ExpandableText`: (b), with (a) folded into it.** `ToggleAfter` is a
+  rune threshold, `Lines` × 40 by default. A negative value always shows
+  the toggle, and a very large one never does, so a caller who knows can
+  say so without a second field. One rule came out of the build: **a cap
+  only comes with a toggle.** Short text is drawn uncapped, because a cap
+  with no way to lift it would hide the end of the text for good. That
+  makes a wrong estimate mild either way. The toggle's name stays "Read
+  more", with `aria-expanded`.
+- **`Rating` half-glyphs: a Canvas star, not a clip.** Reading the SwiftUI
+  mapping answered the plan's question (`Overflow("hidden")` does clip
+  there: `RoundedCornerShapeIfAny(clips:)`), but it raised a worse one.
+  SwiftUI truncates a `Text` proposed less than its width to "…" instead
+  of letting it overflow to be cut. So the clip would cut an ellipsis, not
+  half a star. `Rating.Halves` (opt-in) therefore draws every position as a
+  22px Canvas star, so full, half and empty are one drawing. The half is
+  the star's exact left-half polygon, because a regular star is symmetric
+  about the axis through its top point and bottom inner vertex. `Glyph` and
+  `EmptyGlyph` do not apply with `Halves`. Without it the tree is
+  unchanged. A headless-Chrome render put the Canvas stars beside "★" text
+  glyphs, and they are indistinguishable at that size.
+- **A scrolling `CalendarHeatmap`: not built.** This is the leaning below,
+  unchanged. `WeeksFor` (Tier H) covers the phone case, and a year that
+  opens on its oldest week is worse than 21 weeks that open on today.
+
+The sketch, as drafted:
 
 - **`ExpandableText`**: body text capped with `MaxLines`, plus a "Read more /
   Read less" toggle.
@@ -383,7 +413,7 @@ New this round:
 | 3 | ~~G2 `TagInput`~~ | the one new *input*; completes the form family |
 | 4 | ~~G3 `AudioPlayer`~~ | an extraction; the example proves it |
 | 5 | ~~G4 `MessageBubble`~~ | an extraction; the example proves it |
-| 6 | Tier I | each after its catch is settled |
+| 6 | ~~Tier I~~ | each after its catch is settled |
 
 ## Definition of done, per widget
 

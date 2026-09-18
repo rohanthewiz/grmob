@@ -1268,10 +1268,17 @@ comps.Rating{Value: stars.Get(), OnChange: func(v int) { stars.Set(float64(v)) }
 comps.Rating{Value: 4.5, ReadOnly: true, Label: "Average score"}
 ```
 
-**`Value` is a float.** Version 1 rounds to whole glyphs, so a caller can store
-an average today and gain half-glyphs later without a type change. `OnChange`
-reports whole positions because a tap lands on one glyph. Tapping the glyph
-that is already the value does nothing.
+**`Value` is a float.** It rounds to whole glyphs unless `Halves` is set, so a
+caller storing an average never changed type when half-glyphs arrived.
+`OnChange` reports whole positions because a tap lands on one glyph. Tapping
+the glyph that is already the value does nothing.
+
+**`Halves` draws, it does not type.** With `Halves` the value rounds to the
+nearest half ("3.5 of 5") and every star is a small `Canvas`. The half is the
+star's exact left-half polygon, not a clipped "★": SwiftUI truncates a Text
+squeezed below its width to "…" rather than letting it be cut. `Glyph` and
+`EmptyGlyph` do not apply to a `Halves` rating. Without `Halves` the tree is
+unchanged.
 
 **Interactive glyphs are buttons, read-only glyphs are decoration.** Each
 tappable glyph is a button named "3 of 5". A read-only rating registers no
@@ -3466,6 +3473,24 @@ comps.MessageBubble{Text: "Not yet", Mine: true, Time: "10:42"}
 - `Style` goes on the outer row, where a gap between messages belongs.
 - **Not a thread**: opening at the newest message needs a scroll offset.
   **No tail**: that needs a per-corner radius. Both are renderer work.
+
+## ExpandableText
+
+Body text capped at a few lines, with a Read more that opens it in place.
+
+```go
+comps.ExpandableText{Text: episode.Summary, Lines: 3}
+```
+
+- **The toggle shows past a length, not a measurement.** Whether the cap cut
+  anything is a rendered height, which no host reports. The toggle shows
+  when the text has more than `ToggleAfter` runes: `Lines` × 40 by default,
+  negative to always show it.
+- **A cap only comes with a toggle.** Short text is drawn in full, because a
+  cap with no way to lift it would hide the end of the text for good.
+- The open state is the widget's (one hook): render it unconditionally.
+- The text node always carries the whole string. The toggle stays named "Read
+  more", with `aria-expanded` saying which way it is.
 
 ## QRCode
 

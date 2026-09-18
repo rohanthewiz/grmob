@@ -39,7 +39,7 @@ Package comps's reference is split into 7 topic pages by source file. The index 
 | [Inputs & pickers](comps-inputs.md) | Form fields, password fields, one-time code fields, tag inputs, search, searchable selects, radio groups, dates, date ranges, times and calendars, and the two editors. | 16 types, 15 functions and methods |
 | [Buttons & choices](comps-actions.md) | Buttons and their variants, copy buttons, links, chips, segmented controls, steppers, ratings and badges. | 12 types, 12 functions and methods |
 | [Overlays & feedback](comps-overlays.md) | Dialogs, lightboxes, action sheets, menus, snackbars, banners, progress, spinners, skeletons and empty states. | 13 types, 10 functions and methods |
-| [Data display & maps](comps-display.md) | Avatars and avatar stacks, stat tiles, the compass, clocks, countdowns and alarms, an audio player, message bubbles, QR codes, map panels and static maps. | 20 types, 22 functions and methods |
+| [Data display & maps](comps-display.md) | Avatars and avatar stacks, stat tiles, the compass, clocks, countdowns and alarms, an audio player, message bubbles, expandable text, QR codes, map panels and static maps. | 21 types, 23 functions and methods |
 | [Charts](comps-charts.md) | Sparklines, line, area, bar and scatter charts, histograms, heatmaps and calendar heatmaps, donuts and pies, and gauges, drawn on core.Canvas. | 16 types, 12 functions and methods |
 
 ## Index
@@ -151,6 +151,7 @@ Package comps's reference is split into 7 topic pages by source file. The index 
     - [`type Countdown`](comps-display.md#type-countdown)
     - [`type DigitalClock`](comps-display.md#type-digitalclock)
     - [`type ECLevel`](comps-display.md#type-eclevel)
+    - [`type ExpandableText`](comps-display.md#type-expandabletext)
     - [`type MapHandoff`](comps-display.md#type-maphandoff)
     - [`type MapPanel`](comps-display.md#type-mappanel)
     - [`type MapPin`](comps-display.md#type-mappin)

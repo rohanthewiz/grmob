@@ -63,6 +63,7 @@ func chapter4() Chapter {
 			lessonCopyLinkAndList(),
 			lessonAudioPlayer(),
 			lessonMessageBubbles(),
+			lessonReadMoreAndHalfStars(),
 		},
 	}
 }
@@ -5318,6 +5319,66 @@ comps.MessageBubble{Text: "Not yet", Mine: true, Time: "10:42"}`),
 					"Sender is drawn on theirs only; leave it empty when the speaker has not changed.",
 					"One spoken stop per message, who-what-when; use a RoleLog container for the transcript.",
 					"Not a thread (no scroll offset) and no tail (one corner radius): both are renderer walls.",
+				),
+			)
+		},
+	}
+}
+
+// 4.32 — Tier I of the third low-hanging-fruit round: the two items whose
+// catch was settled without a renderer. Both catches are the same shape —
+// something a text node cannot tell you or do — so the lesson is organised
+// around what was used instead: a length threshold in place of a measurement,
+// and a drawing in place of a clipped glyph.
+//
+// Appended at the end of the chapter for the reason 4.25 was.
+func lessonReadMoreAndHalfStars() Lesson {
+	return Lesson{
+		Title:   "Read more, and half a star",
+		Summary: "comps.ExpandableText's length threshold, and Rating.Halves drawing its stars instead of clipping a glyph.",
+		Body: func(ctx *core.Context) core.View {
+			score := core.NewState(ctx, 3.5)
+			return core.Column(
+				core.Gap(14),
+				prose("ExpandableText caps a paragraph at a few lines with core.MaxLines and adds a "+
+					"Read more that opens it in place. The catch is knowing when to offer it: the "+
+					"honest rule is \"when the cap cut something\", and no host reports that — it "+
+					"is a rendered height. So the toggle shows past a length, Lines × 40 characters "+
+					"by default, and ToggleAfter tunes it."),
+				codeBlock(`comps.ExpandableText{Text: summary, Lines: 3}`),
+				demoPanel("The long review is capped and can be opened; the short one needs neither.",
+					comps.ExpandableText{
+						Lines: 3,
+						Text: "Arrived a day early and set up in ten minutes. The instructions are clear, " +
+							"the parts are labelled, and the one screw that was missing turned out to be " +
+							"taped inside the lid. After a month of daily use the hinge is as stiff as on " +
+							"day one and the finish has not marked. The only thing I would change is the " +
+							"cable, which is a little short for a desk against a wall.",
+					},
+					comps.ExpandableText{Text: "Does what it says. Would buy again."},
+				),
+				prose("Rating rounds to whole stars unless Halves is set. Half a text glyph would be a "+
+					"\"★\" clipped by a half-width box, and a text node cannot be trusted with that: "+
+					"SwiftUI truncates a Text squeezed below its width to \"…\" instead of letting it "+
+					"be cut. So a Halves rating draws every star on a small Canvas, and the half is "+
+					"exact geometry — the left half of a star is the polygon of its left-side points."),
+				codeBlock(`comps.Rating{Value: product.Average, Halves: true, ReadOnly: true}`),
+				demoPanel("Step the average by halves.",
+					comps.Rating{Value: score.Get(), Halves: true, ReadOnly: true, Label: "Average rating"},
+					core.Row(
+						core.Gap(8),
+						comps.Button{Label: "− 0.5", Emphasis: comps.EmphasisOutlined,
+							OnTap: func() { score.Set(math.Max(0, score.Get()-0.5)) }},
+						comps.Button{Label: "+ 0.5", Emphasis: comps.EmphasisOutlined,
+							OnTap: func() { score.Set(math.Min(5, score.Get()+0.5)) }},
+					),
+					caption(fmt.Sprintf("Value = %g, announced \"%g of 5\".", score.Get(), score.Get())),
+				),
+				keyPoints(
+					"ExpandableText: MaxLines while closed; the toggle past ToggleAfter runes (Lines × 40).",
+					"A cap is only applied when there is a toggle to lift it.",
+					"The toggle's name stays \"Read more\"; aria-expanded says which way it is.",
+					"Rating.Halves: rounds to halves and draws canvas stars; without it, nothing changed.",
 				),
 			)
 		},
