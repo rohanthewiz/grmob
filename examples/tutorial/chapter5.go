@@ -29,6 +29,7 @@ func chapter5() Chapter {
 			lessonCrossField(),
 			lessonValuesReset(),
 			lessonPicker(),
+			lessonPINInput(),
 		},
 	}
 }
@@ -723,6 +724,114 @@ func lessonPicker() Lesson {
 					"The Go style owns the frame on all four targets, which is why the web's own <select> border is reset away.",
 					"The value is controlled; whether the menu is open is the renderer's, and Go never hears about it.",
 					"Group sections consecutive options; Disabled greys one out without removing it.",
+				),
+			)
+		},
+	}
+}
+
+// --- 5.7 -----------------------------------------------------------------
+
+func lessonPINInput() Lesson {
+	return Lesson{
+		Title:   "One-time codes: the field that moves its own cursor",
+		Summary: "comps.PINInput: one string across N cells, core.UseFocusOrder doing the walking, and the two edits a prefix allows.",
+		Body: func(ctx *core.Context) core.View {
+			// The code, and what the demo has been told about it. Both are
+			// lesson state: the widget holds neither, exactly as every
+			// controlled input in this chapter holds neither.
+			code := core.NewState(ctx, "")
+			submitted := core.NewState(ctx, "")
+			attempts := core.NewState(ctx, 0)
+
+			// "1 time" rather than "1 times": the caption is read after every
+			// keystroke, so the one place the demo counts out loud should not
+			// read as a placeholder someone forgot to finish.
+			fired := "times"
+			if attempts.Get() == 1 {
+				fired = "time"
+			}
+
+			return core.Column(
+				core.Gap(14),
+				prose("A one-time code is six boxes, one character each, and the reason it is a "+
+					"widget rather than six fields in a Row is the cursor: typing a character "+
+					"should move it on. comps.PINInput is that, and it is the first widget in "+
+					"the library to drive core's focus system — one core.FocusRef per cell, one "+
+					"core.UseFocusOrder over them, and core.FocusNext after every character it "+
+					"writes."),
+				codeBlock(`comps.PINInput{
+    Length:     6,
+    Value:      code.Get(),
+    OnChange:   code.Set,
+    OnComplete: func(c string) { verify(c) },
+}`),
+				prose("Value is the whole code as one string, not a cell array — which decides "+
+					"more than it looks like it does. A string cannot hold a gap, so the cells "+
+					"fill strictly left to right and there are exactly two edits: typing writes "+
+					"from this cell forward, and clearing a cell drops it and everything after "+
+					"it. The alternative to dropping the tail is shifting it left, which changes "+
+					"cells the finger never touched."),
+				demoPanel("Type into the boxes. Paste a whole code into the first one. Then clear a middle box and watch the tail go with it.",
+					comps.PINInput{
+						Length:     6,
+						Value:      code.Get(),
+						Label:      "One-time code",
+						OnChange:   code.Set,
+						OnComplete: func(c string) { attempts.Set(attempts.Get() + 1) },
+						Style:      []core.StyleProp{core.MaxWidth("320px")},
+					},
+					caption(fmt.Sprintf("Value = %q   ·   OnComplete fired %d %s",
+						code.Get(), attempts.Get(), fired)),
+					core.Row(
+						core.Gap(8),
+						comps.Button{
+							Label:    "Submit",
+							Disabled: len(code.Get()) < 6,
+							OnTap:    func() { submitted.Set(code.Get()) },
+						},
+						comps.Button{
+							Label:    "Clear",
+							Emphasis: comps.EmphasisGhost,
+							OnTap:    func() { code.Set(""); submitted.Set("") },
+						},
+					),
+					core.IfElse(submitted.Get() == "",
+						caption("Nothing submitted yet."),
+						caption("✓ Submitted "+submitted.Get()),
+					),
+				),
+				prose("A cell that reports more than one character is a paste — the whole code "+
+					"dropped into the first box — and it is also what typing into a box that "+
+					"already holds something looks like, because the field is controlled and "+
+					"reports its entire contents. Both are the same rule: write the incoming "+
+					"string from this cell forward and put the cursor after the last box it "+
+					"filled. Characters past the last box are dropped."),
+				prose("Backspace in an *empty* box does nothing, and cannot do anything. There "+
+					"are no key events here — a field reports its text, not the keys that made "+
+					"it — so a backspace that changes nothing is never reported at all. That is "+
+					"a limit of the wire rather than of the widget, and the widget documents it "+
+					"instead of pretending otherwise."),
+				prose("OnComplete fires on every edit that leaves the code full, including an "+
+					"edit to a code that was already full. That is deliberately not Countdown's "+
+					"once-per-crossing reading: OnComplete means \"submit this\", and someone who "+
+					"mistypes one digit, corrects it, and gets silence has a field that will not "+
+					"submit. It fires from the change handler, so a screen restored with a "+
+					"complete code in it does not resubmit itself on sight."),
+				prose("The cells are ordinary core.Input nodes wearing the theme's field frame, "+
+					"so they match the text inputs above them, and they divide the row with "+
+					"core.FlexGrow and a zero core.FlexBasis — the pair the calendar's day cells "+
+					"use, which is what makes all four targets read \"equal shares\" the same "+
+					"way. They take the text keyboard rather than the number pad: the numeric "+
+					"keyboard is chosen by node type, and that node carries an int, which has no "+
+					"way to say \"this box is empty\"."),
+				keyPoints(
+					"PINInput is N single-character fields whose cursor walks itself: UseFocusOrder declares the walk, FocusNext takes the steps.",
+					"Value is the whole code as one string, so the cells are a prefix — no gaps, and clearing a cell drops the tail.",
+					"A paste and a second character in a full cell are the same event: write forward from that cell, cursor after the last one filled.",
+					"Backspace in an empty cell is invisible to Go, because the framework carries text and not keys.",
+					"OnComplete fires whenever an edit leaves the code full, so a corrected code submits again.",
+					"It holds one hook per cell, so render it in a stable position every pass — and its hook count never shrinks when Length does.",
 				),
 			)
 		},

@@ -1,8 +1,8 @@
 # Low-hanging fruit for `comps`, round two
 
 **Status:** drafted 2026-09-17. D1 `FAB` + `Screen.Floating`, D2 `QRCode`,
-D4 `SelectRow` + `SliderRow` and D3 `Countdown` + `Stopwatch` all landed the
-same day. Everything else is unstarted.
+D4 `SelectRow` + `SliderRow`, D3 `Countdown` + `Stopwatch` and D5 `PINInput`
+all landed the same day. Everything else is unstarted.
 
 The first round (`comps-low-hanging-fruit.md`) landed entire on 2026-09-12:
 Tiers A through C, fifteen widgets, one carousel left blocked on a scroll
@@ -205,17 +205,63 @@ already answered it. A `Value` no option carries reports
 `comps.ConcernSelectRowValueNotAnOption` in debug builds, because on screen
 that mistake is indistinguishable from a row nobody has set.
 
-### D5. `PINInput`
+### D5. `PINInput` — **landed 2026-09-17**
 
 N single-character `core.Input`s in a row with `FocusNext` on each change, for
 one-time codes. The signup example wants it.
 
 - `PINInput{Length int, Value string, OnChange func(string), OnComplete
-  func(string), Secure bool, Label, Style}`.
+  func(string), Secure bool, Label, Style}` — shipped exactly as sketched, no
+  field added or dropped.
 - **Decisions:** a pasted full code lands in the first cell's `OnChange` as a
   multi-character string — spread it across the cells and jump to the end.
   Backspace on an empty cell cannot be seen (no key events), so a cleared cell
   stays focused; document it.
+
+**What the sketch left for the build.** Four things.
+
+- **`Value` is one string, so the cells are a prefix.** Cell *i* draws the
+  *i*-th character, and a plain string cannot hold a gap — which makes typing
+  and clearing the only two edits there are, and forces the answer to the case
+  the sketch did not ask about: a *cleared* cell must either shift the tail
+  left, changing cells the finger never touched, or drop it. Dropping is the
+  predictable one, because it is what "start again from here" means. The same
+  invariant answers a character typed into a cell past the end of the code —
+  it lands at the end, there being no position for it to occupy.
+- **The paste rule is also the overflow rule**, which is what made it cheap. A
+  cell reporting more than one character is either a pasted code or a keystroke
+  in a box that already held something: the field is controlled, so it reports
+  its whole contents either way, and one rule covers both — write the incoming
+  string from that cell forward, cursor after the last cell filled. The one
+  case it reads wrongly is a character inserted *before* an existing one,
+  which arrives as `"21"`; nothing in the event says where the caret was.
+- **`OnComplete` fires on every edit that leaves the code full**, and this is
+  the decision that is deliberately *not* `Countdown.OnDone`'s. Once per
+  crossing would leave a corrected digit unsubmitted, and `OnComplete` means
+  "submit this". It comes from the change handler rather than from an effect,
+  so a screen restored with a complete code does not resubmit itself on mount;
+  an edit producing the value already held is treated as an echo and does
+  nothing at all.
+- **The hook count follows the high-water `Length`, not the current one.** One
+  `FocusRef` per cell means one hook slot per cell, and a `Length` that shrank
+  between passes would retire slots from the middle of the sequence and drift
+  every cursor after it. The count therefore only ever grows, held in one slot
+  of its own ahead of the refs, at the cost of a few refs nothing points at.
+  `TestPINInputKeepsItsHookSlotsWhenLengthShrinks` pins it with a state
+  allocated *after* the widget, which is where the drift would land.
+
+The cells divide the row with `FlexGrow` and a zero `FlexBasis` — `Calendar`'s
+day-cell pair, the one that makes the natives' "equal shares" and CSS's "equal
+shares of the leftovers" agree. They take the platform's **text** keyboard and
+not its number pad: the numeric keyboard is chosen by node type, and that node
+carries an `int`, which has no way to say "this cell is empty" — so backspace
+would stop working. A digits-only keyboard needs a keyboard-type prop on
+`core.Input`, which is a renderer change and stays out of this plan.
+
+Two concerns, both the "permanently wrong and looks ordinary" bar:
+`ConcernPINInputInert` for a field with no `OnChange`, and
+`ConcernPINValueTooLong` for characters past the last cell, which are never
+drawn and can never be typed away.
 
 ### D6. `DateRangePicker`
 
@@ -279,7 +325,7 @@ wheel (node type), a clipboard copy button (no clipboard bridge).
 | 2 | D2 `QRCode` | the roadmap's pairing flow has nothing to show |
 | 3 | D4 `SelectRow`, `SliderRow` | completes a family, zero decisions |
 | 4 | D3 `Countdown`, `Stopwatch` | alarms exist and cannot show time left |
-| 5 | D5 `PINInput`, D6 `DateRangePicker`, D7 `TimePicker` | in any order |
+| 5 | ~~D5 `PINInput`~~, D6 `DateRangePicker`, D7 `TimePicker` | in any order |
 | 6 | Tier E as one bundle with one lesson | |
 | 7 | Tier F once its theme or core prerequisite lands | |
 

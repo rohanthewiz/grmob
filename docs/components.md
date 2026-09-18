@@ -1463,6 +1463,107 @@ comps.FormField{
 }
 ```
 
+## PINInput
+
+The boxed one-character-per-cell field a one-time code is typed into, with the
+cursor moving itself:
+
+```go
+comps.PINInput{
+    Length:     6,
+    Value:      code.Get(),
+    OnChange:   code.Set,
+    OnComplete: func(c string) { verify(c) },
+}
+```
+
+```
+┌───┐ ┌───┐ ┌───┐ ┌───┐ ┌───┐ ┌───┐
+│ 4 │ │ 1 │ │ 7 │ │ 2 │ │   │ │   │
+└───┘ └───┘ └───┘ └───┘ └───┘ └───┘
+                          ▲ put there by the cell before it
+```
+
+It is the first widget in the package to drive core's [focus
+traversal](concepts/events.md#focus-traversal): one `core.FocusRef` per cell, one
+`core.UseFocusOrder` over them, `core.FocusNext` after every character it
+writes. That is the whole of what it adds over a `Row` of fields — and it also
+gives each cell but the last the keyboard's **Next** action, for free, because
+that is what declaring an order does.
+
+**`Value` is the whole code as one string, and therefore a prefix.** Cell *i*
+draws the *i*-th character and the empty cells are the ones past the end. A
+string cannot hold a gap, so the cells fill strictly left to right and there
+are exactly two edits:
+
+| edit | result |
+| --- | --- |
+| typing at cell *i* | `Value` = `code[:i]` + what was typed + whatever the typed run did not cover |
+| clearing cell *i* | `Value` = `code[:i]` — cell *i* and everything after it goes |
+
+Clearing is the asymmetric one. A cleared middle cell has to either shift the
+tail left — so cells the finger never touched change under it — or drop the
+tail; dropping is the one a person can predict, because it is what "start again
+from here" means. The same invariant settles a case the cells can otherwise
+raise: a character typed into a cell *past* the end of the code lands at the
+end, there being no position for it to occupy.
+
+**A paste and a second character in a full cell are the same event.** A cell
+reporting more than one character is either the whole code pasted into the
+first box, or a keystroke in a box that already held something — the field is
+controlled, so it reports its entire contents either way. Both are one rule:
+write the incoming string from that cell forward, and put the cursor after the
+last cell it filled. Characters past the last cell are dropped. The one case it
+reads wrongly is a character inserted *before* an existing one, which arrives
+as `"21"` and is written in that order; nothing in the event says where the
+caret was.
+
+**Backspace in an empty cell does nothing, and cannot.** There are no key
+events in this framework — a field reports its text, not the keys that produced
+it — so a backspace that changes nothing is never reported. The cursor stays
+put. Clearing a run of cells is one backspace per cell with a tap in between,
+or one backspace in the leftmost filled cell, which drops the rest by the rule
+above.
+
+**`OnComplete` fires on every edit that leaves the code full**, including an
+edit to a code that was already full — deliberately not
+[`Countdown`](#countdown--stopwatch)'s once-per-crossing reading. `OnComplete`
+means "submit this", and someone who mistypes one digit, corrects it and gets
+silence has a field that will not submit. It fires from the change handler
+rather than from an effect, so a screen restored with a complete code in it
+does not resubmit itself on sight. A change producing the value already held is
+treated as an echo: no `OnChange`, no cursor move, no `OnComplete`.
+
+**It holds hooks** — one `FocusRef` per cell — so render it in a stable
+position on every pass rather than inside a `core.If`, as with
+[`Accordion`](#accordion). The hook count follows the largest `Length` the
+widget has ever been rendered with, not the current one: a `Length` that shrank
+would otherwise retire slots from the middle of the sequence and drift every
+cursor after them.
+
+The cells are ordinary `core.Input` nodes (`core.InputPassword` when `Secure`),
+so they wear the theme's field frame and match the text inputs above them. They
+divide the row with `core.FlexGrow` and a zero `core.FlexBasis` — the pair
+`comps.Calendar`'s day cells use, which is what makes the four targets
+agree on "equal shares" rather than "equal shares of the leftovers". The row
+fills the width it is given; cap it with `Style`.
+
+They take the platform's **text** keyboard, not its number pad. The keyboard
+type is chosen by node type on both natives, and the numeric node carries an
+`int` value, which cannot express an empty cell — clearing one would report
+nothing at all and backspace would stop working. A digits-only keyboard needs a
+keyboard-type prop on `core.Input`, which is a renderer change.
+
+`Label` is the accessible name only: the row is a `core.RoleGroup` named by it
+and each cell is named "*Label*, N of M". There is no visible caption — wrap it
+in a [`FormField`](#formfield) when one is wanted.
+
+In debug builds, a `PINInput` with no `OnChange` raises
+`comps.ConcernPINInputInert` (it is read-only in practice and looks exactly
+like an empty field), and a `Value` longer than the field raises
+`comps.ConcernPINValueTooLong` (the extra characters are never drawn and can
+never be typed away).
+
 ## Accordion
 
 A collapsible section — tappable chevron header, content shown while

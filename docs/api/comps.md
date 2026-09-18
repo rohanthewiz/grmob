@@ -36,7 +36,7 @@ Package comps's reference is split into 7 topic pages by source file. The index 
 | --- | --- | --- |
 | [Screens & structure](comps-structure.md) | Screen, app and bottom bars, the FAB, tabs, drawers, step indicators, two-pane and foldable layouts, cards, accordions, headings and separators. | 15 types, 11 functions and methods |
 | [Lists & tables](comps-lists.md) | List rows, the settings-row family (switch, checkbox, select and slider), input rows, grouped and paged lists, data tables and timelines. | 18 types, 14 functions and methods |
-| [Inputs & pickers](comps-inputs.md) | Form fields, search, searchable selects, radio groups, dates and calendars, and the two editors. | 11 types, 10 functions and methods |
+| [Inputs & pickers](comps-inputs.md) | Form fields, one-time code fields, search, searchable selects, radio groups, dates and calendars, and the two editors. | 12 types, 11 functions and methods |
 | [Buttons & choices](comps-actions.md) | Buttons and their variants, chips, segmented controls, steppers, ratings and badges. | 10 types, 10 functions and methods |
 | [Overlays & feedback](comps-overlays.md) | Dialogs, action sheets, menus, snackbars, banners, progress, spinners, skeletons and empty states. | 12 types, 9 functions and methods |
 | [Data display & maps](comps-display.md) | Avatars, stat tiles, the compass, clocks, countdowns and alarms, QR codes, map panels and static maps. | 17 types, 19 functions and methods |
@@ -81,12 +81,13 @@ Package comps's reference is split into 7 topic pages by source file. The index 
     - [`type Timeline`](comps-lists.md#type-timeline)
     - [`type TimelineEvent`](comps-lists.md#type-timelineevent)
 - [Inputs & pickers](comps-inputs.md)
-    - [Constants](comps-inputs.md#constants) — `RichToolLink`
+    - [Constants](comps-inputs.md#constants) — `ConcernPINInputInert`, `ConcernPINValueTooLong`, `RichToolLink`
     - [Variables](comps-inputs.md#variables) — `RichToolbarDefault`
     - [`type Calendar`](comps-inputs.md#type-calendar)
     - [`type CodeEditor`](comps-inputs.md#type-codeeditor)
     - [`type DatePicker`](comps-inputs.md#type-datepicker)
     - [`type FormField`](comps-inputs.md#type-formfield)
+    - [`type PINInput`](comps-inputs.md#type-pininput)
     - [`type RadioGroup`](comps-inputs.md#type-radiogroup)
     - [`type RadioOption`](comps-inputs.md#type-radiooption)
     - [`type RichTextEditor`](comps-inputs.md#type-richtexteditor)

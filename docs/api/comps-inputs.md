@@ -4,13 +4,13 @@
 import "github.com/rohanthewiz/grmob/comps"
 ```
 
-Form fields, search, searchable selects, radio groups, dates and calendars, and the two editors.
+Form fields, one-time code fields, search, searchable selects, radio groups, dates and calendars, and the two editors.
 
-One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/form_field.go`, `comps/search_field.go`, `comps/searchable_select.go`, `comps/radio_group.go`, `comps/date_picker.go`, `comps/calendar.go`, `comps/code_editor.go`, `comps/rich_text_editor.go`.
+One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/form_field.go`, `comps/pin_input.go`, `comps/search_field.go`, `comps/searchable_select.go`, `comps/radio_group.go`, `comps/date_picker.go`, `comps/calendar.go`, `comps/code_editor.go`, `comps/rich_text_editor.go`.
 
 ## Index
 
-- [Constants](#constants) — `RichToolLink`
+- [Constants](#constants) — `ConcernPINInputInert`, `ConcernPINValueTooLong`, `RichToolLink`
 - [Variables](#variables) — `RichToolbarDefault`
 - [`type Calendar`](#type-calendar)
     - [`func (Calendar) Render`](#func-calendar-render)
@@ -20,6 +20,8 @@ One of 7 topic pages of [package comps](comps.md), which has the package overvie
     - [`func (DatePicker) Render`](#func-datepicker-render)
 - [`type FormField`](#type-formfield)
     - [`func (FormField) Render`](#func-formfield-render)
+- [`type PINInput`](#type-pininput)
+    - [`func (PINInput) Render`](#func-pininput-render)
 - [`type RadioGroup`](#type-radiogroup)
     - [`func (RadioGroup) Render`](#func-radiogroup-render)
 - [`type RadioOption`](#type-radiooption)
@@ -35,6 +37,22 @@ One of 7 topic pages of [package comps](comps.md), which has the package overvie
     - [`func (SearchableSelect) Render`](#func-searchableselect-render)
 
 ## Constants
+
+ConcernPINInputInert is raised, in debug builds only, when a PINInput has no OnChange. The field is then read-only in practice — every keystroke reaches the handler, is discarded, and the next pass paints Value back over it — and on screen an inert PINInput is indistinguishable from one nobody has typed into yet. Disclosure's inert case is reported for the same reason: a widget that cannot do the one thing it exists for should say so somewhere other than in a bug report.
+
+```go
+const ConcernPINInputInert = "pin-input-inert"
+```
+
+<small>[comps/pin_input.go:16](https://github.com/rohanthewiz/grmob/blob/master/comps/pin_input.go#L16)</small>
+
+ConcernPINValueTooLong is raised, in debug builds only, when Value holds more characters than there are cells. The extra ones are not drawn and can never be typed away, so a field that looks full is carrying a value its caller cannot see — and OnComplete's "the code is as long as the field" test would be met by characters nobody entered.
+
+```go
+const ConcernPINValueTooLong = "pin-value-too-long"
+```
+
+<small>[comps/pin_input.go:23](https://github.com/rohanthewiz/grmob/blob/master/comps/pin_input.go#L23)</small>
 
 RichToolLink is the sentinel Command that opens the link prompt. Not a core command: core.EditLink needs a URL, and the prompt is where one comes from.
 
@@ -549,6 +567,120 @@ func (f FormField) Render(ctx *core.Context) *core.Node
 ```
 
 <small>[comps/form_field.go:64](https://github.com/rohanthewiz/grmob/blob/master/comps/form_field.go#L64)</small>
+
+### type PINInput
+
+```go
+type PINInput struct {
+	// Length is the number of cells. Zero means six, the one-time code length.
+	Length int
+
+	// Value is the code so far, in full. The field is controlled: it draws
+	// exactly this, one character per cell from the left, and OnChange is the
+	// only way it changes.
+	Value string
+
+	// OnChange receives the whole code after every edit, never a single cell.
+	// Without it the field is read-only and reports ConcernPINInputInert.
+	OnChange func(string)
+
+	// OnComplete receives the code on every edit that leaves it as long as
+	// the field — including an edit to a code that was already complete. Nil
+	// is a field the caller reads from Value instead.
+	OnComplete func(string)
+
+	// Secure masks the characters, as a device PIN rather than an emailed
+	// code. The cells become core.InputPassword.
+	Secure bool
+
+	// Label is the accessible name of the group and the stem of each cell's
+	// name. Empty means "Code". It draws nothing.
+	Label string
+
+	// Style is applied to the row, after the gap and the accessibility pair,
+	// so a caller can override any of them — or cap the width, which is the
+	// common one: MaxWidth stops four cells from spreading across a tablet.
+	Style []core.StyleProp
+}
+```
+
+PINInput is the boxed one-character-per-cell field a one-time code is typed into: N single-character inputs in a row, with the cursor moving itself.
+
+	comps.PINInput{
+	    Length:     6,
+	    Value:      code.Get(),
+	    OnChange:   code.Set,
+	    OnComplete: func(c string) { verify(c) },
+	}
+
+	┌───┐ ┌───┐ ┌───┐ ┌───┐ ┌───┐ ┌───┐
+	│ 4 │ │ 1 │ │ 7 │ │ 2 │ │   │ │   │
+	└───┘ └───┘ └───┘ └───┘ └───┘ └───┘
+	                          ▲ the cursor, put there by the cell before it
+
+It is the first widget in the package to drive core's focus system, and that is the whole of what it adds over a Row of fields: a character typed into a cell moves the cursor to the next one, so a six-digit code is six keystrokes rather than six keystrokes and six taps.
+
+#### The value is one string, and therefore a prefix
+
+Value is the whole code, not a cell array: cell i draws the i-th character and empty cells are the ones past the end. A plain string cannot hold a gap, so the cells fill strictly left to right and the two edits follow from that with no cases left over:
+
+	typing    Value = code[:i] + typed + whatever was past the typed run
+	clearing  Value = code[:i]        — everything from cell i on is dropped
+
+Clearing is the asymmetric one and it is worth being plain about. A cleared middle cell has to either shift the tail left — so cells the finger never touched change under it — or drop the tail. Dropping is the one a person can predict, because it is what "start again from here" means, and it is what backspacing through an OTP field amounts to on every platform that has one.
+
+The same invariant answers a question the cells can otherwise ask: a character typed into a cell past the end of the code (the web lets a click land anywhere) lands at the end instead, because there is no position for it to occupy.
+
+#### A paste and a second character are the same event
+
+A cell whose OnChange arrives with more than one character is a paste — the whole code dropped into the first box — and it is also what typing into an already-full cell looks like, since the field is controlled and reports its entire contents. Both are handled as one rule: \*\*the incoming string is written from this cell forward, and the cursor lands after the last cell it filled.\*\* A six-character paste into cell 0 fills the field; a "2" typed into a cell already holding "1" arrives as "12", rewrites cell 0 with the character that was already there and puts the new one in cell 1. Characters past the last cell are dropped.
+
+The one case it reads wrongly is a character inserted \*before\* an existing one (the caret parked at the left edge of a full cell), which arrives as "21" and is written in that order. Nothing in the event says where the caret was, so no widget here can tell the two apart.
+
+#### Backspace on an empty cell does nothing, and cannot
+
+There are no key events in this framework — a field reports its text, not the keys that produced it — so a backspace in an \*empty\* cell changes nothing and is therefore never reported. The cursor stays where it is, and clearing a run of cells means one backspace per cell with a tap in between, or one backspace in the leftmost filled cell, which drops everything after it by the rule above. Document it to callers rather than working around it: the workaround is a key channel, and that is a renderer change.
+
+#### OnComplete fires on every change that leaves the code full
+
+Not once per crossing, which is what Countdown.OnDone does and is deliberately not what this does. A caller's OnComplete is "submit the code", and a person who mistypes one digit of a full code, corrects it, and gets silence has a field that will not submit. So a complete code re-reports whenever it changes.
+
+It fires from the change handler rather than from an effect, so it never fires for a Value that merely arrived complete — a screen restored with a code already in it does not resubmit itself on mount.
+
+A change that produces the value already held is treated as an echo: no OnChange, no cursor move, no OnComplete. Both natives can report their own text back after a Go-side update, and none of the three is worth doing twice.
+
+#### It holds hooks, so it is not conditional-safe
+
+One FocusRef per cell, and refs must be stable across passes or a focus command aims at last pass's identity. So this is a hook caller with Accordion's rule: render it in a stable position every pass rather than inside a core.If.
+
+The hook count does not follow Length. It follows the largest Length this widget has ever been rendered with, held in one slot of its own, because a Length that shrank between passes would otherwise retire hook slots from the middle of the sequence and drift every cursor after them. Growing is safe — new slots are appended past the ones already bound — and never shrinking is what makes it so. The cost is a handful of FocusRefs that nothing points at, which cost a slice entry each and are never stamped onto a node.
+
+#### What the cells are, and what they are not
+
+Each cell is an ordinary core.Input (core.InputPassword when Secure), so it wears the theme's field frame and matches the text inputs above it in a form. They divide the row equally — core.FlexGrow with a zero core.FlexBasis, the pair Calendar's day cells use, which is what makes the four targets agree on "equal shares" rather than "equal shares of the leftovers". The row therefore fills the width it is given; cap it with Style.
+
+They take the platform's text keyboard, not its number pad. The keyboard type is chosen by node type on both natives — "NumericInput" is the numeric one — and that node carries an int value, which cannot express an empty cell: clearing one would report nothing at all, so backspace would stop working entirely. A digits-only keyboard needs a keyboard-type prop on core.Input, which is a renderer change and not this widget's to make.
+
+#### Accessibility
+
+The row is a core.RoleGroup named by Label, and each cell is named "\<Label>, N of M" so a reader moving between them says which box it is in. Label is the accessible name only — there is no visible caption, as with InputRow; wrap this in a FormField when one is wanted.
+
+#### Theme roles read
+
+	Cells   Components.Input — the same frame every other field in the form has
+	Gap     Spacing.SM between cells
+
+<small>[comps/pin_input.go:159](https://github.com/rohanthewiz/grmob/blob/master/comps/pin_input.go#L159)</small>
+
+#### func (PINInput) Render
+
+```go
+func (p PINInput) Render(ctx *core.Context) *core.Node
+```
+
+Render allocates the refs, declares their order and draws the cells.
+
+<small>[comps/pin_input.go:192](https://github.com/rohanthewiz/grmob/blob/master/comps/pin_input.go#L192)</small>
 
 ### type RadioGroup
 

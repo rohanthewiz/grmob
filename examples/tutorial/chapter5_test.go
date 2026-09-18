@@ -588,3 +588,91 @@ func TestPickerAndTextFieldWearTheSameFrame(t *testing.T) {
 		t.Errorf("picker radius = %g, want the field's %g", picker.Style.BorderRadius, base.BorderRadius)
 	}
 }
+
+// pinCells returns lesson 5.7's boxes in order. They are the only Input nodes
+// on that screen, so the type is enough of a predicate — and picking them out
+// by type rather than by index is what keeps this test standing when the
+// lesson gains another paragraph.
+func pinCells(t *testing.T, mgr *render.Manager) []*node {
+	t.Helper()
+	cells := findNodes(tree(t, mgr), func(n *node) bool { return n.Type == "Input" })
+	if len(cells) != 6 {
+		t.Fatalf("%d cells on the one-time code screen, want the lesson's six", len(cells))
+	}
+	return cells
+}
+
+// typeCell dispatches cell i's change with the text the field would now
+// report — which for a paste is the whole code, in the first box.
+func typeCell(t *testing.T, mgr *render.Manager, i int, text string) {
+	t.Helper()
+	cells := pinCells(t, mgr)
+	id, ok := cells[i].Props["onChange"].(string)
+	if !ok {
+		t.Fatalf("cell %d carries no onChange", i)
+	}
+	mgr.DispatchTextCallback(id, text)
+}
+
+// The two claims lesson 5.7 makes that a tree can answer, driven through the
+// real app rather than asserted in prose:
+//
+//	a paste in the first box fills the field   and completes it once
+//	clearing a middle box drops the tail       so the cells stay a prefix
+//
+// The cursor is checked too, because "the field moves its own cursor" is the
+// lesson's title and core.FocusNext leaves a visible stamp: exactly one cell
+// carries focusAction "focus" once a command has been issued.
+func TestPINLessonSpreadsAPasteAndDropsTheTailOnAClear(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "One-time codes: the field that moves its own cursor")
+
+	if !hasTextContaining(tree(t, mgr), `Value = ""   ·   OnComplete fired 0 times`) {
+		t.Fatal("the lesson should open on an empty code")
+	}
+
+	// One character: the value grows by one and the cursor moves to the box
+	// after it.
+	typeCell(t, mgr, 0, "4")
+	if !hasTextContaining(tree(t, mgr), `Value = "4"`) {
+		t.Fatal("a character typed into the first box should reach the caption")
+	}
+	if got := pinFocused(t, mgr); got != 1 {
+		t.Fatalf("cursor at cell %d after one character, want cell 1", got)
+	}
+
+	// A paste: the whole code arrives in the first box as one string and is
+	// spread across all six, which completes it.
+	typeCell(t, mgr, 0, "417293")
+	cur := tree(t, mgr)
+	if !hasTextContaining(cur, `Value = "417293"   ·   OnComplete fired 1 time`) {
+		t.Fatal("a pasted code should fill the field and complete it exactly once")
+	}
+	for i, want := range []string{"4", "1", "7", "2", "9", "3"} {
+		if got := pinCells(t, mgr)[i].Props["value"]; got != want {
+			t.Errorf("cell %d = %v, want %q", i, got, want)
+		}
+	}
+
+	// Clearing a middle box takes everything after it: a string cannot hold
+	// the gap that keeping the tail would need.
+	typeCell(t, mgr, 2, "")
+	if !hasTextContaining(tree(t, mgr), `Value = "41"`) {
+		t.Fatal("clearing cell 2 should drop it and the three boxes after it")
+	}
+	if !hasTextContaining(tree(t, mgr), "OnComplete fired 1 time") {
+		t.Error("an emptied field should not report a completion")
+	}
+}
+
+// pinFocused reports which cell the last focus command named, or -1 when none
+// has been issued. See core/focus.go for why the other cells are told "".
+func pinFocused(t *testing.T, mgr *render.Manager) int {
+	t.Helper()
+	for i, c := range pinCells(t, mgr) {
+		if c.Props["focusAction"] == "focus" {
+			return i
+		}
+	}
+	return -1
+}
