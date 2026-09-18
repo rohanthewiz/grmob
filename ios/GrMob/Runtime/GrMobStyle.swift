@@ -100,6 +100,10 @@ struct GrMobStyle: Equatable {
     /// core.MinHeight: CSS `min-height`, in points; see minWidth.
     var minHeight: String = ""
     var borderColor: Color?
+    /// core.AccentColor: the tint of a platform-drawn control — Toggle,
+    /// Slider — applied with `.tint` by the renderer. Nil leaves the system
+    /// colour. See core.Style's AccentColor.
+    var accentColor: Color?
     var borderWidth: CGFloat = 0
     var gap: CGFloat = 0
     /// core.RowGap / core.ColumnGap: the per-axis spacings. CSS `gap` IS
@@ -282,6 +286,7 @@ struct GrMobStyle: Equatable {
         s.height = str("Height")
         s.minHeight = str("MinHeight")
         s.borderColor = parseColor(str("BorderColor"))
+        s.accentColor = parseColor(str("AccentColor"))
         s.borderWidth = num("BorderWidth")
         s.gap = num("Gap")
         s.rowGap = num("RowGap")
@@ -892,7 +897,20 @@ extension View {
             // comps.Link (a RoleLink Box around its own hidden Text): absent
             // from VoiceOver and from XCUITest, app.links.count == 0, on the
             // simulator in lesson 4.29. `.ignore` always makes the element, and
-            // with nothing to merge it loses nothing. Chosen by argument, not
+            // with nothing to merge it loses nothing.
+            //
+            // It is the number of children that decides, not the role, the
+            // fill or the alignment. Measured on the iOS 26.5 simulator with
+            // `.combine` forced back on, over labelled containers whose
+            // children were all hidden: every one with a single child made no
+            // element (a Box or Column, with or without RoleGroup, a
+            // background, a border, a radius, padding, MaxWidth, an end-aligned
+            // or bold Text), and every one with two or more made one (a plain
+            // Column of two Texts, and comps.MessageBubble with a sender, a
+            // time or both). With one child, SwiftUI folds the container into
+            // that child, and a hidden child takes the element with it. That
+            // is why MessageBubble kept its element before this fix and
+            // Link, one Text, did not. Chosen by argument, not
             // by a branch, so no _ConditionalContent layer is added to
             // grMobBox's opaque-type tower (see grMobTransition).
             accessibilityElement(children: s.labelOnly ? .ignore : .combine)

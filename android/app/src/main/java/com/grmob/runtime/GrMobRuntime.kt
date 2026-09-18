@@ -17,6 +17,13 @@ interface GrMobBridge {
     fun renderInitial(): String
     fun triggerCallback(id: String): String
     fun triggerTextCallback(id: String, value: String): String
+
+    /**
+     * A text field's keystroke: [triggerTextCallback] plus the edit's sequence
+     * number and the rewrite epoch the field has adopted. See
+     * core/text_edit.go.
+     */
+    fun triggerTextEdit(id: String, value: String, seq: Long, epoch: Long): String
     fun triggerBoolCallback(id: String, value: Boolean): String
     fun triggerIntCallback(id: String, value: Long): String
 
@@ -204,6 +211,25 @@ class GrMobRuntime(private val bridge: GrMobBridge) {
 
     fun textChanged(callbackId: String, value: String) =
         dispatch { bridge.triggerTextCallback(callbackId, value) }
+
+    /**
+     * The last sequence number handed to a text edit. Touched only on the
+     * main thread, where every edit starts, so it needs no lock; the events
+     * executor then carries the edits to Go in the order they were numbered.
+     * One counter for every field: Go keeps its ledger per field, and all it
+     * asks of the numbers is that each field's rise.
+     */
+    private var lastEditSeq = 0
+
+    /**
+     * Sends a text field's edit and returns the sequence number it went
+     * under, for the field's TextEditLedger. Call on the main thread.
+     */
+    fun textEdited(callbackId: String, value: String, epoch: Int): Int {
+        val seq = ++lastEditSeq
+        dispatch { bridge.triggerTextEdit(callbackId, value, seq.toLong(), epoch.toLong()) }
+        return seq
+    }
 
     fun toggled(callbackId: String, value: Boolean) =
         dispatch { bridge.triggerBoolCallback(callbackId, value) }

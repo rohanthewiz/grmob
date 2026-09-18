@@ -975,6 +975,30 @@ follows the same principle: a Modal's fixed positioning, centring and z-index
 are written *under* whatever a hand-built node's `Style` says, on both web
 targets and by the same table.
 
+### `AccentColor`
+
+`core.Switch`, `core.Slider` and `core.Checkbox` are drawn by the platform, and
+every renderer reads only their margin and size, so no other `Style` field
+reaches them. `AccentColor` is the one colour each platform lets an app give
+such a control. The three builders default it to the theme's
+`Colors.Primary`; `core.AccentColor` overrides it per control:
+
+```go
+core.Switch(on, set)                               // the theme's Primary
+core.Switch(on, set, core.AccentColor("#34C759"))  // a green one
+```
+
+| target | what it becomes |
+|---|---|
+| web, htmlout | CSS `accent-color` |
+| SwiftUI | `.tint`: the Toggle's on track, the Slider's filled track |
+| Compose | the checked or active slots of `SwitchDefaults`, `SliderDefaults`, `CheckboxDefaults` |
+
+The thumb, the tick and the off state keep each platform's own colours.
+Before the field existed, these controls were Material purple on Android,
+system green on iOS and the browser's blue on the web, whatever the theme
+said.
+
 ### `Disabled`
 
 `core.Disabled(bool)` rides `Style` for the same reason — one prop, every

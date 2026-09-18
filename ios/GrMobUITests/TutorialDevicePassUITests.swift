@@ -4,7 +4,8 @@ import XCTest
 /// D6's range band (4.25), D7's TimePicker menus (4.26), Tier E's small
 /// pieces (4.27), Tier F's heat canvases (4.28), and round three's CopyButton,
 /// Link, BulletList, AudioPlayer, MessageBubble, ExpandableText, half-star
-/// Rating (4.29–4.32) and TagInput (5.8).
+/// Rating (4.29–4.32) and TagInput (5.8), and the theme accent on a
+/// Toggle and a Slider (2.6, 6.8).
 ///
 /// Mostly a driver for screenshots: what these widgets can get wrong on a
 /// native is how they *draw* (a notch, a menu, a canvas star), which no
@@ -337,5 +338,61 @@ final class TutorialDevicePassUITests: XCTestCase {
                       "a separator did not commit the draft")
         XCTAssertTrue(button(app, "Remove alpha").exists, "return did not commit the draft")
         shot("dp-5.8-pills")
+    }
+
+    /// Several tags in one burst, through the text-edit protocol
+    /// (core/text_edit.go): every keystroke carries a sequence number and an
+    /// epoch, and each comma's rewrite (the draft cleared) is read by epoch.
+    ///
+    /// This guards the new path; it does not reproduce the race the protocol
+    /// was built for. typeText paces its keys and waits for the app between
+    /// them, so no keystroke is ever in flight when a rewrite lands, and the
+    /// old value queue passed this test too (twice, run for the purpose).
+    /// The race was reproduced on the Android emulator with `adb shell input
+    /// text`, where the old queue committed "gaba" and "ltad" from
+    /// "alpha,beta,gamma,delta".
+    ///
+    /// Every tag must arrive whole, and nothing else may: the pills are
+    /// counted, so a stray fragment fails as surely as a missing tag.
+    func testTagInputAtMachineSpeed() throws {
+        let app = XCUIApplication()
+        open(app, lesson: "5.8")
+        let field = app.textFields.firstMatch
+        scroll(app, to: field)
+        field.tap()
+        sleep(1)
+        XCTAssertEqual(app.keyboards.count, 1, "tapping the tag field raised no keyboard")
+        app.typeText("one,two,three,four,")
+        XCTAssertTrue(button(app, "Remove four").waitForExistence(timeout: 5),
+                      "the last tag of the burst was not committed")
+        for tag in ["one", "two", "three"] {
+            XCTAssertTrue(button(app, "Remove \(tag)").exists, "\(tag) was not committed whole")
+        }
+        // The two the lesson starts with, and the four typed.
+        let pills = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Remove '")).count
+        XCTAssertEqual(pills, 6, "the burst committed fragments beside its tags")
+        shot("dp-5.8-burst")
+        dump(app, "dp-5.8-burst")
+    }
+
+    // MARK: 2.6, 6.8 — the theme accent on platform controls
+
+    /// A Toggle and a Slider in the theme's Primary, not the system green and
+    /// blue. core.AccentColor reaches SwiftUI as `.tint`; no assertion can
+    /// read a colour, so this drives the screenshots that show it.
+    func testAccentOnPlatformControls() throws {
+        let app = XCUIApplication()
+        open(app, lesson: "2.6")
+        let toggle = app.switches.firstMatch
+        scroll(app, to: toggle)
+        XCTAssertTrue(toggle.exists, "lesson 2.6 draws no switch")
+        shot("dp-2.6-accent")
+
+        app.open(URL(string: "grmob://lesson/6.8")!)
+        XCTAssertTrue(any(app, beginningWith: "6.8").waitForExistence(timeout: 15), "lesson 6.8 did not open")
+        let slider = app.sliders.firstMatch
+        scroll(app, to: slider)
+        XCTAssertTrue(slider.exists, "lesson 6.8 draws no slider")
+        shot("dp-6.8-accent")
     }
 }

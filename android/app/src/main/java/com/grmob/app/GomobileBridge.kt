@@ -41,6 +41,9 @@ class GomobileBridge(dataDir: String) : GrMobBridge {
     override fun triggerTextCallback(id: String, value: String): String =
         Mobile.triggerTextCallback(id, value)
 
+    override fun triggerTextEdit(id: String, value: String, seq: Long, epoch: Long): String =
+        Mobile.triggerTextEdit(id, value, seq, epoch)
+
     override fun triggerBoolCallback(id: String, value: Boolean): String =
         Mobile.triggerBoolCallback(id, value)
 

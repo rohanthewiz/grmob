@@ -127,6 +127,13 @@ data class GrMobStyle(
     val minHeight: String = "",
     val borderColor: Color?,
     val borderWidth: Float,
+    /**
+     * core.AccentColor: the tint of a platform-drawn control — Switch, Slider,
+     * Checkbox — fed into Material's own colour slots by the renderer rather
+     * than drawn by boxModifier. Null leaves Material's colours. See
+     * core.Style's AccentColor.
+     */
+    val accentColor: Color? = null,
     val gap: Float,
     /**
      * core.RowGap / core.ColumnGap: the per-axis spacings. CSS `gap` IS
@@ -353,6 +360,7 @@ data class GrMobStyle(
                 minHeight = obj.optString("MinHeight"),
                 borderColor = parseColor(obj.optString("BorderColor")),
                 borderWidth = obj.optDouble("BorderWidth", 0.0).toFloat(),
+                accentColor = parseColor(obj.optString("AccentColor")),
                 gap = obj.optDouble("Gap", 0.0).toFloat(),
                 rowGap = obj.optDouble("RowGap", 0.0).toFloat(),
                 columnGap = obj.optDouble("ColumnGap", 0.0).toFloat(),

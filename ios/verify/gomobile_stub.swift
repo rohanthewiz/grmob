@@ -163,5 +163,6 @@ public func MobileSetListener(_ l: MobilePatchListenerProtocol?) {}
 public func MobileSetSystemEventListener(_ l: MobileSystemEventListenerProtocol?) {}
 public func MobileTriggerCallback(_ id: String?) -> String { "" }
 public func MobileTriggerTextCallback(_ id: String?, _ value: String?) -> String { "" }
+public func MobileTriggerTextEdit(_ id: String?, _ value: String?, _ seq: Int, _ epoch: Int) -> String { "" }
 public func MobileTriggerBoolCallback(_ id: String?, _ value: Bool) -> String { "" }
 public func MobileTriggerIntCallback(_ id: String?, _ value: Int) -> String { "" }

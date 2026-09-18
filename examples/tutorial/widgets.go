@@ -88,36 +88,72 @@ func caption(text string) core.View {
 //
 // # The copy button
 //
-// Every snippet carries a comps.CopyButton as a ZStack layer pinned to its
-// top-end corner, so a reader can take the code into their own editor without
-// selecting across a scrolling grid. CopyButton is stateless, which is what
-// lets it live here: the rule above holds for the block as a whole. It copies
-// the trimmed snippet — the exact string the editor draws — and is coloured
-// from the scheme rather than the theme, because its backdrop is the code
-// surface and not the page: the theme's on-light tones would be dark ink on
-// Darcula's dark grey.
+// Every snippet carries a comps.CopyButton at its top-end corner, so a reader
+// can take the code into their own editor without selecting across a
+// scrolling grid. CopyButton is stateless, which is what lets it live here:
+// the rule above holds for the block as a whole. It copies the trimmed
+// snippet — the exact string the editor draws — and is coloured from the
+// scheme rather than the theme, because its backdrop is the code surface and
+// not the page: the theme's on-light tones would be dark ink on Darcula's
+// dark grey.
 //
-//	┌ ZStack ───────────────────────────────────────┐
-//	│ ┌ CodeEditor (base layer) ──────────[ Copy ]┐ │  top-end, 6px in
-//	│ │ func main() {                              │ │
-//	│ │     …                                      │ │
-//	│ └────────────────────────────────────────────┘ │
-//	└────────────────────────────────────────────────┘
+// The button sits in a strip of the code surface above the first line, not
+// over it:
 //
-// The button carries ZIndex(1); see the comment at the prop for why the
-// top layer has to say so on the web. The button can cover the end of a long
-// first line. Code wider than the
-// phone already scrolls sideways under it, and a separate header strip was
-// rejected because it would add a row to every one of the tutorial's
-// snippets to hold one small control.
+//	┌ Column, scheme.Bg, radius 10 ─────────────────┐
+//	│ ┌ Row, Justify end ─────────────────[ Copy ]┐ │  6 in from top and end
+//	│ └───────────────────────────────────────────┘ │
+//	│ ┌ CodeEditor, top padding 4 ────────────────┐ │
+//	│ │ func main() {                             │ │
+//	│ │     …                                     │ │
+//	│ └───────────────────────────────────────────┘ │
+//	└───────────────────────────────────────────────┘
+//
+// It used to be a ZStack layer drawn over the editor's top-end corner. Its
+// opaque background hid the end of line 1 on iOS and the web, and lines 1–2
+// on Android, where a material3 Button is 40dp tall at minimum and lays out
+// at the 48dp touch minimum. Extra top padding on the editor was the chosen
+// look, but a fixed number cannot be right on every target: Go has no
+// platform query, the button is ~22px on the web and ~48dp on Android, and
+// padding sized for Android would leave a wide empty band over every web
+// snippet. A strip that holds the button gets its height from the button on
+// each platform. It is the same colour as the editor and has no rule under
+// it, so it reads as the editor's own top padding and not as a header bar.
+// That keeps the reason a header strip was once rejected: it would have added
+// a visible row to every snippet to hold one small control.
 func codeBlock(code string) core.View {
 	snippet := strings.Trim(code, "\n")
 	scheme := highlight.Darcula
-	return core.ZStack(
-		// Full width so the ZStack spans the lesson column the way the bare
-		// editor did; a ZStack otherwise sizes to its largest layer, and the
-		// editor's intrinsic width is its longest line.
+	return core.Column(
+		// Full width so the block spans the lesson column the way the bare
+		// editor did. The surface colour and radius are the editor's, so the
+		// strip and the code read as one box. The editor keeps its own radius
+		// too: its bottom corners are the box's, and its top corners fall
+		// on the same colour, where they cannot be seen.
 		core.Width("100%"),
+		core.Background(scheme.Bg),
+		core.BorderRadius(10),
+		core.Row(
+			core.Justify(core.JustifyEnd),
+			core.PaddingTop(6),
+			core.PaddingHorizontal(6),
+			comps.CopyButton{
+				Text:               snippet,
+				AccessibilityLabel: "Copy code",
+				CopiedMessage:      "Code copied",
+				Emphasis:           comps.EmphasisGhost,
+				Style: []core.StyleProp{
+					core.PaddingVertical(2),
+					core.PaddingHorizontal(8),
+					core.FontSize(12),
+					core.BorderRadius(6),
+					core.TextColor(scheme.Ink),
+					core.Background(scheme.Bg),
+					core.BorderWidth(1),
+					core.BorderColor(scheme.Comment),
+				},
+			},
+		),
 		comps.CodeEditor{
 			Value:    snippet,
 			Language: "go",
@@ -126,32 +162,12 @@ func codeBlock(code string) core.View {
 			Style: []core.StyleProp{
 				core.Width("100%"),
 				core.Padding(14),
+				// The strip above already puts 6 of surface over the button, so
+				// the first line needs only a small gap under it, not the full
+				// 14 the other three sides keep.
+				core.PaddingTop(4),
 				core.BorderRadius(10),
 				core.FontSize(13),
-			},
-		},
-		comps.CopyButton{
-			Text:               snippet,
-			AccessibilityLabel: "Copy code",
-			CopiedMessage:      "Code copied",
-			Emphasis:           comps.EmphasisGhost,
-			Style: []core.StyleProp{
-				core.StackAlign(core.StackAlignTopEnd),
-				// Above the editor explicitly. The web draws a CodeEditor as a
-				// position:relative <pre> (the containing block for its caret
-				// overlay), and a positioned element paints over a later
-				// non-positioned sibling — so without this the button is laid
-				// out in the corner and drawn underneath the code.
-				core.ZIndex(1),
-				core.Margin(6),
-				core.PaddingVertical(2),
-				core.PaddingHorizontal(8),
-				core.FontSize(12),
-				core.BorderRadius(6),
-				core.TextColor(scheme.Ink),
-				core.Background(scheme.Bg),
-				core.BorderWidth(1),
-				core.BorderColor(scheme.Comment),
 			},
 		},
 	)

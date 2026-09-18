@@ -2292,3 +2292,18 @@ func TestUnsizedOrUnpaddedExportWritesNoBorderBox(t *testing.T) {
 		}
 	}
 }
+
+// --- Accent ----------------------------------------------------------------
+//
+// core.Style.AccentColor is CSS accent-color, the one tint a browser lets a
+// page give a control it draws itself. Without it the exported Switch was the
+// browser's blue whatever the theme said.
+
+func TestAccentColorBecomesCSSAccentColor(t *testing.T) {
+	n := core.Switch(true, nil).Render(core.NewContext())
+	out := ExportHTML(n)
+	want := "accent-color:" + n.Style.AccentColor
+	if n.Style.AccentColor == "" || !strings.Contains(out, want) {
+		t.Fatalf("export of a Switch carries no %q:\n%s", want, out)
+	}
+}

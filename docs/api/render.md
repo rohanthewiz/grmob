@@ -43,6 +43,7 @@ PatchListener.ApplyPatches is called from a background goroutine. A native imple
     - [`func (*Manager) DispatchCallback`](#func-manager-dispatchcallback)
     - [`func (*Manager) DispatchIntCallback`](#func-manager-dispatchintcallback)
     - [`func (*Manager) DispatchTextCallback`](#func-manager-dispatchtextcallback)
+    - [`func (*Manager) DispatchTextEdit`](#func-manager-dispatchtextedit)
     - [`func (*Manager) RenderAgain`](#func-manager-renderagain)
     - [`func (*Manager) RenderAndGetPatches`](#func-manager-renderandgetpatches)
     - [`func (*Manager) RenderInitial`](#func-manager-renderinitial)
@@ -89,7 +90,7 @@ Dispatch runs fn under the render mutex — the same serialization the callback 
 
 Before the initial mount there is no tree to diff against, so fn runs and the state it wrote is simply part of the RenderInitial that follows; the "\[]" tells the host nothing needs applying. That case is rare (a status tick cannot precede the Load that caused it, and Load needs a rendered button) but a host that sent it would otherwise receive a diff against nothing, which no renderer can apply.
 
-<small>[render/manager.go:388](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L388)</small>
+<small>[render/manager.go:399](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L399)</small>
 
 #### func (*Manager) DispatchBoolCallback
 
@@ -99,7 +100,7 @@ func (m *Manager) DispatchBoolCallback(id string, value bool) string
 
 DispatchBoolCallback is DispatchCallback for bool-carrying events.
 
-<small>[render/manager.go:361](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L361)</small>
+<small>[render/manager.go:372](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L372)</small>
 
 #### func (*Manager) DispatchCallback
 
@@ -121,7 +122,7 @@ func (m *Manager) DispatchIntCallback(id string, value int) string
 
 DispatchIntCallback is DispatchCallback for int-carrying events.
 
-<small>[render/manager.go:369](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L369)</small>
+<small>[render/manager.go:380](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L380)</small>
 
 #### func (*Manager) DispatchTextCallback
 
@@ -132,6 +133,16 @@ func (m *Manager) DispatchTextCallback(id string, value string) string
 DispatchTextCallback is DispatchCallback for string-carrying events.
 
 <small>[render/manager.go:353](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L353)</small>
+
+#### func (*Manager) DispatchTextEdit
+
+```go
+func (m *Manager) DispatchTextEdit(id string, value string, seq, epoch int) string
+```
+
+DispatchTextEdit is DispatchTextCallback for a native text field's keystroke, carrying the host's sequence number and adopted rewrite epoch. An edit typed against text Go has since rewritten is acknowledged without reaching the handler; see core/text\_edit.go for the protocol.
+
+<small>[render/manager.go:364](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L364)</small>
 
 #### func (*Manager) RenderAgain
 
@@ -153,7 +164,7 @@ RenderAndGetPatches renders one pass and returns whichever payload the host need
 
 It delegates rather than re-implementing the two passes, which is the whole of the fix here. Its own copy had drifted badly: it reset the root cursor with \`r.context.Cursor = 0\` instead of \`Reset()\`, so every child scope kept its cursor from the previous pass and its slots grew by one per render; and it never called PurgeUnusedCallbacks or ClearDirty, so handlers for vanished nodes stayed dispatchable and a polling host re-rendered forever.
 
-<small>[render/manager.go:444](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L444)</small>
+<small>[render/manager.go:455](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L455)</small>
 
 #### func (*Manager) RenderInitial
 

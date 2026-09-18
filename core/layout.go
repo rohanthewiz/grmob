@@ -100,6 +100,9 @@ func leafNode(ctx *Context, typ string, base Style, props map[string]any, items 
 	if focusableLeafTypes[typ] {
 		stampFocus(ctx, props, nil)
 	}
+	// The value and onChange are already in props, which is all the edit
+	// stamps need; see text_edit.go.
+	stampTextEdit(ctx, typ, props)
 	// The style pointer goes into the node before the props are applied, so a
 	// StyleProp reached later in the loop still lands on the node that is
 	// returned — the same aliasing containerNode relies on.

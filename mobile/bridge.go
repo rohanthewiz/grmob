@@ -102,6 +102,16 @@ func TriggerTextCallback(id string, value string) string {
 	return mgr.DispatchTextCallback(id, value)
 }
 
+// TriggerTextEdit dispatches a keystroke from a native text field: the
+// field's whole text, the host's rising sequence number for the edit, and the
+// rewrite epoch the host last adopted from the field's editEpoch prop. The
+// native text fields use it in place of TriggerTextCallback so that an echo
+// can be told from a rewrite even when typing outruns the round trip; see
+// core/text_edit.go.
+func TriggerTextEdit(id string, value string, seq int, epoch int) string {
+	return mgr.DispatchTextEdit(id, value, seq, epoch)
+}
+
 // TriggerBoolCallback dispatches a bool-carrying event (e.g. checkbox toggle).
 func TriggerBoolCallback(id string, value bool) string {
 	return mgr.DispatchBoolCallback(id, value)

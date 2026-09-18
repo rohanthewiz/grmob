@@ -47,12 +47,15 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.foundation.clickable
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -1137,6 +1140,11 @@ private fun GrMobCheckbox(node: GrMobNode, extra: Modifier) {
         onCheckedChange = { if (cb.isNotEmpty()) runtime.toggled(cb, it) },
         modifier = marginAndSize(node.style, extra),
         enabled = !node.isDisabled(),
+        // The theme's accent on the checked box (core.AccentColor). The tick
+        // and the unchecked outline keep Material's colours.
+        colors = node.style?.accentColor
+            ?.let { CheckboxDefaults.colors(checkedColor = it) }
+            ?: CheckboxDefaults.colors(),
     )
 }
 
@@ -1155,7 +1163,11 @@ private fun GrMobCheckbox(node: GrMobNode, extra: Modifier) {
  * Its own colours come from the Material theme rather than from the Go style,
  * exactly as the Checkbox's do: marginAndSize spends only the margin and the
  * size, which is what keeps a control that a platform draws from being half
- * drawn by a palette.
+ * drawn by a palette. The one exception is the accent (core.AccentColor,
+ * the theme's Primary by default), which goes into Material's own checked
+ * slots: the on track and its border. The thumb and the whole off state stay
+ * Material's. Without it the on track was Material's baseline purple in an
+ * app whose theme said blue.
  */
 @Composable
 private fun GrMobSwitch(node: GrMobNode, extra: Modifier) {
@@ -1166,6 +1178,9 @@ private fun GrMobSwitch(node: GrMobNode, extra: Modifier) {
         onCheckedChange = { if (cb.isNotEmpty()) runtime.toggled(cb, it) },
         modifier = marginAndSize(node.style, extra),
         enabled = !node.isDisabled(),
+        colors = node.style?.accentColor
+            ?.let { SwitchDefaults.colors(checkedTrackColor = it, checkedBorderColor = it) }
+            ?: SwitchDefaults.colors(),
     )
 }
 
@@ -1212,6 +1227,19 @@ private fun GrMobSlider(node: GrMobNode, extra: Modifier) {
         steps = if (step > 0f) (((max - min) / step).toInt() - 1).coerceAtLeast(0) else 0,
         modifier = marginAndSize(node.style, extra),
         enabled = !node.isDisabled(),
+        // The theme's accent (core.AccentColor) on the thumb and the filled
+        // track, and the same colour faded for the unfilled track. Material's
+        // own unfilled track is a pale tone of its baseline purple, which
+        // beside a blue fill read as a second, unrelated colour.
+        colors = node.style?.accentColor
+            ?.let {
+                SliderDefaults.colors(
+                    thumbColor = it,
+                    activeTrackColor = it,
+                    inactiveTrackColor = it.copy(alpha = 0.24f),
+                )
+            }
+            ?: SliderDefaults.colors(),
     )
 }
 
@@ -1226,12 +1254,19 @@ private fun GrMobSlider(node: GrMobNode, extra: Modifier) {
  * The one upstream change that must land mid-focus is a deliberate rewrite —
  * Go clearing the draft after a submit, a validator normalizing the text.
  * Echoes and rewrites are told apart by bookkeeping, not heuristics: every
- * value this field sends upstream is queued, and an upstream change that
- * matches a queued entry is an echo of our own edit (drop the queue through
- * that point — Go may coalesce renders, skipping intermediate values), while
- * one that matches nothing we sent can only be Go speaking for itself, so it
- * wins even while focused. Moving the cursor then is correct: the text under
- * it was replaced.
+ * edit goes to Go with a sequence number and the rewrite epoch this field
+ * has adopted, and Go stamps the field with the last edit it applied and its
+ * own rewrite count. A higher epoch is a rewrite and wins even while
+ * focused; anything else is an echo. Moving the cursor then is correct: the
+ * text under it was replaced. See TextEditLedger (GrMobTextEdits.kt) for the
+ * rule and core/text_edit.go for the protocol.
+ *
+ * It used to be a queue of sent values, with any upstream value not in the
+ * queue read as a rewrite. That lost keystrokes typed faster than the round
+ * trip: the rewrite arrived after later keystrokes had been sent on the old
+ * text, and Go applied those as if they were new (",gamma," into a TagInput
+ * committed "mma" on the emulator). The epoch lets Go drop them, and the
+ * ledger replays them onto the rewrite.
  */
 @Composable
 private fun GrMobTextField(
@@ -1263,24 +1298,37 @@ private fun GrMobTextField(
     val interactions = remember { MutableInteractionSource() }
     val focused by interactions.collectIsFocusedAsState()
     var text by remember { mutableStateOf(upstream) }
-    val pendingEchoes = remember { mutableListOf<String>() }
-    var lastUpstream by remember { mutableStateOf(upstream) }
+    // Go's edit stamps: the last edit it applied and its rewrite count. Both are
+    // 0 on a field no edit has reached. See core/text_edit.go.
+    val editSeq = node.intProp("editSeq")
+    val editEpoch = node.intProp("editEpoch")
+    val ledger = remember { TextEditLedger(upstream, editEpoch) }
+    // Every edit leaves by this one path, so the ledger records exactly what
+    // Go was sent and under which epoch.
+    val send = { next: String ->
+        if (onChange.isNotEmpty()) {
+            ledger.sent(runtime.textEdited(onChange, next, ledger.epoch), next)
+        }
+    }
+    // The three together, because each can change alone: an echo moves only
+    // the ack, and Go refusing an edit moves the ack and the epoch and leaves
+    // the value where it was.
+    val seen = Triple(upstream, editSeq, editEpoch)
+    var lastSeen by remember { mutableStateOf(seen) }
 
-    if (upstream != lastUpstream) {
-        lastUpstream = upstream
+    if (seen != lastSeen) {
+        lastSeen = seen
         if (focused) {
-            val echo = pendingEchoes.indexOf(upstream)
-            if (echo >= 0) {
-                repeat(echo + 1) { pendingEchoes.removeAt(0) }
-            } else {
-                text = upstream
-                pendingEchoes.clear()
+            ledger.upstream(upstream, editSeq, editEpoch, text)?.let { next ->
+                text = next
+                // Typing Go has not seen yet, replayed onto its rewrite.
+                if (next != upstream) send(next)
             }
         }
     }
     if (!focused) {
-        // Go-owned while blurred; any queued echoes died with the focus session.
-        pendingEchoes.clear()
+        // Go-owned while blurred; anything in flight died with the focus session.
+        ledger.reset(upstream, editEpoch)
         if (text != upstream) text = upstream
     }
 
@@ -1366,10 +1414,7 @@ private fun GrMobTextField(
         enabled = !node.isDisabled(),
         onValueChange = {
             text = it
-            if (onChange.isNotEmpty()) {
-                pendingEchoes.add(it)
-                runtime.textChanged(onChange, it)
-            }
+            send(it)
         },
         modifier = modifier,
         interactionSource = interactions,

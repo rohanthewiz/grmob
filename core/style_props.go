@@ -152,6 +152,15 @@ func TextColor(hex string) StyleProp {
 		s.TextColor = hex
 	})
 }
+
+// AccentColor sets the tint of a platform-drawn control: a Switch's on
+// track, a Slider's filled track, a Checkbox's box. It overrides the theme's
+// Primary, which those three use by default. See Style.AccentColor.
+func AccentColor(hex string) StyleProp {
+	return styleFunc(func(s *Style) {
+		s.AccentColor = hex
+	})
+}
 func Gap(px float64) StyleProp {
 	return styleFunc(func(s *Style) {
 		s.Gap = px

@@ -1935,6 +1935,10 @@ private struct GrMobCheckbox: View {
             set: { if !cb.isEmpty { runtime?.toggled(cb, $0) } }
         )) { EmptyView() }
             .labelsHidden()
+            // The theme's accent on the on track (core.AccentColor). A nil
+            // tint is the system colour, so this is one modifier and not a
+            // branch.
+            .tint(node.style?.accentColor)
             .grMobBox(marginAndSizeOnly(node.style), grow: grow)
     }
 }
@@ -1965,6 +1969,10 @@ private struct GrMobSwitch: View {
             set: { if !cb.isEmpty { runtime?.toggled(cb, $0) } }
         )) { EmptyView() }
             .labelsHidden()
+            // The theme's accent on the on track (core.AccentColor). A nil
+            // tint is the system colour, so this is one modifier and not a
+            // branch.
+            .tint(node.style?.accentColor)
             .grMobBox(marginAndSizeOnly(node.style), grow: grow)
     }
 }
@@ -2017,6 +2025,8 @@ private struct GrMobSlider: View {
                 Slider(value: value, in: range, onEditingChanged: edited)
             }
         }
+        // The theme's accent on the filled track (core.AccentColor).
+        .tint(node.style?.accentColor)
         .grMobBox(marginAndSizeOnly(node.style), grow: grow)
     }
 }
@@ -2343,12 +2353,19 @@ private struct GrMobGridRow: View {
 /// The one upstream change that must land mid-focus is a deliberate rewrite —
 /// Go clearing the draft after a submit, a validator normalizing the text.
 /// Echoes and rewrites are told apart by bookkeeping, not heuristics: every
-/// value this field sends upstream is queued, and an upstream change that
-/// matches a queued entry is an echo of our own edit (drop the queue through
-/// that point — Go may coalesce renders, skipping intermediate values), while
-/// one that matches nothing we sent can only be Go speaking for itself, so it
-/// wins even while focused. Moving the cursor then is correct: the text under
-/// it was replaced.
+/// edit goes to Go with a sequence number and the rewrite epoch this field
+/// has adopted, and Go stamps the field with the last edit it applied and its
+/// own rewrite count. A higher epoch is a rewrite and wins even while
+/// focused; anything else is an echo. Moving the cursor then is correct: the
+/// text under it was replaced. See TextEditLedger (GrMobTextEdits.swift) for
+/// the rule and core/text_edit.go for the protocol.
+///
+/// It used to be a queue of sent values, with any upstream value not in the
+/// queue read as a rewrite. That lost keystrokes typed faster than the round
+/// trip (seen on the Android emulator, which has the same bookkeeping): the
+/// rewrite arrived after later keystrokes had been sent on the old text, and
+/// Go applied those as if they were new. The epoch lets Go drop them, and the
+/// ledger replays them onto the rewrite.
 private struct GrMobTextField: View {
     let node: GrMobNode
     let grow: GrMobGrow
@@ -2359,7 +2376,7 @@ private struct GrMobTextField: View {
     @Environment(\.grMobRuntime) private var runtime
     @FocusState private var focused: Bool
     @State private var text = ""
-    @State private var pendingEchoes: [String] = []
+    @State private var ledger = TextEditLedger()
 
     var body: some View {
         let upstream = node.stringProp("value")
@@ -2377,6 +2394,10 @@ private struct GrMobTextField: View {
         let focusEpoch = node.intProp("focusEpoch")
         let focusAction = node.stringProp("focusAction")
         let prompt = Text(node.stringProp("placeholder"))
+        // Go's edit stamps: the last edit it applied and its rewrite count. Both
+        // are 0 on a field no edit has reached. See core/text_edit.go.
+        let editSeq = node.intProp("editSeq")
+        let editEpoch = node.intProp("editEpoch")
 
         // While focused the local buffer is authoritative; otherwise render
         // straight from Go. The buffer is seeded from upstream at the moment
@@ -2385,10 +2406,7 @@ private struct GrMobTextField: View {
             get: { focused ? text : upstream },
             set: { v in
                 text = v
-                if !onChange.isEmpty {
-                    pendingEchoes.append(v)
-                    runtime?.textChanged(onChange, v)
-                }
+                send(v, onChange)
             }
         )
 
@@ -2427,7 +2445,7 @@ private struct GrMobTextField: View {
             .onChange(of: focused) { _, isFocused in
                 if isFocused {
                     text = node.stringProp("value")
-                    pendingEchoes.removeAll()
+                    ledger.reset(text, epoch: node.intProp("editEpoch"))
                     if !onFocus.isEmpty { runtime?.click(onFocus) }
                 } else if !onBlur.isEmpty {
                     runtime?.click(onBlur)
@@ -2451,18 +2469,35 @@ private struct GrMobTextField: View {
             .onChange(of: focusEpoch) { _, epoch in
                 applyFocusCommand(epoch: epoch, action: focusAction)
             }
-            .onChange(of: upstream) { _, newValue in
+            // Keyed on all three, because each can change alone: an echo
+            // moves only the ack, and Go refusing an edit moves the ack and
+            // the epoch and leaves the value where it was.
+            .onChange(of: EditStamp(value: upstream, seq: editSeq, epoch: editEpoch)) { _, stamp in
                 guard focused else { return }
-                if let echo = pendingEchoes.firstIndex(of: newValue) {
-                    pendingEchoes.removeSubrange(...echo)
-                } else {
-                    text = newValue
-                    pendingEchoes.removeAll()
+                if let next = ledger.upstream(stamp.value, ack: stamp.seq, goEpoch: stamp.epoch, local: text) {
+                    text = next
+                    // Typing Go has not seen yet, replayed onto its rewrite.
+                    if next != stamp.value { send(next, onChange) }
                 }
             }
             .textFieldStyle(.plain)
             .grMobTextStyle(node.style)
             .grMobBox(node.style, grow: grow)
+    }
+
+    /// Go's answer to this field's edits, as one value `onChange(of:)` can
+    /// watch.
+    private struct EditStamp: Equatable {
+        let value: String
+        let seq: Int
+        let epoch: Int
+    }
+
+    /// Every edit leaves by this one path, so the ledger records exactly
+    /// what Go was sent and under which epoch.
+    private func send(_ value: String, _ onChange: String) {
+        guard !onChange.isEmpty, let runtime else { return }
+        ledger.sent(runtime.textEdited(onChange, value, epoch: ledger.epoch), value)
     }
 
     /// Runs one focus command from Go.

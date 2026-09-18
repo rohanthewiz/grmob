@@ -34,6 +34,7 @@ Event delivery contract: patches reach the native side on two paths — the sync
 - [`func TriggerCallback`](#func-triggercallback)
 - [`func TriggerIntCallback`](#func-triggerintcallback)
 - [`func TriggerTextCallback`](#func-triggertextcallback)
+- [`func TriggerTextEdit`](#func-triggertextedit)
 - [`type PatchListener`](#type-patchlistener)
 - [`type SystemEventListener`](#type-systemeventlistener)
 
@@ -155,7 +156,7 @@ func TriggerBoolCallback(id string, value bool) string
 
 TriggerBoolCallback dispatches a bool-carrying event (e.g. checkbox toggle).
 
-<small>[mobile/bridge.go:106](https://github.com/rohanthewiz/grmob/blob/master/mobile/bridge.go#L106)</small>
+<small>[mobile/bridge.go:116](https://github.com/rohanthewiz/grmob/blob/master/mobile/bridge.go#L116)</small>
 
 ### func TriggerCallback
 
@@ -175,7 +176,7 @@ func TriggerIntCallback(id string, value int) string
 
 TriggerIntCallback dispatches an int-carrying event (e.g. tab selection).
 
-<small>[mobile/bridge.go:111](https://github.com/rohanthewiz/grmob/blob/master/mobile/bridge.go#L111)</small>
+<small>[mobile/bridge.go:121](https://github.com/rohanthewiz/grmob/blob/master/mobile/bridge.go#L121)</small>
 
 ### func TriggerTextCallback
 
@@ -186,6 +187,16 @@ func TriggerTextCallback(id string, value string) string
 TriggerTextCallback dispatches a string-carrying event (e.g. input change).
 
 <small>[mobile/bridge.go:101](https://github.com/rohanthewiz/grmob/blob/master/mobile/bridge.go#L101)</small>
+
+### func TriggerTextEdit
+
+```go
+func TriggerTextEdit(id string, value string, seq int, epoch int) string
+```
+
+TriggerTextEdit dispatches a keystroke from a native text field: the field's whole text, the host's rising sequence number for the edit, and the rewrite epoch the host last adopted from the field's editEpoch prop. The native text fields use it in place of TriggerTextCallback so that an echo can be told from a rewrite even when typing outruns the round trip; see core/text\_edit.go.
+
+<small>[mobile/bridge.go:111](https://github.com/rohanthewiz/grmob/blob/master/mobile/bridge.go#L111)</small>
 
 ## Types
 

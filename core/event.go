@@ -37,6 +37,12 @@ type callbackRegistry struct {
 	// registerBack for why.
 	backCounter int
 
+	// edits holds the text-edit ledger of each text callback a native host
+	// has sent a TriggerTextEdit to, by callback ID; see text_edit.go. Nil
+	// until the first one, which is every web build and every test that
+	// never dispatches an edit.
+	edits map[string]*textEditLedger
+
 	// used marks IDs touched (registered or triggered) since the last
 	// beginPass; purge drops everything unmarked, so handlers for nodes that
 	// vanished from the tree cannot fire from a stale native event.
@@ -273,6 +279,10 @@ func (r *callbackRegistry) purge() {
 			newInt[id] = fn
 		}
 	}
+
+	// A ledger lives exactly as long as its text callback, for the same
+	// reason the debounce ledger in PurgeUnusedCallbacks does.
+	r.purgeEditsLocked(newText)
 
 	r.voidCBs = newVoid
 	r.textCBs = newText

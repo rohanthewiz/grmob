@@ -1659,6 +1659,11 @@ func styleValue(s *core.Style, nodeType string) string {
 	if s.TextColor != "" {
 		styles = append(styles, fmt.Sprintf("color:%s", s.TextColor))
 	}
+	// A UA-drawn control's tint; see core.Style's AccentColor. Only Switch,
+	// Slider and Checkbox carry one.
+	if s.AccentColor != "" {
+		styles = append(styles, fmt.Sprintf("accent-color:%s", s.AccentColor))
+	}
 	if s.Background != "" {
 		styles = append(styles, fmt.Sprintf("background:%s", s.Background))
 	}

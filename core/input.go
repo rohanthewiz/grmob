@@ -49,7 +49,7 @@ func InputWithSubmit(value string, placeholder string, onChange func(string), on
 
 func Checkbox(checked bool, onToggle func(bool), props ...PropsAndChildren) View {
 	return ComponentFunc(func(ctx *Context) *Node {
-		return leafNode(ctx, "Checkbox", ctx.Theme().Components.CheckBox, map[string]any{
+		return leafNode(ctx, "Checkbox", accented(ctx, ctx.Theme().Components.CheckBox), map[string]any{
 			"checked":  checked,
 			"onToggle": ctx.registerBoolCallback(onToggle),
 		}, props)

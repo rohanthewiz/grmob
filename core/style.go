@@ -841,6 +841,40 @@ type Style struct {
 	// AccessibilityHidden beside it when readers on the phones should be kept
 	// out too, as Drawer does.
 	Inert bool `json:",omitzero"`
+
+	// AccentColor is the colour a platform-drawn control spends on its "on"
+	// or "filled" part: a Switch's track when on, a Slider's filled track and
+	// thumb, a Checkbox's tick box. core.Switch, core.Slider and
+	// core.Checkbox default it to the theme's Colors.Primary, and
+	// core.AccentColor overrides it per control.
+	//
+	// # Why a field of its own
+	//
+	// These three are drawn by the platform, and every renderer reads only
+	// margin and size off their style (marginAndSize in Compose,
+	// marginAndSizeOnly in SwiftUI), so no existing field can colour them.
+	// That rule is right: a Background or TextColor spent on half of a
+	// platform control draws something no platform ever draws. What each
+	// platform does expose is one tint for the whole control, which is what
+	// this is. Left alone, each drew in its platform's own colour: Material's
+	// baseline purple on Android, system green on iOS and the browser's blue
+	// on the web, whatever the app's theme said.
+	//
+	// # What each target does with it
+	//
+	//	web, htmlout   CSS accent-color, the platform's one tint property
+	//	SwiftUI        .tint, which a Toggle spends on its on-track and a
+	//	               Slider on its filled track
+	//	Compose        SwitchDefaults, SliderDefaults and CheckboxDefaults:
+	//	               the checked or active colours only. The off state keeps
+	//	               Material's neutral tones, as the other targets keep
+	//	               theirs.
+	//
+	// The thumb and the tick keep each platform's own colour (white on a
+	// Switch, onPrimary on a Checkbox). An accent too pale to carry white is
+	// the theme's problem to solve in Primary, which already carries white
+	// text on every filled Button.
+	AccentColor string `json:",omitzero"`
 }
 
 type Weight int
@@ -960,6 +994,9 @@ func (s Style) applyTo(target *Style) {
 	}
 	if s.TextColor != "" {
 		target.TextColor = s.TextColor
+	}
+	if s.AccentColor != "" {
+		target.AccentColor = s.AccentColor
 	}
 	if s.Background != "" {
 		target.Background = s.Background

@@ -58,7 +58,7 @@ func Slider(value, min, max float64, onChange func(float64), props ...PropsAndCh
 		if onChange != nil {
 			p["onChange"] = ctx.registerTextCallback(sliderCallback(onChange))
 		}
-		return leafNode(ctx, "Slider", Style{}, p, props)
+		return leafNode(ctx, "Slider", accented(ctx, Style{}), p, props)
 	})
 }
 
@@ -97,4 +97,20 @@ func sliderCallback(fn func(float64)) func(string) {
 			fn(v)
 		}
 	}
+}
+
+// accented is a platform-drawn control's base style with the theme's accent
+// filled in: Colors.Primary, unless the theme's own base for the control
+// already names one. A caller's core.AccentColor is applied after the base,
+// so it wins over both. See Style.AccentColor.
+//
+// A default in the builder rather than a field in each bundled theme's
+// CheckBox base: Slider reads no theme base at all, and the accent is not a
+// new palette role, it is Primary spent somewhere new. A theme that sets
+// Primary gets accented controls with no further edit.
+func accented(ctx *Context, base Style) Style {
+	if base.AccentColor == "" {
+		base.AccentColor = ctx.Theme().Colors.Primary
+	}
+	return base
 }

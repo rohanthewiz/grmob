@@ -49,8 +49,10 @@ func TestSwitchReadsTheCheckBoxThemeBase(t *testing.T) {
 		t.Fatal("Style is nil; a Switch takes the theme's CheckBox base")
 	}
 	// reflect.DeepEqual rather than ==: Style carries a map field, so the type
-	// is not comparable.
+	// is not comparable. The base plus the theme's accent, which a Switch
+	// fills in from Colors.Primary when the base names none (Style.AccentColor).
 	want := ctx.Theme().Components.CheckBox
+	want.AccentColor = ctx.Theme().Colors.Primary
 	if !reflect.DeepEqual(*n.Style, want) {
 		t.Errorf("Style = %+v, want the theme's Components.CheckBox %+v", *n.Style, want)
 	}

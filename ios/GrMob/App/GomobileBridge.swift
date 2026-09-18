@@ -52,6 +52,10 @@ final class GomobileBridge: GrMobBridge, @unchecked Sendable {
         MobileTriggerTextCallback(id, value)
     }
 
+    func triggerTextEdit(_ id: String, _ value: String, _ seq: Int, _ epoch: Int) -> String {
+        MobileTriggerTextEdit(id, value, seq, epoch)
+    }
+
     func triggerBoolCallback(_ id: String, _ value: Bool) -> String {
         MobileTriggerBoolCallback(id, value)
     }

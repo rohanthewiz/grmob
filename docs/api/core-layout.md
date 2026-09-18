@@ -98,7 +98,7 @@ The two roles are not split into two Go types because that would be a breaking c
 func BorderColor(hex string) StyleProp
 ```
 
-<small>[core/layout.go:351](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L351)</small>
+<small>[core/layout.go:354](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L354)</small>
 
 ### func BorderWidth
 
@@ -106,7 +106,7 @@ func BorderColor(hex string) StyleProp
 func BorderWidth(px float64) StyleProp
 ```
 
-<small>[core/layout.go:356](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L356)</small>
+<small>[core/layout.go:359](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L359)</small>
 
 ### func Box
 
@@ -120,7 +120,7 @@ It is not an overlay, on any target. Both natives used to draw it as one (a Comp
 
 ZStack, below, is the container that does overlay — and it exists because this one stopped. The two are the same argument from both ends: one shape per node type, stated once, rather than a container whose meaning depended on which renderer was reading it.
 
-<small>[core/layout.go:258](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L258)</small>
+<small>[core/layout.go:261](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L261)</small>
 
 ### func Card
 
@@ -128,7 +128,7 @@ ZStack, below, is the container that does overlay — and it exists because this
 func Card(stylePropsAndChildren ...PropsAndChildren) View
 ```
 
-<small>[core/layout.go:132](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L132)</small>
+<small>[core/layout.go:135](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L135)</small>
 
 ### func Column
 
@@ -136,7 +136,7 @@ func Card(stylePropsAndChildren ...PropsAndChildren) View
 func Column(stylePropsAndChildren ...PropsAndChildren) View
 ```
 
-<small>[core/layout.go:236](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L236)</small>
+<small>[core/layout.go:239](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L239)</small>
 
 ### func Divider
 
@@ -144,7 +144,7 @@ func Column(stylePropsAndChildren ...PropsAndChildren) View
 func Divider(height int, color string) View
 ```
 
-<small>[core/layout.go:344](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L344)</small>
+<small>[core/layout.go:347](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L347)</small>
 
 ### func Fragment
 
@@ -152,7 +152,7 @@ func Divider(height int, color string) View
 func Fragment(children ...View) View
 ```
 
-<small>[core/layout.go:224](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L224)</small>
+<small>[core/layout.go:227](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L227)</small>
 
 ### func GroupingContainers
 
@@ -201,7 +201,7 @@ A vertical Scroll emits no overflow on the web at all: the page scrolls, and the
 
 It is not a horizontal List. core.List's laziness, its cross-axis stretch and its FlexGrow contract are all written for a vertical main axis on both natives, and nothing yet asks for a lazily-materialized carousel. A strip of chips or a handful of cards is short by construction, which is what Scroll is for.
 
-<small>[core/layout.go:433](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L433)</small>
+<small>[core/layout.go:436](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L436)</small>
 
 ### func JustifyContents
 
@@ -341,7 +341,7 @@ Sorted for the reason htmlout's OverlayTypes is: a test looping over a map repor
 func Row(stylePropsAndChildren ...PropsAndChildren) View
 ```
 
-<small>[core/layout.go:126](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L126)</small>
+<small>[core/layout.go:129](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L129)</small>
 
 ### func SafeArea
 
@@ -357,7 +357,7 @@ Like Scroll it has no theme base: the theme Column's screen padding would otherw
 
 Below the inset it is a Column, on every target: children stack and, with no cross-axis alignment set, stretch to its width. Both natives used to draw it as an overlay (a Compose Box, a SwiftUI ZStack), which stacked two children on top of each other and let a lone one — a screen's whole content column, usually — hug its widest child instead of filling the screen.
 
-<small>[core/layout.go:218](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L218)</small>
+<small>[core/layout.go:221](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L221)</small>
 
 ### func Scroll
 
@@ -379,7 +379,7 @@ A vertical Scroll whose parent is itself a vertical scroll has no viewport to be
 
 The same shape sideways: a Horizontal() Scroll, a TextGrid or a CodeEditor inside a Horizontal() Scroll. Compose's horizontal scroll throws under an infinite width just as the vertical one does, so the renderer caps that axis too, and on an emulator the inner regions draw at their content width while the outer strip pans. SwiftUI's sideways nesting has not been measured.
 
-<small>[core/layout.go:188](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L188)</small>
+<small>[core/layout.go:191](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L191)</small>
 
 ### func Spacer
 
@@ -387,7 +387,7 @@ The same shape sideways: a Horizontal() Scroll, a TextGrid or a CodeEditor insid
 func Spacer(size int) View
 ```
 
-<small>[core/layout.go:138](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L138)</small>
+<small>[core/layout.go:141](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L141)</small>
 
 ### func StackAlign
 
@@ -500,7 +500,7 @@ That holds on all four targets including a stack with a placed layer, which it d
 
 Like Box and Scroll it carries no theme base — a theme Column's screen inset applied to an overlay would offset every layer by 16px and change nothing about their relationship.
 
-<small>[core/layout.go:338](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L338)</small>
+<small>[core/layout.go:341](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L341)</small>
 
 ## Types
 

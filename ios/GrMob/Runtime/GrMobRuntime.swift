@@ -16,6 +16,10 @@ protocol GrMobBridge: Sendable {
     func renderInitial() -> String
     func triggerCallback(_ id: String) -> String
     func triggerTextCallback(_ id: String, _ value: String) -> String
+    /// A text field's keystroke: triggerTextCallback plus the edit's
+    /// sequence number and the rewrite epoch the field has adopted. See
+    /// core/text_edit.go.
+    func triggerTextEdit(_ id: String, _ value: String, _ seq: Int, _ epoch: Int) -> String
     func triggerBoolCallback(_ id: String, _ value: Bool) -> String
     func triggerIntCallback(_ id: String, _ value: Int) -> String
 
@@ -65,6 +69,9 @@ final class GrMobRuntime {
 
     private let bridge: GrMobBridge
     private let events = DispatchQueue(label: "grmob-events")
+
+    /// The last sequence number handed to a text edit; see textEdited.
+    private var lastEditSeq = 0
 
     init(bridge: GrMobBridge) {
         self.bridge = bridge
@@ -132,6 +139,21 @@ final class GrMobRuntime {
 
     func textChanged(_ callbackID: String, _ value: String) {
         dispatch { $0.triggerTextCallback(callbackID, value) }
+    }
+
+    /// Sends a text field's edit and returns the sequence number it went
+    /// under, for the field's TextEditLedger.
+    ///
+    /// The counter is touched only on the main actor, where every edit
+    /// starts, so it needs no lock; the serial events queue then carries the
+    /// edits to Go in the order they were numbered. One counter for every
+    /// field: Go keeps its ledger per field, and all it asks of the numbers
+    /// is that each field's rise.
+    func textEdited(_ callbackID: String, _ value: String, epoch: Int) -> Int {
+        lastEditSeq += 1
+        let seq = lastEditSeq
+        dispatch { $0.triggerTextEdit(callbackID, value, seq, epoch) }
+        return seq
     }
 
     func toggled(_ callbackID: String, _ value: Bool) {

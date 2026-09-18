@@ -6254,6 +6254,11 @@ const GrMob = (() => {
         // numbers, so the int crosses as-is.
         out.fontWeight = style.FontWeight ? `${style.FontWeight}` : "";
         out.color = style.TextColor || "";
+        // The tint of a UA-drawn control (checkbox, switch, range): the one
+        // colour a browser lets a page give a control it draws itself. Go
+        // sets it only on Switch, Slider and Checkbox; see core.Style's
+        // AccentColor.
+        out.accentColor = style.AccentColor || "";
         // Unconditional on purpose, twice over: textAlignFor answers "" for
         // an unset or placement-only Align (keeping the totality rule), and
         // wasm/verify's TestRuntimeStyleAppliesTextAlign pins this exact

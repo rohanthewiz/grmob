@@ -83,7 +83,7 @@ package core
 // <input> for free, as it does a checkbox's.
 func Switch(on bool, onToggle func(bool), props ...PropsAndChildren) View {
 	return ComponentFunc(func(ctx *Context) *Node {
-		return leafNode(ctx, "Switch", ctx.Theme().Components.CheckBox, map[string]any{
+		return leafNode(ctx, "Switch", accented(ctx, ctx.Theme().Components.CheckBox), map[string]any{
 			"checked":  on,
 			"onToggle": ctx.registerBoolCallback(onToggle),
 		}, props)

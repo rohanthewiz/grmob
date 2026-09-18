@@ -47,6 +47,7 @@ One of 11 topic pages of [package core](core.md), which has the package overview
     - [`func (*Context) TriggerCallback`](#func-context-triggercallback)
     - [`func (*Context) TriggerIntCallback`](#func-context-triggerintcallback)
     - [`func (*Context) TriggerTextCallback`](#func-context-triggertextcallback)
+    - [`func (*Context) TriggerTextEdit`](#func-context-triggertextedit)
     - [`func (*Context) With`](#func-context-with)
     - [`func (*Context) WithConfig`](#func-context-withconfig)
     - [`func (*Context) WithTheme`](#func-context-withtheme)
@@ -342,7 +343,7 @@ func (ctx *Context) BeginRenderPass()
 
 BeginRenderPass starts a callback ID pass for this context tree; see callbackRegistry.beginPass for the stability contract.
 
-<small>[core/event.go:316](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L316)</small>
+<small>[core/event.go:326](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L326)</small>
 
 #### func (*Context) ClearDirty
 
@@ -451,7 +452,7 @@ PurgeUnusedCallbacks drops handlers not re-registered in the current pass; see c
 
 OnEndReached's debounce ledger is trimmed in the same breath and against the registry's own survivors, so the two can never disagree about which lists are still on screen — a guard outliving its handler would silently suppress the first page fetch of whatever list next inherits the ID.
 
-<small>[core/event.go:327](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L327)</small>
+<small>[core/event.go:337](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L337)</small>
 
 #### func (*Context) ReceiveEventPayload
 
@@ -461,7 +462,7 @@ func (ctx *Context) ReceiveEventPayload(payload map[string]any)
 
 ReceiveEventPayload dispatches a loosely typed event envelope ({"callback": id, "value": ...}) by sniffing the value's type — the shape the WASM host sends. Typed hosts should call the Trigger\* methods directly.
 
-<small>[core/event.go:365](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L365)</small>
+<small>[core/event.go:375](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L375)</small>
 
 #### func (*Context) RequestRender
 
@@ -515,7 +516,7 @@ func (ctx *Context) TriggerBoolCallback(id string, val bool)
 
 TriggerBoolCallback dispatches a bool-carrying event (e.g. a toggle).
 
-<small>[core/event.go:349](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L349)</small>
+<small>[core/event.go:359](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L359)</small>
 
 #### func (*Context) TriggerCallback
 
@@ -525,7 +526,7 @@ func (ctx *Context) TriggerCallback(id string)
 
 TriggerCallback dispatches a void event (e.g. a button tap) by callback ID. Unknown IDs are silent no-ops: a late native event racing a purge is expected traffic, not an error.
 
-<small>[core/event.go:335](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L335)</small>
+<small>[core/event.go:345](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L345)</small>
 
 #### func (*Context) TriggerIntCallback
 
@@ -535,7 +536,7 @@ func (ctx *Context) TriggerIntCallback(id string, val int)
 
 TriggerIntCallback dispatches an int-carrying event (e.g. tab selection).
 
-<small>[core/event.go:356](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L356)</small>
+<small>[core/event.go:366](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L366)</small>
 
 #### func (*Context) TriggerTextCallback
 
@@ -545,7 +546,19 @@ func (ctx *Context) TriggerTextCallback(id string, val string)
 
 TriggerTextCallback dispatches a string-carrying event (e.g. input change).
 
-<small>[core/event.go:342](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L342)</small>
+<small>[core/event.go:352](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L352)</small>
+
+#### func (*Context) TriggerTextEdit
+
+```go
+func (ctx *Context) TriggerTextEdit(id, val string, seq, epoch int)
+```
+
+TriggerTextEdit dispatches one keystroke's worth of text from a native field: TriggerTextCallback plus the sequence and epoch the host stamped on it. An edit typed before the host had seen Go's latest rewrite of the field is acknowledged and dropped rather than handed to the app. See the file comment.
+
+Unknown IDs are silent no-ops, as for every Trigger\* method.
+
+<small>[core/text_edit.go:196](https://github.com/rohanthewiz/grmob/blob/master/core/text_edit.go#L196)</small>
 
 #### func (*Context) With
 

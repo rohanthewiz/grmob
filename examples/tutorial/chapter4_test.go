@@ -2333,7 +2333,7 @@ func TestFABLessonFloatsTheDiscAndAddsNotes(t *testing.T) {
 	// The disc floats: it is the bottom-end layer of a ZStack whose other
 	// layer fills the stack, the shape Screen.Floating builds.
 	// Found by what its top layer holds rather than as the first two-layer
-	// stack: every codeBlock is a two-layer ZStack too (its Copy button).
+	// stack. Every codeBlock was once a two-layer ZStack too (its Copy button).
 	stack := findNode(root, func(n *node) bool {
 		return n.Type == "ZStack" && len(n.Children) == 2 &&
 			findNode(n.Children[1], func(c *node) bool {

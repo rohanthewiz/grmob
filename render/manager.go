@@ -357,6 +357,17 @@ func (m *Manager) DispatchTextCallback(id string, value string) string {
 	return m.renderAgainLocked()
 }
 
+// DispatchTextEdit is DispatchTextCallback for a native text field's
+// keystroke, carrying the host's sequence number and adopted rewrite epoch.
+// An edit typed against text Go has since rewritten is acknowledged without
+// reaching the handler; see core/text_edit.go for the protocol.
+func (m *Manager) DispatchTextEdit(id string, value string, seq, epoch int) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.guardHandler(id, func() { m.context.TriggerTextEdit(id, value, seq, epoch) })
+	return m.renderAgainLocked()
+}
+
 // DispatchBoolCallback is DispatchCallback for bool-carrying events.
 func (m *Manager) DispatchBoolCallback(id string, value bool) string {
 	m.mu.Lock()
