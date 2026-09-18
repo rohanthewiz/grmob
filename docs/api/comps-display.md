@@ -4,13 +4,13 @@
 import "github.com/rohanthewiz/grmob/comps"
 ```
 
-Avatars and avatar stacks, stat tiles, the compass, clocks, countdowns and alarms, QR codes, map panels and static maps.
+Avatars and avatar stacks, stat tiles, the compass, clocks, countdowns and alarms, an audio player, QR codes, map panels and static maps.
 
-One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/avatar.go`, `comps/avatar_stack.go`, `comps/stat_tile.go`, `comps/compass.go`, `comps/clock.go`, `comps/timers.go`, `comps/alarm.go`, `comps/qr_code.go`, `comps/map_panel.go`, `comps/static_map.go`.
+One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/avatar.go`, `comps/avatar_stack.go`, `comps/stat_tile.go`, `comps/compass.go`, `comps/clock.go`, `comps/timers.go`, `comps/alarm.go`, `comps/audio_player.go`, `comps/qr_code.go`, `comps/map_panel.go`, `comps/static_map.go`.
 
 ## Index
 
-- [Constants](#constants) — `ConcernCountdownUntilUnset`, `ConcernNoMapProvider`, `ConcernQRDataTooLong`, `ConcernStopwatchSinceUnset`, `DefaultMapHeight`, `DefaultMapPanelHeight`, `DefaultMapScale`, `DefaultMapWidth`, `DefaultMapZoom`, `FitPadding`, `MaxFitZoom`, `MaxGoogleMapScale`, and 5 more
+- [Constants](#constants) — `ConcernAudioPlayerNoTrack`, `ConcernCountdownUntilUnset`, `ConcernNoMapProvider`, `ConcernQRDataTooLong`, `ConcernStopwatchSinceUnset`, `DefaultMapHeight`, `DefaultMapPanelHeight`, `DefaultMapScale`, `DefaultMapWidth`, `DefaultMapZoom`, `FitPadding`, `MaxFitZoom`, and 6 more
 - [`func FitRegion`](#func-fitregion)
 - [`func GoogleMapsHandoff`](#func-googlemapshandoff)
 - [`func OSMStaticMap`](#func-osmstaticmap)
@@ -22,6 +22,8 @@ One of 7 topic pages of [package comps](comps.md), which has the package overvie
     - [`func (AlarmRow) Render`](#func-alarmrow-render)
 - [`type AnalogClock`](#type-analogclock)
     - [`func (AnalogClock) Render`](#func-analogclock-render)
+- [`type AudioPlayer`](#type-audioplayer)
+    - [`func (AudioPlayer) Render`](#func-audioplayer-render)
 - [`type Avatar`](#type-avatar)
     - [`func (Avatar) Render`](#func-avatar-render)
 - [`type AvatarStack`](#type-avatarstack)
@@ -145,6 +147,14 @@ const (
 ```
 
 <small>[comps/static_map.go:235](https://github.com/rohanthewiz/grmob/blob/master/comps/static_map.go#L235)</small>
+
+ConcernAudioPlayerNoTrack is raised, in debug builds only, when an AudioPlayer has no Track.URL. Play would load nothing, so the widget disables it — and a player whose only button is dimmed looks exactly like one waiting for its stream to buffer.
+
+```go
+const ConcernAudioPlayerNoTrack = "audio-player-no-track"
+```
+
+<small>[comps/audio_player.go:15](https://github.com/rohanthewiz/grmob/blob/master/comps/audio_player.go#L15)</small>
 
 ConcernCountdownUntilUnset is raised, in debug builds only, when Until is the zero time.Time. The countdown is then permanently expired: it draws 0:00 and fires OnDone on its first pass, which on screen is exactly what a timer that has just finished looks like. So a Countdown rendered before its deadline was assigned — a struct built from a half-filled record, a field spelled differently in the caller — would otherwise announce itself as a completed timer and nobody would go looking.
 
@@ -451,6 +461,81 @@ func (c AnalogClock) Render(ctx *core.Context) *core.Node
 ```
 
 <small>[comps/clock.go:271](https://github.com/rohanthewiz/grmob/blob/master/comps/clock.go#L271)</small>
+
+### type AudioPlayer
+
+```go
+type AudioPlayer struct {
+	// Track is what this player plays. URL is required, and is how the
+	// widget recognizes its own track in the shared status.
+	Track core.AudioTrack
+
+	// SkipSeconds is the back / forward step; 0 means 15, and a negative
+	// value leaves the skip buttons out.
+	SkipSeconds float64
+
+	// Rates, when set, adds a speed button that cycles through them in order
+	// ("Speed 1.25×"). A rate the player is at that is not in the list steps
+	// to the first.
+	Rates []float64
+
+	// ShowStop adds a Stop button, which unloads the track.
+	ShowStop bool
+
+	// Style is applied to the outer column after its defaults.
+	Style []core.StyleProp
+}
+```
+
+AudioPlayer is the transport for one track on the app's one player: the title, a seek bar with the elapsed and total time under it, and back / play-pause / forward, with an optional speed button and Stop.
+
+	comps.AudioPlayer{
+	    Track: core.AudioTrack{URL: sermon.URL, Title: sermon.Title, Artist: sermon.Speaker},
+	    Rates: []float64{1, 1.25, 1.5, 2},
+	}
+
+	┌ Column  role=group  name=Title ──────────────────────┐
+	│ Sunday, 14 March                                     │  Typography.Subtitle
+	│ Pastor Ade                                           │  Artist, or the state
+	│ ●━━━━━━━━━━━━━━━━○──────────────────────────────     │  Slider, seeks on release
+	│ 12:04                                        41:30   │  elapsed · total
+	│            [ −15s ]  [ Pause ]  [ +15s ]             │
+	│               [ Speed 1.25× ]  [ Stop ]              │  when Rates / ShowStop
+	└──────────────────────────────────────────────────────┘
+
+#### One player, many widgets
+
+core's audio is a singleton (see core/audio.go): one stream, one media session, one lock screen. So an AudioPlayer does not own a player, it is a view of the one there is, and it asks one question of the status: is the loaded track mine (same URL)? If it is, the controls drive it. If it is not — nothing loaded, or another screen's track — this widget shows its own track idle, Play loads it (replacing whatever was playing, as a phone does), and the other controls are disabled because they would act on somebody else's stream. A list of sermons can therefore put an AudioPlayer on every detail screen without any of them fighting.
+
+#### The scrub reading is the widget's
+
+While the thumb is down, the elapsed time follows the finger, and the seek happens once, on release (core.OnSliderChangeEnd). The thumb itself needs nothing — the native renderers show the finger's value during a drag — but the time label does, so the widget holds "dragging to t" in a hook.
+
+That is the opposite of SliderRow, which gives its draft to the caller, and the difference is what the reading is for. SliderRow's live reading is decoration on a value the app owns, and holding it would charge every SliderRow a whole-tree render per drag tick. Here the value being drafted is the host's playback position, which no app holds, and the reading is the point of scrubbing: you are looking for 12:04. The cost is also already paid — a playing track re-renders the tree on every status tick.
+
+#### Accessibility
+
+The column is a RoleGroup named by the track's title, so a reader entering it hears what is playing. The seek bar is named "Position" with its value spoken as "12:04 of 41:30" rather than as seconds. The skip buttons show "−15s" and are named "Back 15 seconds" / "Forward 15 seconds".
+
+#### Theme roles read
+
+	Title        Typography.Subtitle
+	Second line  Typography.Caption over TextSecondary
+	Times        Typography.Caption over TextSecondary
+	Controls     comps.Button: Play filled, the rest outlined
+	Gaps         Spacing.SM
+
+<small>[comps/audio_player.go:76](https://github.com/rohanthewiz/grmob/blob/master/comps/audio_player.go#L76)</small>
+
+#### func (AudioPlayer) Render
+
+```go
+func (p AudioPlayer) Render(ctx *core.Context) *core.Node
+```
+
+Render draws the transport. It takes two hook slots — the audio status subscription and the scrub reading — so render it unconditionally.
+
+<small>[comps/audio_player.go:99](https://github.com/rohanthewiz/grmob/blob/master/comps/audio_player.go#L99)</small>
 
 ### type Avatar
 

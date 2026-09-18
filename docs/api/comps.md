@@ -39,7 +39,7 @@ Package comps's reference is split into 7 topic pages by source file. The index 
 | [Inputs & pickers](comps-inputs.md) | Form fields, password fields, one-time code fields, tag inputs, search, searchable selects, radio groups, dates, date ranges, times and calendars, and the two editors. | 16 types, 15 functions and methods |
 | [Buttons & choices](comps-actions.md) | Buttons and their variants, copy buttons, links, chips, segmented controls, steppers, ratings and badges. | 12 types, 12 functions and methods |
 | [Overlays & feedback](comps-overlays.md) | Dialogs, lightboxes, action sheets, menus, snackbars, banners, progress, spinners, skeletons and empty states. | 13 types, 10 functions and methods |
-| [Data display & maps](comps-display.md) | Avatars and avatar stacks, stat tiles, the compass, clocks, countdowns and alarms, QR codes, map panels and static maps. | 18 types, 20 functions and methods |
+| [Data display & maps](comps-display.md) | Avatars and avatar stacks, stat tiles, the compass, clocks, countdowns and alarms, an audio player, QR codes, map panels and static maps. | 19 types, 21 functions and methods |
 | [Charts](comps-charts.md) | Sparklines, line, area, bar and scatter charts, histograms, heatmaps and calendar heatmaps, donuts and pies, and gauges, drawn on core.Canvas. | 16 types, 12 functions and methods |
 
 ## Index
@@ -135,7 +135,7 @@ Package comps's reference is split into 7 topic pages by source file. The index 
     - [`type Spinner`](comps-overlays.md#type-spinner)
     - [`type SpinnerSize`](comps-overlays.md#type-spinnersize)
 - [Data display & maps](comps-display.md)
-    - [Constants](comps-display.md#constants) — `ConcernCountdownUntilUnset`, `ConcernNoMapProvider`, `ConcernQRDataTooLong`, `ConcernStopwatchSinceUnset`, `DefaultMapHeight`, `DefaultMapPanelHeight`, `DefaultMapScale`, `DefaultMapWidth`, `DefaultMapZoom`, `FitPadding`, `MaxFitZoom`, `MaxGoogleMapScale`, and 5 more
+    - [Constants](comps-display.md#constants) — `ConcernAudioPlayerNoTrack`, `ConcernCountdownUntilUnset`, `ConcernNoMapProvider`, `ConcernQRDataTooLong`, `ConcernStopwatchSinceUnset`, `DefaultMapHeight`, `DefaultMapPanelHeight`, `DefaultMapScale`, `DefaultMapWidth`, `DefaultMapZoom`, `FitPadding`, `MaxFitZoom`, and 6 more
     - [`func FitRegion`](comps-display.md#func-fitregion)
     - [`func GoogleMapsHandoff`](comps-display.md#func-googlemapshandoff)
     - [`func OSMStaticMap`](comps-display.md#func-osmstaticmap)
@@ -144,6 +144,7 @@ Package comps's reference is split into 7 topic pages by source file. The index 
     - [`type AlarmRinging`](comps-display.md#type-alarmringing)
     - [`type AlarmRow`](comps-display.md#type-alarmrow)
     - [`type AnalogClock`](comps-display.md#type-analogclock)
+    - [`type AudioPlayer`](comps-display.md#type-audioplayer)
     - [`type Avatar`](comps-display.md#type-avatar)
     - [`type AvatarStack`](comps-display.md#type-avatarstack)
     - [`type Compass`](comps-display.md#type-compass)

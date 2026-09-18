@@ -2,7 +2,8 @@
 
 **Status:** drafted 2026-09-18. **G1 `CopyButton` and Tier H landed** the
 same day as one batch, taught by lesson 4.29 "Copy, link and list".
-**G2 `TagInput` landed** next, with lesson 5.8.
+**G2 `TagInput` landed** next, with lesson 5.8, then **G3 `AudioPlayer`**
+with lesson 4.30.
 
 Round one (`comps-low-hanging-fruit.md`, Tiers A–C) and round two
 (`comps-low-hanging-fruit-2.md`, Tiers D–F) are both complete. This file is
@@ -167,7 +168,28 @@ The list is a `RoleList`, like `KeyValueList`.
 
 **Concern:** `ConcernTagInputInert`.
 
-### G3. `AudioPlayer`
+### G3. `AudioPlayer` — **landed 2026-09-18**
+
+**What the build changed from the sketch.** Four things.
+
+- **The time row shows the total, not the time remaining.** The example
+  showed the total, and the value spoken by the seek bar ("12:04 of 41:30")
+  reads naturally against it.
+- **The seek bar states no value until a duration is known.** A 0-to-0
+  `ValueRange` is one Compose cannot express, and the a11y audit reports it.
+  The widget's own harness did not catch this, because the audit only runs
+  inside a full render manager. `examples/mobileapp`'s app test did. There is
+  now a comps test that calls `core.AuditTree` directly.
+- **The title is `Typography.Body` in bold.** The bundled `Subtitle` is a
+  grey secondary heading, which a headless-Chrome render showed.
+- **The second line is the Artist**, except for this track's "Loading…" and
+  "Couldn't play: …". `audioTab` keeps its raw state line as demo
+  diagnostics. Its `clock` and `nextRate` helpers moved into the widget.
+
+Shipped: `AudioPlayer{Track, SkipSeconds, Rates, ShowStop, Style}`, plus
+`ConcernAudioPlayerNoTrack`.
+
+The sketch, as drafted:
 
 The transport that `examples/mobileapp`'s `audioTab` builds by hand, as a
 widget: title line, scrub slider, elapsed / remaining row, −15 / play-pause /
@@ -336,7 +358,7 @@ New this round:
 | 1 | ~~G1 `CopyButton`~~ | named twice in Next lists; the tutorial's code blocks are the first consumer |
 | 2 | ~~Tier H bundle + lesson~~ | three small pieces, each with a consumer waiting |
 | 3 | ~~G2 `TagInput`~~ | the one new *input*; completes the form family |
-| 4 | G3 `AudioPlayer` | an extraction; the example proves it |
+| 4 | ~~G3 `AudioPlayer`~~ | an extraction; the example proves it |
 | 5 | G4 `MessageBubble` | an extraction; the example proves it |
 | 6 | Tier I | each after its catch is settled |
 

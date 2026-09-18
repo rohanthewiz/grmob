@@ -61,6 +61,7 @@ func chapter4() Chapter {
 			lessonSmallPieces(),
 			lessonHeatAndSpread(),
 			lessonCopyLinkAndList(),
+			lessonAudioPlayer(),
 		},
 	}
 }
@@ -5165,6 +5166,66 @@ comps.CalendarHeatmap{
 					"Link: RoleLink, OnTap or OpenURL(URL); a line of its own, not underlined.",
 					"BulletList: a list of listitems, hidden pinned markers, ordered numbers in one column.",
 					"CalendarHeatmap.WeeksFor: square cells for a width you supply; no measurement, no hook.",
+				),
+			)
+		},
+	}
+}
+
+// tutorialTrack is a freely licensed sample stream — SoundHelix publishes its
+// test songs for exactly this — the same one examples/mobileapp plays.
+var tutorialTrack = core.AudioTrack{
+	URL:    "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
+	Title:  "SoundHelix Song 1",
+	Artist: "SoundHelix",
+	Album:  "GrMob Tutorial",
+}
+
+// 4.30 — G3 of the third low-hanging-fruit round. The lesson is organised
+// around the singleton: an AudioPlayer is a view of the app's one player,
+// not a player of its own, and every control's enabled state follows from
+// asking whether the loaded track is this one.
+//
+// Appended at the end of the chapter for the reason 4.25 was.
+func lessonAudioPlayer() Lesson {
+	return Lesson{
+		Title:   "An audio player",
+		Summary: "comps.AudioPlayer: the transport for one track on the app's one player, and the scrub reading it holds.",
+		Body: func(ctx *core.Context) core.View {
+			return core.Column(
+				core.Gap(14),
+				prose("core's audio is one player for the whole app: one stream, one lock screen, one "+
+					"set of headphone buttons. comps.AudioPlayer is the transport for a single track "+
+					"on it — title, seek bar, elapsed and total time, back, play-pause and forward, "+
+					"and optionally a speed button and Stop."),
+				codeBlock(`comps.AudioPlayer{
+    Track:    core.AudioTrack{URL: url, Title: "Song 1", Artist: "SoundHelix"},
+    Rates:    []float64{1, 1.25, 1.5, 2},
+    ShowStop: true,
+}`),
+				demoPanel("Press Play. On a device, lock the screen: the platform's controls are the same player.",
+					comps.AudioPlayer{
+						Track:    tutorialTrack,
+						Rates:    []float64{1, 1.25, 1.5, 2},
+						ShowStop: true,
+					},
+				),
+				prose("A player widget does not own a player. It asks the shared status one question — "+
+					"is the loaded track mine? — and everything follows. If it is, the controls drive "+
+					"it. If it is not, the widget shows its own track idle, Play loads it (replacing "+
+					"whatever was playing, as a phone does) and the rest is disabled, because it "+
+					"would act on somebody else's stream. So every episode screen in a podcast app "+
+					"can carry one without any of them fighting."),
+				prose("While you drag the seek bar the elapsed time follows your finger, and the seek "+
+					"is sent once, on release. The widget holds that reading itself — the opposite of "+
+					"SliderRow, which leaves a drag's draft to you — because the value being dragged "+
+					"is the host's playback position, which no app holds, and because seeing 12:04 "+
+					"is the point of scrubbing."),
+				keyPoints(
+					"AudioPlayer: a view of the one player, keyed by Track.URL; not a player of its own.",
+					"Not this track loaded? Play loads it; the controls that would drive another stream are disabled.",
+					"The scrub reading is the widget's; the seek is sent once, on release.",
+					"It holds hooks (UseAudio and the scrub), so render it unconditionally.",
 				),
 			)
 		},

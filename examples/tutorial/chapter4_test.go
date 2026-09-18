@@ -2814,3 +2814,35 @@ func TestHeatAndSpreadLessonDrivesTheCharts(t *testing.T) {
 	}
 	assertNoConcerns(t)
 }
+
+// 4.30. Headless there is no player, but core records a load optimistically,
+// which is enough to see the widget recognize its own track: Play turns into
+// "Loading…" and the controls that drive a stream come alive. The shared
+// record is reset afterwards, since it outlives the test.
+func TestAudioPlayerLessonLoadsItsTrack(t *testing.T) {
+	t.Cleanup(core.AudioStop)
+	mgr := newApp(t)
+	openLesson(t, mgr, "An audio player")
+
+	skip := func() *node {
+		t.Helper()
+		n := findNode(tree(t, mgr), func(n *node) bool {
+			return n.Type == "Button" && n.Style != nil && n.Style.AccessibilityLabel == "Back 15 seconds"
+		})
+		if n == nil {
+			t.Fatal("the back button is missing")
+		}
+		return n
+	}
+	if !skip().Style.Disabled {
+		t.Error("before loading, skip has no stream to act on")
+	}
+	tap(t, mgr, "Play")
+	if !hasText(tree(t, mgr), "Loading…") {
+		t.Error("after Play the second line should say the track is loading")
+	}
+	if skip().Style.Disabled {
+		t.Error("with its own track loaded, skip is live")
+	}
+	assertNoConcerns(t)
+}

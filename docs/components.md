@@ -3410,6 +3410,41 @@ text, "4:12" is punctuation. The label is not a live region, so nothing is
 announced every second; a caller who wants that puts the timer beside its own
 `core.RoleStatus` text.
 
+## AudioPlayer
+
+The transport for one track on the app's one player.
+
+```go
+comps.AudioPlayer{
+    Track:    core.AudioTrack{URL: sermon.URL, Title: sermon.Title, Artist: sermon.Speaker},
+    Rates:    []float64{1, 1.25, 1.5, 2},   // adds a speed button that cycles
+    ShowStop: true,
+}
+// Sunday, 14 March
+// Pastor Ade
+// ●━━━━━━━━━○───────────────
+// 12:04                41:30
+//    [−15s] [Pause] [+15s]
+//     [Speed 1.25×] [Stop]
+```
+
+- **A view of the singleton, not a player.** core's audio is one stream for
+  the whole app. The widget asks whether the loaded track is its own (same
+  URL). If it is, the controls drive it. If not, it shows its track idle,
+  Play loads it, and the rest is disabled. One per episode screen is fine.
+- **The scrub reading is the widget's.** The elapsed time follows the finger
+  and the seek is sent once, on release. This is the opposite of
+  [SliderRow](#sliderrow), because the drafted value is the host's position,
+  not the app's, and the reading is the point of scrubbing.
+- The second line is the Artist, except "Loading…" and "Couldn't play: …"
+  for this track.
+- A `RoleGroup` named by the title. The seek bar is "Position", with its value
+  spoken as "12:04 of 41:30" once a duration is known. It states no range
+  before then, because a 0-to-0 range is one Compose cannot express.
+- `SkipSeconds` is 15 by default; a negative value drops the skip buttons.
+  It holds hooks: render it unconditionally. `ConcernAudioPlayerNoTrack` for a
+  missing URL.
+
 ## QRCode
 
 A string drawn as a QR Code, encoded in Go.
