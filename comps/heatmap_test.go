@@ -188,3 +188,18 @@ func TestCalendarHeatmapWeeksForSquaresTheCells(t *testing.T) {
 		}
 	}
 }
+
+// Two days tied for the most: the summary names the earlier, whichever order
+// the entries arrive in, since the grid is walked oldest first.
+func TestCalendarHeatmapTieNamesTheEarliestDay(t *testing.T) {
+	end := time.Date(2026, time.March, 11, 18, 0, 0, 0, time.UTC)
+	early := DayValue{Day: time.Date(2026, time.February, 17, 9, 0, 0, 0, time.UTC), Value: 3}
+	late := DayValue{Day: time.Date(2026, time.March, 9, 9, 0, 0, 0, time.UTC), Value: 3}
+	for _, days := range [][]DayValue{{early, late}, {late, early}} {
+		_, n := renderDebug(t, CalendarHeatmap{Subject: "Runs", Days: days, End: end})
+		want := "Runs: 6 over 17 weeks, on 2 days; most on Tue 17 Feb 2026, 3."
+		if got := n.Style.AccessibilityLabel; got != want {
+			t.Errorf("summary = %q\nwant      %q", got, want)
+		}
+	}
+}

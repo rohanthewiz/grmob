@@ -297,6 +297,7 @@ func TestSearchableSelectLeavesTheReturnKeyToTheFocusOrder(t *testing.T) {
 	s.FocusRef = country
 	n := s.Render(ctx)
 	ctx.EndRenderPass()
+	core.AuditTree(n)
 	if dump := core.DumpConcerns(); dump != "" {
 		t.Errorf("concerns raised:\n%s", dump)
 	}

@@ -178,6 +178,11 @@ struct GrMobStyle: Equatable {
     var accessibilityLabel: String = ""
     var accessibilityHint: String = ""
     var accessibilityHidden: Bool = false
+    /// Set at render time, never parsed: this container's label is the whole
+    /// of what it says, because every child it has is AccessibilityHidden (or
+    /// it has none). See GrMobNode.containerStyle for why it is computed from
+    /// the live children, and grMobAccessibility for what it changes.
+    var labelOnly: Bool = false
     /// Go's core.Role, verbatim; mapped to traits by grMobTraitsFor below.
     var accessibilityRole: String = ""
     /// Go's core.Style.AccessibilityHeadingLevel: 1-6, or 0 for a heading that
@@ -561,7 +566,8 @@ struct GrMobAccessibilityModifier: ViewModifier {
         content
             .grMobAccessibility(style)
             .modifier(GrMobGestureAccessibility(onTap: onTap, onLongPress: onLongPress,
-                                                disabled: style?.disabled ?? false))
+                                                disabled: style?.disabled ?? false,
+                                                isLink: style?.accessibilityRole == "link"))
     }
 }
 
@@ -569,21 +575,30 @@ struct GrMobGestureAccessibility: ViewModifier {
     let onTap: String
     let onLongPress: String
     let disabled: Bool
+    /// The node declares core.RoleLink. A tap on it still activates, but it
+    /// is announced as the link it is: `.isButton` is the stronger trait, so
+    /// adding it beside grMobRole's `.isLink` made comps.Link read as a
+    /// button (XCUITest typed both of lesson 4.29's links as Button).
+    var isLink: Bool = false
     @Environment(\.grMobDispatch) private var dispatch
+
+    /// The trait a tap earns: a button, unless the node already says link.
+    /// An empty set rather than a branch, so both arms keep one type.
+    private var tapTrait: AccessibilityTraits { isLink ? [] : .isButton }
 
     func body(content: Content) -> some View {
         if disabled || (onTap.isEmpty && onLongPress.isEmpty) {
             content
         } else if onLongPress.isEmpty {
             content
-                .accessibilityAddTraits(.isButton)
+                .accessibilityAddTraits(tapTrait)
                 .accessibilityAction { dispatch?(onTap) }
         } else if onTap.isEmpty {
             content
                 .accessibilityAction(named: Text("Long press")) { dispatch?(onLongPress) }
         } else {
             content
-                .accessibilityAddTraits(.isButton)
+                .accessibilityAddTraits(tapTrait)
                 .accessibilityAction { dispatch?(onTap) }
                 .accessibilityAction(named: Text("Long press")) { dispatch?(onLongPress) }
         }
@@ -725,6 +740,20 @@ struct GrMobBoxModifier: ViewModifier {
             // touch target cover the whole floored box, as CSS's border box
             // does.
             .grMobMinimum(width: s?.minWidth ?? "", height: s?.minHeight ?? "", alignment: alignment)
+            // The fill a FlexGrow or stretched child is given, inside the
+            // background, border and gestures for the reason the explicit size
+            // above is: they describe the box, and the box is the slot. It
+            // used to sit outside the margin, last of the sizing layers, and
+            // for a child whose content fills its slot that was invisible. A
+            // child that centres narrower content was not: each of
+            // comps.Calendar's day cells (FlexGrow(1), a centred numeral)
+            // painted its fill around the numeral alone, so a range band drew
+            // as seven separate strips and a selected day as a thin pill (the
+            // simulator, lesson 4.25), and a tap beside the numeral missed.
+            // The margin is outside it now, which is also CSS's order: a
+            // grower's margin is space around the box that fills, not part of
+            // it. The cap stays outermost (GrMobMaxWidthModifier below).
+            .grMobGrow(grow, alignment: alignment)
             .background(s?.background ?? .clear)
             .modifier(GrMobGestures(onTap: onTap, onLongPress: onLongPress,
                                     disabled: s?.disabled ?? false,
@@ -753,7 +782,6 @@ struct GrMobBoxModifier: ViewModifier {
                                   translateX: s?.translateX ?? .zero,
                                   translateY: s?.translateY ?? .zero))
             .padding((s?.margin ?? .zero).insets)
-            .grMobGrow(grow, alignment: alignment)
             // core.MaxWidth, outermost of the sizing layers and after
             // grMobGrow on purpose. A stretched or FlexGrow child carries a
             // flexible frame from grMobGrow that accepts whatever it is
@@ -856,7 +884,18 @@ extension View {
             accessibilityHidden(true)
                 .environment(\.grMobAccessibilityHidden, true)
         } else if let s, !s.accessibilityLabel.isEmpty {
-            accessibilityElement(children: .combine)
+            // `.combine` merges the children's traits, values and actions into
+            // the one element, which is what a row holding a Switch needs.
+            // But a combine over children that are all hidden has nothing to
+            // merge, and SwiftUI then makes no element at all: the label, the
+            // role and the tap's accessibility action go with it. That was
+            // comps.Link (a RoleLink Box around its own hidden Text): absent
+            // from VoiceOver and from XCUITest, app.links.count == 0, on the
+            // simulator in lesson 4.29. `.ignore` always makes the element, and
+            // with nothing to merge it loses nothing. Chosen by argument, not
+            // by a branch, so no _ConditionalContent layer is added to
+            // grMobBox's opaque-type tower (see grMobTransition).
+            accessibilityElement(children: s.labelOnly ? .ignore : .combine)
                 .accessibilityLabel(grMobCurrentLabel(s.accessibilityLabel, kind: s.accessibilityCurrent))
                 .grMobA11yHint(s.accessibilityHint)
         } else if let s, !s.accessibilityHint.isEmpty {
@@ -1584,13 +1623,40 @@ private func grMobTodayWord() -> String {
 struct GrMobMaxWidthModifier: ViewModifier {
     let value: String
     let margin: CGFloat
+    /// True when a flex Row has already resolved this node's percentage cap
+    /// along its main axis; see GrMobFlexSolver.percentCaps.
+    @Environment(\.grMobPercentCapResolved) private var resolvedByParent
 
     @ViewBuilder func body(content: Content) -> some View {
         if value.isEmpty || value == "none" || value == "auto" {
             content
+        } else if resolvedByParent && value.hasSuffix("%") {
+            // The Row proposes a slot already held to the cap. Resolving the
+            // percentage again here would take it of that slot, and compound.
+            // Reset for the subtree, so a descendant's own percentage is its
+            // own parent's to resolve.
+            content.environment(\.grMobPercentCapResolved, false)
         } else {
-            GrMobMaxWidthLayout(value: value, margin: margin) { content }
+            GrMobMaxWidthLayout(value: value, margin: margin) {
+                content.environment(\.grMobPercentCapResolved, false)
+            }
         }
+    }
+}
+
+/// Set by FlexChildren on a Row child whose percentage MaxWidth the Row's
+/// layout resolves itself, and read by that child's GrMobMaxWidthModifier,
+/// which resets it for everything beneath. An environment value rather than
+/// a style field because it is a fact about the parent, which the child's
+/// own style cannot know.
+private struct GrMobPercentCapResolvedKey: EnvironmentKey {
+    static let defaultValue: Bool = false
+}
+
+extension EnvironmentValues {
+    var grMobPercentCapResolved: Bool {
+        get { self[GrMobPercentCapResolvedKey.self] }
+        set { self[GrMobPercentCapResolvedKey.self] = newValue }
     }
 }
 

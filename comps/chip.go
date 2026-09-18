@@ -125,9 +125,9 @@ const (
 //
 // The border is there for geometry, not for decoration. Only the unselected
 // chip wants a visible rule, but a rule on one state alone makes that state
-// 2px wider and taller wherever box-sizing is content-box (the static export
-// sets no reset, so it is), and a pill that grows when you tap it is a worse
-// artifact than the one this fixes. So both states carry a 1px border and the
+// 2px wider and taller: a chip declares no size, so its border adds to its
+// content size under either box model, and a pill that grows when you tap it
+// is a worse artifact than the one this fixes. So both states carry a 1px border and the
 // selected one paints it in its own fill, where it cannot be seen.
 type Chip struct {
 	Label    string

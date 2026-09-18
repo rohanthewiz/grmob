@@ -143,10 +143,11 @@ func (l Lightbox) Render(ctx *core.Context) *core.Node {
 
 	// The panel is full width and carries no padding of its own; the close
 	// row and the caption take their inset and the image runs edge to edge.
-	// Padding on a Width("100%") box is added *outside* the width under the
-	// static export's content-box sizing, which pushed the panel 16px past
-	// the window and the ✕ with it — and a full-bleed image is what a viewer
-	// wants anyway.
+	// A full-bleed image is what a viewer wants. The static export was also
+	// content-box when this was written, so padding on a Width("100%") box
+	// pushed the panel 16px past the window, and the ✕ with it. htmlout now
+	// writes a border-box rule for exactly that shape, and an unpadded panel
+	// never depended on it.
 	panel := make([]core.PropsAndChildren, 0, len(l.Style)+8)
 	panel = append(panel,
 		core.Width("100%"),

@@ -2248,3 +2248,47 @@ func TestMaxLinesExportsTruncation(t *testing.T) {
 		}
 	}
 }
+
+// A declared size with padding inside it is where box-sizing changes the
+// answer, so that tree gets the border-box rule in its head: Width("100%")
+// plus Padding is the parent's width, as it is on the other three targets,
+// not the parent's width plus the padding.
+func TestSizedPaddedBoxGetsBorderBox(t *testing.T) {
+	cases := map[string]*core.Style{
+		"padded":   {Width: "100%", Padding: core.EdgeInsets{Left: 12, Right: 12}},
+		"bordered": {MaxWidth: "480px", BorderWidth: 1},
+	}
+	for name, st := range cases {
+		out := ExportHTML(&core.Node{
+			Type:     "Column",
+			Children: []*core.Node{{Type: "Box", Props: map[string]any{}, Style: st}},
+		})
+		head, rule := strings.Index(out, "<head>"), strings.Index(out, borderBoxCSS)
+		if head < 0 || rule < head {
+			t.Errorf("%s: the border-box rule is not inside <head>:\n%s", name, out)
+		}
+	}
+}
+
+// A sized form control counts even with no padding of its own: an <input>
+// brings user-agent padding and a border that content-box adds to its width.
+func TestSizedInputGetsBorderBox(t *testing.T) {
+	out := ExportHTML(&core.Node{Type: "Input", Props: map[string]any{}, Style: &core.Style{Width: "100%"}})
+	if !strings.Contains(out, borderBoxCSS) {
+		t.Errorf("a full-width input exported without the border-box rule:\n%s", out)
+	}
+}
+
+// Padding with no declared size, or a size with nothing inside it, lays out
+// the same under either model, so the export stays head-less.
+func TestUnsizedOrUnpaddedExportWritesNoBorderBox(t *testing.T) {
+	for name, st := range map[string]*core.Style{
+		"padding only": {Padding: core.EdgeInsets{Top: 8}},
+		"size only":    {Width: "100%"},
+	} {
+		out := ExportHTML(&core.Node{Type: "Box", Props: map[string]any{}, Style: st})
+		if strings.Contains(out, "<head") {
+			t.Errorf("%s: gained a head:\n%s", name, out)
+		}
+	}
+}

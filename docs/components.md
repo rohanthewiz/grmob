@@ -1405,10 +1405,12 @@ margin-on-a-layer that holds [`FAB`](#fab) off its corner. The stack's box is
 pinned: width `ring + step·(n-1)`, height `ring`.
 
 **The ring is a layer, not a border.** Each face sits on a disc of the theme's
-`Background`, drawn as its own layer before the face. A border would be sized
-differently across targets — inside the box on both natives, outside it under
-the static export's content-box sizing — and the overlap would be off by the
-difference. A plain `Box` with a size and a fill is the same everywhere.
+`Background`, drawn as its own layer before the face. When it was built, a
+border was sized differently across targets: inside the box on both natives,
+and outside it in the static export, which was content-box then. The overlap
+was off by the difference. Exports are border-box now. The layer stays,
+because a plain `Box` with a size and a fill needs no target to agree about
+box models.
 `RingColor` matches it to a `Card` or `Surface` panel; `RingWidth: -1` drops it.
 
 Faces overlap by 20% of `Size` by default (`Overlap`): at 25–30% the next disc
@@ -1776,8 +1778,12 @@ comps.FormField{
 - **The ✕ is its own button, the tag's text is not.** A ✕ inside a Chip would
   be a button inside a button. Each ✕ is named "Remove *tag*"
   (`RemoveLabel` changes the prefix).
-- **The draft is the widget's**, so TagInput holds a hook — render it
-  unconditionally. The set is the caller's.
+- **The draft is the widget's**, so TagInput holds hooks (the draft, and a
+  focus ref). Render it unconditionally. The set is the caller's.
+- **The input keeps the keyboard across a return.** Return asks for focus
+  back, because the next thing typed is the next tag. It changes nothing on
+  the web and Compose, which keep focus anyway. On iOS, SwiftUI drops focus on
+  submit, so without it every tag needed a tap first.
 - `Max` stops a paste part-way and disables the input once reached.
 - No "backspace on empty removes the last tag": the input reports text, not
   keys, and an empty input's text does not change.
@@ -3257,7 +3263,9 @@ comps.CalendarHeatmap{Subject: "Workouts", Days: workouts, End: today}
   `hooks.UseWindow(ctx).Width` less your padding. It is arithmetic, not a
   measurement, and reads no hook.
 - One `RoleImg`, one sentence: "Workouts: 42 over 17 weeks, on 23 days; most
-  on Tue 3 Mar 2026, 4."
+  on Tue 3 Mar 2026, 4." **A tie for the most names the earliest day.** It
+  is stable (the same data always names the same date), and the sentence
+  does not say that other days tied.
 
 ## Compass
 

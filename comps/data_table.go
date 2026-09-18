@@ -35,9 +35,11 @@ type Column[T any] struct {
 	// and squeezes the weighted ones.
 	//
 	// It is a width on an inner, unpadded box rather than on the cell, because
-	// the cell carries padding and the targets do not agree on whether a
-	// padded box's width includes it (CSS's content-box default says no); an
-	// unpadded box has one width on all four.
+	// the cell carries padding, and a padded box's width includes that padding
+	// only where box-sizing is border-box. The natives, the hosted WASM page
+	// and (since it writes the rule) the static export all are. A CSS page that
+	// hosts the runtime without the usual reset would not be, and an unpadded
+	// box has one width on every target regardless.
 	Width float64
 
 	// Align positions the cell's content on the row axis; the zero value is

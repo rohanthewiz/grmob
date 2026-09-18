@@ -117,6 +117,44 @@ struct GrMobFlexSolver {
         return fractions.map { $0 > 0 ? $0 * extent : 0 }
     }
 
+    /// Each child's percentage MaxWidth (in a Row) as a cap in points against
+    /// the container's main extent, nil for none. `margins` are the children's
+    /// horizontal margins, which the cap stands outside of as it does in
+    /// GrMobMaxWidthLayout.
+    ///
+    /// # Why the container resolves it, not the child
+    ///
+    /// percentFloors' reason, with the sign flipped. GrMobMaxWidthLayout
+    /// resolves a percentage against its proposal, and on a Row's main axis
+    /// that proposal is the child's own slot: nothing while the bases are
+    /// measured, the resolved main at placement. So "80%" came out as 80% of
+    /// a slot that was already the child's size, and compounded. A
+    /// MessageBubble whose one-line text wanted 180pt of a 308pt row was
+    /// proposed 180, capped itself to 144 and wrapped "Canvas stars now too"
+    /// over three lines (seen on the simulator, lesson 4.31), where CSS caps
+    /// at 80% of the row, 246, and the line fits.
+    ///
+    /// ```
+    ///   cap   = fraction × extent + margin   nil when the extent is indefinite
+    ///                                        (a percentage of an indefinite
+    ///                                        containing block binds nothing)
+    ///   base  = min(base, cap)               the child starts no longer
+    ///   main  = min(main, cap)               and growing cannot take it past
+    /// ```
+    ///
+    /// The last line clamps rather than redistributes: a grower whose cap
+    /// binds leaves the rest of its share empty, the gap GrMobMaxWidthLayout's
+    /// doc already records for this host and Compose.
+    static func percentCaps(fractions: [CGFloat], margins: [CGFloat], extent: CGFloat?) -> [CGFloat?] {
+        guard let extent = definite(extent) else { return fractions.map { _ in nil } }
+        return zip(fractions, margins).map { $0 > 0 ? $0 * extent + $1 : nil }
+    }
+
+    /// `values` with each one held at or below its cap, where it has one.
+    static func capped(_ values: [CGFloat], by caps: [CGFloat?]) -> [CGFloat] {
+        zip(values, caps).map { value, cap in cap.map { min(value, $0) } ?? value }
+    }
+
     /// The size the run of children wants with no growing or shrinking.
     func natural(bases: [CGFloat]) -> CGFloat {
         bases.reduce(0, +) + spacing * CGFloat(max(bases.count - 1, 0))
@@ -134,11 +172,21 @@ struct GrMobFlexSolver {
     /// `offered` is nil for an unspecified *or* infinite proposal: an
     /// infinite one is SwiftUI probing for a maximum, not an offer to fill
     /// the universe.
-    func containerMain(offered: CGFloat?, bases: [CGFloat], weights: [CGFloat]) -> CGFloat {
+    ///
+    /// `percentCapped` is the third claimant: a child whose MaxWidth is a
+    /// percentage (percentCaps). The percentage is of this container's box,
+    /// so a hugging container would shrink the very length it is taken of:
+    /// the parent re-proposes the hugged width at placement, the cap is
+    /// resolved again against that, and a start-justified MessageBubble came
+    /// out at 80% of its own width and wrapped (the simulator, lesson 4.31;
+    /// the end-justified ones were already claiming). Filling is CSS's rule
+    /// for every flex container, applied here only where it changes an answer.
+    func containerMain(offered: CGFloat?, bases: [CGFloat], weights: [CGFloat],
+                       percentCapped: Bool = false) -> CGFloat {
         let natural = natural(bases: bases)
         guard let offered, offered.isFinite else { return natural }
         let grows = weights.contains { $0 > 0 }
-        if grows || justifyClaimsFreeSpace || offered < natural { return offered }
+        if grows || justifyClaimsFreeSpace || percentCapped || offered < natural { return offered }
         return natural
     }
 

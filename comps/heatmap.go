@@ -453,7 +453,13 @@ func orDefaultFloat(v, def float64) float64 {
 //     three columns away, where the two would collide.
 //
 // The summary is the calendar's own: "Workouts: 42 over 17 weeks, on 23 days;
-// most on Tue 3 Mar 2026, 4."
+// most on Tue 3 Mar 2026, 4." When several days share the highest total, the
+// sentence names the earliest of them. A tie has no right answer, so it
+// only needs to be stable: the same days always name the same day. Earliest
+// is simply the order the grid is walked in, and a reader told "most on" a
+// date can find it by reading forward from there. The sentence does not
+// mention the tie, because counting how many days share the peak would be a
+// second statistic that the grid itself does not show.
 type CalendarHeatmap struct {
 	// Days are the dated values. Several on one date are summed.
 	Days []DayValue
@@ -592,6 +598,10 @@ func (c CalendarHeatmap) Render(ctx *core.Context) *core.Node {
 			values[r][w] = v
 			total += v
 			active++
+			// Strictly greater, walked oldest first (week by week, and
+			// row by row within a week), so a tie keeps the earliest day.
+			// See the type's doc for why the tie is settled that way and
+			// not announced.
 			if v > bestV {
 				best, bestV = day, v
 			}

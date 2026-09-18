@@ -268,7 +268,7 @@ private struct GrMobRow: View {
     let grow: GrMobGrow
 
     var body: some View {
-        let s = node.style
+        let s = node.containerStyle
         // core.FlexWrap(true) asks for CSS flex-wrap: children that do not fit
         // continue on the next line instead of being shrunk onto one. The
         // flex stack cannot do that — it is a single-line algorithm that
@@ -281,8 +281,11 @@ private struct GrMobRow: View {
         // Android FlowRow does with its two arrangements.
         if s?.flexWrap == "wrap" {
             GrMobWrapLayout(spacing: s?.horizontalGap ?? 0,
-                            lineSpacing: s?.verticalGap ?? 0) {
-                FlexChildren(node: node, axis: .horizontal)
+                            lineSpacing: s?.verticalGap ?? 0,
+                            crossAlign: s?.alignItems ?? "") {
+                // The wrap layout has no solver to resolve a percentage cap,
+                // so each child keeps resolving its own.
+                FlexChildren(node: node, axis: .horizontal, resolvesPercentCaps: false)
             }
             .grMobBox(s, grow: grow,
                         onTap: node.stringProp("onClick"),
@@ -316,6 +319,14 @@ private struct GrMobWrapLayout: Layout {
     /// Between two lines. Never reaches the solver — it changes the height
     /// the lines occupy, not where they break.
     let lineSpacing: CGFloat
+    /// The Row's AlignItems: where a child shorter than its line sits in it,
+    /// as CSS align-items places items within a wrapped flex line. Top used
+    /// to be the only answer, on the grounds that wrapped chip rows are one
+    /// height. comps.Breadcrumb is not: its ancestor crumbs are buttons with
+    /// a touch-target height and its current page is a bare Text, which sat
+    /// 10pt above them (the simulator, lesson 4.27). The same gap Compose's
+    /// FlowRow had; see GrMobRow in Renderer.kt.
+    var crossAlign: String = ""
 
     private var solver: GrMobWrapSolver { GrMobWrapSolver(spacing: spacing) }
 
@@ -361,12 +372,17 @@ private struct GrMobWrapLayout: Layout {
         var y = bounds.minY
         for line in lines {
             var x = bounds.minX
+            let height = lineHeight(line, sizes)
             for i in line {
-                subviews[i].place(at: CGPoint(x: x, y: y), anchor: .topLeading,
+                // The non-wrapping row's own cross-axis rule, applied per line.
+                // "stretch" places at the top here, as it always has: nothing
+                // proposes a wrapped child its line's height.
+                let dy = GrMobFlexSolver.crossOffset(align: crossAlign, child: sizes[i].height, extent: height)
+                subviews[i].place(at: CGPoint(x: x, y: y + dy), anchor: .topLeading,
                                   proposal: ProposedViewSize(sizes[i]))
                 x += sizes[i].width + spacing
             }
-            y += lineHeight(line, sizes) + lineSpacing
+            y += height + lineSpacing
         }
     }
 }
@@ -376,7 +392,7 @@ private struct GrMobColumn: View {
     let grow: GrMobGrow
 
     var body: some View {
-        let s = node.style
+        let s = node.containerStyle
         GrMobFlexStack(axis: .vertical, style: s) {
             FlexChildren(node: node, axis: .vertical)
         }
@@ -430,7 +446,7 @@ private struct GrMobZStack: View {
     let grow: GrMobGrow
 
     var body: some View {
-        let s = node.style
+        let s = node.containerStyle
         GrMobStackLayout {
             ForEach(node.children, id: \.viewID) { child in
                 RenderNode(node: child)
@@ -538,6 +554,10 @@ private struct GrMobStackLayout: Layout {
 private struct FlexChildren: View {
     let node: GrMobNode
     let axis: Axis
+    /// Whether the layout these children are handed to is GrMobFlexLayout,
+    /// which resolves a Row child's percentage MaxWidth itself (see
+    /// GrMobFlexSolver.percentCaps). False for GrMobWrapLayout.
+    var resolvesPercentCaps: Bool = true
 
     var body: some View {
         // The same cross-axis read GrMobFlexStack does, and it has to be the
@@ -568,9 +588,18 @@ private struct FlexChildren: View {
             // layout against its own extent (GrMobFlexSolver.percentFloors).
             let floor = GrMobMinSize.fraction(axis == .horizontal ? (child.style?.minWidth ?? "")
                                                                   : (child.style?.minHeight ?? "")) ?? 0
+            // A percentage cap along a Row, resolved the same way; a Column's
+            // main axis is height, and MaxWidth is not read there.
+            let cap = axis == .horizontal && resolvesPercentCaps
+                ? GrMobMinSize.fraction(child.style?.maxWidth ?? "") ?? 0 : 0
             RenderNode(node: child, grow: fill(weight: weight, floored: floor > 0, stretch: stretch && !hugs))
+                // Tells the child's GrMobMaxWidthModifier to stand down; set
+                // only where the layout below will apply the cap instead.
+                .environment(\.grMobPercentCapResolved, cap > 0)
                 .layoutValue(key: GrMobFlexWeight.self, value: weight)
                 .layoutValue(key: GrMobFlexPercentFloor.self, value: floor)
+                .layoutValue(key: GrMobFlexPercentCap.self, value: cap)
+                .layoutValue(key: GrMobFlexCapMargin.self, value: grMobHorizontalMargin(child.style))
                 // The reading, not the raw field: core.FlexShrink(0) arrives as
                 // core.ShrinkNone and an absent declaration as 0, and
                 // shrinkFactor is the one place that knows which is which.
@@ -643,6 +672,17 @@ private struct GrMobFlexWeight: LayoutValueKey {
 /// GrMobFlexSolver.percentFloors for why the container, not the child,
 /// resolves it.
 private struct GrMobFlexPercentFloor: LayoutValueKey {
+    static let defaultValue: CGFloat = 0
+}
+
+/// A Row child's percentage MaxWidth as a fraction (0.8 for "80%"), 0 for
+/// none, and the horizontal margin its cap stands outside of. See
+/// GrMobFlexSolver.percentCaps for why the container resolves it.
+private struct GrMobFlexPercentCap: LayoutValueKey {
+    static let defaultValue: CGFloat = 0
+}
+
+private struct GrMobFlexCapMargin: LayoutValueKey {
     static let defaultValue: CGFloat = 0
 }
 
@@ -796,10 +836,14 @@ private struct GrMobFlexLayout: Layout {
         let crossBound = GrMobFlexSolver.definite(crossOf(proposal))
         let offered = mainOf(proposal)
         let floors = percentFloors(subviews, extent: offered)
-        let bases = baseMains(subviews, crossBound: crossBound, floors: floors,
-                              definite: GrMobFlexSolver.definite(offered) != nil)
+        let caps = percentCaps(subviews, extent: offered)
+        let bases = GrMobFlexSolver.capped(
+            baseMains(subviews, crossBound: crossBound, floors: floors,
+                      definite: GrMobFlexSolver.definite(offered) != nil),
+            by: caps)
         let weights = subviews.map { $0[GrMobFlexWeight.self] }
-        let main = solver.containerMain(offered: offered, bases: bases, weights: weights)
+        let main = solver.containerMain(offered: offered, bases: bases, weights: weights,
+                                        percentCapped: caps.contains { $0 != nil })
         // The container's own size is unchanged by the floor, and that is the
         // CSS shape: a flex container that cannot fit its children OVERFLOWS
         // them — it does not report itself bigger and take the room from its
@@ -814,7 +858,7 @@ private struct GrMobFlexLayout: Layout {
         // Cross size is re-measured at each child's *final* main size: a Text
         // that had to shrink wraps to more lines, and asking it before the
         // main axis was settled would under-report its height.
-        let cross = zip(subviews, resolved.mains)
+        let cross = zip(subviews, GrMobFlexSolver.capped(resolved.mains, by: caps))
             .map { crossOf($0.sizeThatFits(proposed(main: $1, cross: crossBound))) }
             .max() ?? 0
         return size(main: main, cross: cross)
@@ -829,9 +873,13 @@ private struct GrMobFlexLayout: Layout {
         // The percentage floors against the same extent sizeThatFits used, the
         // offer, so a hugging container is not re-floored against its own
         // hugged size; the bounds stand in only when no offer was made.
-        let floors = percentFloors(subviews,
-                                   extent: GrMobFlexSolver.definite(mainOf(proposal)) ?? mainOf(bounds.size))
-        let bases = baseMains(subviews, crossBound: containerCross, floors: floors, definite: true)
+        let extent = GrMobFlexSolver.definite(mainOf(proposal)) ?? mainOf(bounds.size)
+        let floors = percentFloors(subviews, extent: extent)
+        // Caps against the same extent as the floors, for the same reason.
+        let caps = percentCaps(subviews, extent: extent)
+        let bases = GrMobFlexSolver.capped(
+            baseMains(subviews, crossBound: containerCross, floors: floors, definite: true),
+            by: caps)
         let weights = subviews.map { $0[GrMobFlexWeight.self] }
         let resolved = solver.resolve(
             main: mainOf(bounds.size), bases: bases, weights: weights,
@@ -842,9 +890,10 @@ private struct GrMobFlexLayout: Layout {
         // DOM targets have always drawn) and packs on the horizontal one.
         let stretch = axis == .vertical ? columnStretches(crossAlign) : crossAlign == "stretch"
 
+        let mains = GrMobFlexSolver.capped(resolved.mains, by: caps)
         var offset = resolved.leading
         for (i, subview) in subviews.enumerated() {
-            let childMain = resolved.mains[i]
+            let childMain = mains[i]
             // Every child is proposed the container's cross extent, as a
             // bound (see baseMains). Stretch and non-stretch differ in what
             // the child does with it, not in what it is told: a stretched
@@ -922,6 +971,14 @@ private struct GrMobFlexLayout: Layout {
     private func percentFloors(_ subviews: Subviews, extent: CGFloat?) -> [CGFloat] {
         GrMobFlexSolver.percentFloors(fractions: subviews.map { $0[GrMobFlexPercentFloor.self] },
                                       extent: extent)
+    }
+
+    /// Each child's percentage cap along the main axis in points, against
+    /// `extent`; see GrMobFlexSolver.percentCaps.
+    private func percentCaps(_ subviews: Subviews, extent: CGFloat?) -> [CGFloat?] {
+        GrMobFlexSolver.percentCaps(fractions: subviews.map { $0[GrMobFlexPercentCap.self] },
+                                    margins: subviews.map { $0[GrMobFlexCapMargin.self] },
+                                    extent: extent)
     }
 
     /// Each child's automatic minimum size along the main axis — the floor

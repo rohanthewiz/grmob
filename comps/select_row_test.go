@@ -52,13 +52,15 @@ func newQuietRowHarness(t *testing.T, view func() core.View) *rowHarness {
 	return h
 }
 
-// render drives one pass and fails on any concern it raised.
+// render drives one pass, audits the finished tree as render.Manager would
+// (see renderDebug), and fails on any concern either raised.
 func (h *rowHarness) render() {
 	h.t.Helper()
 	h.ctx.BeginRenderPass()
 	h.ctx.Reset()
 	h.node = h.view().Render(h.ctx)
 	h.ctx.EndRenderPass()
+	core.AuditTree(h.node)
 	if dump := core.DumpConcerns(); dump != "" {
 		h.t.Errorf("row raised concerns:\n%s", dump)
 	}

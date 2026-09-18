@@ -5127,7 +5127,7 @@ func lessonCopyLinkAndList() Lesson {
 					comps.Link{Text: "GrMob on GitHub", URL: "https://github.com/rohanthewiz/grmob",
 						AccessibilityHint: "Opens in your browser"},
 					comps.Link{Text: "Follow an in-app link", OnTap: func() { followed.Set(followed.Get() + 1) }},
-					caption(fmt.Sprintf("In-app link followed %d times.", followed.Get())),
+					caption(fmt.Sprintf("In-app link followed %d time%s.", followed.Get(), plural(followed.Get()))),
 				),
 				prose("BulletList is the list every lesson's key points already were, as a widget: a "+
 					"list of listitems, the marker hidden and pinned so a long item wraps under its "+

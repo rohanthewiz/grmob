@@ -542,5 +542,32 @@ func checkMinSize() -> [String] {
     if abs(squeezed.mains[0] - 80) > 0.001 || squeezed.mains[1] >= 49 || squeezed.mains[2] >= 67 {
         problems.append("percent floor under shrink: got \(squeezed.mains), want A held at 80 and B, C shrunk")
     }
+
+    // Percentage caps, the same question with the sign flipped. Lesson 4.31's
+    // bubble on the simulator: a 308pt row, a MaxWidth("80%") bubble whose
+    // one line wants 180pt. The cap is 80% of the ROW, 246.4, which the line
+    // is under, so the bubble keeps its 180: it used to be capped at 80% of
+    // its own 180-point slot and wrap.
+    let caps = GrMobFlexSolver.percentCaps(fractions: [0.8], margins: [0], extent: 308)
+    if caps.count != 1 || abs((caps[0] ?? 0) - 246.4) > 0.001 {
+        problems.append("percentCaps for a bubble: got \(caps), want [246.4]")
+    }
+    if GrMobFlexSolver.capped([180], by: caps) != [180] {
+        problems.append("a bubble under its cap was clamped: got \(GrMobFlexSolver.capped([180], by: caps))")
+    }
+    // A paragraph that wants 400pt is held at the cap, where it wraps.
+    let long = GrMobFlexSolver.capped([400], by: caps)
+    if abs(long[0] - 246.4) > 0.001 { problems.append("a long bubble was not capped: got \(long), want [246.4]") }
+    // The margin sits outside the cap, as in GrMobMaxWidthLayout.
+    let margined = GrMobFlexSolver.percentCaps(fractions: [0.5], margins: [8], extent: 200)
+    if margined.first! != 108 { problems.append("percentCaps with a margin: got \(margined), want [108]") }
+    // No fraction, no cap; no definite extent, no cap (a percentage of an
+    // indefinite containing block binds nothing).
+    if GrMobFlexSolver.percentCaps(fractions: [0], margins: [0], extent: 308).first! != nil {
+        problems.append("a child without a percentage cap was capped")
+    }
+    if GrMobFlexSolver.percentCaps(fractions: [0.8], margins: [0], extent: .infinity).first! != nil {
+        problems.append("a percentage cap resolved against an infinite probe")
+    }
     return problems
 }

@@ -1615,9 +1615,9 @@ The strip is a RoleList and each tag a listitem, so a reader hears "list, 3 item
 func (in TagInput) Render(ctx *core.Context) *core.Node
 ```
 
-Render draws the tags and the input. It takes one hook, the draft.
+Render draws the tags and the input. It takes two hooks: the draft, and the focus ref the input keeps across a return.
 
-<small>[comps/tag_input.go:123](https://github.com/rohanthewiz/grmob/blob/master/comps/tag_input.go#L123)</small>
+<small>[comps/tag_input.go:124](https://github.com/rohanthewiz/grmob/blob/master/comps/tag_input.go#L124)</small>
 
 ### type TimePicker
 

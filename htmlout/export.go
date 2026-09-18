@@ -49,6 +49,11 @@ func ExportHTML(node *core.Node) string {
 // declares a Transition, core.TranslateDirectionCSS when any node translates
 // along x. A tree with none of them gets no head at all.
 //
+// It also carries the one rule that is not about motion, borderBoxCSS, on the
+// same conditional terms (see needsBorderBox): the head is this exporter's
+// only stylesheet, and a second head-writing path would have to agree with
+// this one about whether a head exists.
+//
 // Conditional rather than always present so that every export without motion
 // is byte-for-byte what it was before these rules existed: the head is the one
 // stylesheet this exporter writes. The keyframes exist because an `animation`
@@ -60,7 +65,7 @@ func ExportHTML(node *core.Node) string {
 // the same reason renderNode does.
 func motionStylesheet(b *element.Builder, node *core.Node) (x any) {
 	m := treeMotion(node)
-	if !m.spins && !m.transitions && !m.translatesX {
+	if !m.spins && !m.transitions && !m.translatesX && !m.borderBox {
 		return
 	}
 	// The rules are built as arguments of Head().R, not collected beforehand:
@@ -70,6 +75,7 @@ func motionStylesheet(b *element.Builder, node *core.Node) (x any) {
 		motionRule(b, m.spins, core.SpinKeyframes),
 		motionRule(b, m.transitions, core.ReducedMotionCSS),
 		motionRule(b, m.translatesX, core.TranslateDirectionCSS),
+		motionRule(b, m.borderBox, borderBoxCSS),
 	)
 	return
 }
@@ -85,8 +91,58 @@ func motionRule(b *element.Builder, wanted bool, rule string) (x any) {
 }
 
 // motion is what treeMotion found: which of the head's rules the tree needs.
+// borderBox is the odd one out — a sizing rule, not a motion one — and rides
+// here so that one walk answers "is there a head, and what is in it".
 type motion struct {
 	spins, transitions, translatesX bool
+	borderBox                       bool
+}
+
+// borderBoxCSS makes every element's declared width and height include its
+// padding and border, which is what the other three targets already do:
+//
+//   - every page that hosts the WASM runtime sets `* { box-sizing:
+//     border-box; }` (wasm/index.html, wasm/shots/index.html and the
+//     `grmob new` template), so a live page sizes border-box;
+//   - Compose's size modifiers and SwiftUI's frame both measure the outside
+//     of a padded view.
+//
+// An export is a standalone document with no hosting page, so without this
+// rule it is the one target on content-box: Width("100%") plus Padding
+// overflows its parent by the padding (Lightbox, AvatarStack and the
+// tutorial's code block all did). The pseudo-elements are included for the
+// same reason the usual reset includes them; nothing grmob writes today uses
+// one, and a rule that stops short of them is a trap for the first that does.
+const borderBoxCSS = "*,::before,::after{box-sizing:border-box}"
+
+// needsBorderBox reports whether box-sizing changes anything for this node:
+// it declares a size, and something sits between that size and its content —
+// padding, a border, or a form control's own user-agent padding and border
+// (an <input> or <select> brings both unasked). Any other node lays out the
+// same under either model, so a tree of only such nodes keeps its head-less,
+// byte-for-byte-unchanged export.
+//
+// A MaxWidth or MinHeight is a declared size as much as Width is: a padded
+// card capped at MaxWidth("480px") is 480 plus its padding on content-box.
+func needsBorderBox(n *core.Node) bool {
+	s := n.Style
+	if s == nil {
+		return false
+	}
+	sized := s.Width != "" || s.Height != "" ||
+		s.MinWidth != "" || s.MaxWidth != "" ||
+		s.MinHeight != "" || s.MaxHeight != ""
+	if !sized {
+		return false
+	}
+	if s.Padding != (core.EdgeInsets{}) || s.BorderWidth > 0 {
+		return true
+	}
+	switch TagFor(n.Type) {
+	case "input", "textarea", "select", "button":
+		return true
+	}
+	return false
 }
 
 // treeMotion reports which motion rules any node in the tree needs. A full
@@ -101,9 +157,10 @@ func treeMotion(n *core.Node) (m motion) {
 		m.spins = n.Style.Spin != 0
 		m.transitions = n.Style.Transition != ""
 		m.translatesX = translateLength(n.Style.TranslateX) != ""
+		m.borderBox = needsBorderBox(n)
 	}
 	for _, c := range n.Children {
-		if m.spins && m.transitions && m.translatesX {
+		if m.spins && m.transitions && m.translatesX && m.borderBox {
 			break
 		}
 		cm := treeMotion(c)
@@ -111,6 +168,7 @@ func treeMotion(n *core.Node) (m motion) {
 			spins:       m.spins || cm.spins,
 			transitions: m.transitions || cm.transitions,
 			translatesX: m.translatesX || cm.translatesX,
+			borderBox:   m.borderBox || cm.borderBox,
 		}
 	}
 	return m

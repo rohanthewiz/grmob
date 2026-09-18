@@ -37,6 +37,22 @@ final class GrMobNode {
         self.children = children
     }
 
+    /// The style a container renders with: `style`, plus `labelOnly` when
+    /// every child is AccessibilityHidden (or there are none), which is what
+    /// tells grMobAccessibility that a combine would have nothing to merge.
+    ///
+    /// Computed on read rather than stored at parse time, because children
+    /// arrive and leave by patch: a stored flag would describe the tree as it
+    /// was first sent. Reading `children` and each child's `style` here is
+    /// also what registers the container's body with Observation for both,
+    /// so a child that stops being hidden re-renders the parent. Only labelled
+    /// containers pay for the walk, and it is one level deep.
+    var containerStyle: GrMobStyle? {
+        guard var s = style, !s.accessibilityLabel.isEmpty, !s.accessibilityHidden else { return style }
+        s.labelOnly = children.allSatisfy { $0.style?.accessibilityHidden == true }
+        return s
+    }
+
     // Typed prop accessors; Go serializes props with lowercase keys.
     func stringProp(_ name: String) -> String { props[name] as? String ?? "" }
     func boolProp(_ name: String) -> Bool { props[name] as? Bool ?? false }

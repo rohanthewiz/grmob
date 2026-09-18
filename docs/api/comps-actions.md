@@ -307,7 +307,7 @@ It sets the fill and the ink to the values Components.Button already carries, so
 
 Restating rather than simply letting the base show through is what makes "the state wins over Style" true on this side as well. A color the selected default never set could not beat one in Style, so a strip handed a single shared Style{BackgroundColor(x)} would paint x on the selected chip and the quiet fill on all the others — the inversion again, by a different route.
 
-The border is there for geometry, not for decoration. Only the unselected chip wants a visible rule, but a rule on one state alone makes that state 2px wider and taller wherever box-sizing is content-box (the static export sets no reset, so it is), and a pill that grows when you tap it is a worse artifact than the one this fixes. So both states carry a 1px border and the selected one paints it in its own fill, where it cannot be seen.
+The border is there for geometry, not for decoration. Only the unselected chip wants a visible rule, but a rule on one state alone makes that state 2px wider and taller: a chip declares no size, so its border adds to its content size under either box model, and a pill that grows when you tap it is a worse artifact than the one this fixes. So both states carry a 1px border and the selected one paints it in its own fill, where it cannot be seen.
 
 <small>[comps/chip.go:132](https://github.com/rohanthewiz/grmob/blob/master/comps/chip.go#L132)</small>
 

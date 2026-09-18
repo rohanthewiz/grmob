@@ -9,6 +9,13 @@ import (
 
 // renderDebug renders v under debug mode and fails on any concern, so every
 // widget test also proves the a11y audit and hook checks are quiet.
+//
+// The whole-tree audit (core.AuditTree) is run here explicitly because a bare
+// Render never runs it: render.Manager calls it after each pass, and a harness
+// that skips it lets through exactly the findings only a finished tree can
+// show — an unusable value range, a duplicate id, a dangling
+// AccessibilityControls. AudioPlayer's 0-to-0 seek range reached the mobileapp
+// test that way before this line existed.
 func renderDebug(t *testing.T, v core.View) (*core.Context, *core.Node) {
 	t.Helper()
 	core.SetDebugMode(true)
@@ -18,6 +25,7 @@ func renderDebug(t *testing.T, v core.View) (*core.Context, *core.Node) {
 	ctx.BeginRenderPass()
 	n := v.Render(ctx)
 	ctx.EndRenderPass()
+	core.AuditTree(n)
 	if dump := core.DumpConcerns(); dump != "" {
 		t.Errorf("concerns raised:\n%s", dump)
 	}

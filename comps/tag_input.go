@@ -119,12 +119,20 @@ type TagInput struct {
 	Style []core.StyleProp
 }
 
-// Render draws the tags and the input. It takes one hook, the draft.
+// Render draws the tags and the input. It takes two hooks: the draft, and
+// the focus ref the input keeps across a return.
 func (in TagInput) Render(ctx *core.Context) *core.Node {
 	t := ctx.Theme()
 
 	// Before any branch: the hook rule PasswordField's doc spells out.
 	draft := core.NewState(ctx, "")
+	// Return commits a tag, and the reader's next move is the next tag, so
+	// the input has to keep the keyboard. The web and Compose never let go
+	// of it on a submit; SwiftUI does, by default, and a phone reader had to
+	// tap the field again between every two tags (the simulator, lesson 5.8).
+	// Asking for focus back on each submit is a no-op where focus never left,
+	// and on iOS it returns the keyboard one pass after SwiftUI dropped it.
+	field := core.UseFocusRef(ctx)
 
 	if core.IsDebugMode() && in.OnChange == nil {
 		core.ReportConcern(ConcernTagInputInert,
@@ -152,6 +160,7 @@ func (in TagInput) Render(ctx *core.Context) *core.Node {
 			report(next)
 		}
 		draft.Set("")
+		core.Focus(field)
 	}
 
 	items := make([]core.PropsAndChildren, 0, len(in.Style)+4)
@@ -180,7 +189,7 @@ func (in TagInput) Render(ctx *core.Context) *core.Node {
 		items = append(items, core.Row(strip...))
 	}
 
-	input := []core.PropsAndChildren{}
+	input := []core.PropsAndChildren{core.FocusTarget(field)}
 	if in.Label != "" {
 		input = append(input, core.AccessibilityLabel(in.Label))
 	}

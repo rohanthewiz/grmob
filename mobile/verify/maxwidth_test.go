@@ -135,8 +135,12 @@ func TestSwiftCapsOutsideTheGrowFrame(t *testing.T) {
 		{"struct GrMobMaxWidthLayout: Layout", "the cap must be a Layout, not a greedy flexible frame"},
 		{"min(size.width, bound)", "the layout must report what the child took, never more than the cap"},
 		{"cap: GrMobMaxWidth.fixedLimit(", "a rigid Width frame must be clamped by a points cap"},
-		{"GrMobMaxWidthLayout(value: value, margin: margin) { content }",
-			"the modifier must wrap its concrete content in the layout (see its doc for why it is a modifier)"},
+		{"GrMobMaxWidthLayout(value: value, margin: margin) {\n                content.environment(\\.grMobPercentCapResolved, false)",
+			"the modifier must wrap its concrete content in the layout (see its doc for why it is a modifier), " +
+				"resetting the resolved-cap flag for the subtree"},
+		{"} else if resolvedByParent && value.hasSuffix(",
+			"a percentage cap a flex Row already resolved must not be resolved again against the slot " +
+				"(GrMobFlexSolver.percentCaps; lesson 4.31's bubbles wrapped at 80% of 80%)"},
 	} {
 		if !strings.Contains(swift, want.code) {
 			t.Errorf("%s: lacks %q — %s", swiftStyle, want.code, want.why)

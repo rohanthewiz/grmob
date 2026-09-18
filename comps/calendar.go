@@ -680,14 +680,27 @@ func (c Calendar) dayCell(ctx *core.Context, day time.Time, month time.Month) co
 	// Primary on Primary — which is what this condition excludes. Inside the
 	// band the ring inherits the square corners set just above, which is the
 	// honest rendering: the ring is the cell's own edge.
+	//
+	// Every cell carries the 1-unit border and only today's is visible. The
+	// cell declares no size, so a border adds to its size on every target:
+	// the natives inset the content by the border width, and CSS puts the
+	// border outside the content under either box model. A ring on today
+	// alone made that one cell 2 units taller than its row-mates, which
+	// raised the row and dropped today's numeral a unit below its neighbours
+	// (seen on the Android emulator, lesson 4.25: 113px against 107px).
+	// Transparent still occupies the pixel, and a fill or band paints under
+	// it, so the other cells look exactly as they did. The same fix as
+	// Chip's invisible ring; see chipRing.
+	ring := ColorTransparent
 	if isToday && !filled {
 		// A ring rather than a fill, so today and the selected day are two
 		// distinguishable cells.
-		items = append(items,
-			core.BorderWidth(1),
-			core.BorderColor(t.Colors.Primary),
-		)
+		ring = t.Colors.Primary
 	}
+	items = append(items,
+		core.BorderWidth(1),
+		core.BorderColor(ring),
+	)
 
 	if selectable {
 		d := day // captured per cell; the closure outlives this pass

@@ -233,11 +233,20 @@
      left/right 0 inline, so in the split it would centre toasts under the
      whole window. It is the one element of .screen that is not #app; this
      pins it over the phone instead — 1.2rem of split padding plus 12px of
-     bezel from the right and bottom, the glass's width wide. !important
-     because the layer's placement is inline style. */
+     bezel from the right, the glass's width wide. !important because the
+     layer's placement is inline style.
+
+     The bottom follows the phone's own bottom, which is one of two lengths:
+     the split's 1.2rem padding while the phone fills the split's height, or,
+     once the phone is capped at 860px and centred, half of what is left over,
+     (100% − 860px) / 2 of .screen's height (the padding cancels out of that
+     one). Then 12px of bezel and the runtime's own 24px above the glass. The
+     first version used the padding alone, and in a window taller than about
+     900px the toast landed below the phone, 114px under the glass in a
+     1300px-tall one. */
   main:has(#tutorial-split) .screen > :not(#app) {
     left: auto !important; right: calc(1.2rem + 12px) !important;
-    bottom: calc(1.2rem + 36px) !important; width: 376px;
+    bottom: calc(max(1.2rem, (100% - 860px) / 2) + 36px) !important; width: 376px;
   }
 
   /* --- loading / error state ---------------------------------------------------
@@ -266,7 +275,7 @@
 
 <header>
   <h1><span>GrMob</span> · Interactive Tutorial</h1>
-  <span class="meta">60 lessons · 8 chapters · every demo is live Go, running in your browser</span>
+  <span class="meta">74 lessons · 8 chapters · every demo is live Go, running in your browser</span>
   <span class="spacer"></span>
   <div id="layout-toggle" class="layout-toggle" role="group" aria-label="Layout" hidden>
     <button type="button" data-mode="split" aria-pressed="false" title="Read the guide beside a live phone">Guide + phone</button>

@@ -671,7 +671,7 @@ The stack's box is pinned, as core.ZStack asks: "start" of a box with no size is
 
 #### The ring is a layer, not a border
 
-Each face sits on a disc of the theme's Background a little larger than itself, which is what cuts the face under it and keeps two photos from blurring into one. It is drawn as its own layer rather than as a border on the Avatar because a border is sized differently across targets: the natives paint it inside the box, and the static export's content-box sizing paints it outside, so a bordered avatar is 4px wider on the web than on a phone and the overlap arithmetic would be off by the difference. A plain Box with a width, a height and a fill is the same size everywhere.
+Each face sits on a disc of the theme's Background a little larger than itself, which is what cuts the face under it and keeps two photos from blurring into one. It is drawn as its own layer rather than as a border on the Avatar. When this was written a border was sized differently across targets: the natives painted it inside the box and the static export, then content-box, painted it outside, so the overlap arithmetic was off by 4px on the web. htmlout now writes a border-box rule for sized, bordered nodes, so the four agree; the layer stays because a plain Box with a width, a height and a fill needs no target to agree about anything.
 
 #### Later faces sit on top, and the surplus last of all
 
@@ -691,7 +691,7 @@ The stack is RoleImg with one name: "Ada Lovelace, Grace Hopper and 3 others". A
 	Ring        Colors.Background
 	Surplus     Colors.Surface disc, TextSecondary count
 
-<small>[comps/avatar_stack.go:78](https://github.com/rohanthewiz/grmob/blob/master/comps/avatar_stack.go#L78)</small>
+<small>[comps/avatar_stack.go:79](https://github.com/rohanthewiz/grmob/blob/master/comps/avatar_stack.go#L79)</small>
 
 #### func (AvatarStack) Render
 
@@ -701,7 +701,7 @@ func (s AvatarStack) Render(ctx *core.Context) *core.Node
 
 Render builds ZStack(ring, face, ring, face, …, ring, +N).
 
-<small>[comps/avatar_stack.go:117](https://github.com/rohanthewiz/grmob/blob/master/comps/avatar_stack.go#L117)</small>
+<small>[comps/avatar_stack.go:118](https://github.com/rohanthewiz/grmob/blob/master/comps/avatar_stack.go#L118)</small>
 
 ### type Compass
 

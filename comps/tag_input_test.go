@@ -152,6 +152,29 @@ func TestTagInputCommitsOnReturnAndOnSeparator(t *testing.T) {
 	}
 }
 
+// Return asks for the input's focus back, so the next tag can be typed
+// without a tap: SwiftUI resigns a field on submit where the web and Compose
+// keep it. A separator commits without a submit and asks for nothing, since
+// no platform lets go of the field for a typed comma.
+func TestTagInputKeepsFocusAcrossReturn(t *testing.T) {
+	h := newTagHarness(t, nil, 0)
+	h.typeText("design,")
+	if got := h.input().Props["focusAction"]; got != nil && got != "" {
+		t.Errorf("a separator issued focus command %q", got)
+	}
+	h.typeText("urgent")
+	h.submit()
+	if got := h.input().Props["focusAction"]; got != "focus" {
+		t.Errorf("after return the input carries focusAction %v, want \"focus\"", got)
+	}
+	first, _ := h.input().Props["focusEpoch"].(int)
+	h.typeText("later")
+	h.submit()
+	if second, _ := h.input().Props["focusEpoch"].(int); second <= first {
+		t.Errorf("a second return reused focus epoch %d; a repeated command must re-fire", first)
+	}
+}
+
 // Empty pieces and duplicates are dropped without a change; the draft still
 // clears, because the tag the reader wanted is already there.
 func TestTagInputDropsEmptiesAndDuplicates(t *testing.T) {

@@ -59,7 +59,7 @@ Reported through core.ReportConcern rather than detected in core: this is a widg
 const ConcernPartialSort = "partial-sort"
 ```
 
-<small>[comps/data_table.go:80](https://github.com/rohanthewiz/grmob/blob/master/comps/data_table.go#L80)</small>
+<small>[comps/data_table.go:82](https://github.com/rohanthewiz/grmob/blob/master/comps/data_table.go#L82)</small>
 
 ConcernSelectRowValueNotAnOption is raised, in debug builds only, when Value is set to something no option in Options carries. The row has nothing to put in its trailing slot then and shows Placeholder, which looks exactly like an unset field — so the mismatch would otherwise be invisible until somebody noticed a setting that never displays its own value.
 
@@ -386,9 +386,11 @@ type Column[T any] struct {
 	// and squeezes the weighted ones.
 	//
 	// It is a width on an inner, unpadded box rather than on the cell, because
-	// the cell carries padding and the targets do not agree on whether a
-	// padded box's width includes it (CSS's content-box default says no); an
-	// unpadded box has one width on all four.
+	// the cell carries padding, and a padded box's width includes that padding
+	// only where box-sizing is border-box. The natives, the hosted WASM page
+	// and (since it writes the rule) the static export all are. A CSS page that
+	// hosts the runtime without the usual reset would not be, and an unpadded
+	// box has one width on every target regardless.
 	Width float64
 
 	// Align positions the cell's content on the row axis; the zero value is
@@ -537,7 +539,7 @@ Everything is controlled. The table holds no state and calls no hook: Sort is re
 
 A phone is too narrow for a five-column table. Compact drops every Narrow column and leaves the rest; the header and cells stay in step because both walk the same filtered column list. The caller decides when the table is compact — from a breakpoint, a settings toggle, an orientation event.
 
-<small>[comps/data_table.go:149](https://github.com/rohanthewiz/grmob/blob/master/comps/data_table.go#L149)</small>
+<small>[comps/data_table.go:151](https://github.com/rohanthewiz/grmob/blob/master/comps/data_table.go#L151)</small>
 
 #### func (DataTable) Render
 
@@ -545,7 +547,7 @@ A phone is too narrow for a five-column table. Compact drops every Narrow column
 func (d DataTable[T]) Render(ctx *core.Context) *core.Node
 ```
 
-<small>[comps/data_table.go:229](https://github.com/rohanthewiz/grmob/blob/master/comps/data_table.go#L229)</small>
+<small>[comps/data_table.go:231](https://github.com/rohanthewiz/grmob/blob/master/comps/data_table.go#L231)</small>
 
 ### type Group
 
@@ -1754,7 +1756,7 @@ type Sort struct {
 
 Sort names the active sort column and direction. DataTable.Sort is a pointer so that "no sort" is nil rather than an ambiguous column 0.
 
-<small>[comps/data_table.go:65](https://github.com/rohanthewiz/grmob/blob/master/comps/data_table.go#L65)</small>
+<small>[comps/data_table.go:67](https://github.com/rohanthewiz/grmob/blob/master/comps/data_table.go#L67)</small>
 
 ### type SwitchRow
 

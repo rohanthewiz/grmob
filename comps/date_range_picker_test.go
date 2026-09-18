@@ -60,6 +60,8 @@ func (h *rangeHarness) render() {
 	h.ctx.Reset()
 	h.node = h.build(h).Render(h.ctx)
 	h.ctx.EndRenderPass()
+	// The whole-tree audit, as render.Manager runs it; see renderDebug.
+	core.AuditTree(h.node)
 	if dump := core.DumpConcerns(); dump != "" {
 		h.t.Errorf("the picker raised concerns:\n%s", dump)
 	}

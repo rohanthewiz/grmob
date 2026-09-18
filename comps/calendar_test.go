@@ -207,15 +207,43 @@ func TestCalendarTodayIsARingAndSelectionWins(t *testing.T) {
 		t.Errorf("today background = %q, want none — the ring is what keeps it distinct from the selection", today.Style.Background)
 	}
 
-	// Both on one day: the fill wins and the ring is dropped, because a
-	// Primary ring on a Primary fill is invisible anyway.
+	// Both on one day: the fill wins and the ring goes transparent, because a
+	// Primary ring on a Primary fill is invisible anyway. The border itself
+	// stays, at the width every cell has; see the next test.
 	both := renderCalendar(t, Calendar{Month: sep2026, Today: day12, Selected: day12, OnSelect: func(time.Time) {}})
 	cell := cellFor(t, dayCells(t, both), 2, 12)
 	if cell.Style.Background != theme.Colors.Primary {
 		t.Error("a day that is both today and selected should be filled")
 	}
-	if cell.Style.BorderWidth != 0 {
-		t.Errorf("border width = %v, want 0 — the ring under a fill is invisible and only costs a patch", cell.Style.BorderWidth)
+	if cell.Style.BorderColor != ColorTransparent {
+		t.Errorf("border color = %q, want transparent — a Primary ring on a Primary fill says nothing", cell.Style.BorderColor)
+	}
+}
+
+// Every day cell carries the same 1-unit border, and only today's is visible.
+// An unsized cell grows by its border on every target, so a border on today
+// alone made that cell 2 units taller than the rest of its row: 113px against
+// 107px on the Android emulator, with today's numeral a unit below its
+// neighbours.
+func TestCalendarEveryCellCarriesTheRingsWidth(t *testing.T) {
+	theme := core.DefaultTheme
+	cells := sepCells(t, Calendar{
+		RangeStart: sepDay(14), RangeEnd: sepDay(20), Today: sepDay(9),
+		Selected: sepDay(3), OnSelect: func(time.Time) {},
+	})
+	for i, cell := range cells {
+		if cell.Style.BorderWidth != 1 {
+			t.Errorf("cell %d has border width %v, want 1 like every other", i, cell.Style.BorderWidth)
+		}
+		if cell.Style.BorderColor != ColorTransparent && cell.Style.BorderColor != theme.Colors.Primary {
+			t.Errorf("cell %d border color = %q, want transparent or today's Primary", i, cell.Style.BorderColor)
+		}
+	}
+	if got := cellFor(t, cells, 2, 9).Style.BorderColor; got != theme.Colors.Primary {
+		t.Errorf("today's ring = %q, want Primary", got)
+	}
+	if got := cellFor(t, cells, 2, 10).Style.BorderColor; got != ColorTransparent {
+		t.Errorf("an ordinary day's ring = %q, want transparent", got)
 	}
 }
 
@@ -1056,8 +1084,8 @@ func TestCalendarTodayKeepsItsRingInsideTheBand(t *testing.T) {
 	}
 
 	onEnd := cellFor(t, sepCells(t, Calendar{RangeStart: sepDay(14), RangeEnd: sepDay(20), Today: sepDay(14)}), 2, 14)
-	if onEnd.Style.BorderWidth != 0 {
-		t.Error("today on an endpoint draws no ring: Primary on Primary is invisible and the fill already says it")
+	if onEnd.Style.BorderColor != ColorTransparent {
+		t.Error("today on an endpoint draws no visible ring: Primary on Primary is invisible and the fill already says it")
 	}
 }
 

@@ -1446,15 +1446,30 @@ private fun GrMobRow(node: GrMobNode, extra: Modifier) {
     // axes — items along the line (via horizontalArrangement, so
     // ColumnGap-then-Gap) and the wrapped lines apart (verticalArrangement,
     // so RowGap-then-Gap), which is what CSS gap does on a wrapping flex
-    // container. Cross-axis alignment within a line is not applied here:
-    // FlowRow at this foundation version has no verticalAlignment slot, and
-    // wrapped chip rows are single-height in practice.
+    // container.
+    //
+    // Cross-axis alignment within a line goes on each child instead of on the
+    // container: FlowRow at this foundation version has no verticalAlignment
+    // slot, but its scope is a RowScope, so Modifier.align places a child
+    // within its own line, as CSS align-items does on a wrapping flex
+    // container. It used to be skipped on the grounds that wrapped chip rows
+    // are single-height. comps.Breadcrumb is not: its ancestors are ghost
+    // Buttons at the 48dp touch minimum and its current page is a bare Text,
+    // so under the old Top placement "#40121" and the chevrons sat 14dp
+    // above "Orders" and "March" (seen on the emulator, lesson 4.27).
+    // flex-start and stretch keep FlowRow's own Top: a stretched child is not
+    // given the line's height here, which is an older gap and a different one.
     if (s?.flexWrap == "wrap") {
+        val lineAlign = when (s.alignItems) {
+            "center" -> Alignment.CenterVertically
+            "flex-end" -> Alignment.Bottom
+            else -> null
+        }
         FlowRow(
             modifier = s.boxModifier(extra, gestureModifier(node)),
             horizontalArrangement = horizontalArrangement(s),
             verticalArrangement = packedVertically(s),
-        ) { RowChildren(node) }
+        ) { RowChildren(node, lineAlign = lineAlign) }
         return
     }
     Row(
@@ -1606,7 +1621,14 @@ private fun GrMobColumn(node: GrMobNode, extra: Modifier, outer: Modifier = Modi
  * Column, weight distributes height and fillMaxWidth sets width.
  */
 @Composable
-private fun RowScope.RowChildren(node: GrMobNode, intrinsicHeight: Boolean = false) {
+private fun RowScope.RowChildren(
+    node: GrMobNode,
+    intrinsicHeight: Boolean = false,
+    // Where each child sits on the cross axis of its line, when the
+    // container cannot say so itself: a FlowRow's alignItems. Null leaves
+    // the placement to the container (a Row's verticalAlignment).
+    lineAlign: Alignment.Vertical? = null,
+) {
     val stretch = isStretch(node.style)
     // A Row pinned to its tallest child (stretchRowHeight) measures every
     // child at that one height, so a Column inside it has a definite height
@@ -1643,6 +1665,7 @@ private fun RowScope.RowChildren(node: GrMobNode, intrinsicHeight: Boolean = fal
                 )
             }
             if (stretch) m = m.fillMaxHeight()
+            if (lineAlign != null) m = m.align(lineAlign)
             if (rebound) {
                 CompositionLocalProvider(LocalGrMobUnboundedHeight provides false) { RenderNode(child, m) }
             } else {
