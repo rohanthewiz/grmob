@@ -30,10 +30,12 @@ package core
 // # The three rules every host implements
 //
 //  1. Echo guard, unchanged from TextArea. `value` from Go is applied only
-//     when it is not an echo of the host's own last onChange. The buffer is
-//     the host's while focused and Go's otherwise — see GrMobTextField's
-//     pendingEchoes in either native renderer for the bookkeeping, which this
-//     node reuses verbatim rather than restating.
+//     when it is not an echo of the host's own typing. The buffer is the
+//     host's while focused and Go's otherwise. On the natives an echo is told
+//     from a rewrite by the text-edit stamps (core/text_edit.go), and edits
+//     typed on text Go has since rewritten are replayed onto it; both
+//     renderers drive the same TextEditLedger their GrMobTextField does. The
+//     web runtime, which dispatches synchronously, keeps the value queue.
 //
 //  2. Decoration is advisory and per line. The rows are GridRow children,
 //     exactly as core.TextGrid builds them, and a host applies row N's styling

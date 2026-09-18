@@ -107,7 +107,8 @@ internal fun GrMobRichTextEditor(node: GrMobNode, extra: Modifier) {
             view.setTextIsSelectable(readOnly)
             state.readOnly = readOnly
             view.hint = node.stringProp("placeholder")
-            state.applyDoc(node.stringProp("doc"))
+            state.applyDoc(node.stringProp("doc"), node.intProp("editSeq"), node.intProp("editEpoch"),
+                node.props.containsKey("editEpoch"))
             state.runCommand(node.intProp("editorEpoch"), node.stringProp("editorCommand"))
             // core.Focus / core.DismissKeyboard, last: the responder arrives at
             // a document this pass has already settled.
@@ -128,6 +129,22 @@ internal class GrMobBlockSpan(val kind: String)
 
 /** A marker for a list prefix this renderer drew, which is not the user's text. */
 internal class GrMobPrefixSpan
+
+/**
+ * A heading's bold face. A StyleSpan, so it draws exactly as one, and its own
+ * class, so the reverse mapping can tell it from the user's bold mark.
+ *
+ * It was a plain StyleSpan(BOLD), and [GrMobRichMapper.document] read every
+ * bold StyleSpan as a mark: the first keystroke anywhere in a document made
+ * every heading's text bold in Go's copy. Lesson 4.14's Markdown panel showed
+ * it on the emulator as `## **A note**`.
+ */
+internal class GrMobBlockBoldSpan : StyleSpan(Typeface.BOLD)
+
+/** A code block's monospace face, told apart from inline code's TypefaceSpan
+ *  for [GrMobBlockBoldSpan]'s reason: toggling the inline mark off must not
+ *  remove the block's. */
+internal class GrMobBlockMonospaceSpan : TypefaceSpan("monospace")
 
 /** A marker for inline code, carried beside the monospace typeface so that the
  *  reverse mapping reads the mark rather than inferring it from a font. */
@@ -157,8 +174,23 @@ internal class GrMobRichTextState {
      *  runtime and the iOS renderer make. */
     private var doc: JSONObject = JSONObject().put("b", JSONArray())
 
-    /** The JSON of every document sent upstream and not yet seen come back. */
-    private val pendingEchoes = ArrayList<String>()
+    /**
+     * What this editor has sent Go and not yet heard back about. See
+     * GrMobTextEdits.kt. No replay: a rewrite of the document is adopted as
+     * it stands, because the texts it would splice are JSON.
+     */
+    private val ledger = TextEditLedger("", 0, replay = false)
+
+    /** The (doc, editSeq, editEpoch) last read, so an update pass that changed
+     *  none of the three is not read as news. `update` runs on every
+     *  composition, for every reason. */
+    private var lastStamp: Triple<String, Int, Int>? = null
+
+    /** Go's JSON of the document this editor holds, when it has seen one: the
+     *  last rewrite adopted, or the last echo of its own typing. Go and org.json
+     *  spell one document differently, so this, and not `doc.toString()`, is
+     *  what tells a blurred editor that Go's document is the one it has. */
+    private var lastGoJson: String? = null
     private var lastEpoch: Int? = null
     /** The last focus-command epoch applied. Zero is safe as the initial value
      *  because zero is core's own sentinel for "no command has ever been
@@ -197,21 +229,29 @@ internal class GrMobRichTextState {
      * The echo guard, over the document's JSON rather than a string of text.
      *
      * Same three arms GrMobTextField's has: an echo is dropped, a rewrite lands
-     * even mid-typing, and a blurred editor is Go's outright. The comparison is
-     * on the JSON string because Go marshals with a fixed key order, so the same
-     * document is always the same bytes.
+     * even mid-typing, and a blurred editor is Go's outright. Echo and rewrite
+     * are told apart by Go's edit stamps (core/text_edit.go), not by comparing
+     * JSON: Go writes a document with encoding/json and this host with
+     * org.json, which escapes a slash and keeps its own key order, so the same
+     * document does not come back as the same bytes. Go compares the two as
+     * documents and says which it was.
      */
-    fun applyDoc(json: String) {
+    fun applyDoc(json: String, editSeq: Int, editEpoch: Int, stamped: Boolean) {
         val editText = view ?: return
+        val stamp = Triple(json, editSeq, editEpoch)
+        if (stamp == lastStamp) return
+        lastStamp = stamp
         if (editText.isFocused) {
-            val echo = pendingEchoes.indexOf(json)
-            if (echo >= 0) {
-                repeat(echo + 1) { pendingEchoes.removeAt(0) }
+            // Null is an echo: this editor already holds the document.
+            if (ledger.upstream(json, editSeq, editEpoch, doc.toString(), stamped) == null) {
+                lastGoJson = json
                 return
             }
+        } else {
+            ledger.reset(json, editEpoch)
+            if (json == lastGoJson) return
         }
-        pendingEchoes.clear()
-        if (doc.toString() == json) return
+        lastGoJson = json
         val parsed = try {
             JSONObject(json)
         } catch (e: Exception) {
@@ -243,8 +283,10 @@ internal class GrMobRichTextState {
 
     private fun send() {
         val json = doc.toString()
-        pendingEchoes.add(json)
-        if (onChange.isNotEmpty()) runtime?.textChanged(onChange, json)
+        val host = runtime
+        if (onChange.isNotEmpty() && host != null) {
+            ledger.sent(host.textEdited(onChange, json, ledger.epoch), json)
+        }
         reportSelection()
     }
 
@@ -473,12 +515,12 @@ internal object GrMobRichMapper {
      * drawn prefix cannot do for itself.
      */
     private fun paragraphSpans(kind: String, base: GrMobRichStyle): List<Any> = when (kind) {
-        "h1" -> listOf(RelativeSizeSpan(1.6f), StyleSpan(Typeface.BOLD))
-        "h2" -> listOf(RelativeSizeSpan(1.35f), StyleSpan(Typeface.BOLD))
-        "h3" -> listOf(RelativeSizeSpan(1.15f), StyleSpan(Typeface.BOLD))
+        "h1" -> listOf(RelativeSizeSpan(1.6f), GrMobBlockBoldSpan())
+        "h2" -> listOf(RelativeSizeSpan(1.35f), GrMobBlockBoldSpan())
+        "h3" -> listOf(RelativeSizeSpan(1.15f), GrMobBlockBoldSpan())
         "bullet", "numbered" -> listOf(LeadingMarginSpan.Standard(0, (base.size * 1.4f).toInt()))
         "quote" -> listOf(QuoteSpan())
-        "code" -> listOf(TypefaceSpan("monospace"),
+        "code" -> listOf(GrMobBlockMonospaceSpan(),
             LeadingMarginSpan.Standard((base.size * 0.5f).toInt()))
         else -> emptyList()
     }
@@ -516,6 +558,8 @@ internal object GrMobRichMapper {
                     if (spanned.getSpans(at, next, GrMobPrefixSpan::class.java).isEmpty()) {
                         val run = JSONObject().put("t", text.subSequence(at, next).toString())
                         for (style in spanned.getSpans(at, next, StyleSpan::class.java)) {
+                            // A heading's face, not the user's mark; see GrMobBlockBoldSpan.
+                            if (style is GrMobBlockBoldSpan) continue
                             if (style.style and Typeface.BOLD != 0) run.put("b", 1)
                             if (style.style and Typeface.ITALIC != 0) run.put("i", 1)
                         }
@@ -599,6 +643,7 @@ internal object GrMobRichMapper {
         if (end <= start) return Marks(emptyList(), "")
         val names = ArrayList<String>()
         for (style in spanned.getSpans(start, end, StyleSpan::class.java)) {
+            if (style is GrMobBlockBoldSpan) continue
             if (style.style and Typeface.BOLD != 0 && "bold" !in names) names.add("bold")
             if (style.style and Typeface.ITALIC != 0 && "italic" !in names) names.add("italic")
         }
@@ -658,8 +703,12 @@ internal object GrMobRichMapper {
         }
 
         when (command) {
+            // The block's own spans are never the mark's to remove: un-bolding
+            // a word in a heading must not strip the heading's face, and
+            // toggling inline code off inside a code block must not take the
+            // block's monospace with it.
             "bold" -> toggle({ StyleSpan(Typeface.BOLD) }, StyleSpan::class.java) {
-                (it as StyleSpan).style and Typeface.BOLD != 0
+                it !is GrMobBlockBoldSpan && (it as StyleSpan).style and Typeface.BOLD != 0
             }
             "italic" -> toggle({ StyleSpan(Typeface.ITALIC) }, StyleSpan::class.java) {
                 (it as StyleSpan).style and Typeface.ITALIC != 0
@@ -667,7 +716,9 @@ internal object GrMobRichMapper {
             "underline" -> toggle({ UnderlineSpan() }, UnderlineSpan::class.java)
             "strike" -> toggle({ StrikethroughSpan() }, StrikethroughSpan::class.java)
             "code" -> {
-                toggle({ TypefaceSpan("monospace") }, TypefaceSpan::class.java)
+                toggle({ TypefaceSpan("monospace") }, TypefaceSpan::class.java) {
+                    it !is GrMobBlockMonospaceSpan
+                }
                 toggle({ GrMobCodeSpan() }, GrMobCodeSpan::class.java)
             }
             else -> return false

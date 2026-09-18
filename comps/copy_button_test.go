@@ -142,3 +142,18 @@ func TestCopyButtonTakesNoHookSlot(t *testing.T) {
 		t.Errorf("a conditional CopyButton raised concerns:\n%s", dump)
 	}
 }
+
+// CopyButton alone asks for a compact control, and the mark is on the Button
+// node itself, where the Android renderer reads it (see "Compact on Android").
+// A plain Button must not carry it: every other button keeps material3's
+// minimums.
+func TestOnlyCopyButtonIsCompact(t *testing.T) {
+	ctx := core.NewContext()
+	n := CopyButton{Text: "x"}.Render(ctx)
+	if n.Type != "Button" || n.Props["touchTarget"] != "compact" {
+		t.Fatalf("CopyButton node = %s %v, want a Button marked compact", n.Type, n.Props["touchTarget"])
+	}
+	if b := (Button{Label: "Save"}).Render(ctx); b.Props["touchTarget"] != nil {
+		t.Fatalf("a plain Button carries touchTarget %v", b.Props["touchTarget"])
+	}
+}

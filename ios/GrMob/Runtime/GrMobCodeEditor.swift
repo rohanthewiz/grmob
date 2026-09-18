@@ -15,10 +15,11 @@ import SwiftUI
 ///
 /// # The three rules, as they land here
 ///
-///  1. **Echo guard.** Identical bookkeeping to GrMobTextField's
-///     `pendingEchoes`: the buffer is the host's while it is first responder
-///     and Go's otherwise, and an upstream value matching one we sent is our
-///     own edit coming back rather than an instruction.
+///  1. **Echo guard.** GrMobTextField's TextEditLedger: the buffer is the
+///     host's while it is first responder and Go's otherwise, Go's edit stamps
+///     tell our own edit coming back from a rewrite, and typing in flight when
+///     a rewrite lands is replayed onto it with the caret where it was
+///     (`rebaseCaret`).
 ///
 ///  2. **Decoration is advisory and per line.** Go's rows are applied as
 ///     *attributes over the existing characters* — never by assigning
@@ -135,7 +136,10 @@ private struct GrMobCodeEditorRepresentable: UIViewRepresentable {
         view.textView.isEditable = !node.boolProp("readOnly")
         view.showsGutter = node.boolProp("lineNumbers")
 
-        coordinator.applyValue(node.stringProp("value"))
+        coordinator.applyValue(node.stringProp("value"),
+                               editSeq: node.intProp("editSeq"),
+                               editEpoch: node.intProp("editEpoch"),
+                               stamped: node.props["editEpoch"] != nil)
         coordinator.applyRows(node.children, base: node.style)
         view.refreshGutter()
         coordinator.runCommand(epoch: node.intProp("editorEpoch"),
@@ -379,12 +383,25 @@ final class GrMobCodeEditorView: UIView {
         // however far the buffer has scrolled, so number N stays beside line N.
         // Its height is the whole text, not the visible box, which is what lets
         // the offset carry it off the top.
+        //
+        // Exactly its own text's height, and never the box's. A UILabel centres
+        // its lines vertically in a frame taller than they are, and this one
+        // used to be at least the box tall: lesson 4.13's four lines in a 170pt
+        // editor drew "1" beside the fourth line, with 2 to 4 hanging below the
+        // buffer. Fitted, the label's first line is at its top, which is where
+        // the text view's is (its insets and line padding are zero).
+        let numbers = gutter.sizeThatFits(CGSize(width: inset, height: .greatestFiniteMagnitude))
         gutter.frame = CGRect(x: 0, y: -textView.contentOffset.y,
                               width: inset,
-                              height: max(bounds.height, textView.contentSize.height))
+                              height: ceil(numbers.height))
         // Room for the digits, so the gutter's own trailing column is a gap
-        // rather than a number touching the code.
-        gutter.frame = gutter.frame.insetBy(dx: 0, dy: 0)
+        // rather than a number touching the code. The width has two columns
+        // beyond the digits (gutterWidth); the label gives up the last one,
+        // and its right-aligned numbers end a column short of the buffer. It
+        // was `insetBy(dx: 0, dy: 0)`, which gives up nothing, and the numbers
+        // sat against the first character of every line.
+        let column = ("0" as NSString).size(withAttributes: [.font: font]).width
+        gutter.frame.size.width = max(0, inset - column)
     }
 }
 
@@ -398,9 +415,15 @@ final class GrMobCodeCoordinator: NSObject, UITextViewDelegate {
     var tabSize = 4
     var commentPrefix = "//"
 
-    /// Every value this editor has sent upstream and not yet seen come back.
-    /// See GrMobTextField for the full argument; the bookkeeping is identical.
-    private var pendingEchoes: [String] = []
+    /// What this editor has sent Go and not yet heard back about. See
+    /// GrMobTextField for the full argument; the bookkeeping is identical, and
+    /// so is the class (GrMobTextEdits.swift).
+    private var ledger = TextEditLedger()
+    /// The (value, editSeq, editEpoch) last read. updateUIView runs for every
+    /// reason SwiftUI has, and only a change to one of the three is news: an
+    /// echo moves only the ack, and a refused edit moves the ack and the epoch
+    /// and leaves the value where it was.
+    private var lastStamp: (value: String, seq: Int, epoch: Int)?
     /// The last selection reported, so the several delegate calls one gesture
     /// produces cost one Go render pass rather than several.
     private var lastSelection = ""
@@ -419,28 +442,38 @@ final class GrMobCodeCoordinator: NSObject, UITextViewDelegate {
 
     // MARK: Go -> the buffer
 
-    func applyValue(_ value: String) {
+    func applyValue(_ value: String, editSeq: Int, editEpoch: Int, stamped: Bool) {
+        // Nothing lands mid-composition. The stamp is recorded only past this
+        // guard, so the next pass after the composition ends reads it.
         guard let textView = view?.textView, textView.markedTextRange == nil else { return }
+        if let last = lastStamp, last == (value, editSeq, editEpoch) { return }
+        lastStamp = (value, editSeq, editEpoch)
 
-        if textView.isFirstResponder {
-            if let echo = pendingEchoes.firstIndex(of: value) {
-                // Dropped *through* the match rather than at it: Go may
-                // coalesce renders and skip intermediate values.
-                pendingEchoes.removeSubrange(...echo)
-                return
-            }
-            // Not an echo, so this can only be Go speaking for itself — a
-            // validator normalizing the text, a draft cleared after a submit.
-            // It wins even mid-typing, and moving the caret is correct: the
-            // text under it was replaced.
-            pendingEchoes.removeAll()
-        } else {
-            // Go-owned while blurred; any queued echoes died with the session.
-            pendingEchoes.removeAll()
+        guard textView.isFirstResponder else {
+            // Go-owned while blurred; anything in flight died with the session.
+            ledger.reset(value, epoch: editEpoch)
+            if textView.text != value { textView.text = value }
+            return
         }
-        if textView.text != value {
-            textView.text = value
+        // Go's edit stamps say whether this is our own typing coming back or
+        // Go speaking for itself (core/text_edit.go). It used to be a queue of
+        // sent values, which let keystrokes already in flight when a rewrite
+        // landed be applied by Go as if they were new; see GrMobTextField.
+        let local = textView.text ?? ""
+        guard let next = ledger.upstream(value, ack: editSeq, goEpoch: editEpoch, local: local,
+                                         stamped: stamped) else {
+            return
         }
+        // A rewrite, which wins even mid-typing. The caret follows the typing
+        // that was replayed onto it; with nothing replayed it lands at the end
+        // of Go's text, which is where assigning `text` always put it.
+        let caret = !stamped ? (next as NSString).length
+            : rebaseCaret(basis: ledger.lastBasis, local: local, rewrite: value,
+                          caret: textView.selectedRange.location + textView.selectedRange.length)
+        if textView.text != next { textView.text = next }
+        textView.selectedRange = NSRange(location: caret, length: 0)
+        // Typing Go has not seen yet, replayed onto its rewrite.
+        if next != value { send(next) }
     }
 
     /// Rule 2: Go's rows, applied per line, only where they still describe what
@@ -542,10 +575,15 @@ final class GrMobCodeCoordinator: NSObject, UITextViewDelegate {
 
     func textViewDidChange(_ textView: UITextView) {
         guard textView.markedTextRange == nil else { return }
-        let value = textView.text ?? ""
-        pendingEchoes.append(value)
         view?.refreshGutter()
-        if !onChange.isEmpty { runtime?.textChanged(onChange, value) }
+        send(textView.text ?? "")
+    }
+
+    /// Every edit leaves by this one path, so the ledger records exactly what
+    /// Go was sent and under which epoch.
+    private func send(_ value: String) {
+        guard !onChange.isEmpty, let runtime else { return }
+        ledger.sent(runtime.textEdited(onChange, value, epoch: ledger.epoch), value)
     }
 
     /// The selection, as byte offsets into the UTF-8 value.

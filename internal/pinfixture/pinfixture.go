@@ -25,8 +25,9 @@
 // it replaces is the chain each line hangs from:
 //
 //	the transcription   every branch below names the source line it mirrors,
-//	                    from foundation-layout's RowColumnMeasurementHelper.kt
-//	                    and Size.kt.
+//	                    from foundation-layout's RowColumnMeasurePolicy.kt
+//	                    (RowColumnMeasurementHelper.kt before 1.7) and
+//	                    Size.kt.
 //	those lines         mobile/verify's TestTheComposeCensusClaimsAreWhatTheSourceSays
 //	                    reads them out of the sources jar. A release that
 //	                    changes them fails there, by name, and sends the reader
@@ -229,27 +230,34 @@ type Measured struct {
 //
 // # The source it mirrors
 //
-// foundation-layout's RowColumnMeasurementHelper.kt, `measureWithoutPlacing`,
-// the branch commented "First measure children with zero weight". Every child
-// here is unweighted, so the weighted half of that function is not reached and
-// is not transcribed.
+// foundation-layout's RowColumnMeasurePolicy.kt, `measure`, the branch
+// commented "First measure children with zero weight". Every child here is
+// unweighted, so the weighted half of that function is not reached and is not
+// transcribed. Quoted from 1.7.6, the version the BOM resolves; 1.6.x had the
+// same loop in RowColumnMeasurementHelper.kt, spelled in Longs and Floats.
+// The cross-axis lines, which a Row whose children carry no flow-layout data
+// does not use, are elided.
 //
 //	// First measure children with zero weight.
-//	val mainAxisMax = constraints.mainAxisMax
+//	val remaining = mainAxisMax - fixedSpace
 //	val placeable = placeables[i] ?: child.measure(
-//	    constraints.copy(
+//	    createConstraints(
 //	        mainAxisMin = 0,
+//	        …
 //	        mainAxisMax = if (mainAxisMax == Constraints.Infinity) {
 //	            Constraints.Infinity
 //	        } else {
-//	            (mainAxisMax - fixedSpace).coerceAtLeast(0).toInt()
+//	            remaining.coerceAtLeast(0)
 //	        },
-//	        crossAxisMin = 0
-//	    ).toBoxConstraints(orientation)
+//	        …
+//	    )
 //	)
-//	spaceAfterLastNoWeight = min(arrangementSpacingPx.toInt(),
-//	    (mainAxisMax - fixedSpace - placeable.mainAxisSize()).coerceAtLeast(0).toInt())
-//	fixedSpace += placeable.mainAxisSize() + spaceAfterLastNoWeight
+//	val placeableMainAxisSize = placeable.mainAxisSize()
+//	spaceAfterLastNoWeight = min(
+//	    arrangementSpacingInt,
+//	    (remaining - placeableMainAxisSize).coerceAtLeast(0)
+//	)
+//	fixedSpace += placeableMainAxisSize + spaceAfterLastNoWeight
 //
 // The Infinity arm is a Row that was itself offered no definite width. Every
 // case here gives one, so MeasureCompose does not carry that branch — an
@@ -263,8 +271,8 @@ type Measured struct {
 //	fixedSpace -= spaceAfterLastNoWeight
 //	...
 //	val mainAxisLayoutSize = max(
-//	    (fixedSpace + weightedSpace).coerceAtLeast(0).toInt(),
-//	    constraints.mainAxisMin
+//	    (fixedSpace + weightedSpace).coerceAtLeast(0),
+//	    mainAxisMin
 //	)
 //
 // # The three consequences that are easy to get wrong by reading it

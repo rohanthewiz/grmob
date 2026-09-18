@@ -60,35 +60,39 @@ func pinExprs(t *testing.T, file string, pins []struct{ expr, why string }) {
 
 // Rule 1: the echo guard, which is what makes a controlled buffer typeable.
 //
-// Every host keeps a queue of the values it has sent upstream. An upstream
-// value matching a queued entry is this editor's own edit coming back and must
-// be dropped — applying it would move the caret to the end mid-typing. One
-// matching nothing we sent can only be Go speaking for itself and must land
-// even mid-typing. And the queue is dropped *through* the match rather than at
-// it, because Go coalesces renders and skips intermediate values.
+// Every host keeps a TextEditLedger (GrMobTextEdits) of the edits it has sent
+// Go, each under a sequence number and the rewrite epoch it had adopted, and
+// reads Go's editSeq/editEpoch stamps (core/text_edit.go) to tell its own
+// edit coming back from Go speaking for itself. An echo must be dropped —
+// applying it would move the caret to the end mid-typing. A rewrite must land
+// even mid-typing, with the typing still in flight replayed onto it. And the
+// buffer is Go's outright while the editor is not focused.
 //
-// This is the same contract core.TextArea has lived under since it existed; the
-// point of pinning it here is that a new node type had to restate it, and a
-// restatement that dropped one of the three arms would be a caret that jumps
-// on a slow network and nowhere else.
+// This is the contract core.TextArea's field lives under; the point of
+// pinning it here is that a new node type had to restate it. It restated the
+// value queue until the editors joined the protocol, and a host that still
+// sent through textChanged would put edits on the wire with no sequence, so
+// Go could not drop the stale ones.
 func TestBothNativeCodeEditorsGuardTheirEchoes(t *testing.T) {
 	pinExprs(t, swiftCodeEditor, []struct{ expr, why string }{
-		{"private var pendingEchoes: [String] = []",
-			"the queue of values sent upstream and not yet seen come back"},
-		{"if let echo = pendingEchoes.firstIndex(of: value)",
-			"an upstream value we sent is an echo, not an instruction"},
-		{"pendingEchoes.removeSubrange(...echo)",
-			"dropped through the match, because Go may coalesce renders"},
-		{"if textView.isFirstResponder",
+		{"private var ledger = TextEditLedger()",
+			"the edits sent upstream and not yet acknowledged"},
+		{`editSeq: node.intProp("editSeq")`,
+			"Go's ack reaches the coordinator"},
+		{"ledger.upstream(value, ack: editSeq, goEpoch: editEpoch, local: local,",
+			"Go's stamps, not the value, decide echo versus rewrite"},
+		{"ledger.sent(runtime.textEdited(onChange, value, epoch: ledger.epoch), value)",
+			"every edit leaves sequenced and at the adopted epoch"},
+		{"guard textView.isFirstResponder else {",
 			"the buffer is the host's while focused and Go's otherwise"},
 	})
 	pinExprs(t, kotlinCodeEditor, []struct{ expr, why string }{
-		{"val pendingEchoes = remember { mutableListOf<String>() }",
-			"the queue of values sent upstream and not yet seen come back"},
-		{"val echo = pendingEchoes.indexOf(upstream)",
-			"an upstream value we sent is an echo, not an instruction"},
-		{"repeat(echo + 1) { pendingEchoes.removeAt(0) }",
-			"dropped through the match, because Go may coalesce renders"},
+		{"val ledger = remember { TextEditLedger(upstream, editEpoch) }",
+			"the edits sent upstream and not yet acknowledged"},
+		{"ledger.upstream(upstream, editSeq, editEpoch, local.text, stamped)",
+			"Go's stamps, not the value, decide echo versus rewrite"},
+		{"ledger.sent(runtime.textEdited(onChange, next.text, ledger.epoch), next.text)",
+			"every edit leaves sequenced and at the adopted epoch"},
 		{"if (!focused) {",
 			"the buffer is the host's while focused and Go's otherwise"},
 	})
@@ -170,7 +174,7 @@ func TestBothNativeCodeEditorsRefuseTheSubstitutions(t *testing.T) {
 		{"textView.smartDashesType = .no", "-- would become an em dash"},
 	})
 	pinExprs(t, kotlinCodeEditor, []struct{ expr, why string }{
-		{"autoCorrect = false", "autocorrect rewrites identifiers"},
+		{"autoCorrectEnabled = false", "autocorrect rewrites identifiers"},
 		{"capitalization = KeyboardCapitalization.None", "every line would start with a capital"},
 	})
 }

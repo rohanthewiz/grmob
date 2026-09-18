@@ -78,7 +78,7 @@ const (
 )
 ```
 
-<small>[core/richtext.go:88](https://github.com/rohanthewiz/grmob/blob/master/core/richtext.go#L88)</small>
+<small>[core/richtext.go:94](https://github.com/rohanthewiz/grmob/blob/master/core/richtext.go#L94)</small>
 
 ## Functions
 
@@ -105,7 +105,7 @@ The obvious pure-Go construction is a transparent core.TextArea in a ZStack over
 
 #### The three rules every host implements
 
- 1. Echo guard, unchanged from TextArea. \`value\` from Go is applied only when it is not an echo of the host's own last onChange. The buffer is the host's while focused and Go's otherwise — see GrMobTextField's pendingEchoes in either native renderer for the bookkeeping, which this node reuses verbatim rather than restating.
+ 1. Echo guard, unchanged from TextArea. \`value\` from Go is applied only when it is not an echo of the host's own typing. The buffer is the host's while focused and Go's otherwise. On the natives an echo is told from a rewrite by the text-edit stamps (core/text\_edit.go), and edits typed on text Go has since rewritten are replayed onto it; both renderers drive the same TextEditLedger their GrMobTextField does. The web runtime, which dispatches synchronously, keeps the value queue.
 
  2. Decoration is advisory and per line. The rows are GridRow children, exactly as core.TextGrid builds them, and a host applies row N's styling only if that row's concatenated text equals the host's current line N. A line that disagrees — Go is a keystroke behind, which it is for a few milliseconds after every keypress — is drawn in plain ink until the next patch. Never the other way round: decoration never rewrites the buffer, so a lexer that is wrong can make the screen ugly and can never make it lose text.
 
@@ -129,7 +129,7 @@ Nothing that needs a caret is exercised by any harness here — the IME composin
 
 value is the text; rows are a \*decoration of that text\*, computed in Go from that same text. They always agree at the moment Go builds them, and are allowed to disagree with the host mid-keystroke, which is what rule 2 is about. A caller that computes rows from something other than value has not broken anything — the rows simply never match and the buffer is drawn plain.
 
-<small>[core/codeeditor.go:83](https://github.com/rohanthewiz/grmob/blob/master/core/codeeditor.go#L83)</small>
+<small>[core/codeeditor.go:85](https://github.com/rohanthewiz/grmob/blob/master/core/codeeditor.go#L85)</small>
 
 ### func CommentPrefix
 
@@ -141,7 +141,7 @@ CommentPrefix sets the line-comment marker EditCommentLine toggles — "//" for 
 
 An empty prefix makes EditCommentLine a no-op, which is the right answer for a language that has no line comments (JSON) rather than inserting a marker that would make the document invalid.
 
-<small>[core/codeeditor.go:168](https://github.com/rohanthewiz/grmob/blob/master/core/codeeditor.go#L168)</small>
+<small>[core/codeeditor.go:170](https://github.com/rohanthewiz/grmob/blob/master/core/codeeditor.go#L170)</small>
 
 ### func EditBlock
 
@@ -153,7 +153,7 @@ EditBlock is the command that makes every block the selection touches the given 
 
 The kind's wire value \*is\* richtext.BlockKind's, which is why that type is a string: a toolbar naming a heading and a document holding one use the same token, so there is no second table to keep in step.
 
-<small>[core/richtext.go:129](https://github.com/rohanthewiz/grmob/blob/master/core/richtext.go#L129)</small>
+<small>[core/richtext.go:135](https://github.com/rohanthewiz/grmob/blob/master/core/richtext.go#L135)</small>
 
 ### func EditLink
 
@@ -167,7 +167,7 @@ A function rather than a constant because the command carries an argument, and t
 
 An empty url is EditUnlink's job and is refused here rather than sent as a link to nowhere.
 
-<small>[core/richtext.go:116](https://github.com/rohanthewiz/grmob/blob/master/core/richtext.go#L116)</small>
+<small>[core/richtext.go:122](https://github.com/rohanthewiz/grmob/blob/master/core/richtext.go#L122)</small>
 
 ### func EditorTarget
 
@@ -193,7 +193,7 @@ LineNumbers turns on the gutter.
 
 The gutter is drawn by the host rather than being part of the buffer, which is the only arrangement that works: numbers inside the text would be selectable, copyable and editable, and a buffer whose first four columns are not the user's is not the buffer.
 
-<small>[core/codeeditor.go:134](https://github.com/rohanthewiz/grmob/blob/master/core/codeeditor.go#L134)</small>
+<small>[core/codeeditor.go:136](https://github.com/rohanthewiz/grmob/blob/master/core/codeeditor.go#L136)</small>
 
 ### func OnRichSelectionChange
 
@@ -205,7 +205,7 @@ OnRichSelectionChange reports a rich-text editor's caret and the formatting acti
 
 A separate builder from OnSelectionChange rather than an overload, because the two carry different things and the difference is the point: a code editor's selection is two offsets, and a rich editor's is the state a toolbar has to draw. They share the prop name on the wire ("onSelectionChange") and the text channel; what differs is the payload each node type sends and the parse core does before app code sees it.
 
-<small>[core/richtext.go:237](https://github.com/rohanthewiz/grmob/blob/master/core/richtext.go#L237)</small>
+<small>[core/richtext.go:243](https://github.com/rohanthewiz/grmob/blob/master/core/richtext.go#L243)</small>
 
 ### func OnSelectionChange
 
@@ -273,7 +273,7 @@ richtext.Doc crosses the wire as JSON and each host maps it to and from its own 
 
 #### The rules it shares with CodeEditor, and the one it does not
 
-The echo guard is unchanged — the doc JSON is compared exactly as a TextArea's value is, so Go's echo of the host's own last onChange never resets the caret. Commands are epoch-stamped props, same mechanism, same adopt-on-first-sight rule (see core/editor.go).
+The echo guard is the text fields', so Go's echo of the host's own last onChange never resets the caret. On the natives it runs on the text-edit stamps (core/text\_edit.go), with two differences that both come from the value being a JSON document rather than text. Go compares the host's JSON with its own render as documents, not bytes, because neither host's JSON library spells a document the way encoding/json does. And a rewrite is adopted as it stands: a JSON string has no "typing at either end" to replay onto Go's document, so what is in flight is lost, as it always was here. Commands are epoch-stamped props, same mechanism, same adopt-on-first-sight rule (see core/editor.go).
 
 The stale-line rule is \*not\* here and does not need to be. A CodeEditor has two facts about one buffer — the text and a decoration of it computed separately — which can disagree for a frame. Here the doc \*is\* the styled buffer: there is nothing to compare it against, because the formatting and the characters arrive together.
 
@@ -283,7 +283,7 @@ core.Focus and core.DismissKeyboard reach an editor — the type is in focusable
 
 Collaborative editing, images, tables and per-run fonts are non-goals; each is a driver away and none changes the design above.
 
-<small>[core/richtext.go:54](https://github.com/rohanthewiz/grmob/blob/master/core/richtext.go#L54)</small>
+<small>[core/richtext.go:60](https://github.com/rohanthewiz/grmob/blob/master/core/richtext.go#L60)</small>
 
 ### func RunEditorCommand
 
@@ -315,7 +315,7 @@ TabSize sets how many spaces one indent is worth — what the Tab key inserts, a
 
 Zero means a literal tab character instead of spaces, which is what Go source wants. A negative size is clamped to zero rather than refused: the honest reading of "minus two spaces" is "no spaces", and a render pass is not a place to panic over an argument.
 
-<small>[core/codeeditor.go:150](https://github.com/rohanthewiz/grmob/blob/master/core/codeeditor.go#L150)</small>
+<small>[core/codeeditor.go:152](https://github.com/rohanthewiz/grmob/blob/master/core/codeeditor.go#L152)</small>
 
 ## Types
 
@@ -383,7 +383,7 @@ The marks matter more than the offsets, and that is the reason this is a struct 
 
 Start and End are byte offsets into the document's plain text (richtext.Doc.PlainText), which is the one coordinate system all four hosts can produce and which is stable across the marks. They are there for a status line and for "is anything selected"; a command never needs them, because every command acts on the host's own selection.
 
-<small>[core/richtext.go:147](https://github.com/rohanthewiz/grmob/blob/master/core/richtext.go#L147)</small>
+<small>[core/richtext.go:153](https://github.com/rohanthewiz/grmob/blob/master/core/richtext.go#L153)</small>
 
 #### func (RichSelection) HasSelection
 
@@ -393,5 +393,5 @@ func (s RichSelection) HasSelection() bool
 
 HasSelection reports whether anything is actually selected, as opposed to a bare caret. The distinction is what a "Link" button needs: linking an empty selection has nothing to attach to.
 
-<small>[core/richtext.go:169](https://github.com/rohanthewiz/grmob/blob/master/core/richtext.go#L169)</small>
+<small>[core/richtext.go:175](https://github.com/rohanthewiz/grmob/blob/master/core/richtext.go#L175)</small>
 

@@ -30,10 +30,16 @@ import (
 //
 // # The rules it shares with CodeEditor, and the one it does not
 //
-// The echo guard is unchanged — the doc JSON is compared exactly as a
-// TextArea's value is, so Go's echo of the host's own last onChange never
-// resets the caret. Commands are epoch-stamped props, same mechanism, same
-// adopt-on-first-sight rule (see core/editor.go).
+// The echo guard is the text fields', so Go's echo of the host's own last
+// onChange never resets the caret. On the natives it runs on the text-edit
+// stamps (core/text_edit.go), with two differences that both come from the
+// value being a JSON document rather than text. Go compares the host's JSON
+// with its own render as documents, not bytes, because neither host's JSON
+// library spells a document the way encoding/json does. And a rewrite is
+// adopted as it stands: a JSON string has no "typing at either end" to replay
+// onto Go's document, so what is in flight is lost, as it always was here.
+// Commands are epoch-stamped props, same mechanism, same adopt-on-first-sight
+// rule (see core/editor.go).
 //
 // The stale-line rule is *not* here and does not need to be. A CodeEditor has
 // two facts about one buffer — the text and a decoration of it computed

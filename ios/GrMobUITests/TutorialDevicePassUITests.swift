@@ -375,11 +375,106 @@ final class TutorialDevicePassUITests: XCTestCase {
         dump(app, "dp-5.8-burst")
     }
 
+    // MARK: 4.13, 4.14 — the editors on the text-edit protocol
+
+    /// The rich-text editor's echo path, and the heading's own bold.
+    ///
+    /// Typing at the end of 4.14's heading goes through the text-edit
+    /// protocol (core/text_edit.go): the host's JSON of the document is not
+    /// Go's byte for byte, and Go compares the two as documents, so each
+    /// keystroke comes back as an echo rather than a rewrite. The Markdown
+    /// panel is Go's copy of the document; it must hold the typing.
+    ///
+    /// And it must hold the heading as a heading, not as bold text. A heading
+    /// is drawn in a bold face, and the reverse mapping read that trait as the
+    /// user's bold mark, so on Android the first keystroke turned the heading
+    /// into `## **A note**` in Go's copy. GrMobRichMapper.boldMark is the fix
+    /// here.
+    func testRichTextTypingReachesGoWithTheHeadingPlain() throws {
+        let app = XCUIApplication()
+        open(app, lesson: "4.14")
+        let toggle = button(app, "Show the Markdown")
+        scroll(app, to: toggle)
+        toggle.tap()
+        let editor = app.textViews.firstMatch
+        XCTAssertTrue(editor.exists, "the rich-text editor has no text view")
+        // The top right of the editor is the end of its first line, the
+        // heading "A note".
+        editor.coordinate(withNormalizedOffset: CGVector(dx: 0.97, dy: 0.04)).tap()
+        sleep(1)
+        XCTAssertEqual(app.keyboards.count, 1, "tapping the editor raised no keyboard")
+        app.typeText("s/ok")
+        sleep(1)
+        let markdown = app.textViews.element(boundBy: 1)
+        XCTAssertTrue(markdown.exists, "the Markdown panel did not open")
+        let md = (markdown.value as? String) ?? ""
+        shot("dp-4.14-typed")
+        XCTAssertTrue(md.hasPrefix("## A notes/ok"), "Go's document lost the typing or the heading: \(md)")
+        XCTAssertFalse(md.contains("**A note"), "the heading's face was read as a bold mark: \(md)")
+        XCTAssertTrue(md.contains("Some **bold**"), "a real bold mark was lost: \(md)")
+    }
+
+    /// The code editor's echo path: typing into 4.13's buffer is echoed by Go
+    /// through the text-edit stamps and must stay exactly as typed, with the
+    /// caret where the typing is (an echo read as a rewrite would move it to
+    /// the end of the buffer).
+    func testCodeEditorTypingSurvivesItsEchoes() throws {
+        let app = XCUIApplication()
+        open(app, lesson: "4.13")
+        let editor = app.textViews.matching(NSPredicate(format: "value BEGINSWITH '// Try me'")).firstMatch
+        scroll(app, to: editor)
+        lift(app)
+        XCTAssertTrue(editor.exists, "4.13's editor has no text view holding the snippet")
+        // Near the start of the first line. The element's centre is below
+        // four short lines, and a tap there puts the caret at the end of the
+        // buffer instead. UIKit snaps the caret to a word boundary, so where
+        // in the line it lands is not asserted, only that the typing stays
+        // together in it.
+        editor.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.04)).tap()
+        sleep(1)
+        let focused = app.textViews.matching(NSPredicate(format: "hasKeyboardFocus == true")).firstMatch
+        XCTAssertTrue(focused.exists, "tapping the editor did not focus it")
+        app.typeText("ok ")
+        app.typeText("!")
+        sleep(1)
+        let value = (focused.value as? String) ?? ""
+        shot("dp-4.13-typed")
+        let first = value.components(separatedBy: "\n").first ?? ""
+        // Both typeText calls in one piece in the first line: an echo read as
+        // a rewrite would have moved the caret to the end of the buffer, and
+        // the "!" would be there instead.
+        XCTAssertTrue(first.contains("ok !"), "the typing was split or lost: \(value)")
+        XCTAssertEqual(first.replacingOccurrences(of: "ok !", with: ""),
+                       "// Try me: edit, and the colours follow.",
+                       "the first line changed beyond the typing: \(first)")
+    }
+
     // MARK: 2.6, 6.8 — the theme accent on platform controls
 
     /// A Toggle and a Slider in the theme's Primary, not the system green and
     /// blue. core.AccentColor reaches SwiftUI as `.tint`; no assertion can
     /// read a colour, so this drives the screenshots that show it.
+    /// Lesson 2.6's Save button sits in a Row beside a caption long enough to
+    /// overflow the line. The flex solver's min-content floor put every
+    /// Button at 0, so the row squeezed the button instead of the caption and
+    /// its label wrapped as "Sav / e". A Button now floors at its widest
+    /// word plus its padding (GrMobMinContent), as a <button> does in CSS.
+    ///
+    /// A one-line label with the default 16/10 padding is wider than it is
+    /// tall; "Sav" over "e" was not.
+    func testTheSaveButtonKeepsItsLabelOnOneLine() throws {
+        let app = XCUIApplication()
+        open(app, lesson: "2.6")
+        let save = button(app, "Save")
+        scroll(app, to: save)
+        lift(app)
+        XCTAssertTrue(save.exists, "lesson 2.6 draws no Save button")
+        shot("dp-2.6-save")
+        let frame = save.frame
+        XCTAssertGreaterThan(frame.width, frame.height,
+                             "Save is \(frame.width)x\(frame.height): its label wrapped")
+    }
+
     func testAccentOnPlatformControls() throws {
         let app = XCUIApplication()
         open(app, lesson: "2.6")

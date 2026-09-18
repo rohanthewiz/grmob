@@ -30,8 +30,9 @@ import (
 //	          space the ones before it did not take.
 //
 // The Compose reading was made against foundation-layout 1.10.0, because that
-// is what happened to be in a gradle cache. This module's Compose BOM resolves
-// foundation-layout to 1.6.8. A pin against the wrong version is the mistake
+// is what happened to be in a gradle cache. This module's Compose BOM resolved
+// foundation-layout to 1.6.8 then (1.7.6 since the 2024.12.01 bump). A pin
+// against the wrong version is the mistake
 // gobindVersion exists to prevent one file over, and it is worse here than
 // there: the census is prose about a third party's arithmetic, and the reader
 // has no way to tell a paragraph that was checked from one that was true two
@@ -389,15 +390,18 @@ func TestTheComposeCensusClaimsAreWhatTheSourceSays(t *testing.T) {
 				"as everyone else's and the whole paragraph is describing nothing",
 		},
 		{
-			file:   "RowColumnMeasurementHelper.kt",
+			// RowColumnMeasurementHelper.kt through foundation-layout 1.6.x;
+			// 1.7 moved the loop here and rewrote it in plain Ints, with the
+			// same arithmetic. The claims are 1.7.6's spelling.
+			file:   "RowColumnMeasurePolicy.kt",
 			anchor: "// First measure children with zero weight.",
 			want: []string{
 				// What is left, with no factor in it. The census's sentence and
 				// MeasureCompose's `remaining`.
-				"mainAxisMax - fixedSpace",
+				"val remaining = mainAxisMax - fixedSpace",
 				// Floored, which is what makes a child after an overflow get an
 				// offer of 0 instead of a negative one. MeasureCompose's max(…, 0).
-				"(mainAxisMax - fixedSpace).coerceAtLeast(0).toInt()",
+				"remaining.coerceAtLeast(0)",
 				// The offer's MINIMUM is cleared. Without this a child would be
 				// forced to fill what it was offered, and SizeNode's
 				// constrain(base) would come back as the offer rather than as
@@ -413,10 +417,15 @@ func TestTheComposeCensusClaimsAreWhatTheSourceSays(t *testing.T) {
 				// so an overflowing Row inserts none. MeasureCompose's
 				// spaceAfterLastNoWeight.
 				"spaceAfterLastNoWeight = min(",
-				"(mainAxisMax - fixedSpace - placeable.mainAxisSize())",
+				"(remaining - placeableMainAxisSize).coerceAtLeast(0)",
 				// And what the next child's offer is subtracted from.
-				"fixedSpace += placeable.mainAxisSize() + spaceAfterLastNoWeight",
+				"fixedSpace += placeableMainAxisSize + spaceAfterLastNoWeight",
 			},
+			// 1.7 put a flow-layout cross-axis branch inside the loop, so its
+			// last claimed line ends 1726 bytes past the comment rather than
+			// about 1350. The window is that plus some margin, and it still
+			// ends inside the zero-weight loop.
+			window: 1900,
 			why: "the census says a Row measures each unweighted child against the " +
 				"main-axis space the ones before it did not take — no factor, no " +
 				"proportion, just what is left. That is why core.FlexShrink's " +
@@ -427,7 +436,7 @@ func TestTheComposeCensusClaimsAreWhatTheSourceSays(t *testing.T) {
 				"Compose column comes from",
 		},
 		{
-			file:   "RowColumnMeasurementHelper.kt",
+			file:   "RowColumnMeasurePolicy.kt",
 			anchor: "// fixedSpace contains an extra spacing after the last non-weight child.",
 			want:   []string{"fixedSpace -= spaceAfterLastNoWeight"},
 			window: 200,
@@ -437,11 +446,12 @@ func TestTheComposeCensusClaimsAreWhatTheSourceSays(t *testing.T) {
 				"wider than the fixture says, in every case that has a gap",
 		},
 		{
-			file:   "RowColumnMeasurementHelper.kt",
+			file:   "RowColumnMeasurePolicy.kt",
 			anchor: "val mainAxisLayoutSize = max(",
 			want: []string{
-				"(fixedSpace + weightedSpace).coerceAtLeast(0).toInt()",
-				"constraints.mainAxisMin",
+				"(fixedSpace + weightedSpace).coerceAtLeast(0),",
+				// 1.6.x read it off the constraints; 1.7 has it in a local.
+				"mainAxisMin",
 			},
 			// The absence that makes a pin an overflow.
 			//

@@ -1196,10 +1196,10 @@ setup first, and it is why the app layer is a second stage rather than the whole
 thing.
 
 **The classpath comes from gradle, not from a glob over its cache.** A cache
-holds whatever versions anything ever resolved, and this one holds two of every
-Compose artifact: 1.6.8, which the BOM pins, and 1.10.0. Newest-wins picks
-1.10.0 and the pass then fails on `Modifier.animateItemPlacement`, an API that
-1.6.8 has and 1.10.0 removed — a classpath assembled by guesswork failing on the
+holds whatever versions anything ever resolved, and this one held two of every
+Compose artifact: 1.6.8, which the BOM then pinned, and 1.10.0. Newest-wins
+picked 1.10.0 and the pass then failed on `Modifier.animateItemPlacement`, an
+API that 1.6.8 had and 1.10.0 removed — a classpath assembled by guesswork failing on the
 library rather than on the source, which is the one thing a compile check must
 never do. Same lesson the fixed-size census records about its sources jar,
 arriving from the other direction.
@@ -1477,8 +1477,9 @@ three show.
 
 **Which `foundation-layout` the Compose half is read from.** It used to be
 whichever one a gradle cache happened to hold — 1.10.0 on the machine where the
-paragraph was written, while `android/app/build.gradle` pins the Compose BOM at
-`2024.06.00`, which resolves `foundation-layout` to 1.6.8. A reading of the
+paragraph was written, while `android/app/build.gradle` pinned the Compose BOM at
+`2024.06.00`, which resolved `foundation-layout` to 1.6.8 (the BOM is
+`2024.12.01` now, and `foundation-layout` 1.7.6). A reading of the
 wrong version is the mistake `gobindVersion` exists to prevent one file over,
 and it is worse here: the claim is prose about a third party's arithmetic, and a
 reader cannot tell a paragraph that was checked from one that was true two
@@ -1498,7 +1499,8 @@ Two pieces close that, and neither costs a network call at test time:
 - **The claims are read from the source.**
   `./gradlew :app:fetchComposeLayoutSources` puts the sources jar in the cache
   once, and `TestTheComposeCensusClaimsAreWhatTheSourceSays` then reads
-  `Size.kt` and `RowColumnMeasurementHelper.kt` out of it at the version the BOM
+  `Size.kt` and `RowColumnMeasurePolicy.kt` (`RowColumnMeasurementHelper.kt`
+  before 1.7) out of it at the version the BOM
   gives. Six readings, not two: that `Modifier.width` is
   `SizeElement(minWidth = width, maxWidth = width, enforceIncoming = true)`;
   that the zero-weight measure branch offers a child

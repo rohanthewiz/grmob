@@ -2398,6 +2398,8 @@ private struct GrMobTextField: View {
         // are 0 on a field no edit has reached. See core/text_edit.go.
         let editSeq = node.intProp("editSeq")
         let editEpoch = node.intProp("editEpoch")
+        // Whether Go stamped this field at all; see TextEditLedger.
+        let stamped = node.props["editEpoch"] != nil
 
         // While focused the local buffer is authoritative; otherwise render
         // straight from Go. The buffer is seeded from upstream at the moment
@@ -2472,9 +2474,11 @@ private struct GrMobTextField: View {
             // Keyed on all three, because each can change alone: an echo
             // moves only the ack, and Go refusing an edit moves the ack and
             // the epoch and leaves the value where it was.
-            .onChange(of: EditStamp(value: upstream, seq: editSeq, epoch: editEpoch)) { _, stamp in
+            .onChange(of: EditStamp(value: upstream, seq: editSeq, epoch: editEpoch,
+                                    stamped: stamped)) { _, stamp in
                 guard focused else { return }
-                if let next = ledger.upstream(stamp.value, ack: stamp.seq, goEpoch: stamp.epoch, local: text) {
+                if let next = ledger.upstream(stamp.value, ack: stamp.seq, goEpoch: stamp.epoch,
+                                              local: text, stamped: stamp.stamped) {
                     text = next
                     // Typing Go has not seen yet, replayed onto its rewrite.
                     if next != stamp.value { send(next, onChange) }
@@ -2491,6 +2495,7 @@ private struct GrMobTextField: View {
         let value: String
         let seq: Int
         let epoch: Int
+        let stamped: Bool
     }
 
     /// Every edit leaves by this one path, so the ledger records exactly

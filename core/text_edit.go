@@ -1,5 +1,7 @@
 package core
 
+import "github.com/rohanthewiz/grmob/richtext"
+
 // The text-edit ledger: how a native host tells Go's echo of its own
 // keystroke from Go's rewrite of the text, and what happens to keystrokes
 // that were typed against text Go has since replaced.
@@ -74,12 +76,36 @@ package core
 //
 // # What does not carry the stamps
 //
-// A field no edit has reached through TriggerTextEdit has no ledger and
-// carries neither prop. That covers every web build (the wasm host calls Go
-// synchronously, so there is no in-flight keystroke to race), static exports,
-// and any native field before its first keystroke. Tests and exports that
-// pinned a field's props see no change. A host that finds no editSeq falls
-// back to the value queue.
+// Nothing does until the host has sent a TriggerTextEdit. That covers every
+// web build (the wasm host calls Go synchronously, so there is no in-flight
+// keystroke to race), static exports, and a native session before its first
+// keystroke. Tests and exports that pinned a field's props see no change. A
+// host that finds no stamps falls back to the value queue.
+//
+// # Every field, once the host is sequenced
+//
+// The first TriggerTextEdit says the host speaks the protocol. From then on
+// every text field gets a ledger at its first render, holding the rendered
+// value as the host's, and carries the stamps (editSeq 0 until an edit of its
+// own is applied).
+//
+// It used to be each field's own first edit that made its ledger, and that
+// left a hole the Android emulator found in comps.PINInput, which is six
+// fields and one value. Typed at about 130ms a key:
+//
+//	cell 0  "3" sent, then "31" before focus moved   Go: code "31", focus → 2
+//	cell 1  focused by the first render, still ""    Go's render: cell 1 = "1"
+//	        "4" typed before that render arrives     Go: code "34"   the 1 is lost
+//
+// Go's change of cell 1 from "" to "1" was a rewrite, but cell 1 had no
+// ledger to count it in, so the "4" typed on the old text was applied as if
+// it were new. With a ledger from the first render, the render bumps cell 1's
+// epoch, the "4" (epoch 0) is dropped, and the host replays it onto "1" as
+// "14", which PINInput reads as a paste at cell 1: code "314".
+//
+// A host tells stamps from no stamps by the presence of editEpoch, not by a
+// nonzero editSeq: a field stamped from its render has editSeq 0 until its
+// first edit, and its rewrites must still be read as rewrites.
 //
 // The ledger is keyed by callback ID, which is positional within a pass (see
 // callbackRegistry.beginPass). A field that moves inherits whatever ledger
@@ -113,11 +139,13 @@ func (r *callbackRegistry) acceptEdit(id, value string, seq, epoch int) bool {
 	if r.edits == nil {
 		r.edits = make(map[string]*textEditLedger)
 	}
+	r.sequenced = true
 	l := r.edits[id]
 	if l == nil {
-		// The first edit this field has sent. Its epoch is whatever the host
-		// adopted, which for a field with no ledger is 0: Go stamped nothing,
-		// and the host reads a missing editEpoch as 0.
+		// The first edit this field has sent, and it was never stamped: the
+		// host was not sequenced when it was last rendered. Its epoch is
+		// whatever the host adopted, which for such a field is 0, since the
+		// host reads a missing editEpoch as 0.
 		l = &textEditLedger{epoch: epoch}
 		r.edits[id] = l
 	}
@@ -132,20 +160,40 @@ func (r *callbackRegistry) acceptEdit(id, value string, seq, epoch int) bool {
 }
 
 // stampEdit writes editSeq and editEpoch onto a text field's props, bumping
-// the epoch first when the value being rendered is a rewrite. It does nothing
-// for a field with no ledger. See the file comment for the rule.
+// the epoch first when the value being rendered is a rewrite. Before the host
+// is sequenced it does nothing for a field with no ledger; after, it makes
+// one. See the file comment for the rule.
+//
+// canon, when not nil, maps a value to the form Go itself would render it in,
+// and is consulted only when the bytes differ. It exists for RichTextEditor,
+// whose host sends its own JSON of the document: the same document spelled by
+// org.json or JSONSerialization is not byte-for-byte what encoding/json writes
+// (key order, escaped slashes, an empty block list), and without it every
+// keystroke's echo would read as a rewrite. See textEditFields.
 //
 // It is idempotent within a pass: a second render of the same value finds the
 // ledger's hostValue already equal to it.
-func (r *callbackRegistry) stampEdit(id, value string, props map[string]any) {
+func (r *callbackRegistry) stampEdit(id, value string, canon func(string) string, props map[string]any) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	l := r.edits[id]
 	if l == nil {
-		return
+		if !r.sequenced {
+			return
+		}
+		// A field the host will mount (or already shows) with this value:
+		// that is the text it believes it is showing, so this render is not a
+		// rewrite. See "Every field, once the host is sequenced".
+		l = &textEditLedger{hostValue: value}
+		r.edits[id] = l
 	}
 	if value != l.hostValue {
-		l.epoch++
+		// The host's spelling, rendered Go's way. When it matches, the render is
+		// an echo, and hostValue takes Go's bytes so the next pass compares
+		// equal without parsing again.
+		if canon == nil || canon(l.hostValue) != value {
+			l.epoch++
+		}
 		l.hostValue = value
 	}
 	props["editSeq"] = l.seq
@@ -162,28 +210,65 @@ func (r *callbackRegistry) purgeEditsLocked(live map[string]func(string)) {
 	}
 }
 
-// textEditLeafTypes are the leaf nodes whose value a native host edits
-// locally and sends as text. Select also uses a text callback, but its value
-// is picked from a list and not typed, so no keystroke can outrun it.
-var textEditLeafTypes = map[string]bool{
-	"Input":         true,
-	"InputPassword": true,
-	"NumericInput":  true,
-	"TextArea":      true,
+// textEditField says where a stamped node keeps the value the host edits,
+// and how to compare the host's spelling of it with Go's.
+type textEditField struct {
+	// prop is the key holding the value: "value" for the text fields and the
+	// code editor, "doc" for the rich-text editor.
+	prop string
+	// canon renders a host's value the way Go would. nil means the value is
+	// plain text and bytes are the comparison.
+	canon func(string) string
+}
+
+// textEditFields are the leaf nodes whose value a native host edits locally
+// and sends as text, keyed by node type. Select also uses a text callback,
+// but its value is picked from a list and not typed, so no keystroke can
+// outrun it.
+//
+// The two editors joined the four fields once the natives had the ledger:
+// both used to guard their echoes with the value queue this protocol
+// replaced, and both have the same race. A CodeEditor rebases like a field,
+// because its value is plain text. A RichTextEditor's value is a JSON
+// document, which has no "insertion at either end" to replay, so its hosts
+// adopt a rewrite as it stands; what it gains is Go dropping the stale edits
+// rather than applying them after the rewrite, and an echo recognized by its
+// epoch rather than by bytes the two sides spell differently.
+var textEditFields = map[string]textEditField{
+	"Input":          {prop: "value"},
+	"InputPassword":  {prop: "value"},
+	"NumericInput":   {prop: "value"},
+	"TextArea":       {prop: "value"},
+	"CodeEditor":     {prop: "value"},
+	"RichTextEditor": {prop: "doc", canon: canonicalDocJSON},
+}
+
+// canonicalDocJSON is a host's document JSON as Go would write it. A payload
+// that does not parse is returned unchanged: it never equals Go's render, so
+// the render reads as a rewrite and the host takes Go's document, which is
+// the right answer to a host that sent something unreadable (its onChange
+// dropped the edit; see RichTextEditor).
+func canonicalDocJSON(payload string) string {
+	doc, err := richtext.ParseJSON(payload)
+	if err != nil {
+		return payload
+	}
+	return doc.JSON()
 }
 
 // stampTextEdit is leafNode's hook: for a typed text field it adds the edit
 // stamps, when the field has a ledger.
 func stampTextEdit(ctx *Context, typ string, props map[string]any) {
-	if !textEditLeafTypes[typ] {
+	field, ok := textEditFields[typ]
+	if !ok {
 		return
 	}
 	id, _ := props["onChange"].(string)
-	value, _ := props["value"].(string)
+	value, _ := props[field.prop].(string)
 	if id == "" {
 		return
 	}
-	ctx.registry.stampEdit(id, value, props)
+	ctx.registry.stampEdit(id, value, field.canon, props)
 }
 
 // TriggerTextEdit dispatches one keystroke's worth of text from a native

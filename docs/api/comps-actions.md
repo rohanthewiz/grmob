@@ -451,11 +451,17 @@ An empty Text disables the button rather than reporting a concern. It is a legit
 
 Several copy buttons on one screen — one per code block — would all be announced "Copy", so AccessibilityLabel is where a caller says what is copied ("Copy code", "Copy invite link"). The copied text itself is not read out: it is usually on screen beside the button, and a URL or a snippet spoken in full is noise. The toast is announced by each platform's own toast machinery.
 
+#### Compact on Android
+
+The button is marked with a touchTarget of "compact", which only this widget writes. On Android it drops material3's minimums, a 40dp content height inside a 48dp touch target, and draws the button at its padding and label, as SwiftUI and the web already do. A code block's Copy sat in a strip 48dp tall on Android, against about 22px elsewhere, because the strip is the button's height.
+
+That is a trade, taken on purpose and for this widget only: Material's 48dp is an accessibility floor for touch. A copy action beside the text it copies is a secondary control, and a code block with a 48dp band above it reads as broken. Every other Button keeps the floor; see GrMobButton in the Android renderer.
+
 #### Theme roles read
 
 None of its own: the button is a comps.Button, and reads what Button reads for the Variant and Emphasis given.
 
-<small>[comps/copy_button.go:53](https://github.com/rohanthewiz/grmob/blob/master/comps/copy_button.go#L53)</small>
+<small>[comps/copy_button.go:68](https://github.com/rohanthewiz/grmob/blob/master/comps/copy_button.go#L68)</small>
 
 #### func (CopyButton) Render
 
@@ -465,7 +471,7 @@ func (c CopyButton) Render(ctx *core.Context) *core.Node
 
 Render draws the button. It takes no hook slot, so it may be rendered conditionally.
 
-<small>[comps/copy_button.go:88](https://github.com/rohanthewiz/grmob/blob/master/comps/copy_button.go#L88)</small>
+<small>[comps/copy_button.go:103](https://github.com/rohanthewiz/grmob/blob/master/comps/copy_button.go#L103)</small>
 
 ### type Emphasis
 

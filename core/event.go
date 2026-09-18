@@ -37,11 +37,17 @@ type callbackRegistry struct {
 	// registerBack for why.
 	backCounter int
 
-	// edits holds the text-edit ledger of each text callback a native host
-	// has sent a TriggerTextEdit to, by callback ID; see text_edit.go. Nil
-	// until the first one, which is every web build and every test that
-	// never dispatches an edit.
+	// edits holds the text-edit ledger of each text field a native host
+	// edits, by callback ID; see text_edit.go. Nil until the first
+	// TriggerTextEdit, which is every web build and every test that never
+	// dispatches an edit.
 	edits map[string]*textEditLedger
+
+	// sequenced is set by the first TriggerTextEdit: the host speaks the
+	// text-edit protocol, so from then on every text field is stamped from
+	// its first render rather than from its first edit. See "Every field,
+	// once the host is sequenced" in text_edit.go.
+	sequenced bool
 
 	// used marks IDs touched (registered or triggered) since the last
 	// beginPass; purge drops everything unmarked, so handlers for nodes that

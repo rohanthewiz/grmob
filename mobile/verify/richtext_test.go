@@ -27,26 +27,32 @@ var (
 
 // The echo guard, over the document's JSON rather than a string of text.
 //
-// The comparison being on the *JSON string* is the part worth pinning: Go
-// marshals with a fixed key order, so the same document is always the same
-// bytes, and a host that compared parsed values instead would be doing a deep
-// equality on every keystroke for an answer a string compare already has.
+// It used to compare JSON strings, on the claim that Go's fixed key order made
+// the same document the same bytes. It is the same bytes only when both sides
+// are Go: org.json escapes a slash, and neither host is bound to
+// encoding/json's key order or its omission of empty fields. So the hosts now
+// read Go's edit stamps (core/text_edit.go), and Go compares the host's JSON
+// with its own render as documents (canonicalDocJSON).
+//
+// replay: false is the part worth pinning beside the ledger. A rewrite
+// replayed by rebaseEdit splices the tail of one JSON string onto another,
+// which is not a document; the editor has to adopt Go's as it stands.
 func TestBothNativeRichTextEditorsGuardTheirEchoes(t *testing.T) {
 	pinExprs(t, swiftRichText, []struct{ expr, why string }{
-		{"private var pendingEchoes: [String] = []",
-			"the queue of documents sent upstream and not yet seen come back"},
-		{"if view.isFirstResponder, let echo = pendingEchoes.firstIndex(of: json)",
-			"an upstream document we sent is an echo, not an instruction"},
-		{"pendingEchoes.removeSubrange(...echo)",
-			"dropped through the match, because Go may coalesce renders"},
+		{"private var ledger = TextEditLedger(replay: false)",
+			"the documents sent and not yet acknowledged, adopted rather than replayed"},
+		{"ledger.upstream(json, ack: editSeq, goEpoch: editEpoch,",
+			"Go's stamps, not the bytes, decide echo versus rewrite"},
+		{"ledger.sent(runtime.textEdited(onChange, json, epoch: ledger.epoch), json)",
+			"every edit leaves sequenced and at the adopted epoch"},
 	})
 	pinExprs(t, kotlinRichText, []struct{ expr, why string }{
-		{"private val pendingEchoes = ArrayList<String>()",
-			"the queue of documents sent upstream and not yet seen come back"},
-		{"val echo = pendingEchoes.indexOf(json)",
-			"an upstream document we sent is an echo, not an instruction"},
-		{"repeat(echo + 1) { pendingEchoes.removeAt(0) }",
-			"dropped through the match, because Go may coalesce renders"},
+		{"private val ledger = TextEditLedger(\"\", 0, replay = false)",
+			"the documents sent and not yet acknowledged, adopted rather than replayed"},
+		{"ledger.upstream(json, editSeq, editEpoch, doc.toString(), stamped)",
+			"Go's stamps, not the bytes, decide echo versus rewrite"},
+		{"ledger.sent(host.textEdited(onChange, json, ledger.epoch), json)",
+			"every edit leaves sequenced and at the adopted epoch"},
 	})
 }
 

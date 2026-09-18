@@ -46,6 +46,21 @@ import "github.com/rohanthewiz/grmob/core"
 // snippet spoken in full is noise. The toast is announced by each platform's
 // own toast machinery.
 //
+// # Compact on Android
+//
+// The button is marked with a touchTarget of "compact", which only this
+// widget writes. On Android it drops material3's minimums, a 40dp content
+// height inside a 48dp touch target, and draws the button at its padding and
+// label, as SwiftUI and the web already do. A code block's Copy sat in a strip
+// 48dp tall on Android, against about 22px elsewhere, because the strip is
+// the button's height.
+//
+// That is a trade, taken on purpose and for this widget only: Material's 48dp
+// is an accessibility floor for touch. A copy action beside the text it
+// copies is a secondary control, and a code block with a 48dp band above it
+// reads as broken. Every other Button keeps the floor; see GrMobButton in the
+// Android renderer.
+//
 // # Theme roles read
 //
 // None of its own: the button is a comps.Button, and reads what Button reads
@@ -93,7 +108,7 @@ func (c CopyButton) Render(ctx *core.Context) *core.Node {
 	// whatever a later pass's CopyButton value holds.
 	text := c.Text
 
-	return Button{
+	n := Button{
 		Label: label,
 		OnTap: func() {
 			// Guarded as well as disabled: a tap can arrive in the window
@@ -115,4 +130,9 @@ func (c CopyButton) Render(ctx *core.Context) *core.Node {
 		AccessibilityHint:  orDefault(c.AccessibilityHint, "Copies to the clipboard"),
 		FocusRef:           c.FocusRef,
 	}.Render(ctx)
+	// Button.Render returns the core.Button node itself, so the mark lands on
+	// the control. A prop set here rather than a Button field keeps the opt
+	// out this widget's alone; see "Compact on Android".
+	n.Props["touchTarget"] = "compact"
+	return n
 }

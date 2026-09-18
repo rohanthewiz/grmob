@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
@@ -39,8 +40,14 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicSecureTextField
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.input.KeyboardActionHandler
+import androidx.compose.foundation.text.input.TextFieldDecorator
+import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.input.TextObfuscationMode
+import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -52,6 +59,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -73,6 +81,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -97,6 +106,7 @@ import androidx.compose.ui.semantics.expand
 import androidx.compose.ui.semantics.semantics
 import androidx.core.view.WindowCompat
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -105,8 +115,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
@@ -887,9 +895,6 @@ internal fun textStyle(s: GrMobStyle?): TextStyle {
 
 @Composable
 private fun GrMobButton(node: GrMobNode, extra: Modifier) {
-    val runtime = LocalGrMobRuntime.current
-    val s = node.style
-    val onClick = node.stringProp("onClick")
     // core.OnLongPress on a Button takes a different control, because
     // material3's Button has no long-click slot and a combinedClickable put
     // on its modifier would sit *outside* the Button's own clickable and
@@ -905,12 +910,48 @@ private fun GrMobButton(node: GrMobNode, extra: Modifier) {
         GrMobLongPressButton(node, extra)
         return
     }
+    // A compact button: touchTarget "compact", which only comps.CopyButton
+    // writes. material3's Button has two minimums its parameters do not reach,
+    // and both are switched off here rather than by building the button from
+    // parts, so the ripple, the role and the one merged accessibility node are
+    // material3's own:
+    //
+    //   48dp   the touch-target padding Surface(onClick) lays out around a
+    //          smaller button (minimumInteractiveComponentSize). Unspecified
+    //          in LocalMinimumInteractiveComponentSize turns it off.
+    //   40dp   ButtonDefaults.MinHeight, a defaultMinSize on the content row.
+    //          defaultMinSize applies only when the incoming minimum is zero,
+    //          and Surface passes its own minimum through, so a 1dp minimum
+    //          on the button's modifier leaves it nothing to raise.
+    //
+    // What remains is the button at its padding and label, as SwiftUI and the
+    // web draw it: a tutorial code block's Copy had put its strip at 48dp on
+    // this target alone. The finger still gets 48dp: Compose widens a small
+    // clickable's touch bounds to the platform minimum without laying it out
+    // larger (measured on the emulator: a 47px button, a 126 by 118px
+    // clickable).
+    val compact = node.stringProp("touchTarget") == "compact"
+    CompositionLocalProvider(
+        LocalMinimumInteractiveComponentSize provides
+            if (compact) Dp.Unspecified else LocalMinimumInteractiveComponentSize.current,
+    ) {
+        GrMobMaterialButton(node, extra, compact)
+    }
+}
+
+/** GrMobButton's material3 path; `compact` is explained there. */
+@Composable
+private fun GrMobMaterialButton(node: GrMobNode, extra: Modifier, compact: Boolean) {
+    val runtime = LocalGrMobRuntime.current
+    val s = node.style
+    val onClick = node.stringProp("onClick")
     // Style properties the Go theme owns are fed into material3's slots
     // instead of boxModifier: Button draws its own container, so background/
     // radius/padding must go through its API to keep ripple + a11y correct.
+    val box = marginAndSize(s, extra)
     Button(
         onClick = { if (onClick.isNotEmpty()) runtime.click(onClick) },
-        modifier = marginAndSize(s, extra),
+        modifier = if (compact) box.heightIn(min = 1.dp).widthIn(min = 1.dp) else box,
         // The platform disabled state: material3 stops dispatching, drops the
         // ripple, and marks the node disabled for TalkBack.
         enabled = !node.isDisabled(),
@@ -1267,6 +1308,30 @@ private fun GrMobSlider(node: GrMobNode, extra: Modifier) {
  * text, and Go applied those as if they were new (",gamma," into a TagInput
  * committed "mma" on the emulator). The epoch lets Go drop them, and the
  * ledger replays them onto the rewrite.
+ *
+ * # Why a TextFieldState, and not a value and onValueChange
+ *
+ * The ledger fixed what Go did with keystrokes. It could not fix the ones
+ * that never reached it: with the value-and-callback BasicTextField, a key or
+ * two typed just after a rewrite landed never came out of onValueChange at
+ * all. The emulator showed it with `adb shell input text` into lesson 5.8, and
+ * with every IME disabled:
+ *
+ *   burst "alpha,beta,gamma,delta,"   Compose 1.6.8   bea   gmma  dlta
+ *                                     Compose 1.7.6   bta   amma  dlta
+ *
+ * That field keeps the text twice, once in the caller's state and once in the
+ * editing buffer the key handler and the IME write into, and it reconciles
+ * the two when the caller passes a new value. A rewrite is exactly such a
+ * value, and a keystroke that lands between the rewrite and that
+ * reconciliation is applied to a buffer the reconciliation then replaces.
+ *
+ * A TextFieldState is the one buffer. The key handler, the IME and a
+ * rewrite all edit it, in the order they happen, so nothing is overwritten.
+ * The costs, both small: user edits are read by observing the state rather
+ * than from a callback (see the snapshotFlow below, and LastText for how a
+ * rewrite is kept from being read back as typing), and the upstream handling
+ * runs in an effect, because a state is edited from outside composition.
  */
 @Composable
 private fun GrMobTextField(
@@ -1297,39 +1362,91 @@ private fun GrMobTextField(
     val focusManager = LocalFocusManager.current
     val interactions = remember { MutableInteractionSource() }
     val focused by interactions.collectIsFocusedAsState()
-    var text by remember { mutableStateOf(upstream) }
+    // The field's one buffer; see "Why a TextFieldState".
+    val field = remember { TextFieldState(upstream) }
+    // The text this field last sent, or last had written into it for Go. The
+    // observer below reads every change to the buffer and sends the ones that
+    // differ from it, which are the user's.
+    val last = remember { LastText(upstream) }
     // Go's edit stamps: the last edit it applied and its rewrite count. Both are
     // 0 on a field no edit has reached. See core/text_edit.go.
     val editSeq = node.intProp("editSeq")
     val editEpoch = node.intProp("editEpoch")
+    // Whether Go stamped this field at all; see TextEditLedger.
+    val stamped = node.props.containsKey("editEpoch")
     val ledger = remember { TextEditLedger(upstream, editEpoch) }
     // Every edit leaves by this one path, so the ledger records exactly what
     // Go was sent and under which epoch.
     val send = { next: String ->
+        last.text = next
         if (onChange.isNotEmpty()) {
             ledger.sent(runtime.textEdited(onChange, next, ledger.epoch), next)
         }
     }
+    // Writes Go's text into a blurred field's buffer, where the caret has no
+    // user to follow. `last` is set first, so the observer reads the change as
+    // Go's and does not send it back. A focused field's rewrite keeps its caret
+    // instead; see the effect below.
+    val adopt = { next: String ->
+        last.text = next
+        if (field.text.toString() != next) field.setTextAndPlaceCursorAtEnd(next)
+    }
+
+    // The user's edits. snapshotFlow emits the buffer's text after each change
+    // is applied, conflating any that land between two frames, which is all Go
+    // needs: every value it is sent is a whole text, and the ledger reads
+    // whichever of them Go acknowledges.
+    //
+    // The send is read through rememberUpdatedState because the effect outlives
+    // the composition that started it, and the callback ID it sends under can
+    // change between passes (IDs are positional; see callbackRegistry).
+    val currentSend by rememberUpdatedState(send)
+    LaunchedEffect(field) {
+        snapshotFlow { field.text.toString() }.collect { now ->
+            if (now != last.text) currentSend(now)
+        }
+    }
+
     // The three together, because each can change alone: an echo moves only
     // the ack, and Go refusing an edit moves the ack and the epoch and leaves
     // the value where it was.
+    //
+    // In an effect rather than in the composition body, where this used to
+    // run: it writes the buffer, and a TextFieldState is edited from outside
+    // composition. Keyed on the stamps and on focus, which are the two things
+    // it answers to. The effect reads the buffer when it runs, so typing that
+    // landed after this composition is in `local` and is replayed with the
+    // rest.
     val seen = Triple(upstream, editSeq, editEpoch)
-    var lastSeen by remember { mutableStateOf(seen) }
-
-    if (seen != lastSeen) {
-        lastSeen = seen
-        if (focused) {
-            ledger.upstream(upstream, editSeq, editEpoch, text)?.let { next ->
-                text = next
-                // Typing Go has not seen yet, replayed onto its rewrite.
-                if (next != upstream) send(next)
-            }
+    val lastSeen = remember { LastSeen(seen) }
+    LaunchedEffect(seen, focused) {
+        val fresh = seen != lastSeen.value
+        lastSeen.value = seen
+        if (!focused) {
+            // Go-owned while blurred; anything in flight died with the focus
+            // session.
+            ledger.reset(upstream, editEpoch)
+            adopt(upstream)
+            return@LaunchedEffect
         }
-    }
-    if (!focused) {
-        // Go-owned while blurred; anything in flight died with the focus session.
-        ledger.reset(upstream, editEpoch)
-        if (text != upstream) text = upstream
+        if (!fresh) return@LaunchedEffect
+        ledger.upstream(upstream, editSeq, editEpoch, field.text.toString(), stamped)?.let { next ->
+            // The caret keeps its offset, clamped to the new text, which is
+            // what the value-and-callback field did with a new value. It is
+            // what makes a transform typeable mid-text: an uppercasing
+            // onChange rewrites every keystroke, and a caret sent to the end
+            // each time would put the second letter typed in the middle at
+            // the end. A rewrite that shortens the text (a committed tag)
+            // clamps it to the end, where the replayed typing is.
+            last.text = next
+            val keep = field.selection
+            field.edit {
+                replace(0, length, next)
+                selection = TextRange(keep.start.coerceAtMost(next.length), keep.end.coerceAtMost(next.length))
+            }
+            // Typing Go has not seen yet, replayed onto its rewrite.
+            if (next != upstream) send(next)
+        }
     }
 
     // The focus edges, dispatched to Go on the void channel like onSubmit.
@@ -1406,72 +1523,98 @@ private fun GrMobTextField(
         modifier = modifier.heightIn(min = (line * rows).dp)
     }
 
-    BasicTextField(
-        value = text,
-        // A disabled field refuses focus outright, so the IME never opens and
-        // the focused/blurred bookkeeping above simply stays in its blurred
-        // branch — Go-owned, which is the correct reading of an inert field.
-        enabled = !node.isDisabled(),
-        onValueChange = {
-            text = it
-            send(it)
+    val keyboard = KeyboardOptions(
+        keyboardType = when {
+            numeric -> KeyboardType.Number
+            password -> KeyboardType.Password
+            else -> KeyboardType.Text
         },
-        modifier = modifier,
-        interactionSource = interactions,
-        textStyle = textStyle(s),
-        singleLine = !multiline,
-        visualTransformation =
-            if (password) PasswordVisualTransformation() else VisualTransformation.None,
-        keyboardOptions = KeyboardOptions(
-            keyboardType = when {
-                numeric -> KeyboardType.Number
-                password -> KeyboardType.Password
-                else -> KeyboardType.Text
-            },
-            // A submit-carrying field advertises Done so the IME's action key
-            // reads as "act on this", mirroring the iOS submitLabel; a field
-            // with somewhere to go advertises Next instead, so the key reads
-            // "move on" and the platform draws the arrow users expect.
-            //
-            // Next is tested first because it is the more specific claim: Go
-            // only stamps it on a field whose onSubmit it wired itself, so the
-            // two can never disagree about what the key does.
-            imeAction = when {
-                imeAction == "next" -> ImeAction.Next
-                onSubmit.isNotEmpty() -> ImeAction.Done
-                else -> ImeAction.Default
-            },
-        ),
-        // The IME action dispatches onSubmit as a plain void event — the same
-        // channel as a Button tap. Both arms dispatch the same ID: Compose
-        // routes the callback by which action the field advertised, so a field
-        // showing Next arrives here as onNext and one showing Done as onDone,
-        // and Go has already decided which handler that ID points at.
+        // A submit-carrying field advertises Done so the IME's action key
+        // reads as "act on this", mirroring the iOS submitLabel; a field
+        // with somewhere to go advertises Next instead, so the key reads
+        // "move on" and the platform draws the arrow users expect.
         //
-        // Deliberately NOT LocalFocusManager.moveFocus(FocusDirection.Next):
-        // that would walk Compose's own focus graph, which is derived from
-        // layout and knows nothing about the order the Go code declared.
-        //
-        // A multiline field never gets here — Compose gives a non-singleLine
-        // BasicTextField a return key that inserts a newline, which is the
-        // right call. A TextArea in a focus order simply does not advance.
-        keyboardActions = KeyboardActions(
-            onDone = { if (onSubmit.isNotEmpty()) runtime.click(onSubmit) },
-            onNext = { if (onSubmit.isNotEmpty()) runtime.click(onSubmit) },
-        ),
-        decorationBox = { inner ->
-            Box {
-                if (text.isEmpty()) {
-                    Text(
-                        node.stringProp("placeholder"),
-                        style = textStyle(s).copy(color = Color(0x993C3C43)),
-                    )
-                }
-                inner()
-            }
+        // Next is tested first because it is the more specific claim: Go
+        // only stamps it on a field whose onSubmit it wired itself, so the
+        // two can never disagree about what the key does.
+        imeAction = when {
+            imeAction == "next" -> ImeAction.Next
+            onSubmit.isNotEmpty() -> ImeAction.Done
+            else -> ImeAction.Default
         },
     )
+    // The IME action dispatches onSubmit as a plain void event — the same
+    // channel as a Button tap. One handler serves Done and Next: the field
+    // advertised one of them, and Go has already decided which handler the
+    // ID points at.
+    //
+    // performDefaultAction is deliberately never called. For Next it would be
+    // a focus move through Compose's own focus graph, which is derived from
+    // layout and knows nothing about the order the Go code declared; for Done
+    // it would hide the keyboard, which the old KeyboardActions handlers did
+    // not do either.
+    //
+    // A multiline field gets no handler: its return key inserts a newline,
+    // which is the right call. A TextArea in a focus order simply does not
+    // advance.
+    val action = if (multiline) null else KeyboardActionHandler {
+        if (onSubmit.isNotEmpty()) runtime.click(onSubmit)
+    }
+    val decorator = TextFieldDecorator { inner ->
+        Box {
+            if (field.text.isEmpty()) {
+                Text(
+                    node.stringProp("placeholder"),
+                    style = textStyle(s).copy(color = Color(0x993C3C43)),
+                )
+            }
+            inner()
+        }
+    }
+
+    // A disabled field refuses focus outright, so the IME never opens and the
+    // focused/blurred bookkeeping above simply stays in its blurred branch —
+    // Go-owned, which is the correct reading of an inert field.
+    if (password) {
+        // The secure field is the password variant of the same state-based
+        // field: single-line by construction, and it refuses cut and copy.
+        // Hidden obfuscation rather than the platform's reveal-the-last-key,
+        // which is what PasswordVisualTransformation drew before it.
+        BasicSecureTextField(
+            state = field,
+            modifier = modifier,
+            enabled = !node.isDisabled(),
+            textStyle = textStyle(s),
+            keyboardOptions = keyboard,
+            onKeyboardAction = action,
+            interactionSource = interactions,
+            decorator = decorator,
+            textObfuscationMode = TextObfuscationMode.Hidden,
+        )
+    } else {
+        BasicTextField(
+            state = field,
+            modifier = modifier,
+            enabled = !node.isDisabled(),
+            textStyle = textStyle(s),
+            keyboardOptions = keyboard,
+            onKeyboardAction = action,
+            lineLimits = if (multiline) TextFieldLineLimits.MultiLine() else TextFieldLineLimits.SingleLine,
+            interactionSource = interactions,
+            decorator = decorator,
+        )
+    }
 }
+
+/**
+ * The text a GrMobTextField last sent or was given by Go: a plain holder, not
+ * snapshot state, because it is bookkeeping read by the edit observer and
+ * nothing is drawn from it. See GrMobTextField's `last`.
+ */
+private class LastText(var text: String)
+
+/** The stamps a GrMobTextField last read, held the same way as [LastText]. */
+private class LastSeen(var value: Triple<String, Int, Int>)
 
 // ---------------------------------------------------------------------------
 // Flex containers
@@ -2664,8 +2807,8 @@ private fun GrMobList(node: GrMobNode, extra: Modifier) {
  *    has none — the page around it is what scrolls. The header renders as an
  *    ordinary row, which is also what the DOM draws for a sticky element whose
  *    scroll container is taller than it.
- *  - Placement animation. animateItemPlacement exists only in a lazy item
- *    scope; rows still animate their own style under their own Transition.
+ *  - Placement animation. animateItem exists only in a lazy item scope; rows
+ *    still animate their own style under their own Transition.
  *  - core.OnEndReached. EndReachedReporter watches the lazy state's visible
  *    rows, which this arm never feeds, so it does not fire. An endless feed
  *    needs a viewport to have an end — give the List a Height (the tutorial's
@@ -2703,12 +2846,17 @@ private fun isStickyHeader(row: GrMobNode): Boolean = row.style?.position == "st
  * rows slide to their new positions on reorder/insert/removal instead of
  * teleporting. (A Transition on a row animates that row's own property
  * changes — two declarations, two scopes.) An extension on LazyItemScope
- * because animateItemPlacement exists nowhere else.
+ * because animateItem exists nowhere else.
+ *
+ * animateItem replaced animateItemPlacement in Compose 1.7, and it animates
+ * more than placement: by default a row also fades in when inserted and out
+ * when removed. Both fades are turned off, so a List's Transition still means
+ * what it meant under 1.6, rows sliding to their places; an appearing row
+ * that faded would be a new behaviour nobody declared.
  */
-@OptIn(ExperimentalFoundationApi::class)
 private fun LazyItemScope.rowPlacement(s: GrMobStyle?): Modifier =
     if ((s?.transitionMs ?: 0) > 0) {
-        Modifier.animateItemPlacement(s!!.transitionTween())
+        Modifier.animateItem(fadeInSpec = null, placementSpec = s!!.transitionTween(), fadeOutSpec = null)
     } else {
         Modifier
     }

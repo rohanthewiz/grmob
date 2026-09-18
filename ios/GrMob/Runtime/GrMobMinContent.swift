@@ -65,13 +65,22 @@ import SwiftUI
 ///                           something the rest of the arithmetic does not
 ///                           carry.
 ///
-///   every node type that    floors at 0 — buttons, inputs, images, maps. Each
-///   is not text or a        has a min-content size in CSS and none of them is
-///   plain container         a function of a string, so each would need its
+///   every node type that    floors at 0 — inputs, images, maps. Each has a
+///   is not text, a button   min-content size in CSS and none of them is a
+///   or a plain container    function of a string, so each would need its
 ///                           own measurement. Text is where the divergence was
 ///                           found and where it bites, being the only leaf
 ///                           whose whole business is to be narrower than it
 ///                           wants to be.
+///
+///   a Button                floors at its label's widest word plus the
+///                           padding GrMobButton draws, which IS a function of
+///                           a string. It used to floor at 0 with the others,
+///                           and lesson 2.6 showed the cost: a Save button
+///                           beside a caption that overflowed its row was the
+///                           child the solver squeezed, and its label wrapped
+///                           as "Sav / e". A browser floors a <button> at its
+///                           min-content the same way and squeezes the caption.
 ///
 ///   the column axis         not measured here. A text's min-content HEIGHT
 ///                           is a function of the width it is laid out at,
@@ -155,6 +164,8 @@ enum GrMobMinContent {
         // the widest child is theirs too.
         case "Column", "Card", "Box", "Fragment", "Theme":
             inner = node.children.reduce(0) { max($0, width(of: $1)) }
+        case "Button":
+            return buttonWidth(node)
         default:
             return 0
         }
@@ -163,6 +174,32 @@ enum GrMobMinContent {
         // insets — which is not what a browser does with one.
         guard inner > 0 else { return 0 }
         return capped(inner, node.style) + outerInsets(node.style)
+    }
+
+    /// A Button's min-content width: its label's widest word, inside the
+    /// padding GrMobButton draws around it, plus its margin.
+    ///
+    /// Its own function because a Button's box is not grMobBox's. GrMobButton
+    /// puts the padding inside the pressable control and falls back to 16
+    /// points a side when core gave none (its paddingOrDefault), so
+    /// outerInsets, which reads the style's padding as written, would floor a
+    /// default button 32 points narrower than it draws. The border is left out
+    /// for outerInsets' reason: GrMobButtonStyle strokes it inside the shape,
+    /// so it adds nothing to the size.
+    ///
+    /// The MaxWidth clamp is capped()'s rule, over the same border box, so a
+    /// capped button whose label overflows it does not hold its row open.
+    private static func buttonWidth(_ node: GrMobNode) -> CGFloat {
+        let label = textWidth(node.stringProp("label"), style: node.style)
+        // An icon-only button (no label) keeps the old floor of zero: there is
+        // no string here to measure, and zero is the safe direction.
+        guard label > 0 else { return 0 }
+        let s = node.style
+        let written = s?.padding ?? .zero
+        let padding = written == .zero ? 32 : CGFloat(written.left + written.right)
+        var box = label + padding
+        if let cap = GrMobMaxWidth.fixedLimit(s?.maxWidth ?? "") { box = min(box, cap) }
+        return box + CGFloat((s?.margin.left ?? 0) + (s?.margin.right ?? 0))
     }
 
     /// Whether a Column child's automatic minimum height is its content

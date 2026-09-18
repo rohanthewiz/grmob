@@ -42,8 +42,8 @@ import (
 // into Placeables through compose-ui, which needs the Android runtime. Nor can
 // the policy be read and pinned the way the gobind mapping is: this machine's
 // gradle cache holds sources for foundation-layout 1.10.0, and
-// android/app/build.gradle pins the Compose BOM at 2024.06.00, which resolves
-// foundation-layout to 1.6.8 — whose sources are not cached, only its .aar. A
+// android/app/build.gradle pinned the Compose BOM at 2024.06.00, which resolved
+// foundation-layout to 1.6.8 — whose sources were not cached, only its .aar. A
 // pin against the wrong version is the mistake gobindVersion exists to prevent.
 //
 // So the honest state is: three targets asked, one derived. What the derivation

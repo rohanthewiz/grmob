@@ -284,11 +284,50 @@ func checkMinContent() -> [String] {
         problems.append("a percentage width is a declaration too")
     }
     // The node types with a min-content size that is not a function of a
-    // string. Each would need its own measurement; none has one.
-    for type in ["Button", "Input", "Image", "MapView", "Spacer"] {
+    // string. Each would need its own measurement; none has one. (A Button
+    // is not among them: its label is a string. See below.)
+    for type in ["Input", "Image", "MapView", "Spacer"] {
         if GrMobMinContent.width(of: node(type, props: ["content": "4.12"])) != 0 {
             problems.append("\(type) should floor at zero until something measures it")
         }
+    }
+
+    // --- a Button floors at its label, inside the padding it draws ---------
+    //
+    // Lesson 2.6's Save button, squeezed by a long caption beside it and
+    // wrapped as "Sav / e" while it floored at zero.
+    let save = GrMobMinContent.width(of: node("Button", props: ["label": "Save"]))
+    let saveText = GrMobMinContent.textWidth("Save", style: nil)
+    // GrMobButton's default padding is 16 a side when core gave it none.
+    if abs(save - (saveText + 32)) > 0.01 {
+        problems.append("a default Button should floor at its label plus 32 points of padding, got \(save) for a \(saveText)-point label")
+    }
+    // The widest word, not the whole label: a two-word button may wrap, as a
+    // <button> in a browser may.
+    let twoWords = GrMobMinContent.width(of: node("Button", props: ["label": "Save draft"]))
+    let widestWord = max(GrMobMinContent.measure("Save", style: nil),
+                         GrMobMinContent.measure("draft", style: nil))
+    if abs(twoWords - (widestWord + 32)) > 0.01
+        || twoWords >= GrMobMinContent.measure("Save draft", style: nil) + 32 {
+        problems.append("a Button should floor at its widest word, got \(twoWords)")
+    }
+    var buttonBox = GrMobStyle()
+    buttonBox.padding = GrMobStyle.Edges(top: 0, right: 4, bottom: 0, left: 4)
+    buttonBox.margin = GrMobStyle.Edges(top: 0, right: 3, bottom: 0, left: 3)
+    let tight = GrMobMinContent.width(of: node("Button", style: buttonBox, props: ["label": "Save"]))
+    if abs(tight - (saveText + 8 + 6)) > 0.01 {
+        problems.append("a Button's own padding replaces the default and its margin adds, got \(tight)")
+    }
+    var cappedButton = GrMobStyle()
+    cappedButton.maxWidth = "20px"
+    if GrMobMinContent.width(of: node("Button", style: cappedButton, props: ["label": "Save"])) > 20.01 {
+        problems.append("a Button's MaxWidth should clamp its floor")
+    }
+    if GrMobMinContent.width(of: node("Button", props: ["label": ""])) != 0 {
+        problems.append("a Button with no label has nothing to measure and should floor at zero")
+    }
+    if GrMobMinContent.width(of: node("Button", style: sized, props: ["label": "Save"])) != 0 {
+        problems.append("a Button with a declared width should floor at zero like any other node")
     }
 
     // --- the column axis: which children floor at their base height -------

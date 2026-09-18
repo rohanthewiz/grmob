@@ -27,14 +27,28 @@ package com.grmob.runtime
  * composable calls rather than being spread through its body. The iOS
  * renderer has the same class under the same name.
  *
+ * # Who uses it
+ *
+ * GrMobTextField (Input, InputPassword, NumericInput, TextArea),
+ * GrMobCodeEditor and GrMobRichTextState. The rich-text editor constructs it
+ * with `replay = false`: its value is a JSON document, and splicing the text
+ * of one JSON string onto another makes something that is not a document. It
+ * adopts Go's rewrite as it stands, which is what its value queue did.
+ *
  * # When Go stamps nothing
  *
- * A field no edit has reached carries no editSeq; nor does anything a host
- * without the protocol renders. [upstream] then falls back to the value
- * queue this class replaced: a value we sent is an echo, and any other value
- * is Go speaking for itself.
+ * Before this host has sent its first edit, Go stamps no field; nor does
+ * anything a host without the protocol renders. [upstream] then falls back to
+ * the value queue this class replaced: a value we sent is an echo, and any
+ * other value is Go speaking for itself.
+ *
+ * Stamped means the node carries editEpoch at all, and not that editSeq is
+ * nonzero. Once this host is sequenced, Go stamps every field from its first
+ * render, so a field Go has rewritten before its first edit arrives with
+ * editSeq 0 and editEpoch 1, and that is a rewrite (core/text_edit.go, "Every
+ * field, once the host is sequenced": comps.PINInput lost keys to it).
  */
-internal class TextEditLedger(anchor: String, epoch: Int) {
+internal class TextEditLedger(anchor: String, epoch: Int, private val replay: Boolean = true) {
     /** The rewrite epoch this field has adopted; sent with every edit. */
     var epoch: Int = epoch
         private set
@@ -48,6 +62,14 @@ internal class TextEditLedger(anchor: String, epoch: Int) {
 
     /** Edits sent and not yet acknowledged, oldest first. */
     private val pending = ArrayDeque<Pair<Int, String>>()
+
+    /**
+     * The text the last rewrite was rebased from: what Go had read before it
+     * rewrote. Kept for [rebaseCaret], which needs the same basis
+     * [rebaseEdit] used to tell typing at the end from typing at the start.
+     */
+    var lastBasis: String = anchor
+        private set
 
     /** Records an edit just sent under [seq]. */
     fun sent(seq: Int, text: String) {
@@ -70,8 +92,8 @@ internal class TextEditLedger(anchor: String, epoch: Int) {
      * to keep its own. When the returned text differs from [value], the
      * caller must send it as a new edit: it carries typing Go has not seen.
      */
-    fun upstream(value: String, ack: Int, goEpoch: Int, local: String): String? {
-        if (ack == 0) return legacy(value)
+    fun upstream(value: String, ack: Int, goEpoch: Int, local: String, stamped: Boolean): String? {
+        if (!stamped) return legacy(value)
         // Let go of every edit Go has applied. The last of them is the text Go
         // read before this render, which is the base of any rewrite.
         var basis = anchor
@@ -83,7 +105,8 @@ internal class TextEditLedger(anchor: String, epoch: Int) {
         epoch = goEpoch
         pending.clear()
         anchor = value
-        return rebaseEdit(basis, local, value)
+        lastBasis = basis
+        return if (replay) rebaseEdit(basis, local, value) else value
     }
 
     /**
@@ -121,4 +144,32 @@ internal fun rebaseEdit(basis: String, local: String, rewrite: String): String =
     local.startsWith(basis) -> rewrite + local.substring(basis.length)
     local.endsWith(basis) -> local.substring(0, local.length - basis.length) + rewrite
     else -> rewrite
+}
+
+/**
+ * Where the caret goes after [rebaseEdit] replayed [local] onto [rewrite],
+ * for a host that owns its selection (the code editor; a plain field lets
+ * Compose coerce the old one). [caret] is the caret in [local].
+ *
+ * It follows the typing that was replayed, since that is where the user was:
+ *
+ *   typed at the end    keep the distance from the end
+ *       basis "beta,"  local "beta,ga|"  rebased "ga|"
+ *   typed at the start  keep the distance from the start
+ *       basis "ab"     local "x|ab"      rebased "x|AB"
+ *   Go's text won       the end of Go's text, which is where a rewrite always
+ *                       put the caret before there was a rebase
+ *
+ * The cases are [rebaseEdit]'s, in its order, so the two cannot disagree
+ * about which end the typing was at.
+ */
+internal fun rebaseCaret(basis: String, local: String, rewrite: String, caret: Int): Int {
+    val rebased = rebaseEdit(basis, local, rewrite)
+    val at = when {
+        local == basis -> rebased.length
+        local.startsWith(basis) -> rebased.length - (local.length - caret)
+        local.endsWith(basis) -> caret
+        else -> rebased.length
+    }
+    return at.coerceIn(0, rebased.length)
 }

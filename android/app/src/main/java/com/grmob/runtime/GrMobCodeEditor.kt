@@ -72,10 +72,11 @@ import androidx.compose.ui.unit.sp
  *
  * # The three rules, as they land here
  *
- *  1. **Echo guard.** Identical bookkeeping to GrMobTextField's
- *     `pendingEchoes`, one type wider: the local state is a `TextFieldValue`
- *     rather than a `String`, so an echo that is dropped leaves the *selection*
- *     alone as well as the text.
+ *  1. **Echo guard.** GrMobTextField's TextEditLedger, one type wider: the
+ *     local state is a `TextFieldValue` rather than a `String`, so an echo that
+ *     is dropped leaves the *selection* alone as well as the text, and a
+ *     rewrite that replays in-flight typing puts the caret where that typing
+ *     was ([rebaseCaret]).
  *
  *  2. **Decoration is advisory and per line.** The transformation compares each
  *     row's concatenated text with the line under it and paints only where they
@@ -126,41 +127,57 @@ internal fun GrMobCodeEditor(node: GrMobNode, extra: Modifier) {
     val focusManager = LocalFocusManager.current
 
     var buffer by remember { mutableStateOf(TextFieldValue(upstream)) }
-    val pendingEchoes = remember { mutableListOf<String>() }
-    var lastUpstream by remember { mutableStateOf(upstream) }
+    // Go's edit stamps and this editor's half of them. See core/text_edit.go
+    // and GrMobTextEdits.kt; the rule is GrMobTextField's, unchanged.
+    val editSeq = node.intProp("editSeq")
+    val editEpoch = node.intProp("editEpoch")
+    // Whether Go stamped this editor at all; see TextEditLedger.
+    val stamped = node.props.containsKey("editEpoch")
+    val ledger = remember { TextEditLedger(upstream, editEpoch) }
 
-    // The echo guard. The argument is GrMobTextField's, unchanged: every value
-    // this editor sends upstream is queued, an upstream change matching a
-    // queued entry is our own edit coming back (drop the queue *through* the
-    // match, because Go may coalesce renders and skip intermediates), and one
-    // matching nothing we sent can only be Go speaking for itself and wins even
-    // mid-typing.
-    if (upstream != lastUpstream) {
-        lastUpstream = upstream
+    // One place every local edit leaves by, so the ledger and the dispatch can
+    // never get out of step with each other.
+    val commit: (TextFieldValue) -> Unit = { next ->
+        buffer = next
+        if (onChange.isNotEmpty()) {
+            ledger.sent(runtime.textEdited(onChange, next.text, ledger.epoch), next.text)
+        }
+    }
+
+    // The echo guard. It used to be a queue of the values sent upstream, with
+    // any upstream value matching nothing in it read as a rewrite; that is
+    // GrMobTextField's old guard, and it had the same hole: a rewrite landing
+    // behind keystrokes already sent let Go apply them as new. Now Go stamps
+    // the editor with the last edit it applied and its rewrite count, a higher
+    // count is a rewrite that wins even mid-typing, and anything else is our
+    // own typing coming back.
+    //
+    // The three together, because each can change alone: an echo moves only
+    // the ack, and a refused edit moves the ack and the epoch and leaves the
+    // value where it was.
+    val seen = Triple(upstream, editSeq, editEpoch)
+    var lastSeen by remember { mutableStateOf(seen) }
+    if (seen != lastSeen) {
+        lastSeen = seen
         if (focused) {
-            val echo = pendingEchoes.indexOf(upstream)
-            if (echo >= 0) {
-                repeat(echo + 1) { pendingEchoes.removeAt(0) }
-            } else {
-                buffer = TextFieldValue(upstream, TextRange(upstream.length))
-                pendingEchoes.clear()
+            val local = buffer
+            ledger.upstream(upstream, editSeq, editEpoch, local.text, stamped)?.let { next ->
+                // The caret follows the typing that was replayed; with nothing
+                // replayed it lands at the end of Go's text, as it always did.
+                val caret = if (!stamped) next.length
+                else rebaseCaret(ledger.lastBasis, local.text, upstream, local.selection.end)
+                buffer = TextFieldValue(next, TextRange(caret))
+                // Typing Go has not seen yet, replayed onto its rewrite.
+                if (next != upstream && onChange.isNotEmpty()) {
+                    ledger.sent(runtime.textEdited(onChange, next, ledger.epoch), next)
+                }
             }
         }
     }
     if (!focused) {
-        // Go-owned while blurred; any queued echoes died with the focus session.
-        pendingEchoes.clear()
+        // Go-owned while blurred; anything in flight died with the focus session.
+        ledger.reset(upstream, editEpoch)
         if (buffer.text != upstream) buffer = TextFieldValue(upstream)
-    }
-
-    // One place every local edit leaves by, so the echo ledger and the dispatch
-    // can never get out of step with each other.
-    val commit: (TextFieldValue) -> Unit = { next ->
-        buffer = next
-        if (onChange.isNotEmpty()) {
-            pendingEchoes.add(next.text)
-            runtime.textChanged(onChange, next.text)
-        }
     }
 
     // The selection, as byte offsets into the UTF-8 value. Compose counts
@@ -343,7 +360,7 @@ internal fun GrMobCodeEditor(node: GrMobNode, extra: Modifier) {
                         keyboardType = KeyboardType.Ascii,
                         // Both corrupt source: autocorrect rewrites identifiers and
                         // capitalization capitalises the first keyword of every line.
-                        autoCorrect = false,
+                        autoCorrectEnabled = false,
                         capitalization = KeyboardCapitalization.None,
                     ),
                     // The requester sits on the field and not on the Row above it:

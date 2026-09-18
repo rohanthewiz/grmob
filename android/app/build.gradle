@@ -62,7 +62,7 @@ configurations {
 // Compose dependencies below, and it is written into the fetch's receipt so
 // that a receipt from an older BOM can be told apart from a derivation that is
 // wrong. See fetchComposeLayoutSources.
-def composeBomCoord = 'androidx.compose:compose-bom:2024.06.00'
+def composeBomCoord = 'androidx.compose:compose-bom:2024.12.01'
 
 tasks.register('fetchComposeLayoutSources') {
     group = 'verification'
@@ -238,10 +238,11 @@ dependencies {
 //
 // The obvious alternative — glob the gradle cache for each artifact and take
 // the newest — was tried and is wrong here in a way that is worth recording.
-// This machine's cache holds TWO of every Compose artifact: 1.6.8, which the
-// BOM pins, and 1.10.0, which something else once resolved. Newest-wins picks
-// 1.10.0, and the pass then fails on `Modifier.animateItemPlacement` — an API
-// that 1.6.8 has and 1.10.0 removed. A classpath assembled by guesswork fails
+// This machine's cache held TWO of every Compose artifact: 1.6.8, which the
+// BOM then pinned, and 1.10.0, which something else once resolved (it holds
+// 1.7.6 as well now, the BOM's since 2024.12.01). Newest-wins picked 1.10.0,
+// and the pass then failed on `Modifier.animateItemPlacement` — an API that
+// 1.6.8 had and 1.10.0 removed. A classpath assembled by guesswork fails
 // on the library rather than on the source, which is the one thing a compile
 // check must never do.
 //

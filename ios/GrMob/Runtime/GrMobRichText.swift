@@ -138,7 +138,10 @@ private struct GrMobRichTextRepresentable: UIViewRepresentable {
         // isEditable, not isUserInteractionEnabled: a read-only document is
         // still content the reader is meant to select and copy.
         view.isEditable = !node.boolProp("readOnly")
-        coordinator.applyDoc(node.stringProp("doc"))
+        coordinator.applyDoc(node.stringProp("doc"),
+                             editSeq: node.intProp("editSeq"),
+                             editEpoch: node.intProp("editEpoch"),
+                             stamped: node.props["editEpoch"] != nil)
         coordinator.applyPlaceholder(node.stringProp("placeholder"))
         coordinator.runCommand(epoch: node.intProp("editorEpoch"),
                                command: node.stringProp("editorCommand"))
@@ -212,8 +215,19 @@ final class GrMobRichTextCoordinator: NSObject, UITextViewDelegate {
     /// than as Swift structs so that there is one representation on this host
     /// and it is the one that crosses, exactly as the web runtime does it.
     private var doc: [String: Any] = [:]
-    /// The JSON of every document sent upstream and not yet seen come back.
-    private var pendingEchoes: [String] = []
+    /// What this editor has sent Go and not yet heard back about. See
+    /// GrMobTextEdits.swift. No replay: a rewrite of the document is adopted
+    /// as it stands, because the texts it would splice are JSON.
+    private var ledger = TextEditLedger(replay: false)
+    /// The (doc, editSeq, editEpoch) last read, so an update pass that changed
+    /// none of the three is not read as news.
+    private var lastStamp: (json: String, seq: Int, epoch: Int)?
+    /// Go's JSON of the document this editor holds, when it has seen one: the
+    /// last rewrite adopted, or the last echo of its own typing. Go and
+    /// JSONSerialization spell one document differently, so this, and not
+    /// `stringify(doc)`, is what tells a blurred editor that Go's document is
+    /// the one it has.
+    private var lastGoJSON: String?
     private var lastEpoch: Int?
     /// The focus-command memory, shared in shape with the code editor's. See
     /// GrMobEditorFocus.swift.
@@ -223,21 +237,34 @@ final class GrMobRichTextCoordinator: NSObject, UITextViewDelegate {
 
     // MARK: Go -> the document
 
-    func applyDoc(_ json: String) {
+    func applyDoc(_ json: String, editSeq: Int, editEpoch: Int, stamped: Bool) {
+        // Nothing lands mid-composition. The stamp is recorded only past this
+        // guard, so the next pass after the composition ends reads it.
         guard let view, view.markedTextRange == nil else { return }
+        if let last = lastStamp, last == (json, editSeq, editEpoch) { return }
+        lastStamp = (json, editSeq, editEpoch)
 
         // The echo guard, over the document's JSON rather than a string of
         // text. Same three arms GrMobTextField's has: an echo is dropped, a
         // rewrite lands even mid-typing, and a blurred editor is Go's outright.
-        // The comparison is on the JSON string because Go marshals with a fixed
-        // key order, so the same document is always the same bytes.
-        if view.isFirstResponder, let echo = pendingEchoes.firstIndex(of: json) {
-            pendingEchoes.removeSubrange(...echo)
-            return
+        // Echo and rewrite are told apart by Go's edit stamps
+        // (core/text_edit.go), not by comparing JSON: Go writes a document
+        // with encoding/json and this host with JSONSerialization, and the same
+        // document need not come back as the same bytes. Go compares the two
+        // as documents and says which it was.
+        if view.isFirstResponder {
+            guard ledger.upstream(json, ack: editSeq, goEpoch: editEpoch,
+                                  local: GrMobRichJSON.stringify(doc), stamped: stamped) != nil else {
+                // An echo: this editor already holds the document.
+                lastGoJSON = json
+                return
+            }
+        } else {
+            ledger.reset(json, epoch: editEpoch)
+            guard json != lastGoJSON else { return }
         }
-        pendingEchoes.removeAll()
+        lastGoJSON = json
         guard let parsed = GrMobRichJSON.parse(json) else { return }
-        guard GrMobRichJSON.stringify(doc) != json else { return }
         doc = parsed
         rebuild(selecting: nil)
     }
@@ -292,8 +319,9 @@ final class GrMobRichTextCoordinator: NSObject, UITextViewDelegate {
 
     private func send() {
         let json = GrMobRichJSON.stringify(doc)
-        pendingEchoes.append(json)
-        if !onChange.isEmpty { runtime?.textChanged(onChange, json) }
+        if !onChange.isEmpty, let runtime {
+            ledger.sent(runtime.textEdited(onChange, json, epoch: ledger.epoch), json)
+        }
         applyPlaceholder(placeholderLabel?.text ?? "")
     }
 
@@ -318,8 +346,8 @@ final class GrMobRichTextCoordinator: NSObject, UITextViewDelegate {
         var block = "p"
         if attributed.length > 0, probe.location < attributed.length {
             let attrs = attributed.attributes(at: min(probe.location, attributed.length - 1), effectiveRange: nil)
+            if GrMobRichMapper.boldMark(attrs) { marks.append("bold") }
             if let traits = (attrs[.font] as? UIFont)?.fontDescriptor.symbolicTraits {
-                if traits.contains(.traitBold) { marks.append("bold") }
                 if traits.contains(.traitItalic) { marks.append("italic") }
             }
             if attrs[.underlineStyle] != nil { marks.append("underline") }
@@ -534,8 +562,13 @@ enum GrMobRichMapper {
                     let piece = text.substring(with: subrange)
                     guard !piece.isEmpty else { return }
                     var run: [String: Any] = ["t": piece]
+                    // Judged against the paragraph's kind, read once above,
+                    // and not the run's own attribute: text typed at the end of
+                    // a heading takes the heading's bold face from UIKit's
+                    // typing attributes but not the custom block-kind key, and
+                    // it is as much the heading's as the rest of the line.
+                    if boldMark(attrs, blockKind: kind) { run["b"] = 1 }
                     if let traits = (attrs[.font] as? UIFont)?.fontDescriptor.symbolicTraits {
-                        if traits.contains(.traitBold) { run["b"] = 1 }
                         if traits.contains(.traitItalic) { run["i"] = 1 }
                     }
                     if attrs[.underlineStyle] != nil { run["u"] = 1 }
@@ -600,9 +633,31 @@ enum GrMobRichMapper {
 
     // MARK: Marks as attributes
 
+    /// Whether a run's bold is the user's mark rather than its block's.
+    ///
+    /// A heading is drawn in a bold face (GrMobRichStyle.font(for:)), so the
+    /// trait alone cannot tell "a heading" from "bold text". Read as a mark, it
+    /// made every heading's text bold in the document on the first keystroke
+    /// anywhere in it, which the Android emulator showed as `## **A note**` in
+    /// lesson 4.14's Markdown panel. So inside a heading the trait is the
+    /// block's. What that costs: a bold mark inside a heading does not survive
+    /// a round trip through this host, and it was invisible here anyway, the
+    /// face being bold already.
+    ///
+    /// `blockKind` is the paragraph's kind when the caller knows it (the
+    /// document mapping reads it off the paragraph's first character); nil
+    /// reads it off the run.
+    static func boldMark(_ attrs: [NSAttributedString.Key: Any], blockKind: String? = nil) -> Bool {
+        guard trait(attrs, .traitBold) else { return false }
+        switch blockKind ?? attrs[.grMobBlockKind] as? String {
+        case "h1", "h2", "h3": return false
+        default: return true
+        }
+    }
+
     static func hasMark(_ command: String, in attrs: [NSAttributedString.Key: Any]) -> Bool {
         switch command {
-        case "bold": return trait(attrs, .traitBold)
+        case "bold": return boldMark(attrs)
         case "italic": return trait(attrs, .traitItalic)
         case "underline": return attrs[.underlineStyle] != nil
         case "strike": return attrs[.strikethroughStyle] != nil
