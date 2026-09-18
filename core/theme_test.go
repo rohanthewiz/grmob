@@ -444,3 +444,27 @@ func TestChartColorsResolve(t *testing.T) {
 		t.Error("the dark chart list and the light one differ in length")
 	}
 }
+
+// SequentialColors resolves as ChartColors does — a copy, blanks dropped, the
+// default when unset — and the dark list is the light one reversed, so "more"
+// runs away from the page on both.
+func TestSequentialColorsResolve(t *testing.T) {
+	if got := (ColorPalette{}).SequentialColors(); !reflect.DeepEqual(got, DefaultSequentialColors()) {
+		t.Errorf("unset Sequential resolves to %v, want DefaultSequentialColors", got)
+	}
+	own := ColorPalette{Sequential: []string{"#EEEEEE", "", "#111111"}}
+	got := own.SequentialColors()
+	if !reflect.DeepEqual(got, []string{"#EEEEEE", "#111111"}) {
+		t.Errorf("Sequential with a blank resolves to %v", got)
+	}
+	got[0] = "#FFFFFF"
+	if own.Sequential[0] != "#EEEEEE" {
+		t.Error("SequentialColors returned the theme's own backing array")
+	}
+	light, dark := DefaultSequentialColors(), DefaultDarkSequentialColors()
+	for i := range light {
+		if dark[i] != light[len(light)-1-i] {
+			t.Fatalf("dark step %d = %s, want the light list reversed", i, dark[i])
+		}
+	}
+}

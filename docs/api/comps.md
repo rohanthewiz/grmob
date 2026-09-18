@@ -40,7 +40,7 @@ Package comps's reference is split into 7 topic pages by source file. The index 
 | [Buttons & choices](comps-actions.md) | Buttons and their variants, chips, segmented controls, steppers, ratings and badges. | 10 types, 10 functions and methods |
 | [Overlays & feedback](comps-overlays.md) | Dialogs, lightboxes, action sheets, menus, snackbars, banners, progress, spinners, skeletons and empty states. | 13 types, 10 functions and methods |
 | [Data display & maps](comps-display.md) | Avatars and avatar stacks, stat tiles, the compass, clocks, countdowns and alarms, QR codes, map panels and static maps. | 18 types, 20 functions and methods |
-| [Charts](comps-charts.md) | Sparklines, line, area, bar and scatter charts, donuts and pies, and gauges, drawn on core.Canvas. | 12 types, 8 functions and methods |
+| [Charts](comps-charts.md) | Sparklines, line, area, bar and scatter charts, histograms, heatmaps and calendar heatmaps, donuts and pies, and gauges, drawn on core.Canvas. | 16 types, 11 functions and methods |
 
 ## Index
 
@@ -159,11 +159,15 @@ Package comps's reference is split into 7 topic pages by source file. The index 
 - [Charts](comps-charts.md)
     - [`type AreaChart`](comps-charts.md#type-areachart)
     - [`type BarChart`](comps-charts.md#type-barchart)
+    - [`type CalendarHeatmap`](comps-charts.md#type-calendarheatmap)
     - [`type ChartPoint`](comps-charts.md#type-chartpoint)
     - [`type ChartSeries`](comps-charts.md#type-chartseries)
     - [`type ChartSlice`](comps-charts.md#type-chartslice)
+    - [`type DayValue`](comps-charts.md#type-dayvalue)
     - [`type DonutChart`](comps-charts.md#type-donutchart)
     - [`type Gauge`](comps-charts.md#type-gauge)
+    - [`type Heatmap`](comps-charts.md#type-heatmap)
+    - [`type Histogram`](comps-charts.md#type-histogram)
     - [`type LineChart`](comps-charts.md#type-linechart)
     - [`type PieChart`](comps-charts.md#type-piechart)
     - [`type ScatterChart`](comps-charts.md#type-scatterchart)

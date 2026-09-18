@@ -3,8 +3,10 @@
 **Status:** drafted 2026-09-17. D1 `FAB` + `Screen.Floating`, D2 `QRCode`,
 D4 `SelectRow` + `SliderRow`, D3 `Countdown` + `Stopwatch`, D5 `PINInput`,
 D6 `DateRangePicker` and D7 `TimePicker` all landed the same day — Tier D is
-complete — and Tier E landed after it as one bundle with lesson 4.27. Tier F is
-what is left.
+complete — and Tier E landed after it as one bundle with lesson 4.27. Tier F's
+two charts landed next with lesson 4.28; its third item, `RichTextView`, left
+this plan for the renderer-blocked list, by the plan's own rule. Nothing in
+this file is unstarted.
 
 The first round (`comps-low-hanging-fruit.md`) landed entire on 2026-09-12:
 Tiers A through C, fifteen widgets, one carousel left blocked on a scroll
@@ -421,7 +423,42 @@ The sketch, as drafted:
 - `Lightbox{Src string, Open bool, OnDismiss}` — a `Modal` around an
   `ImageWithMode` fit, reusing `Dialog`'s scrim and dismiss plumbing.
 
-## Tier F — worth it, with a catch to settle first
+## Tier F — worth it, with a catch to settle first — **two landed, one out**
+
+How each catch was settled (lesson 4.28, "Heat and spread", teaches both):
+
+- **Heatmap — the theme decision went to a list.** `ColorPalette.Sequential`
+  is a new role, read through `SequentialColors()`, with
+  `DefaultSequentialColors()` on all three bundled themes and
+  `DefaultDarkSequentialColors()` (the same list reversed — "more" runs away
+  from the page) for a dark one. Interpolating from `Primary` was turned down
+  because it hands the scale's range to the brand: from white, AmberTheme's
+  #FFA000 (OKLab L 0.78) spans 0.22 of lightness where DefaultTheme's #0040DD
+  spans 0.54. The list is derived, not published: ColorBrewer's five-step
+  Blues bunches at the light end (ΔE 7.1 against 14.9), so this one holds
+  chart slot 1's hue and steps OKLab L evenly 0.88 → 0.44, landing adjacent
+  steps 11.0–11.6 ΔE apart; the first step stands ΔE 9.3–12.6 from each
+  bundled Surface, which is what "no data" is painted in. Shipped:
+  `Heatmap{Values, RowLabels, ColumnLabels, Subject, CellHeight, Colors,
+  Format, Style, AccessibilityLabel}` — equal steps, not a gradient; NaN is no
+  data; one Canvas shape per step; an empty column label lends its slot to the
+  one before — and `CalendarHeatmap{Days []DayValue, End, Weeks, WeekStart,
+  …}` on the same grid, where zero is empty and days after End are not drawn.
+- **Histogram — no new axis was needed.** n bins have n+1 edges spaced edge to
+  edge, which is LineChart's point spacing, so the edge labels are
+  `pointLabels` and the bars are single-series slots at 94% fill. Edges come
+  from `niceScale`, so `Bins` is a target (Sturges' rule when zero), bins are
+  half-open with the maximum in the last, and the count axis never ticks below
+  1. Shipped: `Histogram{Values, Bins, Subject, Height, Color, Format, Style,
+  AccessibilityLabel}`.
+- **RichTextView — out of this plan.** Confirmed that core has no inline span
+  node: the only styled-run node is `TextGrid`, which is monospace and does not
+  wrap. A view whose bold word flattens on both natives is not worth shipping
+  as half a widget, and giving it spans is a node type on four renderers,
+  which this plan's opening paragraph sends to a plan of its own. It is listed
+  under "Still blocked on a renderer" below.
+
+The sketch, as drafted:
 
 - `Heatmap` (calendar heatmap, matrix heatmap): a `Canvas` of `Rect`s, cheap;
   but it needs a *sequential* colour scale and the palette defines only the
@@ -438,7 +475,13 @@ The sketch, as drafted:
 
 Carousel and pager dots (scroll offset), pull-to-refresh and swipe actions
 (gestures), tooltip and anchored popover (layout measurement), native time
-wheel (node type), a clipboard copy button (no clipboard bridge).
+wheel (node type), and a read-only `RichTextView` with inline marks (an
+inline span node — see Tier F).
+
+*No longer blocked:* the clipboard copy button, listed here when this file was
+drafted for want of a clipboard bridge. `core.WriteClipboard` and
+`core.ReadClipboard` exist now (core/clipboard.go), so a `CopyButton` is pure
+composition — a candidate for a third round, not built here.
 
 ## Suggested order
 
@@ -450,7 +493,7 @@ wheel (node type), a clipboard copy button (no clipboard bridge).
 | 4 | D3 `Countdown`, `Stopwatch` | alarms exist and cannot show time left |
 | 5 | ~~D5 `PINInput`~~, ~~D6 `DateRangePicker`~~, ~~D7 `TimePicker`~~ | in any order |
 | 6 | ~~Tier E as one bundle with one lesson~~ | landed, lesson 4.27 |
-| 7 | Tier F once its theme or core prerequisite lands | |
+| 7 | ~~Tier F once its theme or core prerequisite lands~~ | Heatmap, CalendarHeatmap, Histogram landed, lesson 4.28; RichTextView blocked |
 
 ## Definition of done, per widget
 

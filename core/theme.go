@@ -260,6 +260,40 @@ type ColorPalette struct {
 	// Because a slice is shared by reference, ChartColors returns a copy, so a
 	// caller appending to what it got cannot repaint a bundled theme.
 	Chart []string
+
+	// Sequential is the ordered scale for a *quantity*: the steps a heatmap
+	// paints from least to most. Read via SequentialColors.
+	//
+	// # Why a role of its own, and not Chart or Primary
+	//
+	// Chart is categorical — its order keeps neighbours apart, and nothing in
+	// it says "more". A quantity needs the opposite property: every step must
+	// read as more than the one before it, which is a monotone run of
+	// lightness in one hue. Chart's slots cannot be that by construction.
+	//
+	// Interpolating from Primary to the page was the other candidate, and it
+	// is what the plan offered. It was turned down because it hands the
+	// scale's range to the brand: from a white page, AmberTheme's #FFA000
+	// (OKLab L 0.78) spans 0.22 of lightness where DefaultTheme's #0040DD
+	// (L 0.46) spans 0.54, so the same data would read less than half as
+	// steep under one bundled theme as under another — and no check
+	// could be run on a ramp that does not exist until a theme is picked. A
+	// list is chosen and checked once, like Chart, and a brand that wants its
+	// own hue states its own list.
+	//
+	// # The order runs away from the page
+	//
+	// Entry 0 is the least and the last entry the most, and "more" means
+	// *further from the page's lightness*: darker on a light theme, lighter on
+	// a dark one. That is why DefaultDarkSequentialColors is the light list
+	// reversed rather than a second ramp. "No data" is not a step — a widget
+	// paints it in Surface, so the first step has to stand apart from Surface,
+	// which is the one check the lightest entry is held to (see
+	// DefaultSequentialColors).
+	//
+	// A slice for the reason Chart is one, and copied on read for the same
+	// reason.
+	Sequential []string
 }
 
 // DefaultChartColors is the categorical series palette every bundled theme
@@ -338,6 +372,82 @@ func DefaultDarkChartColors() []string {
 		"#9085E9", // violet
 		"#E66767", // red
 	}
+}
+
+// DefaultSequentialColors is the sequential scale every bundled light theme
+// uses, least to most:
+//
+//	step  hex       OKLab L   contrast on #FFFFFF   ΔE to the next step
+//	1     #C4D9F6   0.88      1.44:1                11.6
+//	2     #90B7EA   0.77      2.07:1                11.6
+//	3     #5E94DA   0.66      3.12:1                11.3
+//	4     #2B71C7   0.55      4.90:1                11.0
+//	5     #0B519D   0.44      7.84:1                —
+//
+// # How it was made, and what it was checked against
+//
+// It is derived rather than taken from a published ramp, because the obvious
+// published one (a five-step ColorBrewer Blues) is uneven in the one way a
+// heatmap cannot afford: its light end bunches, ΔE 7.1 between its first two
+// steps against 14.9 between its last two, so a step of "a little more" looks
+// like no step at all at one end and a jump at the other.
+//
+// This one holds a single hue — Chart slot 1's, OKLCh h −104.5°, so a heatmap
+// reads as the theme's first series — and steps OKLab lightness evenly from
+// 0.88 to 0.44, with chroma rising towards the middle and eased at the dark
+// end to stay in the sRGB gamut. Adjacent steps land 11.0–11.6 ΔE apart, even
+// to within a unit.
+//
+// The first step's distance from "no data", which a widget paints in Surface,
+// is the check that matters most, since an empty cell and a quiet one are the
+// pair a reader must not confuse:
+//
+//	against      Surface   ΔE     contrast
+//	Default      #F2F2F7   9.3    1.29:1
+//	Material     #F5F5F5   10.2   1.26:1
+//	Amber        #FFF8E1   12.6   1.35:1
+//
+// ΔE 9 is clearly visible and the contrast is low, which is the same shape
+// as Chart's warning: colour tells a quiet cell from an empty one, but not to
+// every eye, so a widget drawing this scale says its values in words too.
+func DefaultSequentialColors() []string {
+	return []string{
+		"#C4D9F6",
+		"#90B7EA",
+		"#5E94DA",
+		"#2B71C7",
+		"#0B519D",
+	}
+}
+
+// DefaultDarkSequentialColors is DefaultSequentialColors for a dark page: the
+// same five steps reversed, so "more" still runs away from the page. Against
+// #1A1A19 the least step (#0B519D) stands ΔE 26.4 from the page and the most
+// (#C4D9F6) 66.3. No bundled theme is dark; this is what a dark theme should
+// put in Colors.Sequential.
+func DefaultDarkSequentialColors() []string {
+	light := DefaultSequentialColors()
+	out := make([]string, len(light))
+	for i, c := range light {
+		out[len(light)-1-i] = c
+	}
+	return out
+}
+
+// SequentialColors resolves the Sequential role as ChartColors resolves
+// Chart: a copy of the theme's list with blanks dropped, or
+// DefaultSequentialColors when the theme predates the role or leaves it empty.
+func (c ColorPalette) SequentialColors() []string {
+	out := make([]string, 0, len(c.Sequential))
+	for _, s := range c.Sequential {
+		if s != "" {
+			out = append(out, s)
+		}
+	}
+	if len(out) == 0 {
+		return DefaultSequentialColors()
+	}
+	return out
 }
 
 // ChartColors resolves the Chart role: a copy of the theme's list, or
@@ -699,6 +809,10 @@ var DefaultTheme = &Theme{
 		// derived from this theme's own hues, because Secondary and Success
 		// are one green here and a series list needs eight distinct ones.
 		Chart: DefaultChartColors(),
+
+		// The shared quantity scale; see DefaultSequentialColors for why it
+		// is a checked list rather than a ramp from this theme's Primary.
+		Sequential: DefaultSequentialColors(),
 	},
 	Typography: Typography{
 		Title: Style{
@@ -857,6 +971,10 @@ var MaterialTheme = &Theme{
 		// The shared series palette (see DefaultChartColors), checked
 		// against this theme's white page and its own Surface.
 		Chart: DefaultChartColors(),
+
+		// The shared quantity scale (see DefaultSequentialColors), whose
+		// first step was checked against this theme's Surface.
+		Sequential: DefaultSequentialColors(),
 	},
 	Typography: Typography{
 		Title:    Style{FontSize: 22, FontWeight: Bold, TextColor: "#212121"},
@@ -1024,6 +1142,10 @@ var AmberTheme = &Theme{
 		// The shared series palette (see DefaultChartColors), checked
 		// against this theme's white page and its own Surface.
 		Chart: DefaultChartColors(),
+
+		// The shared quantity scale (see DefaultSequentialColors), whose
+		// first step was checked against this theme's Surface.
+		Sequential: DefaultSequentialColors(),
 	},
 	Typography: Typography{
 		Title:    Style{FontSize: 24, FontWeight: Bold, TextColor: "#1C1B1F", Display: DisplayBlock},

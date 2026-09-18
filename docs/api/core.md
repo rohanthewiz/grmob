@@ -49,7 +49,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
 | [Layout](core-layout.md) | Rows, columns, stacks, scrolls and lists, and the alignment vocabulary they are placed with. | 2 types, 25 functions and methods |
 | [Styling: the Style struct](core-style.md) | Style and the value types its fields take: alignment, flex, position, weights and edge insets. | 11 types, 10 functions and methods |
 | [Styling: style props](core-style-props.md) | The StyleProp constructors: spacing and per-side insets, flex, typography, colour, borders and animation. | 1 types, 69 functions and methods |
-| [Theming](core-theme.md) | Themes, palettes, typography and spacing scales, and per-component defaults. | 5 types, 14 functions and methods |
+| [Theming](core-theme.md) | Themes, palettes, typography and spacing scales, and per-component defaults. | 5 types, 17 functions and methods |
 | [Controls](core-controls.md) | Buttons, text inputs, switches, sliders, selects, images, tab views, text grids and vector canvases. | 18 types, 45 functions and methods |
 | [Editors](core-editors.md) | The code editor and the rich text editor, and the refs and commands that drive them. | 2 types, 15 functions and methods |
 | [Events & focus](core-events.md) | Event props, host and system events, focus refs and focus order. | 2 types, 19 functions and methods |
@@ -227,6 +227,8 @@ Package core's reference is split into 11 topic pages by source file. The index 
     - [`func BundledThemes`](core-theme.md#func-bundledthemes)
     - [`func DefaultChartColors`](core-theme.md#func-defaultchartcolors)
     - [`func DefaultDarkChartColors`](core-theme.md#func-defaultdarkchartcolors)
+    - [`func DefaultDarkSequentialColors`](core-theme.md#func-defaultdarksequentialcolors)
+    - [`func DefaultSequentialColors`](core-theme.md#func-defaultsequentialcolors)
     - [`func WithTheme`](core-theme.md#func-withtheme)
     - [`type ColorPalette`](core-theme.md#type-colorpalette)
     - [`type ComponentDefaults`](core-theme.md#type-componentdefaults)

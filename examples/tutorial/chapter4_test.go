@@ -2754,3 +2754,56 @@ func TestSmallPiecesLessonDrivesEachPiece(t *testing.T) {
 	}
 	assertNoConcerns(t)
 }
+
+// --- 4.28 Heat and spread -------------------------------------------------
+
+// Logging a workout steps today's cell up and changes the calendar's sentence;
+// the bin target re-bins the histogram on round edges.
+func TestHeatAndSpreadLessonDrivesTheCharts(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Heat and spread")
+
+	summary := func(prefix string) string {
+		t.Helper()
+		n := findNode(tree(t, mgr), func(n *node) bool {
+			return n.Style != nil && strings.HasPrefix(n.Style.AccessibilityLabel, prefix)
+		})
+		if n == nil {
+			t.Fatalf("no chart announced as %q…", prefix)
+		}
+		return n.Style.AccessibilityLabel
+	}
+
+	before := summary("Workouts: ")
+	if !strings.Contains(before, "over 17 weeks") {
+		t.Fatalf("calendar summary = %q, want seventeen weeks", before)
+	}
+	for range 6 {
+		tap(t, mgr, "Log a workout")
+	}
+	after := summary("Workouts: ")
+	if after == before {
+		t.Error("logging workouts should change the calendar's sentence")
+	}
+	if !strings.Contains(after, "most on Wed 11 Mar 2026") {
+		t.Errorf("after six extra today, summary = %q, want today the busiest", after)
+	}
+	if !hasText(tree(t, mgr), "Today: 6 logged by you.") {
+		t.Error("the caption should count the taps")
+	}
+
+	if got := summary("Orders by hour: "); !strings.Contains(got, "1 cell with no data") {
+		t.Errorf("matrix summary = %q, want the missing slot counted", got)
+	}
+
+	auto := summary("Response time (ms): ")
+	tap(t, mgr, "4")
+	four := summary("Response time (ms): ")
+	if four == auto {
+		t.Error("a bin target of 4 should re-bin the histogram")
+	}
+	if !strings.Contains(four, "in 3 bins") && !strings.Contains(four, "in 4 bins") {
+		t.Errorf("summary = %q, want at most four bins", four)
+	}
+	assertNoConcerns(t)
+}

@@ -3086,6 +3086,69 @@ four targets agree: Compose and SwiftUI divide the whole axis by weight, CSS
 divides only the leftover space. The natives ignore `FlexBasis`, so the prop
 that is inert on two targets is exactly the one that converges the other two.
 
+## Histogram
+
+Raw values counted into bins, drawn as touching bars over a numeric axis.
+
+```go
+comps.Histogram{Subject: "Response time (ms)", Values: samples}
+// 12 ┤      ██
+//  6 ┤   ██ ██ ██ ██
+//  0 ┼██─██─██─██─██─██┤
+//    0    100   200   300      labels on the bin *edges*
+```
+
+- **The axis names edges.** A bin is a range, and what a reader measures
+  against is where it starts and stops. n bins have n+1 edges evenly spaced
+  edge to edge — `LineChart`'s point spacing — so the labels use that axis
+  rather than `BarChart`'s centred categories, and the bars touch.
+- **Nice edges.** The edges come from the charts' own nice-number scale, so a
+  bin is 10, 25 or 0.5 wide and starts on a multiple of that. `Bins` is
+  therefore a *target*; zero takes Sturges' rule, ⌈log₂ n⌉ + 1. Bins are
+  half-open, `[a, b)`, with the maximum in the last one.
+- The count axis ticks in whole counts only.
+- One `RoleImg`, one sentence: "Response time (ms): 120 values in 8 bins of 50
+  from 0 to 400; most, 34, between 100 and 150."
+
+## Heatmap & CalendarHeatmap
+
+A grid of values as a grid of colours, and the contribution calendar built
+on it.
+
+```go
+comps.Heatmap{
+    Subject:      "Orders by hour",
+    RowLabels:    []string{"Mon", "Tue", "Wed"},
+    ColumnLabels: []string{"9", "12", "15", "18"},
+    Values:       [][]float64{{2, 8, 5, 1}, {3, 9, 7, 2}, {1, 4, math.NaN(), 0}},
+}
+
+comps.CalendarHeatmap{Subject: "Workouts", Days: workouts, End: today}
+```
+
+- **The colours are the theme's `Sequential` role** — five steps of one hue
+  in even lightness, added for this widget — not the categorical chart hues.
+  See [Color roles](concepts/styling-and-theming.md#color-roles). `Colors`
+  overrides it per chart.
+- **Steps, not a gradient.** The range is cut into as many equal steps as the
+  scale has colours, and the legend keys each one: low value, the swatches,
+  high value.
+- **No data is not zero.** `NaN` is painted `Surface` — the scale's first step
+  was checked against every bundled `Surface` for exactly this pair. Zero is a
+  value. `CalendarHeatmap` turns a day with nothing into no data, the
+  contribution calendar's convention, and does not draw days after `End` at
+  all.
+- **One shape per colour.** Every cell of a step is a subpath of one path, so
+  a 7 × 53 calendar is six shapes, not 371.
+- **Labels.** Row labels sit in boxes exactly one row tall. An empty column
+  label lends its slot to the label before it, so a month name spans its
+  weeks; the calendar names a column when it holds the 1st.
+- The calendar is `Weeks` columns (17 by default) ending on the week holding
+  `End`, each starting on `WeekStart` (Sunday); entries are summed per date in
+  `End`'s location.
+- One `RoleImg`, one sentence: "Workouts: 42 over 17 weeks, on 23 days; most
+  on Tue 3 Mar 2026, 4."
+
 ## Compass
 
 A bearing drawn as a compass rose.

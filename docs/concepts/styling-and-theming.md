@@ -1084,8 +1084,21 @@ Name the *role*, never the literal, and one theme swap restyles the tree:
 | `Border` | strokes and hairlines: rules between rows, card outlines — a **divider** |
 | `ControlBorder` | the edge that says *this rectangle is a control*: a field frame, a quiet chip's ring — a **boundary** |
 | `PrimaryOnLight`, `SuccessOnLight`, `WarningOnLight`, `ErrorOnLight` | the same four roles again, dark enough to be read as **ink** on a light surface |
+| `Chart` | a *list*: the categorical series colours, ordered so neighbours stay apart — read via `ChartColors()` |
+| `Sequential` | a *list*: a quantity's scale, least to most, one hue in even lightness steps — read via `SequentialColors()` |
 
-Two distinctions the names do not make obvious:
+The distinctions the names do not make obvious:
+
+- **`Chart` is not `Sequential`.** A series colour carries identity, and its
+  list is ordered so adjacent series stay apart under colour-blindness; nothing
+  in it says "more". A heatmap paints a quantity, which needs every step to
+  read as more than the last — a monotone run of lightness. That is why
+  `comps.Heatmap` reads its own role rather than cycling the chart hues, and
+  why the role is a checked list rather than a ramp from `Primary`: from a
+  white page `AmberTheme`'s amber spans less than half the lightness
+  `DefaultTheme`'s blue does, and the same data would read flatter.
+  "More" runs *away from the page*, so a dark theme states the list
+  reversed (`DefaultDarkSequentialColors`).
 
 - **`Border` is not `Surface`.** `Surface` is a fill, and on a light theme
   the two are near neighbors — a `Surface`-tinted hairline drawn on a

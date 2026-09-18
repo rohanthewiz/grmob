@@ -4,9 +4,9 @@
 import "github.com/rohanthewiz/grmob/comps"
 ```
 
-Sparklines, line, area, bar and scatter charts, donuts and pies, and gauges, drawn on core.Canvas.
+Sparklines, line, area, bar and scatter charts, histograms, heatmaps and calendar heatmaps, donuts and pies, and gauges, drawn on core.Canvas.
 
-One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/chart.go`, `comps/sparkline.go`, `comps/line_chart.go`, `comps/bar_chart.go`, `comps/scatter_chart.go`, `comps/donut_chart.go`, `comps/gauge.go`.
+One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/chart.go`, `comps/sparkline.go`, `comps/line_chart.go`, `comps/bar_chart.go`, `comps/histogram.go`, `comps/scatter_chart.go`, `comps/heatmap.go`, `comps/donut_chart.go`, `comps/gauge.go`.
 
 ## Index
 
@@ -14,13 +14,20 @@ One of 7 topic pages of [package comps](comps.md), which has the package overvie
     - [`func (AreaChart) Render`](#func-areachart-render)
 - [`type BarChart`](#type-barchart)
     - [`func (BarChart) Render`](#func-barchart-render)
+- [`type CalendarHeatmap`](#type-calendarheatmap)
+    - [`func (CalendarHeatmap) Render`](#func-calendarheatmap-render)
 - [`type ChartPoint`](#type-chartpoint)
 - [`type ChartSeries`](#type-chartseries)
 - [`type ChartSlice`](#type-chartslice)
+- [`type DayValue`](#type-dayvalue)
 - [`type DonutChart`](#type-donutchart)
     - [`func (DonutChart) Render`](#func-donutchart-render)
 - [`type Gauge`](#type-gauge)
     - [`func (Gauge) Render`](#func-gauge-render)
+- [`type Heatmap`](#type-heatmap)
+    - [`func (Heatmap) Render`](#func-heatmap-render)
+- [`type Histogram`](#type-histogram)
+    - [`func (Histogram) Render`](#func-histogram-render)
 - [`type LineChart`](#type-linechart)
     - [`func (LineChart) Render`](#func-linechart-render)
 - [`type PieChart`](#type-piechart)
@@ -171,6 +178,78 @@ func (c BarChart) Render(ctx *core.Context) *core.Node
 
 <small>[comps/bar_chart.go:150](https://github.com/rohanthewiz/grmob/blob/master/comps/bar_chart.go#L150)</small>
 
+### type CalendarHeatmap
+
+```go
+type CalendarHeatmap struct {
+	// Days are the dated values. Several on one date are summed.
+	Days []DayValue
+
+	// End is the last day drawn; zero means today. Its location decides which
+	// date each entry falls on.
+	End time.Time
+
+	// Weeks is how many week columns are drawn; 0 means 17, about four months,
+	// which fits a phone at a legible cell width.
+	Weeks int
+
+	// WeekStart is the first row's weekday; the zero value is Sunday.
+	WeekStart time.Weekday
+
+	// Subject says what is counted. It leads the spoken summary.
+	Subject string
+
+	// CellHeight is each weekday row's height in px; 0 means 14.
+	CellHeight float64
+
+	// Colors overrides the theme's sequential scale, least to most.
+	Colors []string
+
+	// Format writes a value in the legend and the summary.
+	Format func(float64) string
+
+	// Style is applied last, to the outer column.
+	Style []core.StyleProp
+
+	// AccessibilityLabel replaces the generated summary.
+	AccessibilityLabel string
+}
+```
+
+CalendarHeatmap is the contribution calendar: a column per week, a row per weekday, and each day painted by its count — commits, workouts, words written.
+
+	comps.CalendarHeatmap{
+	    Subject: "Workouts",
+	    Days:    workouts,          // []comps.DayValue
+	    End:     today,
+	}
+
+	      Jan         Feb         Mar
+	Mon  ░ ▒ ░ · ▓ ░ ▒ ░ · ░ ▓ █ ░ ▒ ░ ▒ ░
+	Wed  ▒ ░ · ░ ░ ▓ ░ · ▒ ░ ░ ▒ ▓ ░ ░ ·
+	Fri  ░ · ▒ ░ ▒ ░ · ░ ░ ▒ ░ ░ ▒ ░ ▓
+	      0 ■■■■■ 4
+
+It is a Heatmap — the same grid, scale, legend and one-sentence summary — with the calendar arithmetic done here:
+
+  - The last column is the week holding End, and the grid runs Weeks columns back from it, each week starting on WeekStart (Sunday, the zero value, as Calendar's does).
+  - Days after End are not drawn at all; they have not happened, which is different from having happened with nothing in them.
+  - A day with no entries, or entries summing to zero, is "no data" and painted Surface — the contribution calendar's convention, where an empty day is the ground and every step is some activity. See "No data is not zero" on Heatmap for why this is a choice made here rather than there.
+  - Days are matched by calendar date in End's location, and several entries on one day are summed.
+  - Rows are labelled on alternate weekdays (Mon, Wed, Fri under a Sunday start), and a column is labelled with its month's name when it holds the 1st — but not the first column, if the next month's name is fewer than three columns away, where the two would collide.
+
+The summary is the calendar's own: "Workouts: 42 over 17 weeks, on 23 days; most on Tue 3 Mar 2026, 4."
+
+<small>[comps/heatmap.go:457](https://github.com/rohanthewiz/grmob/blob/master/comps/heatmap.go#L457)</small>
+
+#### func (CalendarHeatmap) Render
+
+```go
+func (c CalendarHeatmap) Render(ctx *core.Context) *core.Node
+```
+
+<small>[comps/heatmap.go:509](https://github.com/rohanthewiz/grmob/blob/master/comps/heatmap.go#L509)</small>
+
 ### type ChartPoint
 
 ```go
@@ -220,6 +299,19 @@ type ChartSlice struct {
 ChartSlice is one share of a DonutChart or PieChart.
 
 <small>[comps/donut_chart.go:14](https://github.com/rohanthewiz/grmob/blob/master/comps/donut_chart.go#L14)</small>
+
+### type DayValue
+
+```go
+type DayValue struct {
+	Day   time.Time
+	Value float64
+}
+```
+
+DayValue is one dated value of a CalendarHeatmap.
+
+<small>[comps/heatmap.go:492](https://github.com/rohanthewiz/grmob/blob/master/comps/heatmap.go#L492)</small>
 
 ### type DonutChart
 
@@ -373,6 +465,180 @@ func (g Gauge) Render(ctx *core.Context) *core.Node
 ```
 
 <small>[comps/gauge.go:81](https://github.com/rohanthewiz/grmob/blob/master/comps/gauge.go#L81)</small>
+
+### type Heatmap
+
+```go
+type Heatmap struct {
+	// Values are the cells, a row at a time; rows may differ in length, and
+	// the grid is as wide as the longest. NaN is no data.
+	Values [][]float64
+
+	// RowLabels name the rows, drawn to their left. ColumnLabels name the
+	// columns, drawn under them; an empty entry lends its slot to the label
+	// before it (see "Labels"). Both feed the spoken summary.
+	RowLabels, ColumnLabels []string
+
+	// Subject says what the grid measures. It leads the spoken summary and is
+	// not drawn.
+	Subject string
+
+	// CellHeight is each row's height in px; 0 means 20.
+	CellHeight float64
+
+	// Colors overrides the theme's sequential scale, least to most.
+	Colors []string
+
+	// Format writes a value in the legend and the summary.
+	Format func(float64) string
+
+	// Style is applied last, to the outer column.
+	Style []core.StyleProp
+
+	// AccessibilityLabel replaces the generated summary.
+	AccessibilityLabel string
+}
+```
+
+Heatmap draws a grid of values as a grid of colours: a row per thing, a column per slot, and each cell painted by how much it holds.
+
+	comps.Heatmap{
+	    Subject:      "Orders by hour",
+	    RowLabels:    []string{"Mon", "Tue", "Wed"},
+	    ColumnLabels: []string{"9", "12", "15", "18"},
+	    Values: [][]float64{
+	        {2, 8, 5, 1},
+	        {3, 9, 7, 2},
+	        {1, 4, math.NaN(), 0},
+	    },
+	}
+
+	┌─────┬───────────────────────────────┐
+	│ Mon │ ░░░ ▓▓▓ ▒▒▒ ░░░               │  core.Canvas, CanvasStretch:
+	│ Tue │ ░░░ ███ ▓▓▓ ░░░               │  CellHeight px a row, the
+	│ Wed │ ░░░ ▒▒▒ ··· ░░░               │  width shared by the columns
+	│     │  9   12  15  18               │  column labels, equal slots
+	└─────┴───────────────────────────────┘
+	  0 ■■■■■ 9                            legend: the steps, low to high
+
+#### The colours are the theme's Sequential role
+
+A heatmap paints a \*quantity\*, and the palette's categorical Chart role cannot do that: its slots are ordered to stay apart, not to read as more. So the cells take core.ColorPalette.SequentialColors — a checked run of lightness in one hue, least to most, added for this widget; the case against deriving one from Primary is written on that role. Colors overrides it per chart.
+
+#### Steps, not a gradient
+
+The value range is cut into as many equal steps as the scale has colours (five on the bundled themes), and a cell takes its step's colour flat. A continuous blend would claim a precision the eye cannot read back from a colour, and steps are what a legend can key: five swatches say exactly which colours mean what, where a gradient bar can only say "towards here". One value everywhere is the top step — everything present is the most there is.
+
+#### No data is not zero
+
+A NaN cell is "no data" and is painted in the theme's Surface, apart from every step (the scale's lightest entry was checked against each bundled Surface for exactly this pair). Zero is a value like any other and takes the step it falls in; a caller whose zeros mean "nothing happened" (a contribution calendar) passes NaN for them, which is what CalendarHeatmap does.
+
+#### Drawn as one shape per colour
+
+Every cell of a step is a subpath of that step's one path, as BarChart draws a series, so a 7 × 53 calendar is six shapes rather than 371 and a cell changing step patches two paths. The cells are drawn with a gap a tenth of a cell wide, which is what makes a grid of equal colours read as cells rather than as a band.
+
+#### Labels
+
+Row labels sit in a column of boxes each exactly CellHeight tall, so each centres on its row by construction. Column labels are the equal slots BarChart's categories use, with one addition: an empty label gives its slot to the label before it, so "Mar" over four unlabelled weeks has four columns of room and starts at its first — how a calendar names its months. A label with a slot of its own is centred on it.
+
+#### One element, one sentence
+
+As every chart here, the grid is one RoleImg with a summary sentence and everything under it hidden: "Orders by hour: 3 rows by 4 columns; low 0 at Wed, 18; high 9 at Tue, 12; 1 cell with no data."
+
+#### Theme roles read
+
+	Cells      Colors.SequentialColors (or Colors), Colors.Surface for no data
+	Labels     Colors.TextSecondary at the charts' label size
+
+<small>[comps/heatmap.go:88](https://github.com/rohanthewiz/grmob/blob/master/comps/heatmap.go#L88)</small>
+
+#### func (Heatmap) Render
+
+```go
+func (h Heatmap) Render(ctx *core.Context) *core.Node
+```
+
+<small>[comps/heatmap.go:121](https://github.com/rohanthewiz/grmob/blob/master/comps/heatmap.go#L121)</small>
+
+### type Histogram
+
+```go
+type Histogram struct {
+	// Values are the raw observations. NaN and infinities are skipped.
+	Values []float64
+
+	// Bins is the most bins drawn; 0 means Sturges' rule. See "Nice edges".
+	Bins int
+
+	// Subject says what was measured. It leads the spoken summary and is not
+	// drawn.
+	Subject string
+
+	// Height is the plot's height in px, excluding labels; 0 means 160.
+	Height float64
+
+	// Color overrides the bars' colour.
+	Color string
+
+	// Format writes an edge label and the edges in the summary; nil writes
+	// them as the axis would, with the decimals the bin width needs.
+	Format func(float64) string
+
+	// Style is applied last, to the outer column.
+	Style []core.StyleProp
+
+	// AccessibilityLabel replaces the generated summary.
+	AccessibilityLabel string
+}
+```
+
+Histogram counts raw values into bins and draws the counts as touching bars over a numeric axis — how response times, ages or scores are spread.
+
+	comps.Histogram{
+	    Subject: "Response time (ms)",
+	    Values:  samples,          // the raw values, not counts
+	}
+
+	 12 ┤      ██
+	    │   ██ ██ ██
+	  6 ┤   ██ ██ ██ ██
+	    │██ ██ ██ ██ ██ ██
+	  0 ┼──┴──┴──┴──┴──┴──┤
+	    0    100   200   300              labels on the bin *edges*
+
+#### The axis is numeric, and that was the catch
+
+A histogram looks like a BarChart, and the binning is a few lines of Go — the plan's catch was that BarChart's categories are strings, centred under their bars, while a bin is a \*range\* whose edges are what the axis names. "100–150" under a bar is a category chart of ranges; "100" and "150" at the bars' shoulders is a histogram, and the difference is what a reader measures a value against.
+
+It settled without a new axis. n bins have n+1 edges evenly spaced from the plot's left edge to its right, which is exactly the spacing LineChart gives its points — so the edge labels are pointLabels, the row LineChart and the horizontal BarChart already use for axes that run edge to edge. The bars are BarChart's single-series slots with the gap between them nearly closed: a histogram's bars touch, because the bins do.
+
+#### Nice edges
+
+The edges come from the charts' own niceScale, so bins are 10 or 25 or 0.5 wide and start on a multiple of that — "0, 50, 100", never "3.7, 51.2". Bins is therefore a target, and the drawn count is at most it: 12 asked over 0–95 may come out as 10 bins of 10. Zero Bins takes Sturges' rule, ⌈log₂ n⌉ + 1, the usual default for a sample of unknown shape. A value on an interior edge belongs to the bin it opens (the half-open \[a, b) every statistics package uses), and the largest value, on the last edge, to the last bin.
+
+#### Counts are whole
+
+The count axis never ticks at a fraction: a step below 1 is raised to 1, because "half a sample" is a gridline pointing at nothing.
+
+#### One element, one sentence
+
+"Response time (ms): 120 values in 8 bins of 50 from 0 to 400; most, 34, between 100 and 150."
+
+#### Theme roles read
+
+	Bars       Chart slot 1 (Colors.ChartColors), or Color
+	Grid       Colors.BorderColor; the zero line Colors.ControlBorderColor
+	Labels     Colors.TextSecondary at the charts' label size
+
+<small>[comps/histogram.go:66](https://github.com/rohanthewiz/grmob/blob/master/comps/histogram.go#L66)</small>
+
+#### func (Histogram) Render
+
+```go
+func (c Histogram) Render(ctx *core.Context) *core.Node
+```
+
+<small>[comps/histogram.go:99](https://github.com/rohanthewiz/grmob/blob/master/comps/histogram.go#L99)</small>
 
 ### type LineChart
 

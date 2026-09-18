@@ -59,6 +59,7 @@ func chapter4() Chapter {
 			lessonDateRange(),
 			lessonTimePicker(),
 			lessonSmallPieces(),
+			lessonHeatAndSpread(),
 		},
 	}
 }
@@ -4902,4 +4903,158 @@ func orEmpty(s, fallback string) string {
 		return fallback
 	}
 	return s
+}
+
+// --- 4.28 ----------------------------------------------------------------
+
+// tutorialWorkouts is 4.28's calendar: a deterministic scatter of workouts
+// over the seventeen weeks up to the demo's today, so the grid has every step
+// of the scale in it without a random source. The pattern — rest on most
+// Sundays, longer sessions at weekends — is only there so the picture looks
+// like a real habit rather than noise.
+func tutorialWorkouts() []comps.DayValue {
+	var out []comps.DayValue
+	for i := range 17 * 7 {
+		day := tutorialToday.AddDate(0, 0, -i)
+		n := (i*7 + i/5) % 6 // 0–5, spread unevenly
+		switch day.Weekday() {
+		case time.Sunday:
+			if i%3 != 0 {
+				n = 0
+			}
+		case time.Saturday:
+			n = min(5, n+2)
+		}
+		if n > 0 {
+			out = append(out, comps.DayValue{Day: day, Value: float64(n)})
+		}
+	}
+	return out
+}
+
+// tutorialOrdersByHour is 4.28's matrix: orders per weekday and two-hour
+// slot, with a lunchtime and an evening peak and one slot with no data (the
+// till was down), which is what the no-data colour is for.
+var tutorialOrdersByHour = [][]float64{
+	{2, 8, 5, 3, 6, 2},
+	{3, 9, 7, 2, 7, 3},
+	{1, 6, math.NaN(), 3, 8, 4},
+	{2, 7, 6, 4, 9, 5},
+	{4, 9, 8, 5, 11, 8},
+}
+
+// tutorialResponseTimes is 4.28's histogram sample: 160 response times in
+// milliseconds, built from a fixed sum of three sines so the shape is a skewed
+// hump with a long tail — the shape real latencies have — and identical on
+// every run.
+func tutorialResponseTimes() []float64 {
+	out := make([]float64, 160)
+	for i := range out {
+		x := float64(i)
+		v := 180 + 55*math.Sin(x*0.37) + 30*math.Sin(x*1.13) + 25*math.Sin(x*2.71)
+		if i%9 == 0 {
+			v += 140 // the slow tail
+		}
+		out[i] = math.Round(math.Max(40, v))
+	}
+	return out
+}
+
+// 4.28 — Tier F of the second low-hanging-fruit round: the two charts whose
+// catch the plan named. The lesson is organised around the two catches
+// rather than the widgets, because each was settled by a decision a reader
+// building their own chart would meet: a quantity needs its own palette role,
+// and a range needs its edges on the axis.
+//
+// Appended at the end of the chapter for the reason 4.25 was.
+func lessonHeatAndSpread() Lesson {
+	return Lesson{
+		Title:   "Heat and spread",
+		Summary: "comps.Heatmap, CalendarHeatmap and Histogram, the theme's new Sequential role, and why a histogram's axis names edges.",
+		Body: func(ctx *core.Context) core.View {
+			extra := core.NewState(ctx, 0.0)
+			binChoice := core.NewState(ctx, 0)
+
+			days := tutorialWorkouts()
+			if e := extra.Get(); e > 0 {
+				days = append(days, comps.DayValue{Day: tutorialToday, Value: e})
+			}
+			binCounts := []int{0, 4, 8, 16}
+
+			return core.Column(
+				core.Gap(14),
+				prose("4.20's charts colour their series from the theme's Chart role, and that role "+
+					"is categorical: its eight hues are ordered to stay apart, not to mean more. A "+
+					"heatmap paints a quantity, which needs the opposite — every step visibly more "+
+					"than the one before. So the palette grew a role: Sequential, five steps of one "+
+					"blue, evenly spaced in lightness, lightest first."),
+				codeBlock(`comps.CalendarHeatmap{
+    Subject: "Workouts",
+    Days:    workouts,   // []comps.DayValue; one date's entries are summed
+    End:     today,      // the last day drawn
+}`),
+				demoPanel("Log a workout today and watch its cell step up.",
+					comps.CalendarHeatmap{
+						Subject: "Workouts",
+						Days:    days,
+						End:     tutorialToday,
+					},
+					comps.Button{
+						Label:    "Log a workout",
+						Emphasis: comps.EmphasisOutlined,
+						OnTap:    func() { extra.Set(extra.Get() + 1) },
+					},
+					caption(fmt.Sprintf("Today: %g logged by you.", extra.Get())),
+				),
+				prose("A grey cell is \"nothing\", not the first step. In a contribution calendar an "+
+					"empty day is the ground and every colour is some activity, so CalendarHeatmap "+
+					"passes NaN for zero; the plain Heatmap draws zero as a value and keeps grey for "+
+					"cells with no data at all, like Wednesday's missing slot below. Days after End "+
+					"are not drawn — they have not happened, which is different again."),
+				demoPanel("Orders by weekday and hour.",
+					comps.Heatmap{
+						Subject:      "Orders by hour",
+						RowLabels:    []string{"Mon", "Tue", "Wed", "Thu", "Fri"},
+						ColumnLabels: []string{"9", "11", "13", "15", "17", "19"},
+						Values:       tutorialOrdersByHour,
+					},
+				),
+				prose("Why a list and not a ramp from Primary: a ramp from the brand colour hands the "+
+					"scale's range to the brand. From a white page, AmberTheme's amber spans less "+
+					"than half the lightness DefaultTheme's blue does, so the same data would read "+
+					"less than half as steep. A list is chosen and checked once; a brand that wants its own hue "+
+					"states its own list. A dark theme states the same list reversed, so \"more\" "+
+					"still runs away from the page."),
+				prose("A histogram looks like a bar chart, and the catch was the axis. BarChart "+
+					"centres a string under each bar; a bin is a range, and what a reader measures "+
+					"against is its edges. n bins have n+1 edges spread evenly edge to edge, which is "+
+					"exactly the spacing 4.20's line chart gives its points, so the edges are drawn "+
+					"on that axis and the bars touch."),
+				demoPanel("Change the bin target. The edges stay round.",
+					comps.SegmentedControl{
+						Labels:   []string{"Auto", "4", "8", "16"},
+						Selected: binChoice.Get(),
+						OnSelect: binChoice.Set,
+					},
+					comps.Histogram{
+						Subject: "Response time (ms)",
+						Values:  tutorialResponseTimes(),
+						Bins:    binCounts[binChoice.Get()],
+					},
+				),
+				prose("Bins is a target, not a promise. The edges come from the same nice-number "+
+					"scale the chart axes use, so a bin is 10 or 25 or 50 wide and starts on a "+
+					"multiple of it; ask for 16 and you may get 12. Auto is Sturges' rule, "+
+					"⌈log₂ n⌉ + 1. The count axis never ticks at a half, because half a sample is a "+
+					"gridline pointing at nothing."),
+				keyPoints(
+					"ColorPalette.Sequential: a quantity's scale, least to most, one hue, even steps.",
+					"Heatmap: steps, not a gradient; NaN is no data in Surface; one shape per colour.",
+					"CalendarHeatmap: a Heatmap of weeks × weekdays; zero is empty, the future is not drawn.",
+					"Histogram: nice bin edges, drawn on LineChart's point axis; the bars touch.",
+					"Every one is a single image with one spoken sentence, like every chart here.",
+				),
+			)
+		},
+	}
 }
