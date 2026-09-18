@@ -3,7 +3,8 @@
 **Status:** drafted 2026-09-18. **G1 `CopyButton` and Tier H landed** the
 same day as one batch, taught by lesson 4.29 "Copy, link and list".
 **G2 `TagInput` landed** next, with lesson 5.8, then **G3 `AudioPlayer`**
-with lesson 4.30.
+with lesson 4.30 and **G4 `MessageBubble`** with lesson 4.31. Tier G is
+complete.
 
 Round one (`comps-low-hanging-fruit.md`, Tiers A–C) and round two
 (`comps-low-hanging-fruit-2.md`, Tiers D–F) are both complete. This file is
@@ -222,7 +223,29 @@ seeks.
 **Proof:** `audioTab` is rewritten over the widget. What remains of it is its
 track and its status line.
 
-### G4. `MessageBubble`
+### G4. `MessageBubble` — **landed 2026-09-18**
+
+**What the build changed from the sketch.**
+
+- **`ShowSender` was dropped.** An empty `Sender` hides the line, which is
+  what "the speaker has not changed" already means to a caller building the
+  list. The sender is never drawn on `Mine`.
+- **`MineLabel` was added** ("You" by default). The bubble is one spoken
+  stop named who-what-when, and the reader's own messages need a word where
+  the sender goes.
+- **`Style` goes on the outer row**, which is where `examples/chat` puts
+  its between-message margin. Its pinned test,
+  `TestTheGapBetweenMessagesIsOnTheBottomOfTheBubble`, passes unchanged
+  through the widget.
+- **Bubbles are capped at `MaxWidth("80%")`.** Percentages resolve on both
+  natives (`GrMobMaxWidth`, `widthModifier`).
+- The chat example's package doc used to say it taught `core.UseStyle`
+  through the bubble. It now says the bubble is a widget and points to where
+  `UseStyle` is taught.
+
+Shipped: `MessageBubble{Text, Sender, Mine, Time, MineLabel, Style}`.
+
+The sketch, as drafted:
 
 The chat example's bubble, themed: a sender line (theirs only), the text, and
 an optional time. It is aligned to the end for `Mine` and to the start for
@@ -359,7 +382,7 @@ New this round:
 | 2 | ~~Tier H bundle + lesson~~ | three small pieces, each with a consumer waiting |
 | 3 | ~~G2 `TagInput`~~ | the one new *input*; completes the form family |
 | 4 | ~~G3 `AudioPlayer`~~ | an extraction; the example proves it |
-| 5 | G4 `MessageBubble` | an extraction; the example proves it |
+| 5 | ~~G4 `MessageBubble`~~ | an extraction; the example proves it |
 | 6 | Tier I | each after its catch is settled |
 
 ## Definition of done, per widget

@@ -3445,6 +3445,28 @@ comps.AudioPlayer{
   It holds hooks: render it unconditionally. `ConcernAudioPlayerNoTrack` for a
   missing URL.
 
+## MessageBubble
+
+One message in a conversation, held to one side of the row.
+
+```go
+comps.MessageBubble{Text: "Did you see?", Sender: "Ana", Time: "10:41"}
+comps.MessageBubble{Text: "Not yet", Mine: true, Time: "10:42"}
+```
+
+- **Mine** is on the trailing side in `Primary`, with the ink chosen by
+  contrast. **Theirs** is on the leading side in `Surface` with a `Border`
+  hairline, because the palette has no muted container tone (Banner's answer
+  to the same gap). Bubbles are capped at 80% of the row.
+- `Sender` is drawn on theirs only. Leave it empty when the speaker has not
+  changed. `Time` is a string you format.
+- One spoken stop per message, named who-what-when ("Ana, Did you see?,
+  10:41"). The reader's own messages are named "You, …", and `MineLabel`
+  localizes that. Put the bubbles under a `core.RoleLog` container.
+- `Style` goes on the outer row, where a gap between messages belongs.
+- **Not a thread**: opening at the newest message needs a scroll offset.
+  **No tail**: that needs a per-corner radius. Both are renderer work.
+
 ## QRCode
 
 A string drawn as a QR Code, encoded in Go.

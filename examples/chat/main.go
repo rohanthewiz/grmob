@@ -6,8 +6,10 @@
 //   - core.For + core.Keyed — building a list from data, with the stable row
 //     identity the reconciler needs to keep a row attached to its message when
 //     the slice grows.
-//   - core.UseStyle — one Style value carrying a whole visual role (the bubble),
-//     rather than a scatter of individual style props.
+//   - comps.MessageBubble — the bubble is a library widget now. This file
+//     used to build it by hand with core.UseStyle and literal colours; the
+//     widget reads the theme instead. core.UseStyle is still taught where it
+//     belongs, in docs/concepts/styling-and-theming.md and the tutorial.
 //   - a single mutation choke point — every write to the thread goes through
 //     `send`, so there is exactly one place where the message list changes.
 //
@@ -151,54 +153,30 @@ func MessageList(msgs []Message) core.View {
 	)
 }
 
-// MessageBubble is the sent/received styling, expressed as two Style values
-// chosen by one predicate.
+// MessageBubble maps a Message onto comps.MessageBubble, which owns the
+// sent/received styling this function used to spell out as two literal
+// core.Style values (a hard-coded grey and white for theirs). The widget
+// reads the theme instead — Primary with a contrast-chosen ink for ours,
+// Surface with a hairline for theirs — so the bubbles follow a theme switch.
 //
-// core.UseStyle takes a whole Style at once, which is the right shape when a
-// group of properties travels together as a visual role — here "our bubble" vs
-// "their bubble". Individual style props (core.Padding, core.FontSize, ...)
-// remain the right shape for one-off adjustments; both compose, and later props
-// win over earlier ones.
+// What stays here is what is specific to this screen:
+//
+//   - Who is "us": Message.Mine, the empty From.
+//   - Only their messages carry a sender line; the widget never draws one on
+//     ours, so From passes straight through.
+//   - The gap between messages, a bottom margin on the bubble's row. See
+//     MessageList for why the spacing rides on the bubble rather than on the
+//     list, and TestTheGapBetweenMessagesIsOnTheBottomOfTheBubble for the pin.
 func MessageBubble(m Message) core.View {
-	bubble := core.Style{
-		Background:   "#E9E9EB",
-		TextColor:    "#000000",
-		BorderRadius: 16,
-		Padding:      core.EdgeInsets{Top: 8, Bottom: 8, Left: 12, Right: 12},
-		Gap:          2,
+	return comps.MessageBubble{
+		Text:      m.Text,
+		Sender:    m.From,
+		Mine:      m.Mine(),
+		MineLabel: "Eu",
+		// One side, one prop: the other three margins stay the widget's
+		// zero, so the row's other edges are left to whatever placed it.
+		Style: []core.StyleProp{core.MarginBottom(8)},
 	}
-	// Which end of the row the bubble sits at. JustifyContent (not Align) is
-	// the main-axis property: on a Row it is what Compose maps to
-	// Arrangement.End and CSS to justify-content, whereas Align is the cross
-	// axis.
-	side := core.JustifyStart
-	if m.Mine() {
-		bubble.Background = core.PrimaryColor()
-		bubble.TextColor = "#FFFFFF"
-		side = core.JustifyEnd
-	}
-
-	return core.Row(
-		core.Justify(side),
-		// The gap between consecutive messages; see MessageList for why it
-		// lives here rather than on the list container. One side, one prop —
-		// the UseStyle this replaced also cleared the other three, which was
-		// harmless only because nothing else here sets a margin.
-		core.MarginBottom(8),
-		core.Column(
-			core.UseStyle(bubble),
-			// Only their messages are labelled: our own name on our own
-			// bubbles is noise. core.MaybeProp and not core.If, because a
-			// false core.If still returns a Fragment, and an empty Fragment
-			// is a real child node — one the reconciler walks and diffs on
-			// every pass, for a label that is not there. MaybeProp's false
-			// path is an untyped nil, which the container skips outright, so
-			// the tree is identical to one written without the label at all.
-			core.MaybeProp(!m.Mine(),
-				core.Text(m.From, core.FontSize(12), core.FontWeight(core.Bold))),
-			core.Text(m.Text, core.FontSize(15)),
-		),
-	)
 }
 
 // Composer is the input row: the field, its commit action, and the tap target

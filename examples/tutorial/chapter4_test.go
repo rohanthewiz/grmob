@@ -2846,3 +2846,38 @@ func TestAudioPlayerLessonLoadsItsTrack(t *testing.T) {
 	}
 	assertNoConcerns(t)
 }
+
+// 4.31. The transcript: Ana's second line has no sender, the reader's is
+// named "You", and sending appends a bubble of the reader's own.
+func TestMessageBubblesLessonSendsAndGroups(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Message bubbles")
+
+	named := func(name string) *node {
+		return findNode(tree(t, mgr), func(n *node) bool {
+			return n.Style != nil && n.Style.AccessibilityLabel == name
+		})
+	}
+	if named("Ana, Did you see the new release?, 10:41") == nil {
+		t.Error("the first line names its sender")
+	}
+	if named("Bubbles are a widget now., 10:41") == nil {
+		t.Error("the second of Ana's lines has no sender")
+	}
+	if named("You, Not yet — what changed?, 10:42") == nil {
+		t.Error("the reader's own line is named You")
+	}
+
+	in := findNode(tree(t, mgr), func(n *node) bool {
+		return n.Type == "Input" && n.Props["placeholder"] == "Message…"
+	})
+	if in == nil {
+		t.Fatal("the composer is missing")
+	}
+	mgr.DispatchTextCallback(in.Props["onChange"].(string), "Looks good")
+	tap(t, mgr, "Send")
+	if named("You, Looks good, 10:43") == nil {
+		t.Error("sending should append the reader's bubble")
+	}
+	assertNoConcerns(t)
+}

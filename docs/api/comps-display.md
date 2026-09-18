@@ -4,9 +4,9 @@
 import "github.com/rohanthewiz/grmob/comps"
 ```
 
-Avatars and avatar stacks, stat tiles, the compass, clocks, countdowns and alarms, an audio player, QR codes, map panels and static maps.
+Avatars and avatar stacks, stat tiles, the compass, clocks, countdowns and alarms, an audio player, message bubbles, QR codes, map panels and static maps.
 
-One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/avatar.go`, `comps/avatar_stack.go`, `comps/stat_tile.go`, `comps/compass.go`, `comps/clock.go`, `comps/timers.go`, `comps/alarm.go`, `comps/audio_player.go`, `comps/qr_code.go`, `comps/map_panel.go`, `comps/static_map.go`.
+One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/avatar.go`, `comps/avatar_stack.go`, `comps/stat_tile.go`, `comps/compass.go`, `comps/clock.go`, `comps/timers.go`, `comps/alarm.go`, `comps/audio_player.go`, `comps/message_bubble.go`, `comps/qr_code.go`, `comps/map_panel.go`, `comps/static_map.go`.
 
 ## Index
 
@@ -39,6 +39,8 @@ One of 7 topic pages of [package comps](comps.md), which has the package overvie
 - [`type MapPanel`](#type-mappanel)
     - [`func (MapPanel) Render`](#func-mappanel-render)
 - [`type MapPin`](#type-mappin)
+- [`type MessageBubble`](#type-messagebubble)
+    - [`func (MessageBubble) Render`](#func-messagebubble-render)
 - [`type QRCode`](#type-qrcode)
     - [`func (QRCode) Render`](#func-qrcode-render)
 - [`type StatTile`](#type-stattile)
@@ -495,7 +497,7 @@ AudioPlayer is the transport for one track on the app's one player: the title, a
 	}
 
 	┌ Column  role=group  name=Title ──────────────────────┐
-	│ Sunday, 14 March                                     │  Typography.Subtitle
+	│ Sunday, 14 March                                     │  Typography.Body, bold
 	│ Pastor Ade                                           │  Artist, or the state
 	│ ●━━━━━━━━━━━━━━━━○──────────────────────────────     │  Slider, seeks on release
 	│ 12:04                                        41:30   │  elapsed · total
@@ -519,7 +521,7 @@ The column is a RoleGroup named by the track's title, so a reader entering it he
 
 #### Theme roles read
 
-	Title        Typography.Subtitle
+	Title        Typography.Body, bold
 	Second line  Typography.Caption over TextSecondary
 	Times        Typography.Caption over TextSecondary
 	Controls     comps.Button: Play filled, the rest outlined
@@ -1088,6 +1090,86 @@ MapPin is one point in a MapPanel: the data a core.Marker needs, as a value a ca
 A struct rather than four arguments for the reason StaticMapArea is one: a caller builds these in a loop from their own data, and a field added here is a field existing code ignores.
 
 <small>[comps/map_panel.go:103](https://github.com/rohanthewiz/grmob/blob/master/comps/map_panel.go#L103)</small>
+
+### type MessageBubble
+
+```go
+type MessageBubble struct {
+	// Text is the message.
+	Text string
+
+	// Sender is drawn above the text of someone else's message. Leave it
+	// empty to hide it — on the second of two consecutive messages from the
+	// same person, or in a one-to-one chat. It is never drawn on Mine.
+	Sender string
+
+	// Mine puts the bubble on the trailing side in the Primary fill.
+	Mine bool
+
+	// Time is drawn small under the text, at the trailing edge ("10:42").
+	// The widget does not format times; pass what the screen should show.
+	Time string
+
+	// MineLabel stands in for the sender in the spoken name of the reader's
+	// own message; empty gives "You".
+	MineLabel string
+
+	// Style is applied to the outer row — the placement, where a margin
+	// between messages belongs — after its defaults.
+	Style []core.StyleProp
+}
+```
+
+MessageBubble is one message in a conversation: a rounded box of text held to one side of the row — the trailing side for the reader's own, the leading side for everyone else's — with an optional sender line above the text and a time under it.
+
+	comps.MessageBubble{Text: "Já viste a nova versão?", Sender: "Ana", Time: "10:42"}
+	comps.MessageBubble{Text: "Ainda não", Mine: true, Time: "10:43"}
+
+	┌ Row  justify=start ───────────────────────────────────┐
+	│ ┌ Column  Surface + hairline ─────┐                   │  theirs
+	│ │ Ana                             │  bold caption     │
+	│ │ Já viste a nova versão?         │                   │
+	│ │                          10:42  │  caption, end     │
+	│ └─────────────────────────────────┘                   │
+	└───────────────────────────────────────────────────────┘
+	┌ Row  justify=end ─────────────────────────────────────┐
+	│                   ┌ Column  Primary ────────────────┐ │  mine
+	│                   │ Ainda não                 10:43 │ │
+	│                   └─────────────────────────────────┘ │
+	└───────────────────────────────────────────────────────┘
+
+#### The two sides' colours
+
+Mine is the theme's Primary with the ink chosen by contrast against it (Variant.Ink), the fill every chat app gives the reader's own words. Theirs has no palette role to take: there is no muted container tone (Banner's doc has the long version of that gap), and inventing one is a theme decision a chat bubble should not force. So theirs is Surface with a Border hairline — Banner's answer to the same gap — which separates it from the page in every bundled theme without a colour anybody has to choose.
+
+#### What it is not
+
+  - \*\*Not a thread.\*\* A conversation opens at its newest message, which is a scroll offset, and no host reports or accepts one (Carousel's wall). A caller lays bubbles out in its own Column or core.List, as examples/chat does, and the spacing between them is the caller's too.
+  - \*\*No tail.\*\* The little point on a bubble's corner is one sharp corner on a rounded box, and core has one radius, not four — DateRangePicker's notch again.
+
+#### Accessibility
+
+The bubble is one stop named "Ana, Já viste a nova versão?, 10:42" — who, what, when — with its parts hidden, so a reader moving through a transcript hears each message whole rather than as three fragments. The reader's own messages are named with MineLabel ("You") in the sender's place, since no sender is drawn on them. Put the bubbles under a core.RoleLog container (examples/chat does) so new ones are announced.
+
+#### Theme roles read
+
+	Mine       Colors.Primary fill, ink by contrast (Variant.Ink)
+	Theirs     Colors.Surface fill, ColorPalette.BorderColor hairline, TextPrimary ink
+	Sender     Typography.Caption, bold
+	Text       Typography.Body
+	Time       Typography.Caption; TextSecondary on theirs, the ink on mine
+
+<small>[comps/message_bubble.go:62](https://github.com/rohanthewiz/grmob/blob/master/comps/message_bubble.go#L62)</small>
+
+#### func (MessageBubble) Render
+
+```go
+func (m MessageBubble) Render(ctx *core.Context) *core.Node
+```
+
+Render builds Row(justify, Column(sender?, text, time?)). It takes no hook slot.
+
+<small>[comps/message_bubble.go:89](https://github.com/rohanthewiz/grmob/blob/master/comps/message_bubble.go#L89)</small>
 
 ### type QRCode
 

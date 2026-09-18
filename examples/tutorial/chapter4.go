@@ -62,6 +62,7 @@ func chapter4() Chapter {
 			lessonHeatAndSpread(),
 			lessonCopyLinkAndList(),
 			lessonAudioPlayer(),
+			lessonMessageBubbles(),
 		},
 	}
 }
@@ -5226,6 +5227,97 @@ func lessonAudioPlayer() Lesson {
 					"Not this track loaded? Play loads it; the controls that would drive another stream are disabled.",
 					"The scrub reading is the widget's; the seek is sent once, on release.",
 					"It holds hooks (UseAudio and the scrub), so render it unconditionally.",
+				),
+			)
+		},
+	}
+}
+
+// tutorialChatLine is one message of lesson 4.31's transcript.
+type tutorialChatLine struct {
+	from, text, time string // from "" is the reader
+}
+
+// 4.31 — G4 of the third low-hanging-fruit round, extracted from
+// examples/chat. The lesson is organised around the two things the widget
+// refuses to be — a thread, and a bubble with a tail — because each refusal
+// names a wall a reader building a chat screen will hit.
+//
+// Appended at the end of the chapter for the reason 4.25 was.
+func lessonMessageBubbles() Lesson {
+	return Lesson{
+		Title:   "Message bubbles",
+		Summary: "comps.MessageBubble: whose side, which colours, one spoken stop per message — and why it is not a thread.",
+		Body: func(ctx *core.Context) core.View {
+			thread := core.NewState(ctx, []tutorialChatLine{
+				{"Ana", "Did you see the new release?", "10:41"},
+				{"Ana", "Bubbles are a widget now.", "10:41"},
+				{"", "Not yet — what changed?", "10:42"},
+			})
+			draft := core.NewState(ctx, "")
+
+			send := func() {
+				text := strings.TrimSpace(draft.Get())
+				if text == "" {
+					return
+				}
+				thread.Set(append(append([]tutorialChatLine(nil), thread.Get()...),
+					tutorialChatLine{"", text, "10:43"}))
+				draft.Set("")
+			}
+
+			lines := thread.Get()
+			bubbles := []core.PropsAndChildren{
+				core.Gap(6),
+				// A transcript is ARIA's log: new messages are announced and
+				// the rest stays readable in order. See examples/chat.
+				core.AccessibilityRole(core.RoleLog),
+			}
+			for i, l := range lines {
+				// The sender line only where the speaker changes: the second
+				// of Ana's two messages leaves Sender empty.
+				sender := l.from
+				if i > 0 && lines[i-1].from == l.from {
+					sender = ""
+				}
+				bubbles = append(bubbles, core.Keyed(fmt.Sprintf("line-%d", i), comps.MessageBubble{
+					Text:   l.text,
+					Sender: sender,
+					Mine:   l.from == "",
+					Time:   l.time,
+				}))
+			}
+
+			return core.Column(
+				core.Gap(14),
+				prose("A message bubble is a rounded box held to one side of the row: the trailing side "+
+					"for your own words in the theme's Primary, the leading side for everyone else's. "+
+					"Theirs has no palette role to take — there is no muted container tone — so it is "+
+					"Surface with a hairline, Banner's answer to the same gap."),
+				codeBlock(`comps.MessageBubble{Text: "Did you see?", Sender: "Ana", Time: "10:41"}
+comps.MessageBubble{Text: "Not yet", Mine: true, Time: "10:42"}`),
+				demoPanel("Send a message. Ana's second line has no sender: Sender is left empty when the speaker has not changed.",
+					core.Column(bubbles...),
+					comps.InputRow{
+						Value:       draft.Get(),
+						Placeholder: "Message…",
+						OnChange:    draft.Set,
+						OnSubmit:    send,
+						Button:      comps.Button{Label: "Send"},
+					},
+				),
+				prose("Each bubble is one stop for a screen reader, named who-what-when: \"Ana, Did you "+
+					"see the new release?, 10:41\". Your own are named \"You, …\" — MineLabel "+
+					"localizes it. Put the bubbles under a RoleLog container so new ones are announced."),
+				prose("It is not a thread. A conversation opens at its newest message, which is a scroll "+
+					"offset, and no host reports or accepts one — the wall the carousel hit. And it "+
+					"has no tail: a tail is one sharp corner on a rounded box, and core has one radius, "+
+					"not four."),
+				keyPoints(
+					"MessageBubble: Mine on the trailing side in Primary; theirs on the leading side in Surface with a hairline.",
+					"Sender is drawn on theirs only; leave it empty when the speaker has not changed.",
+					"One spoken stop per message, who-what-when; use a RoleLog container for the transcript.",
+					"Not a thread (no scroll offset) and no tail (one corner radius): both are renderer walls.",
 				),
 			)
 		},
