@@ -794,6 +794,38 @@ Other notes:
   no reading at all.
 - `Disabled` greys the track and registers neither callback.
 
+## KeyValueList
+
+The label-and-value table of an order summary, a profile or an about screen.
+
+```go
+comps.KeyValueList{
+    Label:    "Order details",
+    Dividers: true,
+    Rows: []comps.KeyValue{
+        {Key: "Placed", Value: "14 Mar 2026"},
+        {Key: "Total",  Value: "$42.10"},
+    },
+}
+// Placed                 14 Mar 2026
+// ──────────────────────────────────
+// Total                       $42.10
+```
+
+- Each row is a [`ListRow`](#listrow): the key is the leading slot, the value
+  the trailing one, and the empty middle grows between them, so the value is
+  pinned to the edge and nothing new solves layout. The key is pinned at its
+  width (`FlexShrink(0)`, ListRow's own advice for text there), so a long value
+  wraps and a key never does.
+- The key is in the body ink and the value in the secondary one — the iOS
+  "value" cell. A long value wraps against the trailing edge.
+- The column is a `RoleList` of listitems, which the widget can claim because
+  it owns both halves. Each row is named "Key, Value", because the widget knows
+  both strings and a row is then one stop for a reader rather than two
+  unrelated ones.
+- `Dividers` puts a hidden `Separator` between rows, never above the first or
+  below the last.
+
 ## Badge
 
 A small **non-interactive** status pill — a count, a "verified" mark, a
@@ -1228,6 +1260,21 @@ The default tint is the theme's `Border` role, read through
 before that role existed falls back to `core.FallbackBorder` (`#E5E5EA`)
 instead of rendering an invisible rule. `Color` still overrides per instance.
 
+## LabeledSeparator
+
+The rule with a word in it — the "or" between two ways to sign in.
+
+```go
+comps.LabeledSeparator{Label: "or"}
+// ──────────────── or ────────────────
+```
+
+Two [`Separator`](#separator)s that grow equally, with the label between them,
+so the word stays centred at any width and the rules are the theme's own
+hairline. The rules are hidden; the label is read, because "or" between two
+sign-in buttons is part of what the screen says. The label never shrinks —
+the rules give way first. An empty `Label` draws one unbroken rule.
+
 ## Avatar
 
 The circular portrait: a remote image when there is one, initials on a
@@ -1271,6 +1318,40 @@ change that, though the underlying prop now exists:
 `core.ImageWithMode(src, core.ContentModeFill, ...)` covers the four modes
 (`Fit`, `Fill`, `Stretch`, `Center`) on every renderer. Threading it through
 `Avatar` is a widget change waiting for a caller that wants it.
+
+## AvatarStack
+
+The overlapping row of faces: who is in a thread, who is going.
+
+```go
+comps.AvatarStack{Avatars: attendees, Max: 4}
+// (AL)(GH)(KJ)(+3)      six people, Max 4
+```
+
+**A `ZStack`, because a `Row` cannot overlap.** A negative margin or gap is not
+portable, so every face is a stack layer placed `core.StackAlignStart` and
+pushed right by a `MarginLeft` one step larger than the last — the same
+margin-on-a-layer that holds [`FAB`](#fab) off its corner. The stack's box is
+pinned: width `ring + step·(n-1)`, height `ring`.
+
+**The ring is a layer, not a border.** Each face sits on a disc of the theme's
+`Background`, drawn as its own layer before the face. A border would be sized
+differently across targets — inside the box on both natives, outside it under
+the static export's content-box sizing — and the overlap would be off by the
+difference. A plain `Box` with a size and a fill is the same everywhere.
+`RingColor` matches it to a `Card` or `Surface` panel; `RingWidth: -1` drops it.
+
+Faces overlap by 20% of `Size` by default (`Overlap`): at 25–30% the next disc
+cut into a two-letter pair of initials.
+
+**`Max` counts the surplus disc**, so `Max: 4` is four discs wide however long
+the list: six people draw three faces and "+3". Later faces overlap earlier
+ones, and the "+N" disc is drawn last so nothing covers its count.
+
+**One picture, one name.** The stack is `RoleImg` named "Ada Lovelace, Grace
+Hopper and 3 others", with every face hidden behind it. The count takes in the
+surplus and any unnamed face. `Label` replaces the sentence ("6 attendees", or
+another language). An empty stack is a hidden, sizeless `Box`.
 
 ## ProgressBar
 
@@ -1462,6 +1543,41 @@ comps.FormField{
     },
 }
 ```
+
+## PasswordField
+
+A password input with a reveal toggle trailing it.
+
+```go
+comps.FormField{
+    Label: "Password",
+    Error: form.Error("password"),
+    Input: comps.PasswordField{
+        Value:    pw.Get(),
+        OnChange: pw.Set,
+        Label:    "Password",
+    },
+}
+// [ ••••••••••            ]  Show
+```
+
+- **It is the input, not the field.** The plan sketched a `FormField` whose
+  input swaps; it goes *in* a `FormField` instead, by `DatePicker`'s rule that
+  a control growing its own label is a second way to write a form.
+- **The swap.** Hidden it is a `core.InputPassword`, revealed a `core.Input`.
+  They are different node types, so the element is replaced rather than
+  patched — harmless, because focus is on the toggle just pressed, and the text
+  is `Value`, the caller's, drawn into whichever element is up.
+- **One hook, the reveal.** Nothing else in a form wants to know whether the
+  password was visible while typed, so the widget holds it — the test
+  [`TimePicker`](#timepicker) states. It inherits the hook rules: render it
+  unconditionally, in a stable position.
+- **A stable name with a pressed state.** The caption flips between Show and
+  Hide, but the toggle's accessible name stays "Show password", with
+  `core.AccessibilitySelected` saying whether it is pressed (`aria-pressed` on
+  the web). A name that flipped would read as two different buttons.
+- No `OnChange` raises `ConcernPasswordFieldInert`: a password that never
+  reaches the app looks, at sign-in, exactly like a wrong one.
 
 ## PINInput
 
@@ -2201,6 +2317,28 @@ It is an ordinary `Row`, not a platform navigation bar: nothing floats,
 collapses on scroll, or claims the status bar. `Screen`'s `SafeArea` is what
 keeps it clear of the notch.
 
+## Breadcrumb
+
+The trail from the root of a hierarchy to the current page.
+
+```go
+comps.Breadcrumb{
+    Items: []string{"Files", "Photos", "2026"},
+    OnTap: func(i int) { nav.PopTo(i) },
+}
+// Files › Photos › 2026
+```
+
+- A `RoleNavigation` named "Breadcrumb" — ARIA's breadcrumb pattern. Every
+  ancestor is a ghost [`Button`](#button); the chevrons are hidden.
+- **The last item is not a button.** It is where the reader already is, so it
+  is text stating `core.CurrentPage`, and not a dead tab stop at the end of the
+  trail.
+- With `OnTap` nil the whole trail is text — a location label, not navigation —
+  which is why a nil `OnTap` is not a concern.
+- A long trail wraps rather than truncating; collapsing the middle into "…" is
+  a caller's shortened `Items`.
+
 ## BottomBar
 
 The strip pinned to the bottom of a screen: two to five destinations or
@@ -2241,6 +2379,26 @@ Other notes:
   not control.
 - The icon is decoration and hidden from assistive technology.
 - `BarItem.AccessibilityLabel` replaces an abbreviated label as the spoken name.
+
+### Badges
+
+`BarItem.Badge` puts a count on an item as a [`Badge`](#badge) over the icon's
+top-end corner. The icon becomes a two-layer `ZStack` — the glyph, centred, and
+the badge placed `core.StackAlignTopEnd`. The glyph keeps a symmetric
+horizontal margin so the badge overlaps its corner rather than all of it, and
+no top margin, so a badged icon stays level with its neighbours. An item with
+no badge renders the tree it always did. The badge is the compact pill both
+platforms' bars use, two points under a free-standing `Badge`, so it covers
+the corner and not the glyph.
+
+```go
+{Icon: "✉", Label: "Inbox", Badge: "3", BadgeLabel: "3 unread"}
+```
+
+The count joins the item's name — "Inbox, 3 unread" — because the cell is one
+button with one name; `BadgeLabel` is the spoken form, `Badge` itself when
+empty. The badge is `VariantError`, the colour both platforms give a count.
+With no icon, the label wears the badge.
 
 ## FAB
 
@@ -2444,6 +2602,34 @@ Other notes:
   the host's rendering of the chassis, not something the widget chooses.
 - A `Body` taller than the screen scrolls inside the dialog on every target,
   so a long form on a landscape phone is reachable rather than cut off.
+
+## Lightbox
+
+One image, large, over everything, on a dark ground.
+
+```go
+comps.Lightbox{
+    Src:       photo.URL,
+    Alt:       photo.Description,
+    Open:      viewing.Get(),
+    OnDismiss: func() { viewing.Set(false) },
+}
+```
+
+- **Dialog's plumbing, not Dialog.** A `core.Modal`, controlled by `Open`, every
+  way out reported through `OnDismiss` — with an image where [`Dialog`](#dialog)'s
+  card would be.
+- **Fit.** `core.ContentModeFit`, never cropped: the reason to open a thumbnail
+  is to see what its crop cut off. `Height` (400 by default) and the panel's
+  width bound it.
+- **Dark on every target, in every theme.** The scrim is near-black and the
+  panel black, with white ink. The panel is filled rather than transparent
+  because SwiftUI presents a `Modal` as a sheet on the system background, not
+  over the scrim.
+- The image is named by `Alt`, or hidden when there is none (the `Caption`, if
+  any, is then what is read). The ✕ is named "Close".
+- No `OnDismiss` raises `ConcernLightboxInescapable`: the close button and the
+  scrim would close nothing.
 
 ## ActionSheet
 

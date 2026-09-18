@@ -2659,3 +2659,98 @@ func TestTimePickerLessonReportsEachPickAndKeepsTheDate(t *testing.T) {
 	}
 	assertNoConcerns(t)
 }
+
+// --- 4.27 Seven small pieces ----------------------------------------------
+
+// Every piece on the order screen does its one job: a crumb reports its
+// ancestor, the receipt opens and closes, the password reveals and hides
+// again, and visiting the Inbox clears its badge because the count is the
+// caller's.
+func TestSmallPiecesLessonDrivesEachPiece(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Seven small pieces")
+
+	cur := tree(t, mgr)
+	if hasTextContaining(cur, "Back to") {
+		t.Fatal("no crumb has been tapped yet")
+	}
+	if findNode(cur, func(n *node) bool { return n.Type == "Button" && n.Props["label"] == "#40121" }) != nil {
+		t.Error("the current crumb should not be a button")
+	}
+	tap(t, mgr, "Orders")
+	if !hasText(tree(t, mgr), "Back to Orders.") {
+		t.Error("tapping the first crumb should report it")
+	}
+
+	// The facts and the facepile are named for a reader.
+	cur = tree(t, mgr)
+	if findNode(cur, func(n *node) bool { return n.Style != nil && n.Style.AccessibilityLabel == "Total, $42.10" }) == nil {
+		t.Error("a fact should be one named item")
+	}
+	if findNode(cur, func(n *node) bool {
+		return n.Style != nil && n.Style.AccessibilityLabel == "Ada Lovelace, Grace Hopper, Katherine Johnson and 3 others"
+	}) == nil {
+		t.Error("the avatar stack should be one picture naming who is drawn and counting the rest")
+	}
+
+	// The receipt: shut, open, shut.
+	lightbox := func() *node {
+		return findNode(tree(t, mgr), func(n *node) bool {
+			return n.Type == "Modal" && hasText(n, "Receipt #40121")
+		})
+	}
+	if lightbox().Props["visible"] != false {
+		t.Fatal("the lightbox should start shut")
+	}
+	tap(t, mgr, "View receipt")
+	if lightbox().Props["visible"] != true {
+		t.Fatal("View receipt should open the lightbox")
+	}
+	tap(t, mgr, "✕")
+	if lightbox().Props["visible"] != false {
+		t.Error("the close button should shut it")
+	}
+
+	// The password: dots, then text, then dots, with the same name throughout.
+	inputType := func() string {
+		n := findNode(tree(t, mgr), func(n *node) bool {
+			return (n.Type == "Input" || n.Type == "InputPassword") && n.Style != nil && n.Style.AccessibilityLabel == "Password"
+		})
+		if n == nil {
+			t.Fatal("no password input")
+		}
+		return n.Type
+	}
+	if got := inputType(); got != "InputPassword" {
+		t.Fatalf("input = %q, want the dots first", got)
+	}
+	tap(t, mgr, "Show")
+	if got := inputType(); got != "Input" {
+		t.Errorf("after Show the input = %q, want the text in the open", got)
+	}
+	tap(t, mgr, "Hide")
+	if got := inputType(); got != "InputPassword" {
+		t.Errorf("after Hide the input = %q", got)
+	}
+
+	// The badge is the lesson's count, drawn; visiting the Inbox reads it.
+	inbox := func() *node {
+		return findNode(tree(t, mgr), func(n *node) bool {
+			return n.Style != nil && strings.HasPrefix(n.Style.AccessibilityLabel, "Inbox")
+		})
+	}
+	if got := inbox().Style.AccessibilityLabel; got != "Inbox, 3 unread" {
+		t.Fatalf("inbox name = %q, want the count in it", got)
+	}
+	if !hasText(inbox(), "3") {
+		t.Fatal("the badge should be drawn")
+	}
+	mgr.DispatchCallback(inbox().Props["onClick"].(string))
+	if got := inbox().Style.AccessibilityLabel; got != "Inbox" {
+		t.Errorf("inbox name after visiting = %q, want the badge gone", got)
+	}
+	if hasText(inbox(), "3") {
+		t.Error("the badge should clear once the Inbox is visited")
+	}
+	assertNoConcerns(t)
+}

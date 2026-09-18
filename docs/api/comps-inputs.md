@@ -4,13 +4,13 @@
 import "github.com/rohanthewiz/grmob/comps"
 ```
 
-Form fields, one-time code fields, search, searchable selects, radio groups, dates, date ranges, times and calendars, and the two editors.
+Form fields, password fields, one-time code fields, search, searchable selects, radio groups, dates, date ranges, times and calendars, and the two editors.
 
-One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/form_field.go`, `comps/pin_input.go`, `comps/search_field.go`, `comps/searchable_select.go`, `comps/radio_group.go`, `comps/date_picker.go`, `comps/date_range_picker.go`, `comps/time_picker.go`, `comps/calendar.go`, `comps/code_editor.go`, `comps/rich_text_editor.go`.
+One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/form_field.go`, `comps/password_field.go`, `comps/pin_input.go`, `comps/search_field.go`, `comps/searchable_select.go`, `comps/radio_group.go`, `comps/date_picker.go`, `comps/date_range_picker.go`, `comps/time_picker.go`, `comps/calendar.go`, `comps/code_editor.go`, `comps/rich_text_editor.go`.
 
 ## Index
 
-- [Constants](#constants) — `ConcernCalendarRangeReversed`, `ConcernDateRangePickerInert`, `ConcernPINInputInert`, `ConcernPINValueTooLong`, `ConcernTimePickerInert`, `RichToolLink`
+- [Constants](#constants) — `ConcernCalendarRangeReversed`, `ConcernDateRangePickerInert`, `ConcernPINInputInert`, `ConcernPINValueTooLong`, `ConcernPasswordFieldInert`, `ConcernTimePickerInert`, `RichToolLink`
 - [Variables](#variables) — `RichToolbarDefault`
 - [`type Calendar`](#type-calendar)
     - [`func (Calendar) Render`](#func-calendar-render)
@@ -24,6 +24,8 @@ One of 7 topic pages of [package comps](comps.md), which has the package overvie
     - [`func (FormField) Render`](#func-formfield-render)
 - [`type PINInput`](#type-pininput)
     - [`func (PINInput) Render`](#func-pininput-render)
+- [`type PasswordField`](#type-passwordfield)
+    - [`func (PasswordField) Render`](#func-passwordfield-render)
 - [`type RadioGroup`](#type-radiogroup)
     - [`func (RadioGroup) Render`](#func-radiogroup-render)
 - [`type RadioOption`](#type-radiooption)
@@ -73,6 +75,14 @@ const ConcernPINValueTooLong = "pin-value-too-long"
 ```
 
 <small>[comps/pin_input.go:23](https://github.com/rohanthewiz/grmob/blob/master/comps/pin_input.go#L23)</small>
+
+ConcernPasswordFieldInert is raised, in debug builds only, when a PasswordField has no OnChange. Every keystroke goes nowhere, so the field either snaps back to empty or, on a target that keeps typed text until a patch says otherwise, shows dots for a password the application never received — and a sign-in that fails with a filled-in field is the worst kind of broken, because it looks like a wrong password. The bar TimePicker's and PINInput's inert cases are reported against.
+
+```go
+const ConcernPasswordFieldInert = "password-field-inert"
+```
+
+<small>[comps/password_field.go:12](https://github.com/rohanthewiz/grmob/blob/master/comps/password_field.go#L12)</small>
 
 ConcernTimePickerInert is raised, in debug builds only, when a TimePicker has no OnChange. The pickers still open and still take a choice, and the choice goes nowhere: the field goes on reporting the time it was handed, so it either snaps back or, on a target that keeps the picked option until a patch says otherwise, shows a time the application does not hold. Neither looks broken on screen, which is the bar DateRangePicker's and PINInput's inert cases are reported against.
 
@@ -891,6 +901,95 @@ func (p PINInput) Render(ctx *core.Context) *core.Node
 Render allocates the refs, declares their order and draws the cells.
 
 <small>[comps/pin_input.go:192](https://github.com/rohanthewiz/grmob/blob/master/comps/pin_input.go#L192)</small>
+
+### type PasswordField
+
+```go
+type PasswordField struct {
+	// Value is the password, owned by the caller.
+	Value string
+
+	// OnChange receives every keystroke. Nil reports
+	// ConcernPasswordFieldInert.
+	OnChange func(string)
+
+	// Placeholder is drawn in the empty field.
+	Placeholder string
+
+	// Label names the input for assistive technology ("Password"). It is not
+	// drawn: the FormField around the field is the visible label.
+	Label string
+
+	// ShowLabel and HideLabel caption the toggle; empty gives "Show" and
+	// "Hide".
+	ShowLabel, HideLabel string
+
+	// RevealLabel is the toggle's accessible name, the same in both states;
+	// empty gives "Show password". See "Accessibility".
+	RevealLabel string
+
+	// Disabled disables the input and the toggle.
+	Disabled bool
+
+	// Style is applied to the row after its defaults.
+	Style []core.StyleProp
+}
+```
+
+PasswordField is a password input with a reveal toggle: the dots, and a "Show" button trailing them that swaps the dots for the text and back.
+
+	comps.FormField{
+	    Label: "Password",
+	    Error: form.Error("password"),
+	    Input: comps.PasswordField{
+	        Value:    pw.Get(),
+	        OnChange: pw.Set,
+	        Label:    "Password",
+	    },
+	}
+
+	┌ Row ──────────────────────────────────────────────┐
+	│ ┌ InputPassword FlexGrow(1) ───────────┐  [Show]  │
+	│ │ ••••••••••                           │   ghost  │
+	│ └──────────────────────────────────────┘          │
+	└───────────────────────────────────────────────────┘
+	      revealed: core.Input, and the button says Hide
+
+#### It is the input, not the field
+
+The plan called this a FormField whose input swaps. It is built as the input instead, and goes in a FormField's slot like every other input, because FormField already owns the label, the hint, the error and the required mark — DatePicker's rule, stated there: a control that grew its own label would be a second way to write a form, worded and spaced slightly differently from every other field on the screen. It also keeps forms' Error and Required wiring exactly as it is for a plain Input.
+
+#### The swap
+
+Revealed, the field is a core.Input; hidden, a core.InputPassword. The two are different node types, so the reconciler replaces the element rather than patching an attribute. That is harmless here, and the reason is where focus is: the reader just pressed the toggle, so focus is on the button and not in the field being replaced. The text survives because it was never the element's — it is Value, the caller's, drawn into whichever element is up.
+
+#### The one piece of state is the widget's
+
+Whether the password is showing is held here, in a hook, and not handed to the caller. It is the test TimePicker's doc states — hold state in the widget only when no application wants it — and no application wants it: a form submits the value, never whether it was visible while being typed. Owning it means inheriting the hook rules, as DatePicker does: render a PasswordField unconditionally, in a stable position, every pass.
+
+It also resets on its own. The state lives as long as the screen's hooks do, and a Navigator frame that is popped starts fresh when it is pushed again, so a sign-in screen that is left and returned to opens hidden — the behaviour a shoulder-surfer's victim wants, without anyone writing it.
+
+#### Accessibility
+
+The input is named by Label, since the FormField's visible label is a separate Text that no target associates with it. The toggle's visible caption changes (Show, Hide) but its accessible name does not: it is "Show password" with core.AccessibilitySelected stating whether it is pressed — aria-pressed on the web, the selected trait on the natives. That is ARIA's rule for a toggle button, and the reason for it: a name that flips between "Show" and "Hide" as it is pressed reads as two different buttons, and a reader cannot tell which state the field is in from a name that describes the action rather than the state.
+
+#### Theme roles read
+
+	Input      Components.Input, through core.Input / core.InputPassword
+	Toggle     Colors.Primary's on-light tone, through a ghost Button
+	Gap        Spacing.XS between the input and the toggle
+
+<small>[comps/password_field.go:84](https://github.com/rohanthewiz/grmob/blob/master/comps/password_field.go#L84)</small>
+
+#### func (PasswordField) Render
+
+```go
+func (p PasswordField) Render(ctx *core.Context) *core.Node
+```
+
+Render draws the input and its toggle. It takes one hook, the reveal state.
+
+<small>[comps/password_field.go:115](https://github.com/rohanthewiz/grmob/blob/master/comps/password_field.go#L115)</small>
 
 ### type RadioGroup
 

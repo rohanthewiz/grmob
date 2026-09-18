@@ -58,6 +58,7 @@ func chapter4() Chapter {
 			lessonTimers(),
 			lessonDateRange(),
 			lessonTimePicker(),
+			lessonSmallPieces(),
 		},
 	}
 }
@@ -4735,4 +4736,170 @@ func lessonTimePicker() Lesson {
 			)
 		},
 	}
+}
+
+// --- 4.27 ----------------------------------------------------------------
+
+// tutorialOrderCrumbs is 4.27's trail: the order sits two levels under the
+// orders list, so the breadcrumb has two ancestors to go back to.
+var tutorialOrderCrumbs = []string{"Orders", "March", "#40121"}
+
+// tutorialSharedWith are the six people 4.27's order is shared with. Initials
+// only, no Src, so the stack draws with no network at all.
+var tutorialSharedWith = []comps.Avatar{
+	{Name: "Ada Lovelace"},
+	{Name: "Grace Hopper"},
+	{Name: "Katherine Johnson"},
+	{Name: "Dorothy Vaughan"},
+	{Name: "Mary Jackson"},
+	{Name: "Annie Easley"},
+}
+
+// tutorialReceipt is the image 4.27's Lightbox opens: a placeholder service's
+// URL, the same one examples/fintechapp uses, at a photo's proportions.
+const tutorialReceipt = "https://dummyimage.com/800x600/1e3a5f/ffffff&text=Receipt+%2340121"
+
+// 4.27 — Tier E of the second low-hanging-fruit round, seven small widgets
+// taught together because none of them has a lesson's worth of idea alone.
+// The demo is one screen that uses all seven the way an app would — an order's
+// detail page — so each piece is seen in the place it was made for rather than
+// on a bare panel, and the prose says the one thing about each that is not
+// obvious from its picture.
+//
+// The bar's Inbox badge clears when Inbox is tapped, so the badge is seen to
+// be caller state that a render reads, not something the bar counts.
+//
+// Appended at the end of the chapter for the reason 4.25 was.
+func lessonSmallPieces() Lesson {
+	return Lesson{
+		Title:   "Seven small pieces",
+		Summary: "KeyValueList, Breadcrumb, AvatarStack, LabeledSeparator, PasswordField, a badge on BottomBar and Lightbox — one order screen built from all of them.",
+		Body: func(ctx *core.Context) core.View {
+			crumbNote := core.NewState(ctx, "")
+			viewing := core.NewState(ctx, false)
+			password := core.NewState(ctx, "")
+			tab := core.NewState(ctx, 0)
+			unread := core.NewState(ctx, 3)
+
+			// The badge is the caller's count drawn as text; empty draws none.
+			inboxBadge := ""
+			if n := unread.Get(); n > 0 {
+				inboxBadge = strconv.Itoa(n)
+			}
+			choose := func(i int) func() {
+				return func() {
+					tab.Set(i)
+					if i == 1 {
+						unread.Set(0) // visiting the inbox reads it
+					}
+				}
+			}
+
+			return core.Column(
+				core.Gap(14),
+				prose("None of these seven has a lesson's worth of idea on its own, and every one "+
+					"of them is a thing screens kept hand-rolling. So here they are together, "+
+					"doing their jobs on one screen: the detail page of an order."),
+				demoPanel("Tap a crumb, the receipt, Show, and the Inbox.",
+					comps.Breadcrumb{
+						Items: tutorialOrderCrumbs,
+						OnTap: func(i int) { crumbNote.Set("Back to " + tutorialOrderCrumbs[i] + ".") },
+					},
+					caption(orEmpty(crumbNote.Get(), "The last crumb is where you are, so it is not a button.")),
+					comps.KeyValueList{
+						Label:    "Order details",
+						Dividers: true,
+						Rows: []comps.KeyValue{
+							{Key: "Placed", Value: "14 Mar 2026"},
+							{Key: "Items", Value: "3"},
+							{Key: "Total", Value: "$42.10"},
+						},
+					},
+					comps.ListRow{
+						Title:    "Shared with",
+						Trailing: comps.AvatarStack{Avatars: tutorialSharedWith, Max: 4},
+					},
+					comps.Button{
+						Label:    "View receipt",
+						Emphasis: comps.EmphasisOutlined,
+						OnTap:    func() { viewing.Set(true) },
+						Style:    []core.StyleProp{core.AccessibilityHasPopup(core.PopupDialog)},
+					},
+					comps.Lightbox{
+						Src:       tutorialReceipt,
+						Alt:       "Receipt for order 40121, total $42.10",
+						Caption:   "Receipt #40121",
+						Open:      viewing.Get(),
+						OnDismiss: func() { viewing.Set(false) },
+					},
+					comps.LabeledSeparator{Label: "or"},
+					comps.FormField{
+						Label: "Confirm with your password",
+						Input: comps.PasswordField{
+							Value:    password.Get(),
+							OnChange: password.Set,
+							Label:    "Password",
+						},
+					},
+					comps.BottomBar{
+						Selected: tab.Get(),
+						Items: []comps.BarItem{
+							{Icon: "🧾", Label: "Orders", OnTap: choose(0)},
+							{Icon: "📬", Label: "Inbox", OnTap: choose(1),
+								Badge: inboxBadge, BadgeLabel: inboxBadge + " unread"},
+							{Icon: "👤", Label: "Me", OnTap: choose(2)},
+						},
+					},
+				),
+				prose("KeyValueList is ListRows with the key as the title and the value trailing, "+
+					"so the value is pinned by the row's growing middle and nothing new solves "+
+					"layout. It is a list of list items, each named \"Total, $42.10\", so a reader "+
+					"hears a fact once rather than a word and a number as two strangers."),
+				prose("Breadcrumb is a navigation landmark of ghost buttons, and its last item is "+
+					"text marked as the current page — a button that went where you already are "+
+					"would be a dead tab stop at the end of every trail. With no OnTap the whole "+
+					"trail is text: a location label rather than a way back."),
+				prose("AvatarStack overlaps with a ZStack, not a Row: a negative margin is not "+
+					"portable, a margin on a stack layer is. The ring around each face is a disc "+
+					"layer of its own rather than a border, because a border is drawn inside the "+
+					"box on a phone and outside it in a static export. Max counts the +N disc, so "+
+					"Max 4 is four discs wide however long the list, and the whole stack is one "+
+					"picture with one name."),
+				codeBlock(`comps.FormField{
+    Label: "Password",
+    Input: comps.PasswordField{Value: pw.Get(), OnChange: pw.Set, Label: "Password"},
+}`),
+				prose("PasswordField is the input, not the field — FormField already owns the "+
+					"label — and it keeps one piece of state, whether the text is showing, because "+
+					"no application wants that. The toggle's caption flips between Show and Hide "+
+					"but its accessible name stays \"Show password\", with pressed or not pressed "+
+					"as its state: a name that flipped would read as two different buttons."),
+				prose("A BarItem's Badge turns its icon into a two-layer ZStack, the Badge placed "+
+					"at the top-end corner, and joins the item's name — \"Inbox, 3 unread\". An "+
+					"item with no Badge renders exactly the tree it always did."),
+				prose("Lightbox is Dialog's Modal plumbing with an image where the card would be, "+
+					"fitted rather than cropped because seeing what the thumbnail cut off is the "+
+					"reason to open it. It is black in every theme, and the panel is filled rather "+
+					"than transparent because an iOS sheet is not drawn over the scrim."),
+				keyPoints(
+					"KeyValueList: ListRows, a list of named items, the value in the quieter ink.",
+					"Breadcrumb: a navigation landmark; the current page is text, not a button.",
+					"AvatarStack: ZStack layers at growing margins; the ring is a layer; one name for the picture.",
+					"LabeledSeparator: two growing Separators and a word that is read.",
+					"PasswordField: goes in a FormField; owns only the reveal; a stable name with a pressed state.",
+					"BarItem.Badge: a top-end ZStack layer over the icon, and part of the item's name.",
+					"Lightbox: a Modal, a fitted image, dark everywhere, and a close button that is always wired.",
+				),
+			)
+		},
+	}
+}
+
+// orEmpty returns s, or fallback when s is empty — the lesson's caption shows
+// a standing hint until a crumb has been tapped.
+func orEmpty(s, fallback string) string {
+	if s == "" {
+		return fallback
+	}
+	return s
 }

@@ -4,9 +4,9 @@
 import "github.com/rohanthewiz/grmob/comps"
 ```
 
-List rows, the settings-row family (switch, checkbox, select and slider), input rows, grouped and paged lists, data tables and timelines.
+List rows, the settings-row family (switch, checkbox, select and slider), input rows, key-value lists, grouped and paged lists, data tables and timelines.
 
-One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/list_row.go`, `comps/settings_row.go`, `comps/select_row.go`, `comps/slider_row.go`, `comps/input_row.go`, `comps/grouped_list.go`, `comps/grouping.go`, `comps/paging.go`, `comps/data_table.go`, `comps/timeline.go`.
+One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/list_row.go`, `comps/settings_row.go`, `comps/select_row.go`, `comps/slider_row.go`, `comps/input_row.go`, `comps/key_value_list.go`, `comps/grouped_list.go`, `comps/grouping.go`, `comps/paging.go`, `comps/data_table.go`, `comps/timeline.go`.
 
 ## Index
 
@@ -27,6 +27,9 @@ One of 7 topic pages of [package comps](comps.md), which has the package overvie
     - [`func (GroupedList) Render`](#func-groupedlist-render)
 - [`type InputRow`](#type-inputrow)
     - [`func (InputRow) Render`](#func-inputrow-render)
+- [`type KeyValue`](#type-keyvalue)
+- [`type KeyValueList`](#type-keyvaluelist)
+    - [`func (KeyValueList) Render`](#func-keyvaluelist-render)
 - [`type ListRow`](#type-listrow)
     - [`func (ListRow) Render`](#func-listrow-render)
 - [`type LoadMore`](#type-loadmore)
@@ -999,6 +1002,85 @@ func (r InputRow) Render(ctx *core.Context) *core.Node
 ```
 
 <small>[comps/input_row.go:107](https://github.com/rohanthewiz/grmob/blob/master/comps/input_row.go#L107)</small>
+
+### type KeyValue
+
+```go
+type KeyValue struct {
+	// Key names the fact ("Total"); Value states it ("$42.10"). An empty Value
+	// draws the key alone, for a fact still loading.
+	Key, Value string
+}
+```
+
+KeyValue is one row of a KeyValueList.
+
+<small>[comps/key_value_list.go:72](https://github.com/rohanthewiz/grmob/blob/master/comps/key_value_list.go#L72)</small>
+
+### type KeyValueList
+
+```go
+type KeyValueList struct {
+	// Rows are the facts, drawn top to bottom.
+	Rows []KeyValue
+
+	// Dividers draws a hairline Separator between rows — not above the first
+	// or below the last, where the list's own container supplies the edge.
+	Dividers bool
+
+	// Label names the list for assistive technology ("Order details"). Empty
+	// leaves it unnamed, which is fine under a visible heading.
+	Label string
+
+	// Style is applied to the list column after its defaults.
+	Style []core.StyleProp
+}
+```
+
+KeyValueList is the label-and-value table of an order summary, a profile or an about screen: one row per fact, the name on the leading side and the value pinned to the trailing edge.
+
+	comps.KeyValueList{Rows: []comps.KeyValue{
+	    {Key: "Order", Value: "#40121"},
+	    {Key: "Placed", Value: "14 Mar 2026"},
+	    {Key: "Total", Value: "$42.10"},
+	}}
+
+	┌──────────────────────────────────────────┐
+	│ Order                            #40121  │
+	│ Placed                      14 Mar 2026  │
+	│ Total                            $42.10  │
+	└──────────────────────────────────────────┘
+
+Each row is a ListRow — the key is its Leading, the value its Trailing, and the empty middle column grows between them — so the value is pinned by ListRow's own spine and the list inherits that widget's answer to "how does the trailing slot stay at the edge". Nothing here re-solves layout. The key is Leading rather than Title so it can be pinned at its width: a long value wraps, a key never does.
+
+#### The two inks
+
+The key is in the body ink and the value in the secondary one. That is the iOS "value" cell and the Material list's supporting text: the key is what the eye scans down, and the value is what it stops on once it has found the line. The opposite weighting (quiet keys, loud values) reads as a form that has been filled in, which is a different screen.
+
+#### Accessibility
+
+The column is a RoleList and every row a listitem, so a reader hears "list, 3 items" and can step through them — a fact sheet is a list, and saying so costs nothing because this widget owns both halves of the structure (the ownership rule ListRow.NestingLevel describes, satisfied from inside).
+
+Each row is named "Key, Value". Unlike ListRow, which will not synthesize a name because its slots can carry meaning it cannot see, this widget knows both strings exactly, which is Avatar's reason for naming itself. The name also makes a row one stop on the natives, where two bare Texts would be two swipes and a reader would hear "Total" and "$42.10" as unrelated items.
+
+#### Theme roles read
+
+	Key        Typography.Body over TextPrimary
+	Value      Typography.Body over TextSecondary
+	Rules      ColorPalette.BorderColor, through Separator, when Dividers
+	Row inset  the theme's Row base, through ListRow
+
+<small>[comps/key_value_list.go:55](https://github.com/rohanthewiz/grmob/blob/master/comps/key_value_list.go#L55)</small>
+
+#### func (KeyValueList) Render
+
+```go
+func (l KeyValueList) Render(ctx *core.Context) *core.Node
+```
+
+Render builds Column(role=list, ListRow(listitem)…).
+
+<small>[comps/key_value_list.go:79](https://github.com/rohanthewiz/grmob/blob/master/comps/key_value_list.go#L79)</small>
 
 ### type ListRow
 

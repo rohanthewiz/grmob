@@ -4,9 +4,9 @@
 import "github.com/rohanthewiz/grmob/comps"
 ```
 
-Screen, app and bottom bars, the FAB, tabs, drawers, step indicators, two-pane and foldable layouts, cards, accordions, headings and separators.
+Screen, app and bottom bars, the FAB, tabs, drawers, step indicators, two-pane and foldable layouts, cards, accordions, headings, breadcrumbs and separators, labelled or not.
 
-One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/screen.go`, `comps/app_bar.go`, `comps/bottom_bar.go`, `comps/fab.go`, `comps/tabs.go`, `comps/drawer.go`, `comps/step_indicator.go`, `comps/two_pane.go`, `comps/card.go`, `comps/accordion.go`, `comps/disclosure.go`, `comps/heading.go`, `comps/separator.go`.
+One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/screen.go`, `comps/app_bar.go`, `comps/bottom_bar.go`, `comps/fab.go`, `comps/tabs.go`, `comps/drawer.go`, `comps/step_indicator.go`, `comps/two_pane.go`, `comps/card.go`, `comps/accordion.go`, `comps/disclosure.go`, `comps/heading.go`, `comps/breadcrumb.go`, `comps/separator.go`, `comps/labeled_separator.go`.
 
 ## Index
 
@@ -17,6 +17,8 @@ One of 7 topic pages of [package comps](comps.md), which has the package overvie
 - [`type BarItem`](#type-baritem)
 - [`type BottomBar`](#type-bottombar)
     - [`func (BottomBar) Render`](#func-bottombar-render)
+- [`type Breadcrumb`](#type-breadcrumb)
+    - [`func (Breadcrumb) Render`](#func-breadcrumb-render)
 - [`type Card`](#type-card)
     - [`func (Card) Render`](#func-card-render)
 - [`type Drawer`](#type-drawer)
@@ -25,6 +27,8 @@ One of 7 topic pages of [package comps](comps.md), which has the package overvie
 - [`type FAB`](#type-fab)
     - [`func (FAB) Render`](#func-fab-render)
 - [`type FABSize`](#type-fabsize)
+- [`type LabeledSeparator`](#type-labeledseparator)
+    - [`func (LabeledSeparator) Render`](#func-labeledseparator-render)
 - [`type Screen`](#type-screen)
     - [`func (Screen) Render`](#func-screen-render)
 - [`type Separator`](#type-separator)
@@ -230,12 +234,20 @@ type BarItem struct {
 	// AccessibilityLabel replaces Label as the spoken name, for a bar whose
 	// labels are abbreviated.
 	AccessibilityLabel string
+
+	// Badge is a count or a short word drawn over the icon's top-end corner;
+	// empty draws none. See "Badges" on BottomBar.
+	Badge string
+
+	// BadgeLabel is how the badge is read as part of the item's name; empty
+	// reads Badge itself. "3 unread" says more than "3".
+	BadgeLabel string
 }
 ```
 
 BarItem is one cell of a BottomBar.
 
-<small>[comps/bottom_bar.go:75](https://github.com/rohanthewiz/grmob/blob/master/comps/bottom_bar.go#L75)</small>
+<small>[comps/bottom_bar.go:108](https://github.com/rohanthewiz/grmob/blob/master/comps/bottom_bar.go#L108)</small>
 
 ### type BottomBar
 
@@ -286,6 +298,23 @@ Each item is a Column with FlexGrow(1), so the tap targets tile the whole bar. J
 
 The current cell states core.CurrentPage: aria-current="page" on the web, and the selected state on Compose and SwiftUI, which is how both platforms' own navigation bars announce the destination they show. It used to append ", selected" to its name, because core had no current state and RoleTab would claim a tab panel this bar does not control (examples/social builds that relationship explicitly when it wants it). The name is now the label alone, and stays the same as the selection moves. The Icon is decoration and is hidden from assistive technology, so the Label is what is read.
 
+#### Badges
+
+BarItem.Badge puts a count or a word on an item — "3" on Inbox — as a comps.Badge over the top-end corner of the icon. The icon becomes a two-layer core.ZStack: the glyph, centred, and the Badge placed core.StackAlignTopEnd.
+
+	┌ ZStack ────────────────┐
+	│            ┌───┐       │   the glyph keeps a margin either side, so
+	│    ┌────┐  │ 3 │       │   the stack is wider than the glyph and the
+	│    │ ✉  │──┴───┘       │   compact badge sits over the glyph's
+	│    └────┘              │   top-end corner rather than across it
+	└────────────────────────┘
+
+The margin is horizontal only, and symmetric. A badge that rose above the glyph would need a negative offset, which no target takes portably, and a top margin on the glyph to make room would push a badged icon lower than its unbadged neighbours; the badge sits level with the glyph's top instead, and every icon in the bar stays on one line. An item with no Badge draws the icon exactly as before — no stack, no margin — so a bar that never uses one renders the tree it always did.
+
+With no Icon the Label wears the badge, by the same two layers.
+
+The count is read as part of the item's name ("Inbox, 3"), because the cell is one button with one name and a label on a button replaces the text inside it on every target; the badge's own Text is hidden so it is not heard twice where it would be. BadgeLabel is the spoken form when the digits alone say too little ("3 unread").
+
 #### Theme roles read
 
 	Bar background   Colors.Surface
@@ -293,8 +322,11 @@ The current cell states core.CurrentPage: aria-current="page" on the web, and th
 	Other items      Colors.TextSecondary
 	Label text       Typography.Caption; Icon uses Typography.Subtitle
 	Padding          Spacing.XS
+	Badge            VariantError, through Badge — the colour both
+	                 platforms give a notification count — at
+	                 Typography.Caption less two points
 
-<small>[comps/bottom_bar.go:62](https://github.com/rohanthewiz/grmob/blob/master/comps/bottom_bar.go#L62)</small>
+<small>[comps/bottom_bar.go:95](https://github.com/rohanthewiz/grmob/blob/master/comps/bottom_bar.go#L95)</small>
 
 #### func (BottomBar) Render
 
@@ -304,7 +336,78 @@ func (b BottomBar) Render(ctx *core.Context) *core.Node
 
 Render builds Row(Column(icon, label)...) with the role chosen by Selected.
 
-<small>[comps/bottom_bar.go:91](https://github.com/rohanthewiz/grmob/blob/master/comps/bottom_bar.go#L91)</small>
+<small>[comps/bottom_bar.go:132](https://github.com/rohanthewiz/grmob/blob/master/comps/bottom_bar.go#L132)</small>
+
+### type Breadcrumb
+
+```go
+type Breadcrumb struct {
+	// Items are the steps from the root to the current page, in that order.
+	// The last is the current page.
+	Items []string
+
+	// OnTap receives the index of the ancestor tapped. It is never called for
+	// the last item. Nil draws the whole trail as text.
+	OnTap func(i int)
+
+	// Label names the navigation landmark; empty gives "Breadcrumb".
+	Label string
+
+	// Separator is the glyph between items; empty gives "›".
+	Separator string
+
+	// Style is applied to the row after its defaults.
+	Style []core.StyleProp
+}
+```
+
+Breadcrumb is the trail from the root of a hierarchy to the current page — Files › Photos › 2026 — where every step but the last is a way back up.
+
+	comps.Breadcrumb{
+	    Items: []string{"Files", "Photos", "2026"},
+	    OnTap: func(i int) { nav.PopTo(i) },
+	}
+
+	┌ Row role=navigation "Breadcrumb" ───────────────────┐
+	│ [Files]  ›  [Photos]  ›  2026                       │
+	└─────────────────────────────────────────────────────┘
+	  ghost       ghost        Text, aria-current="page"
+	  Buttons     Buttons
+
+#### The last item is not a button
+
+It is the page the reader is on, so tapping it would go nowhere; drawing it as a control would put a dead tab stop at the end of every trail. It is a Text in the primary ink carrying core.CurrentPage, which is how every target says "you are here" (aria-current on the web, the selected state on the natives — see core.AccessibilityCurrent).
+
+#### Controlled, and read-only when OnTap is nil
+
+Breadcrumb holds no state. OnTap reports the index of the ancestor tapped and the caller navigates; the trail it is handed next is the new truth. With OnTap nil every item is drawn as text, which is the trail as a location label (a heading's context line) rather than as navigation — a legitimate use, and why a nil OnTap is not a concern the way an inert picker is: nothing here pretends to be a control.
+
+#### Long trails wrap
+
+The row wraps (core.FlexWrap) rather than scrolling or truncating. A deep trail on a phone becomes two lines, every step still visible and tappable, which is what the reader who went five levels down needs to get back out. Collapsing the middle into "…" is a second design (a menu of the hidden steps) and a caller that wants it can pass the shortened Items itself.
+
+#### Accessibility
+
+The row is RoleNavigation named "Breadcrumb", ARIA's own breadcrumb pattern: a landmark a reader can jump to, whose items are its links. The chevrons are decoration and hidden, so a reader hears "Files, button; Photos, button; 2026, current page" and not the separators between them.
+
+#### Theme roles read
+
+	Ancestors  Colors.Primary's on-light tone, through a ghost Button
+	Current    Typography.Body over TextPrimary
+	Chevron    Typography.Body over TextSecondary
+	Gaps       Spacing.XS between every item
+
+<small>[comps/breadcrumb.go:57](https://github.com/rohanthewiz/grmob/blob/master/comps/breadcrumb.go#L57)</small>
+
+#### func (Breadcrumb) Render
+
+```go
+func (b Breadcrumb) Render(ctx *core.Context) *core.Node
+```
+
+Render builds Row(role=navigation, Button › Button › … › Text).
+
+<small>[comps/breadcrumb.go:77](https://github.com/rohanthewiz/grmob/blob/master/comps/breadcrumb.go#L77)</small>
 
 ### type Card
 
@@ -660,6 +763,51 @@ const (
 	FABSmall FABSize = "small"
 )
 ```
+
+### type LabeledSeparator
+
+```go
+type LabeledSeparator struct {
+	// Label is the word in the rule. Empty draws the rule unbroken.
+	Label string
+
+	// Color overrides the rules' tint, as Separator.Color does.
+	Color string
+
+	// Style is applied to the row after its defaults.
+	Style []core.StyleProp
+}
+```
+
+LabeledSeparator is the rule with a word in it — the "or" between "Sign in with Google" and the email form, the "Today" over a day's messages.
+
+	comps.LabeledSeparator{Label: "or"}
+
+	──────────────── or ────────────────
+
+It is a Row of two Separators that each grow to half the slack, with the label between them, so the word stays centred at any width and the rules are the theme's own hairline rather than a second one drawn here. An empty Label draws one unbroken rule, which is just a Separator with more nodes; it is allowed so a label that is sometimes empty does not need a branch.
+
+#### Accessibility
+
+The rules are hidden, as every Separator is. The label is not: "or" between two ways to sign in is part of what the screen says, and a reader who skips it hears two sign-in buttons with nothing to say they are alternatives.
+
+#### Theme roles read
+
+	Rules   ColorPalette.BorderColor, through Separator
+	Label   Typography.Caption over TextSecondary
+	Gap     Spacing.SM either side of the label
+
+<small>[comps/labeled_separator.go:29](https://github.com/rohanthewiz/grmob/blob/master/comps/labeled_separator.go#L29)</small>
+
+#### func (LabeledSeparator) Render
+
+```go
+func (s LabeledSeparator) Render(ctx *core.Context) *core.Node
+```
+
+Render builds Row(Separator grow, Text, Separator grow).
+
+<small>[comps/labeled_separator.go:41](https://github.com/rohanthewiz/grmob/blob/master/comps/labeled_separator.go#L41)</small>
 
 ### type Screen
 

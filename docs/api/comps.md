@@ -34,12 +34,12 @@ Package comps's reference is split into 7 topic pages by source file. The index 
 
 | Topic | What it covers | Declares |
 | --- | --- | --- |
-| [Screens & structure](comps-structure.md) | Screen, app and bottom bars, the FAB, tabs, drawers, step indicators, two-pane and foldable layouts, cards, accordions, headings and separators. | 15 types, 11 functions and methods |
-| [Lists & tables](comps-lists.md) | List rows, the settings-row family (switch, checkbox, select and slider), input rows, grouped and paged lists, data tables and timelines. | 18 types, 14 functions and methods |
-| [Inputs & pickers](comps-inputs.md) | Form fields, one-time code fields, search, searchable selects, radio groups, dates, date ranges, times and calendars, and the two editors. | 14 types, 13 functions and methods |
+| [Screens & structure](comps-structure.md) | Screen, app and bottom bars, the FAB, tabs, drawers, step indicators, two-pane and foldable layouts, cards, accordions, headings, breadcrumbs and separators, labelled or not. | 17 types, 13 functions and methods |
+| [Lists & tables](comps-lists.md) | List rows, the settings-row family (switch, checkbox, select and slider), input rows, key-value lists, grouped and paged lists, data tables and timelines. | 20 types, 15 functions and methods |
+| [Inputs & pickers](comps-inputs.md) | Form fields, password fields, one-time code fields, search, searchable selects, radio groups, dates, date ranges, times and calendars, and the two editors. | 15 types, 14 functions and methods |
 | [Buttons & choices](comps-actions.md) | Buttons and their variants, chips, segmented controls, steppers, ratings and badges. | 10 types, 10 functions and methods |
-| [Overlays & feedback](comps-overlays.md) | Dialogs, action sheets, menus, snackbars, banners, progress, spinners, skeletons and empty states. | 12 types, 9 functions and methods |
-| [Data display & maps](comps-display.md) | Avatars, stat tiles, the compass, clocks, countdowns and alarms, QR codes, map panels and static maps. | 17 types, 19 functions and methods |
+| [Overlays & feedback](comps-overlays.md) | Dialogs, lightboxes, action sheets, menus, snackbars, banners, progress, spinners, skeletons and empty states. | 13 types, 10 functions and methods |
+| [Data display & maps](comps-display.md) | Avatars and avatar stacks, stat tiles, the compass, clocks, countdowns and alarms, QR codes, map panels and static maps. | 18 types, 20 functions and methods |
 | [Charts](comps-charts.md) | Sparklines, line, area, bar and scatter charts, donuts and pies, and gauges, drawn on core.Canvas. | 12 types, 8 functions and methods |
 
 ## Index
@@ -49,11 +49,13 @@ Package comps's reference is split into 7 topic pages by source file. The index 
     - [`type AppBar`](comps-structure.md#type-appbar)
     - [`type BarItem`](comps-structure.md#type-baritem)
     - [`type BottomBar`](comps-structure.md#type-bottombar)
+    - [`type Breadcrumb`](comps-structure.md#type-breadcrumb)
     - [`type Card`](comps-structure.md#type-card)
     - [`type Drawer`](comps-structure.md#type-drawer)
     - [`type DrawerItem`](comps-structure.md#type-draweritem)
     - [`type FAB`](comps-structure.md#type-fab)
     - [`type FABSize`](comps-structure.md#type-fabsize)
+    - [`type LabeledSeparator`](comps-structure.md#type-labeledseparator)
     - [`type Screen`](comps-structure.md#type-screen)
     - [`type Separator`](comps-structure.md#type-separator)
     - [`type StepIndicator`](comps-structure.md#type-stepindicator)
@@ -71,6 +73,8 @@ Package comps's reference is split into 7 topic pages by source file. The index 
     - [`type GroupHeader`](comps-lists.md#type-groupheader)
     - [`type GroupedList`](comps-lists.md#type-groupedlist)
     - [`type InputRow`](comps-lists.md#type-inputrow)
+    - [`type KeyValue`](comps-lists.md#type-keyvalue)
+    - [`type KeyValueList`](comps-lists.md#type-keyvaluelist)
     - [`type ListRow`](comps-lists.md#type-listrow)
     - [`type LoadMore`](comps-lists.md#type-loadmore)
     - [`type Pagination`](comps-lists.md#type-pagination)
@@ -81,7 +85,7 @@ Package comps's reference is split into 7 topic pages by source file. The index 
     - [`type Timeline`](comps-lists.md#type-timeline)
     - [`type TimelineEvent`](comps-lists.md#type-timelineevent)
 - [Inputs & pickers](comps-inputs.md)
-    - [Constants](comps-inputs.md#constants) — `ConcernCalendarRangeReversed`, `ConcernDateRangePickerInert`, `ConcernPINInputInert`, `ConcernPINValueTooLong`, `ConcernTimePickerInert`, `RichToolLink`
+    - [Constants](comps-inputs.md#constants) — `ConcernCalendarRangeReversed`, `ConcernDateRangePickerInert`, `ConcernPINInputInert`, `ConcernPINValueTooLong`, `ConcernPasswordFieldInert`, `ConcernTimePickerInert`, `RichToolLink`
     - [Variables](comps-inputs.md#variables) — `RichToolbarDefault`
     - [`type Calendar`](comps-inputs.md#type-calendar)
     - [`type CodeEditor`](comps-inputs.md#type-codeeditor)
@@ -89,6 +93,7 @@ Package comps's reference is split into 7 topic pages by source file. The index 
     - [`type DateRangePicker`](comps-inputs.md#type-daterangepicker)
     - [`type FormField`](comps-inputs.md#type-formfield)
     - [`type PINInput`](comps-inputs.md#type-pininput)
+    - [`type PasswordField`](comps-inputs.md#type-passwordfield)
     - [`type RadioGroup`](comps-inputs.md#type-radiogroup)
     - [`type RadioOption`](comps-inputs.md#type-radiooption)
     - [`type RichTextEditor`](comps-inputs.md#type-richtexteditor)
@@ -111,12 +116,13 @@ Package comps's reference is split into 7 topic pages by source file. The index 
     - [`type Stepper`](comps-actions.md#type-stepper)
     - [`type Variant`](comps-actions.md#type-variant)
 - [Overlays & feedback](comps-overlays.md)
-    - [Constants](comps-overlays.md#constants) — `SnackbarDuration`
+    - [Constants](comps-overlays.md#constants) — `ConcernLightboxInescapable`, `SnackbarDuration`
     - [`type ActionSheet`](comps-overlays.md#type-actionsheet)
     - [`type Banner`](comps-overlays.md#type-banner)
     - [`type Dialog`](comps-overlays.md#type-dialog)
     - [`type DialogAction`](comps-overlays.md#type-dialogaction)
     - [`type EmptyState`](comps-overlays.md#type-emptystate)
+    - [`type Lightbox`](comps-overlays.md#type-lightbox)
     - [`type Menu`](comps-overlays.md#type-menu)
     - [`type ProgressBar`](comps-overlays.md#type-progressbar)
     - [`type SheetAction`](comps-overlays.md#type-sheetaction)
@@ -135,6 +141,7 @@ Package comps's reference is split into 7 topic pages by source file. The index 
     - [`type AlarmRow`](comps-display.md#type-alarmrow)
     - [`type AnalogClock`](comps-display.md#type-analogclock)
     - [`type Avatar`](comps-display.md#type-avatar)
+    - [`type AvatarStack`](comps-display.md#type-avatarstack)
     - [`type Compass`](comps-display.md#type-compass)
     - [`type Countdown`](comps-display.md#type-countdown)
     - [`type DigitalClock`](comps-display.md#type-digitalclock)

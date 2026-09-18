@@ -4,13 +4,13 @@
 import "github.com/rohanthewiz/grmob/comps"
 ```
 
-Dialogs, action sheets, menus, snackbars, banners, progress, spinners, skeletons and empty states.
+Dialogs, lightboxes, action sheets, menus, snackbars, banners, progress, spinners, skeletons and empty states.
 
-One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/dialog.go`, `comps/action_sheet.go`, `comps/menu.go`, `comps/snackbar.go`, `comps/banner.go`, `comps/progress_bar.go`, `comps/spinner.go`, `comps/skeleton.go`, `comps/empty_state.go`.
+One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/dialog.go`, `comps/lightbox.go`, `comps/action_sheet.go`, `comps/menu.go`, `comps/snackbar.go`, `comps/banner.go`, `comps/progress_bar.go`, `comps/spinner.go`, `comps/skeleton.go`, `comps/empty_state.go`.
 
 ## Index
 
-- [Constants](#constants) — `SnackbarDuration`
+- [Constants](#constants) — `ConcernLightboxInescapable`, `SnackbarDuration`
 - [`type ActionSheet`](#type-actionsheet)
     - [`func (ActionSheet) Render`](#func-actionsheet-render)
 - [`type Banner`](#type-banner)
@@ -20,6 +20,8 @@ One of 7 topic pages of [package comps](comps.md), which has the package overvie
 - [`type DialogAction`](#type-dialogaction)
 - [`type EmptyState`](#type-emptystate)
     - [`func (EmptyState) Render`](#func-emptystate-render)
+- [`type Lightbox`](#type-lightbox)
+    - [`func (Lightbox) Render`](#func-lightbox-render)
 - [`type Menu`](#type-menu)
     - [`func (Menu) Render`](#func-menu-render)
 - [`type ProgressBar`](#type-progressbar)
@@ -34,6 +36,14 @@ One of 7 topic pages of [package comps](comps.md), which has the package overvie
 - [`type SpinnerSize`](#type-spinnersize)
 
 ## Constants
+
+ConcernLightboxInescapable is raised, in debug builds only, when a Lightbox has no OnDismiss. The close button then closes nothing and the scrim is inert, so on the web the image covers the screen until the page is reloaded. Dialog allows a nil OnDismiss because a dialog can be one that must be answered; a lightbox asks nothing, so the only way out is the one this callback provides.
+
+```go
+const ConcernLightboxInescapable = "lightbox-inescapable"
+```
+
+<small>[comps/lightbox.go:15](https://github.com/rohanthewiz/grmob/blob/master/comps/lightbox.go#L15)</small>
 
 SnackbarDuration is the default time a Snackbar stays up: long enough to read a short sentence and reach an Undo, and within Material's four-to-ten second range for a snackbar with an action.
 
@@ -486,6 +496,95 @@ func (e EmptyState) Render(ctx *core.Context) *core.Node
 ```
 
 <small>[comps/empty_state.go:94](https://github.com/rohanthewiz/grmob/blob/master/comps/empty_state.go#L94)</small>
+
+### type Lightbox
+
+```go
+type Lightbox struct {
+	// Src is the image URL.
+	Src string
+
+	// Alt describes the image for assistive technology. Empty hides the
+	// image from it; see "Accessibility".
+	Alt string
+
+	// Caption is drawn under the image, in white.
+	Caption string
+
+	// Open is the caller's open/closed state.
+	Open bool
+
+	// OnDismiss is called by the close button, a scrim tap and the
+	// platform's dismiss gesture. Nil reports ConcernLightboxInescapable.
+	OnDismiss func()
+
+	// Height is the image's height in px; 0 means 400. The width is the
+	// panel's, and Fit letterboxes within the two.
+	Height float64
+
+	// CloseLabel names the close button; empty gives "Close".
+	CloseLabel string
+
+	// Style is applied to the panel after its defaults.
+	Style []core.StyleProp
+}
+```
+
+Lightbox shows one image large, over everything, on a dark ground — the photo tapped in a feed, the receipt tapped in an expense.
+
+	comps.Lightbox{
+	    Src:       photo.URL,
+	    Alt:       photo.Description,
+	    Open:      viewing.Get(),
+	    OnDismiss: func() { viewing.Set(false) },
+	}
+
+	┌ Modal (near-black scrim) ─────────────────────┐
+	│ ┌ Column (black panel, full width) ─────────┐ │
+	│ │                                       [✕] │ │
+	│ ├ ImageWithMode(Fit) Width 100% ────────────┤ │
+	│ │                                           │ │
+	│ │             the whole image,              │ │
+	│ │       letterboxed, never cropped          │ │
+	│ │                                           │ │
+	│ ├───────────────────────────────────────────┤ │
+	│ │ Caption                                   │ │
+	│ └───────────────────────────────────────────┘ │
+	└───────────────────────────────────────────────┘
+
+#### Dialog's plumbing, not Dialog
+
+It is a core.Modal driven exactly as Dialog drives one — controlled by Open, every way out reported through OnDismiss, nothing closed by the widget itself — with an image where the card would be. Dialog's Card would be the wrong frame: a white card with a heading around a photo is a document, and a lightbox is a viewer.
+
+#### Fit, because a lightbox is for seeing all of it
+
+The image is core.ContentModeFit, the one mode that neither crops nor distorts. A thumbnail in the feed was Fill, cropped to its tile; the reason to open it is to see what the crop cut off.
+
+#### Dark on every target, in every theme
+
+The scrim and the panel are near-black and black, and the close glyph and the caption are white, whatever the theme — photo viewers are dark in a light theme too, because a white ground around an image changes how its colours read. The panel is filled, not left transparent over the scrim, because SwiftUI presents a Modal as a sheet on the system's own background rather than over the scrim, and white ink on that sheet would vanish. Filled, the panel is the same black on all four targets.
+
+#### Accessibility
+
+The image is named by Alt. With no Alt it is hidden, and the Caption, when there is one, is what is read — Avatar's rule that an unnamed image is better silent than announced as "image" or as its URL. The close button is named "Close", since "✕" is not a word. The chassis supplies the dialog role and modality on the web and the platform's own presentation on the natives, as it does for Dialog.
+
+#### Theme roles read
+
+	None for colour — see "Dark on every target". Spacing.SM for the gaps
+	and for the close row's and the caption's inset (the image is full
+	bleed), Typography.Body for the caption.
+
+<small>[comps/lightbox.go:78](https://github.com/rohanthewiz/grmob/blob/master/comps/lightbox.go#L78)</small>
+
+#### func (Lightbox) Render
+
+```go
+func (l Lightbox) Render(ctx *core.Context) *core.Node
+```
+
+Render builds Modal > Column(close, image, caption).
+
+<small>[comps/lightbox.go:116](https://github.com/rohanthewiz/grmob/blob/master/comps/lightbox.go#L116)</small>
 
 ### type Menu
 

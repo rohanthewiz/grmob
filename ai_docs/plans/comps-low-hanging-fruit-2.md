@@ -3,7 +3,8 @@
 **Status:** drafted 2026-09-17. D1 `FAB` + `Screen.Floating`, D2 `QRCode`,
 D4 `SelectRow` + `SliderRow`, D3 `Countdown` + `Stopwatch`, D5 `PINInput`,
 D6 `DateRangePicker` and D7 `TimePicker` all landed the same day — Tier D is
-complete. Everything else is unstarted.
+complete — and Tier E landed after it as one bundle with lesson 4.27. Tier F is
+what is left.
 
 The first round (`comps-low-hanging-fruit.md`) landed entire on 2026-09-12:
 Tiers A through C, fifteen widgets, one carousel left blocked on a scroll
@@ -366,7 +367,42 @@ concern, `ConcernTimePickerInert`.
 Shipped: `TimePicker{Value, OnChange, Hour24, MinuteStep, Label, HourLabel,
 MinuteLabel, PeriodLabel, AMLabel, PMLabel, Disabled, Style}`.
 
-## Tier E — an hour each, no decisions
+## Tier E — an hour each, no decisions — **landed 2026-09-17**
+
+All seven landed together, taught by one lesson (4.27, "Seven small pieces":
+an order's detail page built from all of them). Where the build departed from
+the sketch below, and why:
+
+- `KeyValueList` puts the key in ListRow's **Leading** slot with
+  `FlexShrink(0)`, not the Title: as the Title it sat in the growing middle and
+  a long value squeezed "Ship to" onto two lines. It is a `RoleList` of
+  listitems named "Key, Value", which it can claim because it owns both
+  halves. `Dividers` adds hidden Separators between rows.
+- `Breadcrumb` with a nil `OnTap` draws the trail as text — a location label —
+  and raises no concern. Long trails wrap.
+- `AvatarStack` is a ZStack of layers at growing `MarginLeft`, as sketched, and
+  the white ring is **its own disc layer, not a border**: the natives paint a
+  border inside the box and the static export's content-box sizing paints it
+  outside, so a bordered face is 4px wider on the web. `Max` counts the "+N"
+  disc. The whole stack is `RoleImg` with one synthesized name. Overlap 0.2:
+  0.3 and 0.25 cut into a pair of initials.
+- `LabeledSeparator` as sketched; the label is read, the rules are hidden.
+- `PasswordField` is **the input, not a FormField** — DatePicker's rule — and
+  owns its one piece of state (revealed), which no app wants. The toggle's
+  caption flips Show/Hide but its name stays "Show password" with
+  `AccessibilitySelected` as aria-pressed. `ConcernPasswordFieldInert`.
+- `BarItem.Badge` (+ `BadgeLabel`) as sketched, with two things the sketch did
+  not see: the glyph keeps a symmetric horizontal margin and **no top margin**,
+  so a badged icon stays level with its neighbours, and the badge is a compact
+  pill (Caption − 2) so it covers the corner rather than the glyph. The count
+  joins the cell's name. An unbadged item's tree is unchanged.
+- `Lightbox` fields grew `Alt`, `Caption`, `Height`, `CloseLabel`. Black in
+  every theme; the panel is filled because SwiftUI presents a Modal as a sheet
+  on the system background. The image is full bleed and the panel carries no
+  padding (padding on a `Width(100%)` box overflows under the static export's
+  content-box sizing). `ConcernLightboxInescapable`.
+
+The sketch, as drafted:
 
 - `KeyValueList{Rows []KeyValue}` for order details, profiles and about
   screens; a `Column` of `ListRow`s with the value trailing.
@@ -413,7 +449,7 @@ wheel (node type), a clipboard copy button (no clipboard bridge).
 | 3 | D4 `SelectRow`, `SliderRow` | completes a family, zero decisions |
 | 4 | D3 `Countdown`, `Stopwatch` | alarms exist and cannot show time left |
 | 5 | ~~D5 `PINInput`~~, ~~D6 `DateRangePicker`~~, ~~D7 `TimePicker`~~ | in any order |
-| 6 | Tier E as one bundle with one lesson | |
+| 6 | ~~Tier E as one bundle with one lesson~~ | landed, lesson 4.27 |
 | 7 | Tier F once its theme or core prerequisite lands | |
 
 ## Definition of done, per widget

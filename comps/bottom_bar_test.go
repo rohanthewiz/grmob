@@ -93,3 +93,49 @@ func TestBottomBarStyleOverrides(t *testing.T) {
 		t.Error("an item with no OnTap registers no callback")
 	}
 }
+
+// A badged item's icon becomes a two-layer stack with the Badge at its
+// top-end corner; the count joins the cell's name and is hidden where it is
+// drawn. An unbadged item keeps the bare icon Text it always had.
+func TestBottomBarBadgeSitsOverTheIcon(t *testing.T) {
+	_, n := renderDebug(t, BottomBar{Items: []BarItem{
+		{Icon: "🏠", Label: "Home"},
+		{Icon: "✉", Label: "Inbox", Badge: "3", BadgeLabel: "3 unread"},
+		{Label: "Me", Badge: "!"},
+	}})
+
+	if icon := n.Children[0].Children[0]; icon.Type != "Text" || icon.Style.Margin.Left != 0 {
+		t.Errorf("unbadged icon = %q with margin %d, want the bare Text", icon.Type, icon.Style.Margin.Left)
+	}
+
+	inbox := n.Children[1]
+	if got := inbox.Style.AccessibilityLabel; got != "Inbox, 3 unread" {
+		t.Errorf("badged name = %q, want the label and the spoken badge", got)
+	}
+	stack := inbox.Children[0]
+	if stack.Type != "ZStack" || len(stack.Children) != 2 {
+		t.Fatalf("badged icon = %q with %d layers, want a two-layer ZStack", stack.Type, len(stack.Children))
+	}
+	glyph, badge := stack.Children[0], stack.Children[1]
+	if glyph.Props["content"] != "✉" || glyph.Style.Margin.Left == 0 || glyph.Style.Margin.Left != glyph.Style.Margin.Right {
+		t.Errorf("glyph margin = %d/%d, want a symmetric horizontal margin", glyph.Style.Margin.Left, glyph.Style.Margin.Right)
+	}
+	if glyph.Style.Margin.Top != 0 {
+		t.Error("a top margin would drop a badged icon below its neighbours")
+	}
+	if badge.Props["content"] != "3" || badge.Style.StackAlign != core.StackAlignTopEnd || !badge.Style.AccessibilityHidden {
+		t.Errorf("badge = %v placed %q hidden %v", badge.Props["content"], badge.Style.StackAlign, badge.Style.AccessibilityHidden)
+	}
+	if badge.Style.Background != VariantError.Color(core.DefaultTheme) {
+		t.Errorf("badge fill = %q, want the Error role", badge.Style.Background)
+	}
+
+	// No icon: the label wears it, and BadgeLabel falls back to Badge.
+	me := n.Children[2]
+	if got := me.Style.AccessibilityLabel; got != "Me, !" {
+		t.Errorf("name = %q", got)
+	}
+	if me.Children[0].Type != "ZStack" || findText(me.Children[0], "Me") == nil {
+		t.Error("with no icon the label should carry the badge")
+	}
+}

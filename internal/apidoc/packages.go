@@ -244,20 +244,21 @@ var Packages = []Pkg{
 		Topics: []Topic{{
 			Slug:  "structure",
 			Title: "Screens & structure",
-			Blurb: "Screen, app and bottom bars, the FAB, tabs, drawers, step indicators, two-pane and foldable layouts, cards, accordions, headings and separators.",
+			Blurb: "Screen, app and bottom bars, the FAB, tabs, drawers, step indicators, two-pane and foldable layouts, cards, accordions, headings, breadcrumbs and separators, labelled or not.",
 			Files: []string{"screen.go", "app_bar.go", "bottom_bar.go", "fab.go", "tabs.go", "drawer.go", "step_indicator.go",
-				"two_pane.go", "card.go", "accordion.go", "disclosure.go", "heading.go", "separator.go"},
+				"two_pane.go", "card.go", "accordion.go", "disclosure.go", "heading.go", "breadcrumb.go", "separator.go",
+				"labeled_separator.go"},
 		}, {
 			Slug:  "lists",
 			Title: "Lists & tables",
-			Blurb: "List rows, the settings-row family (switch, checkbox, select and slider), input rows, grouped and paged lists, data tables and timelines.",
+			Blurb: "List rows, the settings-row family (switch, checkbox, select and slider), input rows, key-value lists, grouped and paged lists, data tables and timelines.",
 			Files: []string{"list_row.go", "settings_row.go", "select_row.go", "slider_row.go", "input_row.go",
-				"grouped_list.go", "grouping.go", "paging.go", "data_table.go", "timeline.go"},
+				"key_value_list.go", "grouped_list.go", "grouping.go", "paging.go", "data_table.go", "timeline.go"},
 		}, {
 			Slug:  "inputs",
 			Title: "Inputs & pickers",
-			Blurb: "Form fields, one-time code fields, search, searchable selects, radio groups, dates, date ranges, times and calendars, and the two editors.",
-			Files: []string{"form_field.go", "pin_input.go", "search_field.go", "searchable_select.go", "radio_group.go",
+			Blurb: "Form fields, password fields, one-time code fields, search, searchable selects, radio groups, dates, date ranges, times and calendars, and the two editors.",
+			Files: []string{"form_field.go", "password_field.go", "pin_input.go", "search_field.go", "searchable_select.go", "radio_group.go",
 				"date_picker.go", "date_range_picker.go", "time_picker.go", "calendar.go", "code_editor.go", "rich_text_editor.go"},
 		}, {
 			Slug:  "actions",
@@ -268,14 +269,14 @@ var Packages = []Pkg{
 		}, {
 			Slug:  "overlays",
 			Title: "Overlays & feedback",
-			Blurb: "Dialogs, action sheets, menus, snackbars, banners, progress, spinners, skeletons and empty states.",
-			Files: []string{"dialog.go", "action_sheet.go", "menu.go", "snackbar.go", "banner.go",
+			Blurb: "Dialogs, lightboxes, action sheets, menus, snackbars, banners, progress, spinners, skeletons and empty states.",
+			Files: []string{"dialog.go", "lightbox.go", "action_sheet.go", "menu.go", "snackbar.go", "banner.go",
 				"progress_bar.go", "spinner.go", "skeleton.go", "empty_state.go"},
 		}, {
 			Slug:  "display",
 			Title: "Data display & maps",
-			Blurb: "Avatars, stat tiles, the compass, clocks, countdowns and alarms, QR codes, map panels and static maps.",
-			Files: []string{"avatar.go", "stat_tile.go", "compass.go", "clock.go", "timers.go", "alarm.go", "qr_code.go",
+			Blurb: "Avatars and avatar stacks, stat tiles, the compass, clocks, countdowns and alarms, QR codes, map panels and static maps.",
+			Files: []string{"avatar.go", "avatar_stack.go", "stat_tile.go", "compass.go", "clock.go", "timers.go", "alarm.go", "qr_code.go",
 				"map_panel.go", "static_map.go"},
 		}, {
 			Slug:  "charts",
