@@ -5,6 +5,7 @@ import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import androidx.annotation.RequiresApi
 import org.json.JSONObject
 
 /**
@@ -54,7 +55,14 @@ object Haptics {
      * feels like the rest of the system. Warning and error have no
      * predefined effect, so they are short waveforms distinct from success's
      * double click — two pulses and three.
+     *
+     * The @RequiresApi on this and the other level-specific helpers states
+     * the SDK_INT dispatch in [handle] to lint. Lint's NewApi check follows a
+     * version guard only within the function that holds it, so without the
+     * annotation it reported every call here as a crash below minSdk (11
+     * errors, failing lintDebug) though [handle] never reaches them there.
      */
+    @RequiresApi(Build.VERSION_CODES.Q)
     private fun predefined(v: Vibrator, kind: String) {
         val effect = when (kind) {
             "selection", "light" -> VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK)
@@ -68,6 +76,7 @@ object Haptics {
     }
 
     /** API 26–28: no predefined effects, but amplitude-aware one-shots. */
+    @RequiresApi(Build.VERSION_CODES.O)
     private fun shaped(v: Vibrator, kind: String) {
         val effect = when (kind) {
             "selection" -> VibrationEffect.createOneShot(5, VibrationEffect.DEFAULT_AMPLITUDE)
@@ -94,7 +103,9 @@ object Haptics {
 
     // The pulse patterns, shared by every API level that has waveforms and
     // matching the browser's table in grmob-runtime.js: off/on alternating,
-    // starting with a zero delay; -1 means play once.
+    // starting with a zero delay; -1 means play once. VibrationEffect is API
+    // 26; legacy() takes the same timings through the old vibrate(long[]).
+    @RequiresApi(Build.VERSION_CODES.O)
     private fun waveform(kind: String): VibrationEffect =
         VibrationEffect.createWaveform(timings(kind), -1)
 
