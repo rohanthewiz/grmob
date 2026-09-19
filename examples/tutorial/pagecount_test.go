@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// The browser page's header states the tutorial's size ("74 lessons · 8
+// The browser page's header states the tutorial's size ("75 lessons · 8
 // chapters") in hand-written HTML, which no render reaches. Every other place
 // that states the count is either a render (the contents' progress caption)
 // or pinned by a screenshot claim, so this was the one that drifted: it said

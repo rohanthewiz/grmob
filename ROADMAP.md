@@ -166,6 +166,12 @@
       the row count at the last fire, so a slow fetch cannot double-load),
       wired through `GroupedList.OnEndReached`; `StickyHeaders` on
       `GroupedList` and `DataTable`, and `ChipStrip.Scrollable`
+- [x] Threads — `core.StartAtEnd` and `core.OnStartReached` on `core.List`
+      (the top edge, guarded like the bottom one) and `comps.MessageThread`
+      over them: opens at the newest message, loads older pages at the top,
+      keeps the reader's row in place across the prepend on all three hosts,
+      and follows a new message only from the end (tutorial lesson 4.33;
+      browser check 19, the emulator, and an XCUITest)
 - [x] `Calendar` and `DatePicker` — a controlled month grid (fixed six rows,
       dimmed inert adjacent days, a `Today` the caller supplies rather than a
       `time.Now()` the widget reads, `Min`/`Max` by calendar day, `Marked`

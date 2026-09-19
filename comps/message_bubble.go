@@ -35,12 +35,11 @@ import "github.com/rohanthewiz/grmob/core"
 //
 // # What it is not
 //
-//   - **Not a thread.** A conversation opens at its newest message and loads
-//     older ones as the reader scrolls up. core.ScrollIntoView can do the
-//     first, but no host reports a scroll offset, so nothing can do the
-//     second (Carousel's wall).
-//     A caller lays bubbles out in its own Column or core.List, as
-//     examples/chat does, and the spacing between them is the caller's too.
+//   - **Not a thread.** comps.MessageThread is: a List of bubbles that opens
+//     at the newest and loads older ones as the reader scrolls up
+//     (core.StartAtEnd, core.OnStartReached). A caller can still lay bubbles
+//     out in its own Column, as examples/chat does, and the spacing between
+//     them is then the caller's too.
 //
 // # The tail
 //
@@ -74,9 +73,16 @@ type MessageBubble struct {
 	Text string
 
 	// Sender is drawn above the text of someone else's message. Leave it
-	// empty to hide it — on the second of two consecutive messages from the
-	// same person, or in a one-to-one chat. It is never drawn on Mine.
+	// empty in a one-to-one chat, where it says nothing. It is never drawn
+	// on Mine.
 	Sender string
+
+	// Continued marks the second and later of a run of messages from the same
+	// sender: the sender line is not drawn, because the bubble above already
+	// says who, and it is still spoken, because a screen reader moving through
+	// the transcript meets each message on its own. Emptying Sender instead
+	// hides the line and the name both. comps.MessageThread sets it.
+	Continued bool
 
 	// Mine puts the bubble on the trailing side in the Primary fill.
 	Mine bool
@@ -154,7 +160,7 @@ func (m MessageBubble) Render(ctx *core.Context) *core.Node {
 	if !m.Mine {
 		bubble = append(bubble, core.BorderWidth(1), core.BorderColor(t.Colors.BorderColor()))
 	}
-	if m.Sender != "" && !m.Mine {
+	if m.Sender != "" && !m.Mine && !m.Continued {
 		bubble = append(bubble, core.Text(m.Sender,
 			core.UseStyle(t.Typography.Caption),
 			core.FontWeight(core.Bold),

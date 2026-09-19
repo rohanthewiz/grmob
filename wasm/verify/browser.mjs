@@ -1,5 +1,5 @@
-// The facts a shimmed DOM cannot check, checked in a browser: six about the
-// keyboard, three about paint, five about layout, one about what a browser
+// The facts a shimmed DOM cannot check, checked in a browser: seven about the
+// keyboard, three about paint, seven about layout, one about what a browser
 // does with an accessibility value nobody here resolves, and one about how it
 // reads a CSS shorthand back.
 //
@@ -7,7 +7,7 @@
 // few hundred lines that model element trees, attributes, listeners and which
 // element holds focus. That is enough for almost everything, and its limits
 // are stated in its own header: there is no layout, no bubbling, and `focus()`
-// is an assignment, and nothing is ever painted. Sixteen claims sit exactly in
+// is an assignment, and nothing is ever painted. Nineteen claims sit exactly in
 // that blind spot, and no amount of widening the shim would settle them,
 // because each one is a claim about what a *browser* does:
 //
@@ -156,6 +156,42 @@
 //      live build this opens lesson 2.2 and presses Control+Alt+K and F6,
 //      which its "Log from the keyboard" button declares, and then a bare K,
 //      which must press nothing.
+//  17. a wide window's first tree is already the split. The tutorial page
+//      (wasm/index.html) sends the "layout" host event before RenderInitial,
+//      and examples/tutorial holds a mode sent then as its boot mode
+//      (split.go, bootLayout), so the tree it mounts is the two-pane one. It
+//      used to send the event after the mount. examples/tutorial's
+//      TestAModeSentBeforeTheFirstRenderIsTheFirstFrame holds the app's half;
+//      what only a browser settles is the page's: its matchMedia and its
+//      order. This loads the real index.html (its Leaflet CDN lines removed,
+//      the promise of no network) at 1280px wide and reads two things:
+//      the tree RenderInitial returned, through a trap on the GrMobWASM
+//      global installed before any script, and the DOM at the microtask
+//      checkpoint after the mount, which is the earliest a frame could be
+//      painted. Measured with the old order restored: the first reading
+//      fails and the second holds, because the layout patch is pushed from
+//      inside the HostEvent call and lands in the same task as the mount.
+//      So the phone layout was never painted; what the old order cost was a
+//      whole phone tree built, mounted and patched away on every wide boot.
+//  18. typing mid-text under a transform stays where it is typed. Assigning
+//      `value` to a focused <input> sends a browser's caret to the end, and
+//      dom.mjs has no caret to send anywhere; fieldvalue_test.mjs holds
+//      writeFieldValue's arithmetic against it, and this holds the premise.
+//      In the live build, lesson 2.3's name field with UPPERCASE on takes
+//      "hello world", then "abc" at offset 5, one key event at a time: every
+//      key is a Go rewrite, and the field must read "HELLOABC WORLD" with the
+//      caret at 8. Before writeFieldValue it read "HELLOA WORLDBC".
+//  19. a thread opens at its end, loads one older page at the top, and keeps
+//      the reader's row where it was. core.StartAtEnd and core.OnStartReached
+//      are scroll positions, and dom.mjs has none; startreached_test.mjs holds
+//      the observer and the data-key bookkeeping, and this holds the scrolling.
+//      In the live build, lesson 4.33's comps.MessageThread must open with its
+//      last message in view and scrolled to the end; scrolled to the top, it
+//      must load exactly one page (the reconciler replaces every row, so a
+//      runtime that lost the place would sit at the top and load the next
+//      page too), with the row that was first in view back at its offset; a
+//      message sent while at the end must be shown; and one sent while the
+//      reader is scrolled back must leave them where they are.
 //
 // The numbering is one sequence, and it is the order the checks run in rather
 // than the order they were written. It is also load-bearing: a dozen comments
@@ -335,6 +371,61 @@ const LIVE_PAGE = `<!DOCTYPE html>
   })();
 </script>
 </body></html>
+`;
+
+// Check 17's page: wasm/index.html as the site serves it, read fresh so the
+// check is about the file in the tree, less its two unpkg.com lines (Leaflet's
+// stylesheet and script). This pass makes no network requests, and only the
+// map lessons use Leaflet; the boot sequence under test does not touch it.
+function sitePage() {
+    return readFileSync(join(HERE, "..", "index.html"), "utf8")
+        .split("\n")
+        .filter((line) => !line.includes("unpkg.com"))
+        .join("\n");
+}
+
+// Check 17's probe, installed before any of the page's scripts run.
+//
+// The trap: Go publishes its entry points by assigning window.GrMobWASM
+// (wasm/main.go), which goes through a setter, so the setter wraps
+// RenderInitial and records whether the first tree it returns is the split.
+// That is the reading that tells the two orders apart.
+//
+// The observer: watches the whole document, because #app does not exist yet
+// when it starts, and records once, the first time #app holds a GrMob node,
+// whether the two-pane root is in the DOM. A GrMob node and not any child,
+// because #app starts out holding the page's own "Loading the tutorial…"
+// spinner. Its callback runs at the microtask checkpoint after the mount, and
+// no rendering opportunity comes before that, so this is what the first frame
+// that could be painted shows.
+const BOOT_FRAME_PROBE = `
+    window.__bootTree = null;
+    window.__bootFrame = null;
+    let host;
+    Object.defineProperty(window, "GrMobWASM", {
+        configurable: true,
+        get() { return host; },
+        set(v) {
+            host = v;
+            const render = v && v.RenderInitial;
+            if (typeof render !== "function") return;
+            v.RenderInitial = function (...args) {
+                const out = render.apply(this, args);
+                if (window.__bootTree === null) {
+                    window.__bootTree = { split: String(out).includes("tutorial-split") };
+                }
+                return out;
+            };
+        },
+    });
+    new MutationObserver((records, observer) => {
+        if (!document.querySelector("#app [data-node-path]")) return;
+        window.__bootFrame = {
+            split: !!document.getElementById("tutorial-split"),
+            width: window.innerWidth,
+        };
+        observer.disconnect();
+    }).observe(document, { childList: true, subtree: true });
 `;
 
 // Builds the tutorial for js/wasm into dir and finds Go's wasm_exec.js, for
@@ -5509,6 +5600,37 @@ async function main() {
             res.end();
             return;
         }
+        // Check 17's page: the site's own index.html over the same build.
+        if (liveBuild && (req.url === "/site/" || req.url === "/site/index.html")) {
+            res.writeHead(200, { "content-type": "text/html" });
+            res.end(sitePage());
+            return;
+        }
+        if (liveBuild && req.url === "/site/grmob-runtime.js") {
+            res.writeHead(200, { "content-type": "text/javascript" });
+            res.end(runtimeSource);
+            return;
+        }
+        if (liveBuild && req.url === "/site/camera.js") {
+            res.writeHead(200, { "content-type": "text/javascript" });
+            res.end(readFileSync(join(HERE, "..", "camera.js")));
+            return;
+        }
+        if (liveBuild && req.url === "/site/wasm_exec.js") {
+            res.writeHead(200, { "content-type": "text/javascript" });
+            res.end(readFileSync(liveBuild.wasmExec));
+            return;
+        }
+        if (liveBuild && req.url === "/site/main.wasm") {
+            res.writeHead(200, { "content-type": "application/wasm" });
+            res.end(readFileSync(liveBuild.wasm));
+            return;
+        }
+        if (req.url.startsWith("/site/")) {
+            res.writeHead(404);
+            res.end();
+            return;
+        }
         if (req.url === "/grmob-runtime.js") {
             res.writeHead(200, { "content-type": "text/javascript" });
             res.end(runtimeSource);
@@ -9763,6 +9885,282 @@ async function main() {
             }
         }
 
+        // ------------------------------------------------------------------
+        // 17. a wide window's first tree is already the split
+        // ------------------------------------------------------------------
+        //
+        // The same build as checks 15 and 16, booted by the site's own page.
+        // 1280px is well past the page's 900px split threshold, and the fresh
+        // profile has no remembered choice, so the page's answer is "split".
+        // Three readings, and all must say split:
+        //
+        //	first tree     what RenderInitial returned: the page's order
+        //	first frame    the DOM when #app first held a node: what a paint
+        //	               could show
+        //	settled        the tree a second later, so the two above cannot
+        //	               pass on a page that never splits at all
+        if (liveBuild) {
+            await session.send("Emulation.setDeviceMetricsOverride",
+                { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+            const { identifier } = await session.send("Page.addScriptToEvaluateOnNewDocument",
+                { source: BOOT_FRAME_PROBE });
+            try {
+                const siteLoaded = session.once("Page.loadEventFired");
+                await session.send("Page.navigate", { url: `${origin}/site/` });
+                await siteLoaded;
+                const boot = await evaluate(`new Promise((done) => {
+                    const started = Date.now();
+                    const poll = () => {
+                        if (window.__bootTree && window.__bootFrame) {
+                            return done({ tree: window.__bootTree, frame: window.__bootFrame });
+                        }
+                        if (Date.now() - started > 30000) return done(null);
+                        setTimeout(poll, 50);
+                    };
+                    poll();
+                })`);
+                if (!boot) {
+                    problems.push(`check 17: the site page never rendered and mounted a tree within 30s`);
+                } else {
+                    const settled = await evaluate(`new Promise((done) =>
+                        setTimeout(() => done(!!document.getElementById("tutorial-split")), 1000))`);
+                    const width = boot.frame.width;
+                    if (!settled) {
+                        problems.push(`check 17: at ${width}px the page never reached the split ` +
+                            `layout, so its first tree says nothing; is the page's split threshold still under 1280px?`);
+                    } else if (!boot.tree.split) {
+                        problems.push(`check 17: at ${width}px RenderInitial returned the phone layout ` +
+                            `and the split was patched in afterwards: index.html has to send the ` +
+                            `"layout" host event before RenderInitial`);
+                    } else if (!boot.frame.split) {
+                        problems.push(`check 17: at ${width}px the first tree was the split but the DOM ` +
+                            `at the first microtask checkpoint was not`);
+                    } else {
+                        asked.bootFrame = width;
+                    }
+                }
+            } finally {
+                await session.send("Page.removeScriptToEvaluateOnNewDocument", { identifier });
+                await session.send("Emulation.clearDeviceMetricsOverride");
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // 18. typing mid-text under a transform stays where it is typed
+        // ------------------------------------------------------------------
+        //
+        // Back on the live page (no metrics override, so the phone layout,
+        // which does not matter here), routed to 2.3. Each character is one
+        // keyDown carrying its text, which is what a keyboard sends: the
+        // input event reaches Go, and Go's uppercased value comes back as a
+        // patch inside the same dispatch.
+        if (liveBuild) {
+            const liveAgain = session.once("Page.loadEventFired");
+            await session.send("Page.navigate", { url: `${origin}/live/` });
+            await liveAgain;
+            const ready = await evaluate(`new Promise((done) => {
+                const started = Date.now();
+                const poll = () => {
+                    if (window.GrMobWASM && document.querySelector("#app [data-node-path]")) {
+                        window.GrMobWASM.HostEvent("route", JSON.stringify({ lesson: "2.3" }));
+                        return waitField();
+                    }
+                    if (Date.now() - started > 30000) return done(false);
+                    setTimeout(poll, 50);
+                };
+                const waitField = () => {
+                    const field = [...document.querySelectorAll("input")]
+                        .find((i) => (i.placeholder || "").startsWith("Type your name"));
+                    const upper = document.querySelector('input[type="checkbox"]');
+                    if (field && upper) {
+                        if (!upper.checked) upper.click();
+                        field.focus();
+                        return done(document.activeElement === field);
+                    }
+                    if (Date.now() - started > 30000) return done(false);
+                    setTimeout(waitField, 50);
+                };
+                poll();
+            })`);
+            if (!ready) {
+                problems.push(`check 18: lesson 2.3's name field never came up focused in the live build`);
+            } else {
+                const typeText = async (text) => {
+                    for (const ch of text) {
+                        await session.send("Input.dispatchKeyEvent", { type: "keyDown", key: ch, text: ch });
+                        await session.send("Input.dispatchKeyEvent", { type: "keyUp", key: ch });
+                    }
+                };
+                const field = () => evaluate(`({ value: document.activeElement.value,
+                    caret: document.activeElement.selectionStart })`);
+                await typeText("hello world");
+                const typed = await field();
+                if (typed.value !== "HELLO WORLD") {
+                    problems.push(`check 18: "hello world" typed under UPPERCASE read ${JSON.stringify(typed.value)}`);
+                } else {
+                    await evaluate(`document.activeElement.setSelectionRange(5, 5)`);
+                    await typeText("abc");
+                    const mid = await field();
+                    if (mid.value !== "HELLOABC WORLD" || mid.caret !== 8) {
+                        problems.push(`check 18: "abc" typed at offset 5 of "HELLO WORLD" under UPPERCASE ` +
+                            `read ${JSON.stringify(mid.value)} with the caret at ${mid.caret}; want ` +
+                            `"HELLOABC WORLD" at 8. A value written into the focused field has to carry ` +
+                            `the caret across Go's change (writeFieldValue)`);
+                    } else {
+                        asked.midText = true;
+                    }
+                }
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // 19. a thread opens at its end, loads one older page at the top, and
+        //     keeps the reader's row where it was
+        // ------------------------------------------------------------------
+        //
+        // Still on the live page from check 18, routed on to 4.33. Each step
+        // is read back from the list element (role=log, data-start-at-end) and
+        // the lesson's own caption, which Go writes:
+        //
+        //	opened        at the end, "Message 48" in the box
+        //	to the top    one page lands: "24 of 48", and 1.5s later still
+        //	              "1 older page"; the first row that was in view is
+        //	              within 2px of where it was
+        //	send at end   the new message is in the box, the list at its end
+        //	send mid-way  scrollTop unchanged
+        if (liveBuild) {
+            const threadProblem = (what) => problems.push(`check 19: ${what}`);
+            // Frames first. By this point in the pass the page draws no frames
+            // of its own: requestAnimationFrame did not fire within a second
+            // (measured here), and an IntersectionObserver is delivered in the
+            // same rendering steps, so the top edge could never be reported.
+            // Bringing the target to the front starts them again. The earlier
+            // checks never needed it: they read state and focus, not frames.
+            await session.send("Page.bringToFront");
+            const opened = await evaluate(`new Promise((done) => {
+                window.GrMobWASM.HostEvent("route", JSON.stringify({ lesson: "4.33" }));
+                const started = Date.now();
+                const poll = () => {
+                    const list = document.querySelector('[data-start-at-end]');
+                    if (list && list.clientHeight > 0 && list.scrollHeight > list.clientHeight) {
+                        list.scrollIntoView({ block: "center" });
+                        return setTimeout(() => {
+                            const box = list.getBoundingClientRect();
+                            const last = [...list.children].pop();
+                            const r = last.getBoundingClientRect();
+                            done({
+                                atEnd: list.scrollHeight - list.scrollTop - list.clientHeight <= 2,
+                                lastKey: last.dataset.key,
+                                lastInBox: r.top >= box.top - 1 && r.bottom <= box.bottom + 1,
+                            });
+                        }, 100);
+                    }
+                    if (Date.now() - started > 30000) return done(null);
+                    setTimeout(poll, 50);
+                };
+                poll();
+            })`);
+            // Whether the lesson's caption says text, polled for up to ms.
+            const captionSays = (text, ms) => evaluate(`new Promise((done) => {
+                const started = Date.now();
+                const poll = () => {
+                    if (document.body.textContent.includes(${JSON.stringify(text)})) return done(true);
+                    if (Date.now() - started > ${ms}) return done(false);
+                    setTimeout(poll, 25);
+                };
+                poll();
+            })`);
+            // Waits two frames, then reads the list.
+            const readList = () => evaluate(`new Promise((done) => setTimeout(() => {
+                    const list = document.querySelector('[data-start-at-end]');
+                    done({ top: list.scrollTop,
+                        atEnd: list.scrollHeight - list.scrollTop - list.clientHeight <= 2 });
+                }, 100))`);
+            if (!opened) {
+                threadProblem("lesson 4.33's thread never came up with more messages than fit its box");
+            } else if (!opened.atEnd || opened.lastKey !== "msg:m48" || !opened.lastInBox) {
+                threadProblem(`the thread opened ${opened.atEnd ? "at" : "away from"} its end with its last ` +
+                    `row ${opened.lastKey} ${opened.lastInBox ? "in" : "out of"} the box; core.StartAtEnd ` +
+                    `opens it on msg:m48, in view`);
+            } else {
+                // To the top, remembering the first message row in view.
+                const before = await evaluate(`(() => {
+                    const list = document.querySelector('[data-start-at-end]');
+                    list.scrollTop = 0;
+                    const box = list.getBoundingClientRect();
+                    const row = [...list.children].find((c) => c.getBoundingClientRect().bottom > box.top + 1);
+                    return { key: row.dataset.key, offset: row.getBoundingClientRect().top - box.top };
+                })()`);
+                const landed = await captionSays("24 of 48 messages loaded", 5000);
+                const settled = landed && !(await captionSays("36 of 48", 1500));
+                const after = await evaluate(`(() => {
+                    const list = document.querySelector('[data-start-at-end]');
+                    const box = list.getBoundingClientRect();
+                    const row = [...list.children].find((c) => c.dataset.key === ${JSON.stringify(before.key)});
+                    return { top: list.scrollTop, offset: row ? row.getBoundingClientRect().top - box.top : null };
+                })()`);
+                let held = true;
+                if (!landed) {
+                    threadProblem("scrolled to the top, the thread never loaded its older page");
+                    held = false;
+                } else if (!settled) {
+                    threadProblem("scrolled to the top once, the thread loaded a second older page: the " +
+                        "reader was left at the top after the first one landed");
+                    held = false;
+                } else if (after.offset === null || Math.abs(after.offset - before.offset) > 2) {
+                    threadProblem(`the row in view before the older page landed (${before.key}, at ` +
+                        `${before.offset.toFixed(1)}px) is at ${after.offset === null ? "nowhere" :
+                        after.offset.toFixed(1) + "px"} after it; the place was not kept`);
+                    held = false;
+                }
+                // Send at the end, then send from the middle.
+                const send = async (text) => {
+                    await evaluate(`(() => {
+                        const field = [...document.querySelectorAll("input")]
+                            .find((i) => i.placeholder === "Message…");
+                        field.focus();
+                    })()`);
+                    for (const ch of text) {
+                        await session.send("Input.dispatchKeyEvent", { type: "keyDown", key: ch, text: ch });
+                        await session.send("Input.dispatchKeyEvent", { type: "keyUp", key: ch });
+                    }
+                    const enter = { key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 };
+                    await session.send("Input.dispatchKeyEvent", { type: "rawKeyDown", ...enter });
+                    await session.send("Input.dispatchKeyEvent", { type: "char", ...enter, text: "\r" });
+                    await session.send("Input.dispatchKeyEvent", { type: "keyUp", ...enter });
+                };
+                if (held) {
+                    await evaluate(`(() => { const l = document.querySelector('[data-start-at-end]');
+                        l.scrollTop = l.scrollHeight; })()`);
+                    await send("hello");
+                    const end = await readList();
+                    const shown = await evaluate(`(() => {
+                        const list = document.querySelector('[data-start-at-end]');
+                        const last = [...list.children].pop();
+                        return last.dataset.key === "msg:sent1";
+                    })()`);
+                    if (!shown || !end.atEnd) {
+                        threadProblem(`a message sent at the end is ${shown ? "the last row" : "not the last row"} ` +
+                            `and the list is ${end.atEnd ? "at" : "not at"} its end; StartAtEnd keeps a reader ` +
+                            `at the end there`);
+                        held = false;
+                    }
+                }
+                if (held) {
+                    const mid = await evaluate(`(() => { const l = document.querySelector('[data-start-at-end]');
+                        l.scrollTop = Math.round(l.scrollHeight / 3); return l.scrollTop; })()`);
+                    await send("again");
+                    const later = await readList();
+                    if (Math.abs(later.top - mid) > 2) {
+                        threadProblem(`a message sent while the reader was scrolled back moved them from ` +
+                            `${mid}px to ${later.top}px`);
+                        held = false;
+                    }
+                }
+                if (held) asked.thread = true;
+            }
+        }
+
     } finally {
         if (session) session.close();
         chrome.kill();
@@ -9774,7 +10172,7 @@ async function main() {
     // that only appears on the happy path is a skip that goes missing exactly
     // when the log is long.
     if (asked.liveSkip) {
-        console.log(`SKIP: checks 15 and 16, the live calendar and shortcuts (${asked.liveSkip})`);
+        console.log(`SKIP: checks 15 to 19, the live calendar, shortcuts, boot frame, mid-text typing and thread (${asked.liveSkip})`);
     }
     if (asked.inkFaceSkip) {
         console.log(`SKIP: the band grid's ink scan (${asked.inkFaceSkip})`);
@@ -9799,7 +10197,13 @@ async function main() {
         ? `PageUp and PageDown page the 4.9 calendar through a live Go render ${asked.livePages} times with focus kept on the day,`
         : "the live calendar unpaged,"} ${asked.liveShortcuts
         ? "Control+Alt+K and F6 press lesson 2.2's button with nothing focused and a bare K does not,"
-        : "the live shortcuts unpressed,"} ${PALETTES.length} palette swatches paint the
+        : "the live shortcuts unpressed,"} ${asked.bootFrame
+        ? `the first tree the site page renders at ${asked.bootFrame}px is already the split,`
+        : "the boot frame unread,"} ${asked.midText
+        ? "typing mid-text under lesson 2.3's UPPERCASE stays where it is typed,"
+        : "mid-text typing untried,"} ${asked.thread
+        ? "lesson 4.33's thread opens at its end, loads one older page at the top with the reader's row kept in place, and follows a send only from the end,"
+        : "the thread unscrolled,"} ${PALETTES.length} palette swatches paint the
     hexes the contrast census measures, ${WIDGETS.length} real widgets draw
     their own boundary tones on both edges, a sticky band pins, ${VALUE_RANGES.length}
     value ranges resolve the way core.Progress says a browser resolves them,

@@ -419,6 +419,8 @@ func renderNode(b *element.Builder, node *core.Node, from imposed, path string) 
 		// table — knows which callback the bottom of this list belongs to
 		// without re-deriving it from the tree.
 		{"onEndReached", "data-onendreached"},
+		// core.OnStartReached, the top edge, recorded the same way.
+		{"onStartReached", "data-onstartreached"},
 		// core.MapView's three. Recorded like the rest — the ID, not the
 		// behavior — which is what makes an exported map upgradeable: a page
 		// that loads Leaflet, reads the region off data-lat/lng/zoom and wires

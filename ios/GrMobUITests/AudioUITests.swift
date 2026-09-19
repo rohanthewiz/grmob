@@ -8,6 +8,14 @@ import XCTest
 // the simulator's temp dir), because test stdout reaches neither the
 // xcodebuild log nor the xcresult. Run with:
 //   xcodebuild test ... -only-testing:GrMobUITests/AudioUITests
+//
+// The queries follow comps.AudioPlayer, which replaced the hand-built
+// transport this test was first written against: the state line reads
+// "State: <state>" (audioTab's diagnostics line), the skip buttons are named
+// "Back 15 seconds" / "Forward 15 seconds" rather than their "−15s" / "+15s"
+// captions, and the rate button spells its rate with a multiplication sign,
+// "Speed 1×". Waiting for the old bare "playing" is why this test failed with
+// playback working.
 final class AudioUITests: XCTestCase {
     let out = (ProcessInfo.processInfo.environment["GRMOB_AUDIO_OUT"] ?? NSTemporaryDirectory()) + "/grmob-audio"
 
@@ -27,12 +35,13 @@ final class AudioUITests: XCTestCase {
         dump(app, "1-idle")
 
         app.buttons["Play"].tap()
-        XCTAssertTrue(app.staticTexts["playing"].waitForExistence(timeout: 20), "never reached playing")
+        XCTAssertTrue(app.staticTexts["State: playing"].waitForExistence(timeout: 20), "never reached playing")
         sleep(4)
         dump(app, "2-playing")
 
-        app.buttons["+15s"].tap()
-        app.buttons["Speed 1x"].tap()
+        app.buttons["Forward 15 seconds"].tap()
+        app.buttons["Speed 1×"].tap()
+        XCTAssertTrue(app.buttons["Speed 1.25×"].waitForExistence(timeout: 5), "the rate did not step to 1.25×")
         sleep(2)
         dump(app, "3-skip-speed")
 
@@ -44,13 +53,13 @@ final class AudioUITests: XCTestCase {
         dump(app, "4-seeked")
 
         app.buttons["Pause"].tap()
-        XCTAssertTrue(app.staticTexts["paused"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["State: paused"].waitForExistence(timeout: 5))
         dump(app, "5-paused")
 
         // Let it run out: from ~90% of a 6:13 track at 1.25x, the end is
         // ~30s away. Play, then wait for "ended".
         app.buttons["Play"].tap()
-        XCTAssertTrue(app.staticTexts["ended"].waitForExistence(timeout: 60), "never reached ended")
+        XCTAssertTrue(app.staticTexts["State: ended"].waitForExistence(timeout: 60), "never reached ended")
         dump(app, "6-ended")
 
         app.buttons["Stop"].tap()

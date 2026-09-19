@@ -280,7 +280,7 @@
 
 <header>
   <h1><span>GrMob</span> · Interactive Tutorial</h1>
-  <span class="meta">74 lessons · 8 chapters · every demo is live Go, running in your browser</span>
+  <span class="meta">75 lessons · 8 chapters · every demo is live Go, running in your browser</span>
   <span class="spacer"></span>
   <div id="layout-toggle" class="layout-toggle" role="group" aria-label="Layout" hidden>
     <button type="button" data-mode="split" aria-pressed="false" title="Read the guide beside a live phone">Guide + phone</button>
@@ -490,8 +490,11 @@
         const exited = go.run(result.instance);
         // Before the first render: the tutorial holds a mode sent now and
         // starts in it (examples/tutorial/split.go, bootLayout), so a wide
-        // window's first frame is already the split. It used to be sent after
-        // the mount, which drew one frame of the phone layout first.
+        // window's first tree is already the split. It used to be sent after
+        // the mount, which built and mounted the phone layout and then patched
+        // it into the split within the same task (never painted, but thrown
+        // away on every wide boot). wasm/verify's browser check 17 holds this
+        // order.
         sendLayout();
         const patch = window.GrMobWASM.RenderInitial();
         GrMob.mount(patch);

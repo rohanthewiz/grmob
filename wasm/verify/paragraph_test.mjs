@@ -57,3 +57,22 @@ test("the keyboard prop sets inputmode, on mount and on patch", () => {
     rt.GrMob.patch(JSON.stringify([{ Type: "update-props", TargetID: "root/0", Changes: { value: "", keyboard: "email" } }]));
     assert.equal(el.inputMode, "email");
 });
+
+// The patch carries the whole new props map, so a field that drops
+// core.Keyboard is back on the text keyboard, not left on the old pad.
+test("a patch without the keyboard prop clears inputmode", () => {
+    const rt = loadRuntime();
+    rt.GrMob.mount(JSON.stringify({ Type: "Column", Children: [{ Type: "Input", Props: { value: "", keyboard: "digits" } }] }));
+    const el = nodeAt(rt.document, "root/0");
+    assert.equal(el.inputMode, "numeric");
+    rt.GrMob.patch(JSON.stringify([{ Type: "update-props", TargetID: "root/0", Changes: { value: "12" } }]));
+    assert.equal(el.inputMode, "");
+});
+
+test("a props patch on a non-field leaves inputmode alone", () => {
+    const rt = loadRuntime();
+    rt.GrMob.mount(JSON.stringify({ Type: "Column", Children: [{ Type: "Text", Props: { content: "a" } }] }));
+    const el = nodeAt(rt.document, "root/0");
+    rt.GrMob.patch(JSON.stringify([{ Type: "update-props", TargetID: "root/0", Changes: { content: "b" } }]));
+    assert.equal(el.inputMode, undefined);
+});

@@ -2798,8 +2798,16 @@ private fun GrMobList(node: GrMobNode, extra: Modifier) {
     val rows = flattenFragments(node.children)
     // Composed outside the branch below, so the scroll position and the
     // reporter's positional slot survive a flip between the two arms.
-    val listState = rememberLazyListState()
+    // core.StartAtEnd opens the list on its last row. Read once, by
+    // rememberLazyListState's own contract: the initial index only matters to
+    // the first composition, and after that the position is the reader's.
+    val startAtEnd = node.boolProp("startAtEnd")
+    val listState = rememberLazyListState(
+        initialFirstVisibleItemIndex = if (startAtEnd) (rows.size - 1).coerceAtLeast(0) else 0,
+    )
     EndReachedReporter(node, listState, rows.size)
+    StartReachedReporter(node, listState, rows.size)
+    StickToEnd(startAtEnd, listState, rows.size)
 
     // The lazy sibling of GrMobColumn's dispatch, with the same contract
     // and the same two vocabularies. Held to core.AlignItemsValues() by
@@ -3028,6 +3036,63 @@ private fun EndReachedReporter(node: GrMobNode, listState: LazyListState, rowCou
             .collect { last ->
                 if (last >= rowCount - END_REACHED_SLACK) runtime.click(callbackId)
             }
+    }
+}
+
+/** How close to the first row counts as "the start" — see StartReachedReporter. */
+private const val START_REACHED_SLACK = 2
+
+/**
+ * core.OnStartReached: EndReachedReporter mirrored, reporting that the reader
+ * has scrolled to within START_REACHED_SLACK rows of the top, so Go can fetch
+ * the older page.
+ *
+ * # The place after the page lands
+ *
+ * Nothing here keeps it; LazyColumn does. A LazyListState holds its position
+ * as the first visible item's *key*, and when rows are inserted before that
+ * item it follows the key to its new index. comps.MessageThread keys every
+ * bubble, so the older page lands above the reader and the first visible index
+ * jumps by the page's size, out of this reporter's slack, which is what keeps
+ * one arrival at the top from asking for every page to the beginning. An
+ * unkeyed List falls back to index keys and would not keep its place.
+ *
+ * The slack is smaller than the bottom's three: the top is reached by
+ * scrolling back through what was read, not toward what is loading, and a
+ * thread opened at its end on a short first page must not report the top
+ * before the reader has moved at all.
+ */
+@Composable
+private fun StartReachedReporter(node: GrMobNode, listState: LazyListState, rowCount: Int) {
+    val callbackId = node.stringProp("onStartReached")
+    val runtime = LocalGrMobRuntime.current
+    LaunchedEffect(listState, callbackId, rowCount) {
+        if (callbackId.isEmpty() || rowCount == 0) return@LaunchedEffect
+        snapshotFlow { listState.firstVisibleItemIndex }
+            .collect { first ->
+                if (first < START_REACHED_SLACK) runtime.click(callbackId)
+            }
+    }
+}
+
+/**
+ * core.StartAtEnd's second half: a list that was at its end when rows arrived
+ * stays at its end, so the newest message is shown to a reader who was
+ * reading the newest. A reader who has scrolled back is left where they are.
+ *
+ * "Was at its end" is remembered from the last settled layout rather than
+ * read when the rows change, because by then the layout already includes the
+ * new rows and the list is, by definition, no longer at its end.
+ */
+@Composable
+private fun StickToEnd(startAtEnd: Boolean, listState: LazyListState, rowCount: Int) {
+    val atEnd = remember { mutableStateOf(true) }
+    LaunchedEffect(listState, startAtEnd) {
+        if (!startAtEnd) return@LaunchedEffect
+        snapshotFlow { !listState.canScrollForward }.collect { atEnd.value = it }
+    }
+    LaunchedEffect(rowCount) {
+        if (startAtEnd && atEnd.value && rowCount > 0) listState.scrollToItem(rowCount - 1)
     }
 }
 

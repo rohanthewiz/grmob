@@ -6,7 +6,7 @@ import "github.com/rohanthewiz/grmob/core"
 
 Rows, columns, stacks, scrolls and lists, and the alignment vocabulary they are placed with.
 
-One of 11 topic pages of [package core](core.md), which has the package overview and an index of every topic. This page documents the declarations in `core/layout.go`, `core/list.go`, `core/stack_align.go`, `core/alignment.go`, `core/keyboard.go`, `core/placement_audit.go`.
+One of 11 topic pages of [package core](core.md), which has the package overview and an index of every topic. This page documents the declarations in `core/layout.go`, `core/list.go`, `core/list_start.go`, `core/stack_align.go`, `core/alignment.go`, `core/keyboard.go`, `core/placement_audit.go`.
 
 ## Index
 
@@ -26,12 +26,14 @@ One of 11 topic pages of [package core](core.md), which has the package overview
 - [`func KeyboardAware`](#func-keyboardaware)
 - [`func List`](#func-list)
 - [`func OnEndReached`](#func-onendreached)
+- [`func OnStartReached`](#func-onstartreached)
 - [`func PlacingContainers`](#func-placingcontainers)
 - [`func Row`](#func-row)
 - [`func SafeArea`](#func-safearea)
 - [`func Scroll`](#func-scroll)
 - [`func Spacer`](#func-spacer)
 - [`func StackAlign`](#func-stackalign)
+- [`func StartAtEnd`](#func-startatend)
 - [`func StickyHeader`](#func-stickyheader)
 - [`func TextAlignments`](#func-textalignments)
 - [`func ZStack`](#func-zstack)
@@ -323,6 +325,18 @@ State is keyed by callback ID, and callback IDs are positional: the Nth void han
 
 <small>[core/list.go:154](https://github.com/rohanthewiz/grmob/blob/master/core/list.go#L154)</small>
 
+### func OnStartReached
+
+```go
+func OnStartReached(handler func()) BehaviorProp
+```
+
+OnStartReached fires when the reader scrolls to within a few rows of the top of a List: the "load older messages" edge. The mirror of OnEndReached, with the same guard: it runs once per row count, so the host reporting the same top several times (it will) loads one page, and a page that comes back empty leaves the guard shut.
+
+Both edges share OnEndReached's ledger. It is keyed by callback ID, and a List carrying both registers two IDs, so the two guards never meet.
+
+<small>[core/list_start.go:60](https://github.com/rohanthewiz/grmob/blob/master/core/list_start.go#L60)</small>
+
 ### func PlacingContainers
 
 ```go
@@ -408,6 +422,18 @@ It says nothing anywhere else. A stack is the only container that places its chi
 Inert is the right behaviour and \*silent\* is not, so the tree walk says so: with debug mode on, core.AuditTree reports a placement no container will read as ConcernInertPlacement, naming the node path and the container that was going to place it. That is the only diagnostic any target produces, and the argument for putting it there rather than in a renderer is in placement\_audit.go.
 
 <small>[core/stack_align.go:143](https://github.com/rohanthewiz/grmob/blob/master/core/stack_align.go#L143)</small>
+
+### func StartAtEnd
+
+```go
+func StartAtEnd() BehaviorProp
+```
+
+StartAtEnd opens a List scrolled to its last row, and keeps it there while rows are appended as long as the reader has not scrolled away from the end: a conversation's newest message, and the next one arriving under it.
+
+A prop rather than a ScrollIntoView of the last row, because the natives' List is windowed and its off-screen rows do not exist to be scrolled to (see ScrollTarget), and because a command issued after the first render is a frame too late: the list would draw its top first.
+
+<small>[core/list_start.go:87](https://github.com/rohanthewiz/grmob/blob/master/core/list_start.go#L87)</small>
 
 ### func StickyHeader
 

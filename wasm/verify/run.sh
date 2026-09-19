@@ -12,7 +12,7 @@
 #
 # Some of what was in that bucket is not any more: browser.mjs drives a
 # headless Chrome over the DevTools protocol at the end of this script and
-# checks six keyboard facts, three about paint, five about layout, one about
+# checks seven keyboard facts, three about paint, seven about layout, one about
 # ARIA's value rules and one about the CSSOM — that every bundled palette's
 # ControlBorder reaches the
 # screen as the hex the contrast census did its arithmetic about, that a real
@@ -30,7 +30,13 @@
 # the tutorial for js/wasm and pages 4.9's calendar with PageUp and PageDown
 # through a live Go render. The sixth, in the same build, presses lesson 2.2's
 # button with Control+Alt+K and F6 with nothing focused, and checks that a bare
-# K presses nothing.
+# K presses nothing. The sixth layout fact boots the same build through the
+# site's own index.html at 1280px and checks that the first tree it renders is
+# already the two-pane split. The seventh keyboard fact types into lesson 2.3's
+# UPPERCASE field mid-text and checks the caret stays with the typing. The
+# seventh layout fact scrolls lesson 4.33's message thread: open at the end,
+# one older page at the top with the reader's row kept, sends followed only
+# from the end.
 # It skips when there is no Chrome to launch, which keeps the promise above
 # intact — see that file for the claims and why no amount of widening dom.mjs
 # would settle them.

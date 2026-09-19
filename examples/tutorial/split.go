@@ -110,11 +110,17 @@ const (
 // The page learns the window's width and the reader's choice before it has
 // mounted anything, but useLayoutMode subscribes during the first render, so
 // the page used to mount first and send the mode after. Every wide-screen boot
-// therefore drew one frame of the phone layout, bezel and all, and then
-// re-drew the split when the event's patch arrived:
+// therefore built and mounted the whole phone layout, bezel and all, and then
+// diffed it into the split when the event's patch arrived:
 //
 //	RenderInitial ─▶ mount (phone layout) ─▶ HostEvent("layout") ─▶ patch (split)
-//	                 └── the frame this removes
+//	                 └── the tree this removes
+//
+// It was thought to be a visible frame. wasm/verify's browser check 17
+// measured it with the old order restored: the patch is pushed from inside
+// the HostEvent call, in the same task as the mount, so no frame of the phone
+// layout was ever painted. What the order cost was the work: a tree built,
+// mounted and patched away on every wide boot.
 //
 // So a package-level subscriber takes the event before any tree exists, and
 // App seeds its split state from it. The page sends the mode first:

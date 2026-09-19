@@ -190,6 +190,34 @@ func TestTextAreaDemoCountsLinesAndTidiesThem(t *testing.T) {
 	assertNoConcerns(t)
 }
 
+// The second transform: the first letter of each word, and nothing else.
+func TestCapitalizeWords(t *testing.T) {
+	for _, c := range []struct{ in, want string }{
+		{"", ""},
+		{"hello world", "Hello World"},
+		{"hellox world", "Hellox World"},
+		{"hello mcGrMob", "Hello McGrMob"},
+		{"  two  spaces ", "  Two  Spaces "},
+		{"été 1st", "Été 1st"},
+	} {
+		if got := capitalizeWords(c.in); got != c.want {
+			t.Errorf("capitalizeWords(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// With "Capitalize each word" on, the stored value is capitalized.
+func TestInputDemoCapitalizesWords(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Controlled inputs")
+	toggleCheckbox(t, mgr, 1, true)
+	typeInto(t, mgr, "ada lovelace")
+	if !hasText(tree(t, mgr), "Hello, Ada Lovelace!") {
+		t.Fatal("with the word transform on, each word should be capitalized")
+	}
+	assertNoConcerns(t)
+}
+
 func TestLineSummaryAndTidyLines(t *testing.T) {
 	for _, c := range []struct{ in, summary, tidy string }{
 		{"", "Empty: zero lines.", ""},

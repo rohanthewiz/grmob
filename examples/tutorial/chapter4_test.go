@@ -2847,8 +2847,9 @@ func TestAudioPlayerLessonLoadsItsTrack(t *testing.T) {
 	assertNoConcerns(t)
 }
 
-// 4.31. The transcript: Ana's second line has no sender, the reader's is
-// named "You", and sending appends a bubble of the reader's own.
+// 4.31. The transcript: Ana's second line draws no sender and still speaks
+// her name (MessageBubble.Continued), the reader's is named "You", and
+// sending appends a bubble of the reader's own.
 func TestMessageBubblesLessonSendsAndGroups(t *testing.T) {
 	mgr := newApp(t)
 	openLesson(t, mgr, "Message bubbles")
@@ -2861,8 +2862,12 @@ func TestMessageBubblesLessonSendsAndGroups(t *testing.T) {
 	if named("Ana, Did you see the new release?, 10:41") == nil {
 		t.Error("the first line names its sender")
 	}
-	if named("Bubbles are a widget now., 10:41") == nil {
-		t.Error("the second of Ana's lines has no sender")
+	second := named("Ana, Bubbles are a widget now., 10:41")
+	if second == nil {
+		t.Fatal("the second of Ana's lines should still speak her name")
+	}
+	if findNode(second, func(n *node) bool { return n.Type == "Text" && n.Props["content"] == "Ana" }) != nil {
+		t.Error("the second of Ana's lines draws her name again")
 	}
 	if named("You, Not yet — what changed?, 10:42") == nil {
 		t.Error("the reader's own line is named You")
@@ -2916,6 +2921,54 @@ func TestReadMoreAndHalfStarsLesson(t *testing.T) {
 	tap(t, mgr, "+ 0.5")
 	if got := rating(); got != "4 of 5" {
 		t.Errorf("after +0.5 rating = %q, want 4 of 5", got)
+	}
+	assertNoConcerns(t)
+}
+
+// 4.33. The thread opens on the newest page; reaching the top loads the page
+// before once, shows the loading caption while it is in flight, and prepends
+// it; the start caption appears once the history is exhausted.
+func TestMessageThreadLessonLoadsOlderPages(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Message threads")
+
+	list := func() *node {
+		return findNode(tree(t, mgr), func(n *node) bool { return n.Type == "List" && n.Props["startAtEnd"] == true })
+	}
+	if list() == nil {
+		t.Fatal("the lesson has no StartAtEnd list")
+	}
+	if !hasTextContaining(tree(t, mgr), "12 of 48 messages loaded") {
+		t.Fatal("the thread should open on its newest page of 12")
+	}
+	// waitFor polls the tree, because the pretend fetch lands on a timer.
+	waitFor := func(text string) bool {
+		for range 60 {
+			if hasTextContaining(tree(t, mgr), text) {
+				return true
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		return false
+	}
+	for page := 1; page <= 3; page++ {
+		id := list().Props["onStartReached"].(string)
+		mgr.DispatchCallback(id)
+		// A second report of the same top, mid-fetch, loads nothing more.
+		mgr.DispatchCallback(id)
+		if !hasText(tree(t, mgr), "Loading older messages…") {
+			t.Fatalf("page %d: reaching the top did not show the loading caption", page)
+		}
+		want := fmt.Sprintf("%d of 48 messages loaded · %d older page", 12*(page+1), page)
+		if !waitFor(want) {
+			t.Fatalf("page %d: want %q", page, want)
+		}
+	}
+	if !hasText(tree(t, mgr), "This is the start of the conversation.") {
+		t.Error("with all 48 loaded the caption should say the conversation starts here")
+	}
+	if _, ok := list().Props["onStartReached"]; ok {
+		t.Error("with nothing older the top edge is still wired")
 	}
 	assertNoConcerns(t)
 }

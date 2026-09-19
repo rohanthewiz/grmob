@@ -90,12 +90,23 @@ final class GrMobUITests: XCTestCase {
         XCTAssertFalse(lastRow.isHittable,
                        "row 30 is on screen at the top of the list")
 
-        // Tap = select. The row's accessibility label flips to "…, selected".
-        app.buttons["Article 3"].tap()
+        // Tap = select. The row is a selectable option (comps.ListRow with
+        // Selectable, in a RoleListBox list), so the selection is a *state*:
+        // the .isSelected trait, which XCUITest reads as isSelected. The name
+        // stays "Article 3". This test once waited for the label to become
+        // "Article 3, selected", the suffix a row with no role spells into its
+        // own name; examples/mobileapp's TestFeedTabListGestures pins that the
+        // suffix is gone, and this half now checks the state that replaced it.
+        let row3 = app.buttons["Article 3"]
+        XCTAssertFalse(row3.isSelected, "row 3 reads as selected before the tap")
+        row3.tap()
         XCTAssertTrue(app.staticTexts["Selected: Article 3"].waitForExistence(timeout: 5),
                       "row tap did not round-trip to Go")
-        XCTAssertTrue(app.buttons["Article 3, selected"].waitForExistence(timeout: 5),
-                      "selected row's accessibility label did not update")
+        let selected = NSPredicate(format: "isSelected == true")
+        expectation(for: selected, evaluatedWith: row3)
+        waitForExpectations(timeout: 5)
+        XCTAssertFalse(app.buttons["Article 3, selected"].exists,
+                       "the row spelled its state into its name")
 
         // Long-press = star, asserted through the status line. (The row's
         // starred title "Article 5 ★" is deliberately NOT queried as a static

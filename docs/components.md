@@ -3448,8 +3448,9 @@ comps.MessageBubble{Text: "Not yet", Mine: true, Time: "10:42"}
   contrast. **Theirs** is on the leading side in `Surface` with a `Border`
   hairline, because the palette has no muted container tone (Banner's answer
   to the same gap). Bubbles are capped at 80% of the row.
-- `Sender` is drawn on theirs only. Leave it empty when the speaker has not
-  changed. `Time` is a string you format.
+- `Sender` is drawn on theirs only. Set `Continued` on the second and later of
+  a run from one sender: the line is not drawn, and the name is still spoken.
+  `Time` is a string you format.
 - One spoken stop per message, named who-what-when ("Ana, Did you see?,
   10:41"). The reader's own messages are named "You, …", and `MineLabel`
   localizes that. Put the bubbles under a `core.RoleLog` container.
@@ -3457,9 +3458,37 @@ comps.MessageBubble{Text: "Not yet", Mine: true, Time: "10:42"}
 - **The tail** is the bottom corner on the sender's side, nearly square
   (`core.CornerRadii`): bottom-right on the reader's own, bottom-left on
   theirs.
-- **Not a thread**: `core.ScrollIntoView` can open a transcript at its newest
-  message, but loading older ones as the reader scrolls up needs a reported
-  scroll offset, which no host sends.
+- **Not a thread**: a whole conversation is `MessageThread`, below.
+
+## MessageThread
+
+A conversation: bubbles in a `core.List` that opens on the newest message,
+loads older ones when the reader scrolls back to the top, and keeps the
+reader's place while they land.
+
+```go
+comps.MessageThread{
+    Messages:    msgs,        // []comps.ThreadMessage, oldest first
+    OnLoadOlder: loadOlder,   // nil once there is nothing older
+    Loading:     fetching,
+}
+```
+
+- Every `ThreadMessage` needs a stable `Key` (a server ID, not an index). The
+  key is how each host finds the row the reader was looking at after a
+  prepend: the reconciler pairs rows by position, so without keys a prepend is
+  new text in every row.
+- `OnLoadOlder` runs when the reader reaches the top, once per row count
+  (`core.OnStartReached`'s guard), so repeated reports of the same top load
+  one page, and a page that comes back empty leaves the guard shut.
+- The loading and start captions are a line above the list, never a row in
+  it, so the list's first row is always a message.
+- A message that arrives while the reader is at the end is shown; one that
+  arrives while they have scrolled back leaves them where they are.
+- The list is an unnamed `core.RoleLog`. A name on a container folds its
+  children into one stop on iOS.
+- Under it are two `core.List` props any list can use: `core.StartAtEnd()`
+  and `core.OnStartReached(fn)`. See their doc for what each host does.
 
 ## ExpandableText
 

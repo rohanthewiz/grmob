@@ -7,6 +7,10 @@ const GrMob = (() => {
     function renderNode(node, path = "") {
         const el = createElement(node);
         el.setAttribute("data-node-path", path);
+        // core.Keyed's key, for the one reader that needs identity rather
+        // than position: a thread keeping the reader's row in place across a
+        // prepend (captureListAnchors). Patches still address by path.
+        if (node.Key) el.dataset.key = node.Key;
 
 
         if (node.Type === "Spacer" && node.Props) {
@@ -63,6 +67,10 @@ const GrMob = (() => {
         // read to be told they are not lists.
         if (node.Props && node.Props.onEndReached) {
             syncEndReached(el);
+        }
+        // And its mirror at the top, for the same reason.
+        if (node.Props && node.Props.onStartReached) {
+            syncStartReached(el);
         }
 
         return el;
@@ -234,6 +242,12 @@ const GrMob = (() => {
                     // child, pointed at it by syncEndReached once renderNode
                     // has built the children.
                     attachEndReached(el, value);
+                } else if (key === "onStartReached") {
+                    // The top edge, before the generic on* branch for the
+                    // same reason; see "Start reached".
+                    attachStartReached(el, value);
+                } else if (key === "startAtEnd") {
+                    setStartAtEnd(el, value);
                 } else if (key === "onBack") {
                     // core.OnBack, which on a page is the browser's back
                     // button. There is no "back" DOM event, so the generic
@@ -3334,6 +3348,162 @@ const GrMob = (() => {
     }
 
 
+    // --- Start reached, and a thread's place (core.OnStartReached,
+    //     core.StartAtEnd) ---------------------------------------------------
+    //
+    // The top edge is the end edge mirrored: an IntersectionObserver on the
+    // list's *first* child, re-pointed whenever a batch may have replaced it.
+    // core.OnStartReached debounces on the Go side by row count, as
+    // OnEndReached does.
+    //
+    // # Keeping the reader's place
+    //
+    // Older messages land *above* the reader, and the reconciler pairs
+    // children by position, so a prepend reaches this runtime as a new row in
+    // every slot: each element is replaced. A browser's own scroll anchoring
+    // (overflow-anchor) anchors on an element, and every element it could have
+    // chosen is gone. So the place is kept here, by key:
+    //
+    //	before the batch   the first row visible in the list: its data-key and
+    //	                   its offset from the list's top edge
+    //	after the batch    the row with that key, found again, and scrollTop
+    //	                   moved by however far it drifted
+    //
+    // This also has to run before the next frame, and it does (it is
+    // synchronous, at the end of patch): the first row is a new element, the
+    // start observer is re-pointed at it, and an IntersectionObserver reports
+    // a new target's state on the next frame. Were the reader still at the top
+    // then, the landing page would ask for the page before it at once, and
+    // every page after that.
+    //
+    // # Opening at the end, and staying there
+    //
+    // A StartAtEnd list is scrolled to its end the first time it is in the
+    // document with a height, and a batch that finds it at its end leaves it
+    // at its end, so a message arriving under a reader who is reading the
+    // newest one is shown. A reader who has scrolled back is left where they
+    // are.
+    //
+    // Only for lists carrying one of the two props (threadLists). A list that
+    // is its own scroll box is the case handled; a List inside some other
+    // scrolling ancestor keeps the browser's behaviour.
+    const START_OBSERVER = "__grmobStartObserver";
+    const START_TARGET = "__grmobStartTarget";
+    const threadLists = new Set();
+
+    function attachStartReached(el, cbId) {
+        el.dataset.listener_onStartReached = cbId;
+        threadLists.add(el);
+    }
+
+    function setStartAtEnd(el, on) {
+        if (on) {
+            el.dataset.startAtEnd = "true";
+            threadLists.add(el);
+        } else {
+            delete el.dataset.startAtEnd;
+        }
+    }
+
+    // syncEndReached's twin, watching the first child.
+    function syncStartReached(el) {
+        const cbId = el.dataset.listener_onStartReached;
+        const first = el.children.length ? el.children[0] : null;
+        if (!cbId || !first || typeof IntersectionObserver !== "function") {
+            if (el[START_OBSERVER]) {
+                el[START_OBSERVER].disconnect();
+                el[START_OBSERVER] = null;
+                el[START_TARGET] = null;
+            }
+            return;
+        }
+        if (el[START_TARGET] === first) return;
+        if (!el[START_OBSERVER]) {
+            el[START_OBSERVER] = new IntersectionObserver((entries) => {
+                if (!entries.some((entry) => entry.isIntersecting)) return;
+                const latestCbId = el.dataset.listener_onStartReached;
+                if (latestCbId) window.GoInvokeCallback(latestCbId, {});
+            }, { rootMargin: END_REACHED_MARGIN });
+        }
+        el[START_OBSERVER].disconnect();
+        el[START_TARGET] = first;
+        el[START_OBSERVER].observe(first);
+    }
+
+    function syncTouchedStartReached(touched) {
+        const done = new Set();
+        for (const start of touched) {
+            for (let el = start; el; el = el.parentNode) {
+                if (!el.dataset || done.has(el)) continue;
+                if (el.dataset.listener_onStartReached || el[START_OBSERVER]) {
+                    done.add(el);
+                    syncStartReached(el);
+                }
+            }
+        }
+    }
+
+    // Whether the list is scrolled to its end, within two pixels of rounding.
+    function atListEnd(el) {
+        return el.scrollHeight - el.scrollTop - el.clientHeight <= 2;
+    }
+
+    // The before half: for each thread list in the document, whether it was
+    // at its end and which row the reader was looking at.
+    function captureListAnchors() {
+        const out = [];
+        for (const el of threadLists) {
+            if (!el.isConnected) {
+                threadLists.delete(el);
+                continue;
+            }
+            if (typeof el.getBoundingClientRect !== "function") continue;
+            const box = el.getBoundingClientRect();
+            let key = null, offset = 0;
+            for (const row of el.children) {
+                const r = row.getBoundingClientRect();
+                if (r.bottom > box.top + 1 && row.dataset && row.dataset.key) {
+                    key = row.dataset.key;
+                    offset = r.top - box.top;
+                    break;
+                }
+            }
+            out.push({ el, atEnd: el.__grmobOpened && atListEnd(el), key, offset });
+        }
+        return out;
+    }
+
+    // The after half: at the end stays at the end; otherwise the row the
+    // reader was looking at goes back to where it was.
+    function restoreListAnchors(anchors) {
+        for (const a of anchors) {
+            const el = a.el;
+            if (!el.isConnected) continue;
+            if (a.atEnd && el.dataset.startAtEnd) {
+                el.scrollTop = el.scrollHeight;
+                continue;
+            }
+            if (!a.key) continue;
+            const row = [...el.children].find((c) => c.dataset && c.dataset.key === a.key);
+            if (!row) continue;
+            const drift = (row.getBoundingClientRect().top - el.getBoundingClientRect().top) - a.offset;
+            if (drift) el.scrollTop += drift;
+        }
+    }
+
+    // Opens each StartAtEnd list at its end, once, as soon as it is in the
+    // document with a height to scroll: after a mount, and after any batch
+    // (a lesson pushed by a patch builds its list inside the batch).
+    function openListsAtEnd() {
+        for (const el of threadLists) {
+            if (el.__grmobOpened || !el.dataset.startAtEnd || !el.isConnected) continue;
+            if (!(el.clientHeight > 0)) continue;
+            el.scrollTop = el.scrollHeight;
+            el.__grmobOpened = true;
+        }
+    }
+
+
     // --- Live maps (core.MapView) --------------------------------------------
     //
     // The web half of core.MapView: a <div> handed to Leaflet, with the pins
@@ -4536,6 +4706,61 @@ const GrMob = (() => {
         }
         buffer.selectionStart = start;
         buffer.selectionEnd = end;
+    }
+
+    // writeFieldValue puts Go's value into a field, keeping the caret with the
+    // text around it when the field is the one being typed in.
+    //
+    // Assigning `value` to a focused <input> sends the caret to the end, so a
+    // transform in onChange (2.3's UPPERCASE) broke typing mid-text: after the
+    // first key's rewrite every later key landed at the end. Measured in Chrome
+    // typing "abc" at offset 5 of "HELLO WORLD": "HELLOA WORLDBC".
+    //
+    // The caret is carried across Go's change by the rule the native hosts'
+    // rewrites follow (internal/rebasefixture's mapOffset, and the iOS field's
+    // write): read old→new as one differing span, then
+    //
+    //	caret at or after the span's end   shifted by the change in length
+    //	caret at or before its start       left where it is
+    //	caret inside a span that kept its  left where it is (a per-character
+    //	length                             transform, such as UPPERCASE)
+    //	caret inside a span that changed   the end of Go's new text
+    //	length
+    //
+    // Only a focused field, because a caret nobody is typing at has nothing to
+    // keep. No edit ledger is needed here, unlike the natives: the key's
+    // event reaches Go and its patch comes back inside the one call, so no key
+    // can arrive between the two. A field type with no selection (a range, an
+    // email input) reports null and is left to the plain assignment.
+    function writeFieldValue(el, v) {
+        const before = String(el.value ?? "");
+        const focused = el.ownerDocument && el.ownerDocument.activeElement === el;
+        const caret = focused && typeof el.selectionStart === "number" ? codeSelection(el) : null;
+        el.value = v;
+        if (!caret) return;
+        const after = String(el.value ?? "");
+        let prefix = 0;
+        const n = Math.min(before.length, after.length);
+        while (prefix < n && before.charCodeAt(prefix) === after.charCodeAt(prefix)) prefix++;
+        // Neither end inside a surrogate pair, as on the other hosts: a caret
+        // must never be put between the halves of one character.
+        const lead = (c) => c >= 0xD800 && c <= 0xDBFF;
+        const trail = (c) => c >= 0xDC00 && c <= 0xDFFF;
+        if (prefix > 0 && lead(before.charCodeAt(prefix - 1))) prefix--;
+        let suffix = 0;
+        while (suffix < n - prefix &&
+            before.charCodeAt(before.length - 1 - suffix) === after.charCodeAt(after.length - 1 - suffix)) suffix++;
+        if (suffix > 0 && trail(before.charCodeAt(before.length - suffix))) suffix--;
+        const end = before.length - suffix;
+        const delta = after.length - before.length;
+        const map = (i) => {
+            if (i >= end) return i + delta;
+            if (i <= prefix || delta === 0) return i;
+            return after.length - suffix;
+        };
+        try {
+            setCodeCaret(el, map(caret.start), map(caret.end));
+        } catch { /* a type that takes no selection: the assignment stands */ }
     }
 
     // insertInCode replaces the selection with text and leaves the caret after
@@ -6076,6 +6301,19 @@ const GrMob = (() => {
     // table as htmlout's InputModeFor.
     function inputModeFor(kind) {
         return ({ digits: "numeric", decimal: "decimal", phone: "tel", email: "email", url: "url" })[kind] || "";
+    }
+
+    // The patch half of the keyboard prop. An <input> or <textarea> only: the
+    // prop is carried by text fields alone, and a stray inputmode on a div
+    // would be harmless to a browser but a false fact to a test reading the
+    // DOM. The assignment is skipped when nothing moved, so a value-only patch
+    // on a field that never had core.Keyboard writes nothing.
+    function applyInputMode(el, props) {
+        const tag = String(el.tagName || "").toLowerCase();
+        if (tag !== "input" && tag !== "textarea") return;
+        const mode = inputModeFor(props.keyboard);
+        if ((el.inputMode || "") === mode) return;
+        el.inputMode = mode;
     }
 
     function applyScrollCommand(el, epoch) {
@@ -7624,6 +7862,8 @@ const GrMob = (() => {
         // document.activeElement and writes a tab stop, and both are questions
         // about an element that is in the document.
         syncCompositesIn(root, new Set(), new Set());
+        // After the append, because scrolling needs an element with a box.
+        openListsAtEnd();
         // After the append: a claim counts only once its element is in the
         // document. See syncBrowserBack.
         syncBrowserBack();
@@ -7633,6 +7873,9 @@ const GrMob = (() => {
 
     function patch(patchList) {
         const patches = typeof patchList === "string" ? JSON.parse(patchList) : patchList;
+        // Before anything moves: where each thread's reader is. See "Start
+        // reached, and a thread's place".
+        const anchors = captureListAnchors();
 
         // Every element this batch reached, plus its parent — the input to the
         // TabView pass at the end. The parent is collected too because a
@@ -7690,6 +7933,14 @@ const GrMob = (() => {
                     // was given when it had one, so the keyboard went on
                     // advertising a submit affordance the field no longer had.
                     applyEnterKeyHint(el, p.Changes);
+                    // core.Keyboard, unconditional for the same reason the
+                    // hint is: the patch carries the whole new map, so a key
+                    // that is absent means the text keyboard, not "leave it".
+                    // Decided per key, a field that dropped core.Keyboard kept
+                    // the digits pad it had been given. Only on text controls,
+                    // so an unrelated node never gains an inputmode it would
+                    // not have been created with.
+                    applyInputMode(el, p.Changes);
                     // The map nodes' dataset, before the per-key loop and for
                     // the same reason the hint is: the sync pass reads lat, lng
                     // and zoom together, and the patch carries the whole new
@@ -7731,7 +7982,7 @@ const GrMob = (() => {
                             // sends a number, and a strict compare would
                             // re-assign on every status tick.
                             if (el.value == v) continue;
-                            el.value = v;
+                            writeFieldValue(el, v);
                         } else if (k === "min" || k === "max" || k === "step") {
                             applySliderBound(el, k, v, p.Changes.value);
                         } else if (k === "content") {
@@ -7750,7 +8001,8 @@ const GrMob = (() => {
                             if (el.placeholder === v) continue;
                             el.placeholder = v;
                         } else if (k === "keyboard") {
-                            el.inputMode = inputModeFor(v);
+                            // Written whole by applyInputMode above.
+                            continue;
                         } else if (k === "checked") {
                             // No echo guard, unlike value above: assigning a
                             // boolean back onto a checkbox costs nothing,
@@ -7788,6 +8040,10 @@ const GrMob = (() => {
                             if (String(el.dataset.focusEpoch) === String(v)) continue;
                             el.dataset.focusEpoch = v;
                             applyFocusCommand(el, v, p.Changes.focusAction);
+                        } else if (k === "onStartReached") {
+                            attachStartReached(el, v);
+                        } else if (k === "startAtEnd") {
+                            setStartAtEnd(el, v);
                         } else if (k === "focusAction") {
                             // Handled with focusEpoch above; on its own it
                             // says when nothing, only what.
@@ -7940,6 +8196,12 @@ const GrMob = (() => {
         // the observation target is the list's last child, and this batch is
         // exactly what may have replaced it.
         syncTouchedEndReached(touched);
+        // Then the thread lists: the reader's row back in place first, so the
+        // start observer, re-pointed next at a first row that may be new,
+        // sees the list where the reader will see it.
+        restoreListAnchors(anchors);
+        openListsAtEnd();
+        syncTouchedStartReached(touched);
         // After every structural patch for the same reason the map pass is:
         // an editor re-decides the stale-line rule against the rows this batch
         // added, changed or removed, and draws a gutter sized to how many

@@ -500,8 +500,13 @@ final class GrMobTextInputCoordinator: NSObject, UITextFieldDelegate, UITextView
         // when Go transforms the key just typed, the span is extended to end
         // at the caret, and the replacement leaves the caret there by itself.
         // A change after the caret or around it is rarer and keeps a
-        // correction: the caret is put back before the change, or at the end
-        // of the new text when it sat inside text Go replaced.
+        // correction, by the rule rebaseMapOffset states for the replay: the
+        // caret stays put before the change, and inside a change that kept
+        // its length (capitalizing words: "hellox| world" → "Hellox| World",
+        // one span from the H to the W), and goes to the end of Go's new text
+        // only when it sat inside text Go replaced with text of another
+        // length, where there is no telling. Sending it to the span's end
+        // there too put the next keys after the W: "Hellox Wyzorld".
         let delta = b.count - a.count
         let start = prefix
         var end = a.count - suffix
@@ -510,7 +515,7 @@ final class GrMobTextInputCoordinator: NSObject, UITextFieldDelegate, UITextView
         if was >= end {
             end = was
             caret = was + delta
-        } else if was <= start {
+        } else if was <= start || delta == 0 {
             caret = was
         } else {
             caret = b.count - suffix

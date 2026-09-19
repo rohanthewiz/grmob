@@ -306,6 +306,16 @@ extension GrMobNode {
     var viewID: AnyHashable {
         key.isEmpty ? AnyHashable(ObjectIdentifier(self)) : AnyHashable(key)
     }
+
+    /// viewID as a String, for GrMobList's scrollPosition(id:), which matches
+    /// ids by the binding's type. Bound as AnyHashable, it reported SwiftUI's
+    /// own UniqueIDs from inside the rows (measured on the iOS 26.5
+    /// simulator), which never equal a key; bound as String, only this id can
+    /// match. The key when there is one; otherwise object identity, spelled
+    /// so it cannot collide with a key (keys never start with "#object:").
+    var rowKey: String {
+        key.isEmpty ? "#object:\(ObjectIdentifier(self).hashValue)" : key
+    }
 }
 
 /// Children of a non-flex container (no grow, no justify-content emulation).
@@ -1410,10 +1420,21 @@ private struct GrMobList: View {
     /// Row placement animates under the List's Transition, so it snaps under
     /// Reduce Motion like every other Transition (see grMobTransition).
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The row at the top edge of a StartAtEnd list, kept by SwiftUI through
+    /// scrollPosition(id:) below. See the note there.
+    @State private var topRow: String?
+    /// Whether the last row is materialized, which in a lazy stack means the
+    /// reader is at or near the end. Read by stickToEnd.
+    @State private var nearEnd = false
 
     var body: some View {
         let s = node.style
         let rows = flattenFragments(node.children)
+        let startAtEnd = node.boolProp("startAtEnd")
+        let startReached = node.stringProp("onStartReached")
+        // Whether the top-edge row is tracked at all: a thread, or any List
+        // reporting its top edge (see topEdgeReached).
+        let tracksTop = startAtEnd || !startReached.isEmpty
         // Read here rather than inside rowView so the equality stays in the
         // declaration mobile/verify's TestListStretchFillReadsTheAlignFallback
         // anchors on — the pin exists because this read and crossAlignmentH's
@@ -1430,6 +1451,7 @@ private struct GrMobList: View {
         // than bouncing the list. Whether the LazyVStack stays lazy under that
         // proposal has not been measured; a long feed should carry a Height
         // anyway so that OnEndReached has a viewport to act on.
+        ScrollViewReader { proxy in
         ScrollView {
             // Two stacks rather than one taking an empty pinnedViews, because
             // a Section is not free of consequence: it changes what the lazy
@@ -1465,6 +1487,7 @@ private struct GrMobList: View {
                         }
                     }
                 }
+                .scrollTargetLayout()
                 .animation(reduceMotion ? nil : s?.swiftUIAnimation, value: rows.map(\.viewID))
             } else {
                 LazyVStack(alignment: crossAlignmentH(s), spacing: s?.verticalGap ?? 0) {
@@ -1472,14 +1495,75 @@ private struct GrMobList: View {
                         rowView(child, stretch: stretch, last: rows.last)
                     }
                 }
+                .scrollTargetLayout()
                 .animation(reduceMotion ? nil : s?.swiftUIAnimation, value: rows.map(\.viewID))
             }
+        }
+        // core.StartAtEnd and core.OnStartReached. Three parts here, and
+        // stickToEnd below.
+        //
+        // The anchor opens the content at its bottom. nil is the default
+        // anchor, so the modifier is unconditional and every other List
+        // composes as it did.
+        //
+        // The anchor does not keep the reader's place when an older page is
+        // prepended: measured on the iOS 26.5 simulator, 4.33's thread stayed
+        // at its top after each page landed, the new first row appeared, and
+        // the thread loaded all three pages from one arrival at the top.
+        // scrollPosition(id:) is SwiftUI's own answer: bound to the id of the
+        // row at the top edge (the stacks are its scrollTargetLayout), it
+        // keeps that row in position when rows are inserted before it, so
+        // the older page lands above the reader. Bound only on a list that
+        // tracks its top; any other gets a constant nil, which tracks nothing.
+        //
+        // The same binding is the top edge (topEdgeReached), and a change to
+        // the last row is stickToEnd's cue.
+        .defaultScrollAnchor(startAtEnd ? .bottom : nil)
+        .scrollPosition(id: tracksTop ? $topRow : .constant(nil), anchor: .top)
+        .onChange(of: topRow) { _, top in
+            topEdgeReached(top, rows: rows, callback: startReached)
+        }
+        .onChange(of: rows.last?.rowKey) { old, new in
+            stickToEnd(startAtEnd, old: old, new: new, proxy: proxy)
+        }
         }
         .grMobKeyboardAware(node.boolProp("keyboardAware"))
         .grMobBox(s, grow: grow,
                     onTap: node.stringProp("onClick"),
                     onLongPress: node.stringProp("onLongPress"),
                     axis: .vertical)
+    }
+
+    /// core.OnStartReached: the row at the top edge is one of the first
+    /// START_REACHED_SLACK rows.
+    ///
+    /// Read from the scrollPosition binding, which SwiftUI keeps on the row
+    /// at the top edge, and not from the first row's .onAppear, the way the
+    /// end edge is read. A LazyVStack materializes rows ahead of the viewport,
+    /// and on the iOS 26.5 simulator that was enough for the first row of 4.33's
+    /// thread to "appear" as the reader neared the top and again as soon as
+    /// each older page landed: one drag loaded two pages, the next the third.
+    /// The binding says which row the reader is actually at.
+    private func topEdgeReached(_ top: String?, rows: [GrMobNode], callback: String) {
+        guard !callback.isEmpty, let top else { return }
+        let slack = 2
+        if rows.prefix(slack).contains(where: { $0.rowKey == top }) {
+            dispatch?(callback)
+        }
+    }
+
+    /// core.StartAtEnd's second half: a new last row, arriving while the
+    /// reader was at the end, is scrolled into view at the bottom. A reader
+    /// who has scrolled back is left where they are, and a prepend (which
+    /// leaves the last row as it was) moves nothing.
+    ///
+    /// Needed because the scrollPosition binding holds the row at the top
+    /// edge through every change, appends included: measured on the iOS 26.5
+    /// simulator, a message sent at the end of 4.33's thread landed below the
+    /// box, out of view, with the anchor at .bottom all the while.
+    private func stickToEnd(_ startAtEnd: Bool, old: String?, new: String?, proxy: ScrollViewProxy) {
+        guard startAtEnd, nearEnd, let old, let new, old != new else { return }
+        withAnimation { proxy.scrollTo(new, anchor: .bottom) }
     }
 
     /// One row, plus the end-reached trip wire on the last of them.
@@ -1519,9 +1603,18 @@ private struct GrMobList: View {
         return RenderNode(node: child,
                           grow: stretch && !hugsContent(child.style) ? .horizontal : .none)
             .onAppear {
+                if child === last { nearEnd = true }
                 guard !endReached.isEmpty, child === last else { return }
                 dispatch?(endReached)
             }
+            .onDisappear {
+                if child === last { nearEnd = false }
+            }
+            // The row's id as scrollPosition(id:) reads it: a String, the type
+            // topRow is bound as (see GrMobNode.rowKey). It names the same row
+            // the ForEach's viewID does, so a row's identity never changes
+            // under it.
+            .id(child.rowKey)
     }
 }
 
@@ -1726,11 +1819,17 @@ private struct GrMobText: View {
 /// way SwiftUI's Text lets a range of it be tapped, and it gives VoiceOver the
 /// run as a link, in the rotor with the paragraph's others, for free.
 ///
-/// SwiftUI draws link runs in the tint rather than their own colour, so the
-/// tint is set to the first link's colour, which Go has already resolved
-/// (the theme's Primary unless the run named one). Links of different colours
-/// in one paragraph therefore all draw in the first one's here, a limit of
-/// this platform's Text that the other targets do not share.
+/// Each link run carries its own colour as `foregroundColor`, which Go has
+/// already resolved (the theme's Primary unless the run named one), and that
+/// is what draws it: on the iOS 26.5 simulator, 4.29's sentence draws its
+/// guide link in Primary and its "report a problem" link in Error, side by
+/// side (TutorialDevicePassUITests.testParagraphLinksKeepTheirOwnColours).
+/// SwiftUI's default for a link is the tint, which is why the tint is still
+/// set to the first link's colour: it is the fallback where a run's own
+/// colour does not reach a link (only iOS 26.5 has been measured, and the
+/// floor is 17), and there it is the closest single answer. An earlier note
+/// here called one colour per paragraph a limit of this platform; the
+/// measurement says it is not.
 private struct GrMobParagraph: View {
     let node: GrMobNode
     let grow: GrMobGrow
@@ -2186,9 +2285,51 @@ private struct GrMobSlider: View {
                 Slider(value: value, in: range, onEditingChanged: edited)
             }
         }
+        // The node's name and hint on the Slider itself, and not through
+        // grMobBox, for the reason GrMobTextField.boxStyle gives for the text
+        // fields: grMobBox names a node with `.accessibilityElement(children:
+        // .combine)`, which around a native control makes a new element.
+        // Around a Slider that element kept the slider type and lost the
+        // slider: XCUITest's adjust(toNormalizedSliderPosition:) failed on
+        // comps.AudioPlayer's "Position" bar with "Unable to get expected
+        // attributes for slider" (its scrubber positions read 0,0). On the
+        // Slider, the name is the control's own and it stays adjustable.
+        // The value (core.ValueRange.Text) still comes from grMobBox, whose
+        // accessibilityValue lands on the Slider now that nothing wraps it.
+        .grMobControlName(node.style)
         // The theme's accent on the filled track (core.AccentColor).
         .tint(node.style?.accentColor)
-        .grMobBox(marginAndSizeOnly(node.style), grow: grow)
+        .grMobBox(unnamed(marginAndSizeOnly(node.style)), grow: grow)
+    }
+}
+
+/// A style with its accessible name and hint removed, for a native control
+/// that states them on itself (grMobControlName). The same stripping
+/// GrMobTextField.boxStyle does for the text fields, kept here because the
+/// ios/verify harness compiles this file without GrMobTextInput.swift.
+private func unnamed(_ s: GrMobStyle?) -> GrMobStyle? {
+    guard var t = s else { return nil }
+    t.accessibilityLabel = ""
+    t.accessibilityHint = ""
+    return t
+}
+
+extension View {
+    /// A native control's stated name and hint, applied to the control. Each
+    /// only when stated: `.accessibilityLabel("")` would blank the name the
+    /// control reads for itself.
+    @ViewBuilder fileprivate func grMobControlName(_ s: GrMobStyle?) -> some View {
+        let label = s?.accessibilityLabel ?? ""
+        let hint = s?.accessibilityHint ?? ""
+        if label.isEmpty && hint.isEmpty {
+            self
+        } else if hint.isEmpty {
+            accessibilityLabel(label)
+        } else if label.isEmpty {
+            accessibilityHint(hint)
+        } else {
+            accessibilityLabel(label).accessibilityHint(hint)
+        }
     }
 }
 

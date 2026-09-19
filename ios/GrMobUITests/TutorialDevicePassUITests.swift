@@ -547,6 +547,55 @@ final class TutorialDevicePassUITests: XCTestCase {
         12 + 5 * 11.5 + 2
     }
 
+    /// 2.3's second transform capitalizes the first letter of every word,
+    /// so a key typed mid-text makes Go change text on the far side of the
+    /// caret. The caret must stay with the typing all the same.
+    ///
+    /// Two starts, because they reach different arms of the field's write
+    /// (GrMobTextInputCoordinator.write):
+    ///
+    ///     "hello world", caret 5, type x → Go "Hellox World"
+    ///       Go's span [0,8) holds the caret and keeps its length: the caret
+    ///       stays at 6. The field used to put it at the span's end, 8.
+    ///     "Hello world", caret 5, type x → Go "Hellox World"
+    ///       Go's span [7,8) is after the caret, and the replacement leaves the
+    ///       caret at 8 until it is moved back: a key queued behind the x
+    ///       landed in that window.
+    ///
+    /// Either way three keys typed at once must read "Helloxyz World". A tap
+    /// lands the caret on a word boundary; the other one it can pick, the
+    /// start of "world", gives "Hello Xyzworld", which is right too.
+    func testCapitalizedWordsKeepTheCaretWithTheTyping() throws {
+        for seed in ["Hello world", "hello world"] {
+            let app = XCUIApplication()
+            open(app, lesson: "2.3")
+            let field = app.textFields.matching(NSPredicate(format: "placeholderValue BEGINSWITH 'Type your name'")).firstMatch
+            scroll(app, to: field)
+            XCTAssertTrue(field.exists, "2.3's name field is not on screen")
+            field.tap()
+            sleep(1)
+            app.typeText(seed)
+            sleep(1)
+            let words = app.switches.matching(NSPredicate(format: "label == 'Capitalize each word'")).firstMatch
+            XCTAssertTrue(words.exists, "2.3 has no Capitalize each word switch")
+            words.tap()
+            sleep(1)
+            let typed = app.textFields.matching(NSPredicate(format: "value BEGINSWITH[c] 'hello'")).firstMatch
+            XCTAssertEqual(typed.value as? String, seed, "the seed did not arrive as typed")
+            // Inside "hello", nearer its end than its start: the caret goes to 5.
+            typed.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0.5))
+                .withOffset(CGVector(dx: 12 + 30, dy: 0)).tap()
+            sleep(1)
+            app.typeText("xyz")
+            sleep(1)
+            let value = (typed.value as? String) ?? ""
+            shot("dp-2.3-words-\(seed.first!)")
+            XCTAssertTrue(value == "Helloxyz World" || value == "Hello Xyzworld",
+                          "from \(seed): the typing left the caret's place: \(value)")
+            app.terminate()
+        }
+    }
+
     // MARK: 1.5 — core.ScrollIntoView
 
     /// Lesson 1.5's short Scroll of twelve named rows: "Jump to row 10"
@@ -606,6 +655,129 @@ final class TutorialDevicePassUITests: XCTestCase {
         XCTAssertTrue(sentence.exists, "the paragraph is not one text element holding its runs")
         XCTAssertTrue(app.links.matching(NSPredicate(format: "label == 'link'")).firstMatch.exists,
                       "the link run is not exposed as a link")
+    }
+
+    // MARK: 4.29 — two links of different colours in one Paragraph
+
+    /// 4.29's sentence holds two link runs: the guide (Link.Span, the theme's
+    /// Primary) and "report a problem" (the theme's Error). Each is a link of
+    /// its own, and tapping the second runs its own callback. The colours are
+    /// the screenshot's to show: SwiftUI draws a link in the tint, and
+    /// GrMobParagraph must still draw each run in its own.
+    func testParagraphLinksKeepTheirOwnColours() throws {
+        let app = XCUIApplication()
+        open(app, lesson: "4.29")
+        let caption = any(app, beginningWith: "Problem reported")
+        scroll(app, to: caption)
+        lift(app)
+        shot("dp-4.29-two-links")
+        dump(app, "dp-4.29-two-links")
+        XCTAssertTrue(any(app, beginningWith: "Problem reported 0 times").exists, "the counter did not start at 0")
+        let report = app.links.matching(NSPredicate(format: "label == 'report a problem'")).firstMatch
+        XCTAssertTrue(report.exists, "the second link run is not a link")
+        XCTAssertTrue(app.links.matching(NSPredicate(format: "label == 'guide'")).firstMatch.exists,
+                      "the first link run is not a link")
+        report.tap()
+        XCTAssertTrue(any(app, beginningWith: "Problem reported 1 time").waitForExistence(timeout: 3),
+                      "tapping the second link did not run its callback")
+    }
+
+    // MARK: 4.33 — comps.MessageThread
+
+    /// 4.33's thread over a pretend server of 48 messages, 12 a page:
+    ///
+    ///   - it opens at its end, "Message 48" in view;
+    ///   - scrolled back to the top, one older page lands ("24 of 48") and
+    ///     the message that was at the top stays where it was, so the reader
+    ///     is not left at the new top, which would load the next page too;
+    ///   - a message sent from the end is shown; one sent while scrolled back
+    ///     leaves the reader where they are.
+    ///
+    /// The bubbles are found by their spoken names ("Ana, Message 37, 09:48"),
+    /// which MessageBubble composes; the lesson's caption is Go's count.
+    func testMessageThreadOpensAtTheEndAndKeepsThePlace() throws {
+        let app = XCUIApplication()
+        open(app, lesson: "4.33")
+        // Scrolled until the caption under the thread is hittable, and no
+        // further: the whole box then sits above it on screen. lift() would
+        // push the box off the top, where a drag cannot reach it.
+        let caption = any(app, beginningWith: "12 of 48 messages loaded")
+        scroll(app, to: caption)
+        func bubble(_ n: Int) -> XCUIElement {
+            app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label CONTAINS %@", "Message \(n),")).firstMatch
+        }
+        // The thread's box: the smallest scroll view holding a message,
+        // re-read on each use because the page around it can move.
+        func threadBox() -> CGRect {
+            app.scrollViews.containing(NSPredicate(format: "label CONTAINS ', Message '"))
+                .allElementsBoundByIndex.map(\.frame).min { $0.height < $1.height } ?? .zero
+        }
+        let box = threadBox()
+        XCTAssertTrue(box.minY >= 0 && box.maxY <= app.frame.maxY, "the thread's box is not on screen: \(box)")
+        func inBox(_ e: XCUIElement) -> Bool {
+            let b = threadBox()
+            return e.exists && e.frame.minY >= b.minY - 1 && e.frame.maxY <= b.maxY + 1
+        }
+        shot("dp-4.33-opened")
+        dump(app, "dp-4.33-opened")
+        XCTAssertTrue(inBox(bubble(48)), "the thread did not open on its last message: \(bubble(48).frame) in \(box)")
+
+        // Back to the top, one drag at a time inside the box, until the first
+        // loaded message (37) is in view; then the page lands on its own.
+        let start = box.origin.y + box.height * 0.25, end = box.origin.y + box.height * 0.85
+        var drags = 0
+        while !inBox(bubble(37)) && drags < 12 {
+            app.coordinate(withNormalizedOffset: .zero)
+                .withOffset(CGVector(dx: box.midX, dy: start))
+                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: .zero)
+                    .withOffset(CGVector(dx: box.midX, dy: end)), withVelocity: .slow, thenHoldForDuration: 0.3)
+            drags += 1
+        }
+        dump(app, "dp-4.33-dragged")
+        shot("dp-4.33-dragged")
+        XCTAssertTrue(inBox(bubble(37)), "never scrolled back to the first loaded message")
+        let before = bubble(37).frame.minY
+        XCTAssertTrue(any(app, beginningWith: "24 of 48 messages loaded").waitForExistence(timeout: 5),
+                      "reaching the top did not load the older page")
+        sleep(2)
+        shot("dp-4.33-older")
+        XCTAssertFalse(any(app, beginningWith: "36 of 48").exists,
+                       "one arrival at the top loaded two pages: the reader was left at the new top")
+        XCTAssertEqual(bubble(37).frame.minY, before, accuracy: 2,
+                       "the message at the top moved when the older page landed")
+
+        // To the end again, then send from there.
+        for _ in 0..<12 where !inBox(bubble(48)) {
+            app.coordinate(withNormalizedOffset: .zero)
+                .withOffset(CGVector(dx: box.midX, dy: end))
+                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: .zero)
+                    .withOffset(CGVector(dx: box.midX, dy: start)), withVelocity: .fast, thenHoldForDuration: 0.1)
+        }
+        sleep(1)
+        let field = app.textFields.matching(NSPredicate(format: "placeholderValue == 'Message…'")).firstMatch
+        field.tap()
+        app.typeText("hello\n")
+        sleep(2)
+        let hello = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'You, hello'")).firstMatch
+        shot("dp-4.33-sent")
+        XCTAssertTrue(inBox(hello), "a message sent from the end is not shown: \(hello.frame) in \(box)")
+
+        // Scrolled back a little, a send must leave the reader where they are.
+        app.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: box.midX, dy: start))
+            .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: .zero)
+                .withOffset(CGVector(dx: box.midX, dy: end)), withVelocity: .slow, thenHoldForDuration: 0.3)
+        sleep(1)
+        let marker = bubble(45)
+        XCTAssertTrue(inBox(marker), "message 45 is not in view after scrolling back")
+        let at = marker.frame.minY
+        field.tap()
+        app.typeText("again\n")
+        sleep(2)
+        shot("dp-4.33-sent-back")
+        XCTAssertEqual(bubble(45).frame.minY, at, accuracy: 2,
+                       "a message sent while scrolled back moved the reader")
     }
 
     // MARK: 5.7 — PINInput, one field under the boxes

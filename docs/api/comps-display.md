@@ -6,7 +6,7 @@ import "github.com/rohanthewiz/grmob/comps"
 
 Avatars and avatar stacks, stat tiles, the compass, clocks, countdowns and alarms, an audio player, message bubbles, expandable text, QR codes, map panels and static maps.
 
-One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/avatar.go`, `comps/avatar_stack.go`, `comps/stat_tile.go`, `comps/compass.go`, `comps/clock.go`, `comps/timers.go`, `comps/alarm.go`, `comps/audio_player.go`, `comps/message_bubble.go`, `comps/expandable_text.go`, `comps/qr_code.go`, `comps/map_panel.go`, `comps/static_map.go`.
+One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/avatar.go`, `comps/avatar_stack.go`, `comps/stat_tile.go`, `comps/compass.go`, `comps/clock.go`, `comps/timers.go`, `comps/alarm.go`, `comps/audio_player.go`, `comps/message_bubble.go`, `comps/message_thread.go`, `comps/expandable_text.go`, `comps/qr_code.go`, `comps/map_panel.go`, `comps/static_map.go`.
 
 ## Index
 
@@ -43,6 +43,8 @@ One of 7 topic pages of [package comps](comps.md), which has the package overvie
 - [`type MapPin`](#type-mappin)
 - [`type MessageBubble`](#type-messagebubble)
     - [`func (MessageBubble) Render`](#func-messagebubble-render)
+- [`type MessageThread`](#type-messagethread)
+    - [`func (MessageThread) Render`](#func-messagethread-render)
 - [`type QRCode`](#type-qrcode)
     - [`func (QRCode) Render`](#func-qrcode-render)
 - [`type StatTile`](#type-stattile)
@@ -55,6 +57,7 @@ One of 7 topic pages of [package comps](comps.md), which has the package overvie
     - [`func GoogleStaticMap`](#func-googlestaticmap)
 - [`type Stopwatch`](#type-stopwatch)
     - [`func (Stopwatch) Render`](#func-stopwatch-render)
+- [`type ThreadMessage`](#type-threadmessage)
 
 ## Constants
 
@@ -1168,9 +1171,16 @@ type MessageBubble struct {
 	Text string
 
 	// Sender is drawn above the text of someone else's message. Leave it
-	// empty to hide it — on the second of two consecutive messages from the
-	// same person, or in a one-to-one chat. It is never drawn on Mine.
+	// empty in a one-to-one chat, where it says nothing. It is never drawn
+	// on Mine.
 	Sender string
+
+	// Continued marks the second and later of a run of messages from the same
+	// sender: the sender line is not drawn, because the bubble above already
+	// says who, and it is still spoken, because a screen reader moving through
+	// the transcript meets each message on its own. Emptying Sender instead
+	// hides the line and the name both. comps.MessageThread sets it.
+	Continued bool
 
 	// Mine puts the bubble on the trailing side in the Primary fill.
 	Mine bool
@@ -1213,7 +1223,7 @@ Mine is the theme's Primary with the ink chosen by contrast against it (Variant.
 
 #### What it is not
 
-  - \*\*Not a thread.\*\* A conversation opens at its newest message and loads older ones as the reader scrolls up. core.ScrollIntoView can do the first, but no host reports a scroll offset, so nothing can do the second (Carousel's wall). A caller lays bubbles out in its own Column or core.List, as examples/chat does, and the spacing between them is the caller's too.
+  - \*\*Not a thread.\*\* comps.MessageThread is: a List of bubbles that opens at the newest and loads older ones as the reader scrolls up (core.StartAtEnd, core.OnStartReached). A caller can still lay bubbles out in its own Column, as examples/chat does, and the spacing between them is then the caller's too.
 
 #### The tail
 
@@ -1231,7 +1241,7 @@ The bubble is one stop named "Ana, Já viste a nova versão?, 10:42" — who, wh
 	Text       Typography.Body
 	Time       Typography.Caption; TextSecondary on theirs, the ink on mine
 
-<small>[comps/message_bubble.go:72](https://github.com/rohanthewiz/grmob/blob/master/comps/message_bubble.go#L72)</small>
+<small>[comps/message_bubble.go:71](https://github.com/rohanthewiz/grmob/blob/master/comps/message_bubble.go#L71)</small>
 
 #### func (MessageBubble) Render
 
@@ -1239,7 +1249,77 @@ The bubble is one stop named "Ana, Já viste a nova versão?, 10:42" — who, wh
 func (m MessageBubble) Render(ctx *core.Context) *core.Node
 ```
 
-<small>[comps/message_bubble.go:105](https://github.com/rohanthewiz/grmob/blob/master/comps/message_bubble.go#L105)</small>
+<small>[comps/message_bubble.go:111](https://github.com/rohanthewiz/grmob/blob/master/comps/message_bubble.go#L111)</small>
+
+### type MessageThread
+
+```go
+type MessageThread struct {
+	Messages []ThreadMessage
+
+	// OnLoadOlder asks for the page before the first message. Nil means
+	// there is none, and the caption line says so.
+	OnLoadOlder func()
+
+	// Loading shows "Loading older messages…" in the caption line.
+	Loading bool
+
+	// Height is the thread's viewport; a List needs a bounded height to
+	// scroll. Empty gives "360px".
+	Height string
+
+	// LoadingText and StartText replace the caption line's two captions.
+	LoadingText string
+	StartText   string
+
+	// MineLabel is passed to each bubble; see MessageBubble.MineLabel.
+	MineLabel string
+
+	// Style is applied to the List (the scrolling box, not the caption
+	// line above it) after its defaults.
+	Style []core.StyleProp
+}
+```
+
+MessageThread is a conversation: MessageBubbles in a List that opens on the newest message, loads older ones as the reader scrolls back to the top, and keeps the reader's place while they land.
+
+	comps.MessageThread{
+	    Messages:    thread.Get(),           // oldest first
+	    OnLoadOlder: loadOlder,              // nil once there is nothing older
+	    Loading:     fetching.Get(),
+	}
+
+	  "Loading older messages…" | the start caption | (blank)   ← one line,
+	┌ List  Height, StartAtEnd, OnStartReached, RoleLog ─────┐     always there
+	│  Ana     Já viste a nova versão?                        │
+	│          Ainda não                            (mine)    │
+	│  Ana     Saiu ontem                                     │
+	│          (Continued: the sender line not drawn)         │
+	└─────────────────────────────────────────────────────────┘
+	                                              opens here ▲
+
+#### What the hosts do, and what this does
+
+Opening at the end, reporting the top, and keeping the reader's place on a prepend are the host's (core.StartAtEnd and core.OnStartReached, whose doc has the per-host table). What is here is the transcript:
+
+  - Each bubble is Keyed by its message's Key, which is what the hosts' place-keeping reads. Without keys every prepend would look, to every host, like new text in every row.
+  - A run of messages from one sender draws the sender once (MessageBubble.Continued), and still speaks it on each.
+  - The loading and start captions are a line above the List, not a row in it. As a row it broke both halves of the top edge. The guard counts rows, and a loading row that came and went reopened it mid-fetch. And every host keeps the reader's place by the first visible row, which at the top was the caption row, still first after the prepend: the reader stayed at the top, looking at the older page, and the edge fired for the page before that, and so on to the beginning. Outside the List, the first row is always a message. The line is there when it is blank too, so the box does not move when the caption appears.
+  - The list is a core.RoleLog, the role for a transcript: what arrives is announced, and what came before stays in order (see examples/chat).
+
+#### Loading
+
+OnLoadOlder runs when the reader reaches the top, once per row count. The caller fetches, sets Loading while it does, and prepends what came back. A fetch that returns nothing leaves the count unchanged and the guard shut, so a thread at its true beginning is not asked again; set OnLoadOlder to nil then, and the caption line says the conversation starts here.
+
+<small>[comps/message_thread.go:69](https://github.com/rohanthewiz/grmob/blob/master/comps/message_thread.go#L69)</small>
+
+#### func (MessageThread) Render
+
+```go
+func (m MessageThread) Render(ctx *core.Context) *core.Node
+```
+
+<small>[comps/message_thread.go:95](https://github.com/rohanthewiz/grmob/blob/master/comps/message_thread.go#L95)</small>
 
 ### type QRCode
 
@@ -1727,4 +1807,26 @@ func (s Stopwatch) Render(ctx *core.Context) *core.Node
 Render arms the tick and draws the digits.
 
 <small>[comps/timers.go:311](https://github.com/rohanthewiz/grmob/blob/master/comps/timers.go#L311)</small>
+
+### type ThreadMessage
+
+```go
+type ThreadMessage struct {
+	// Key identifies the message for as long as it exists: an ID from the
+	// server, not an index. It is the row's identity, and the only thing
+	// that tells a host which row the reader was looking at when an older
+	// page lands above it.
+	Key string
+
+	Text   string
+	Sender string
+	Mine   bool
+	// Time is drawn as given; see MessageBubble.Time.
+	Time string
+}
+```
+
+ThreadMessage is one message in a MessageThread.
+
+<small>[comps/message_thread.go:6](https://github.com/rohanthewiz/grmob/blob/master/comps/message_thread.go#L6)</small>
 

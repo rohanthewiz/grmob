@@ -73,3 +73,20 @@ func TestOnEndReachedExportsItsCallbackID(t *testing.T) {
 		t.Errorf("missing %q:\n%s", want, out)
 	}
 }
+
+// core.OnStartReached is recorded the same way, as the top edge's own
+// attribute.
+func TestOnStartReachedExportsItsCallbackID(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+	n := core.List(core.OnStartReached(func() {}), core.Text("row")).Render(ctx)
+
+	id, _ := n.Props["onStartReached"].(string)
+	if id == "" {
+		t.Fatal("the List carries no onStartReached prop to export")
+	}
+	out := ExportHTML(n)
+	if want := `data-onstartreached="` + id + `"`; !strings.Contains(out, want) {
+		t.Errorf("missing %q:\n%s", want, out)
+	}
+}

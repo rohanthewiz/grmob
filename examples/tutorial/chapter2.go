@@ -3,6 +3,7 @@ package tutorial
 import (
 	"fmt"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/rohanthewiz/grmob/comps"
@@ -209,6 +210,12 @@ func lessonInputs() Lesson {
 		Body: func(ctx *core.Context) core.View {
 			name := core.NewState(ctx, "")
 			upper := core.NewState(ctx, false)
+			// A second transform, and a different kind of one: UPPERCASE
+			// only ever changes the key just typed, while capitalizing words
+			// can change text on both sides of the caret (typing "x" into
+			// "hello| world" rewrites the h before it and the w after it).
+			// That is the case a host must land without moving the caret.
+			words := core.NewState(ctx, false)
 			// The multiline demo's value. Seeded with two lines so the first
 			// thing a reader sees is that a TextArea holds newlines as
 			// ordinary characters of the one string.
@@ -232,9 +239,13 @@ core.Input(name.Get(), "Your name", func(v string) {
 						if upper.Get() {
 							v = strings.ToUpper(v)
 						}
+						if words.Get() {
+							v = capitalizeWords(v)
+						}
 						name.Set(v)
 					}),
 					checkRow("UPPERCASE on the way in", upper),
+					checkRow("Capitalize each word", words),
 					core.IfElse(name.Get() == "",
 						caption("Nothing typed yet — the state slot is empty, so the field is too."),
 						core.Column(
@@ -284,6 +295,27 @@ func lineSummary(v string) string {
 		noun = "line"
 	}
 	return fmt.Sprintf("%d %s, %d characters, straight from state", lines, noun, utf8.RuneCountInString(v))
+}
+
+// capitalizeWords is 2.3's second transform: the first letter of every word
+// upper-cased, the rest left as typed, so "hello mcGrMob" reads "Hello
+// McGrMob". Only letters that start a word change, and never the length
+// (ToUpper of one rune is one rune for every letter this demo will see), which
+// is what makes it a length-kept rewrite on both sides of the caret.
+func capitalizeWords(v string) string {
+	out := []rune(v)
+	start := true
+	for i, r := range out {
+		if unicode.IsSpace(r) {
+			start = true
+			continue
+		}
+		if start {
+			out[i] = unicode.ToUpper(r)
+		}
+		start = false
+	}
+	return string(out)
 }
 
 // tidyLines is the TextArea demo's write from outside the field: trailing

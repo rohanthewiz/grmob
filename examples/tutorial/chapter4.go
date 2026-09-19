@@ -64,6 +64,7 @@ func chapter4() Chapter {
 			lessonAudioPlayer(),
 			lessonMessageBubbles(),
 			lessonReadMoreAndHalfStars(),
+			lessonMessageThread(),
 		},
 	}
 }
@@ -5080,6 +5081,9 @@ func lessonCopyLinkAndList() Lesson {
 		Summary: "comps.CopyButton, Link and BulletList, and sizing a CalendarHeatmap to the window with WeeksFor.",
 		Body: func(ctx *core.Context) core.View {
 			followed := core.NewState(ctx, 0)
+			// The in-sentence demo's second link, counted apart from the
+			// first so a tap shows which run the host dispatched.
+			reported := core.NewState(ctx, 0)
 			win := hooks.UseWindow(ctx)
 
 			// The lesson column's own inset: the screen's padding and the
@@ -5124,13 +5128,36 @@ func lessonCopyLinkAndList() Lesson {
 				prose("Link is a line of text that goes somewhere. It is announced as a link, not a "+
 					"button, because a reader deciding whether to follow a control needs to know it "+
 					"leaves the screen. With a URL it calls core.OpenURL; with OnTap it goes wherever "+
-					"the handler takes it. It is not underlined — core's Style has no text decoration — "+
-					"and it cannot sit inside a sentence, because core has no inline span."),
+					"the handler takes it. On a line of its own it is not underlined: being a line in "+
+					"the link colour is what sets it apart."),
 				demoPanel("One link out of the app, one within it.",
 					comps.Link{Text: "GrMob on GitHub", URL: "https://github.com/rohanthewiz/grmob",
 						AccessibilityHint: "Opens in your browser"},
 					comps.Link{Text: "Follow an in-app link", OnTap: func() { followed.Set(followed.Get() + 1) }},
 					caption(fmt.Sprintf("In-app link followed %d time%s.", followed.Get(), plural(followed.Get()))),
+				),
+				prose("Inside a sentence a link is a run of a core.Paragraph, and Link.Span makes one. "+
+					"It is underlined there, because in running text the colour is the only other "+
+					"difference, and a reader who cannot see colour would miss it. A run can also be "+
+					"a link in a colour of its own: each one draws in its own colour on every target."),
+				codeBlock(`core.Paragraph([]core.Span{
+    {Text: "Read the "},
+    comps.Link{Text: "guide", OnTap: openGuide}.Span(ctx),
+    {Text: ", or "},
+    {Text: "report a problem", Underline: true,
+        Color: theme.Colors.Error, OnTap: report},
+    {Text: "."},
+})`),
+				demoPanel("Two links in one sentence, each in its own colour.",
+					core.Paragraph([]core.Span{
+						{Text: "Read the "},
+						comps.Link{Text: "guide", OnTap: func() { followed.Set(followed.Get() + 1) }}.Span(ctx),
+						{Text: ", or "},
+						{Text: "report a problem", Underline: true, Color: ctx.Theme().Colors.Error,
+							OnTap: func() { reported.Set(reported.Get() + 1) }},
+						{Text: "."},
+					}),
+					caption(fmt.Sprintf("Problem reported %d time%s.", reported.Get(), plural(reported.Get()))),
 				),
 				prose("BulletList is the list every lesson's key points already were, as a widget: a "+
 					"list of listitems, the marker hidden and pinned so a long item wraps under its "+
@@ -5251,7 +5278,7 @@ type tutorialChatLine struct {
 func lessonMessageBubbles() Lesson {
 	return Lesson{
 		Title:   "Message bubbles",
-		Summary: "comps.MessageBubble: whose side, which colours, one spoken stop per message — and why it is not a thread.",
+		Summary: "comps.MessageBubble: whose side, which colours, one spoken stop per message.",
 		Body: func(ctx *core.Context) core.View {
 			thread := core.NewState(ctx, []tutorialChatLine{
 				{"Ana", "Did you see the new release?", "10:41"},
@@ -5279,16 +5306,14 @@ func lessonMessageBubbles() Lesson {
 			}
 			for i, l := range lines {
 				// The sender line only where the speaker changes: the second
-				// of Ana's two messages leaves Sender empty.
-				sender := l.from
-				if i > 0 && lines[i-1].from == l.from {
-					sender = ""
-				}
+				// of Ana's two messages is Continued, which hides the line
+				// and still speaks her name.
 				bubbles = append(bubbles, core.Keyed(fmt.Sprintf("line-%d", i), comps.MessageBubble{
-					Text:   l.text,
-					Sender: sender,
-					Mine:   l.from == "",
-					Time:   l.time,
+					Text:      l.text,
+					Sender:    l.from,
+					Mine:      l.from == "",
+					Time:      l.time,
+					Continued: i > 0 && l.from != "" && lines[i-1].from == l.from,
 				}))
 			}
 
@@ -5300,7 +5325,7 @@ func lessonMessageBubbles() Lesson {
 					"Surface with a hairline, Banner's answer to the same gap."),
 				codeBlock(`comps.MessageBubble{Text: "Did you see?", Sender: "Ana", Time: "10:41"}
 comps.MessageBubble{Text: "Not yet", Mine: true, Time: "10:42"}`),
-				demoPanel("Send a message. Ana's second line has no sender: Sender is left empty when the speaker has not changed.",
+				demoPanel("Send a message. Ana's second line draws no sender: it is Continued, the second of her run.",
 					core.Column(bubbles...),
 					comps.InputRow{
 						Value:       draft.Get(),
@@ -5314,16 +5339,14 @@ comps.MessageBubble{Text: "Not yet", Mine: true, Time: "10:42"}`),
 					"see the new release?, 10:41\". Your own are named \"You, …\" — MineLabel "+
 					"localizes it. Put the bubbles under a RoleLog container so new ones are announced."),
 				prose("The tail is a corner, not a point: the bottom corner on the sender's side is "+
-					"nearly square, drawn with core.CornerRadii (a radius per corner). It is not a "+
-					"thread, though. A transcript that opens at its newest message can bring it into "+
-					"view with core.ScrollIntoView, but no host reports a scroll offset back, so "+
-					"\"load older messages when the reader reaches the top\" still has nothing to "+
-					"listen to."),
+					"nearly square, drawn with core.CornerRadii (a radius per corner). A bubble is "+
+					"one message; a conversation that opens at its newest and loads older ones is "+
+					"comps.MessageThread, at the end of this chapter."),
 				keyPoints(
 					"MessageBubble: Mine on the trailing side in Primary; theirs on the leading side in Surface with a hairline.",
-					"Sender is drawn on theirs only; leave it empty when the speaker has not changed.",
+					"Sender is drawn on theirs only; Continued hides it on the rest of a run and still speaks it.",
 					"One spoken stop per message, who-what-when; use a RoleLog container for the transcript.",
-					"The tail is one nearly square corner (core.CornerRadii); a thread still waits on a reported scroll offset.",
+					"The tail is one nearly square corner (core.CornerRadii); a whole conversation is comps.MessageThread.",
 				),
 			)
 		},
@@ -5384,6 +5407,118 @@ func lessonReadMoreAndHalfStars() Lesson {
 					"A cap is only applied when there is a toggle to lift it.",
 					"The toggle's name stays \"Read more\"; aria-expanded says which way it is.",
 					"Rating.Halves: rounds to halves and draws canvas stars; without it, nothing changed.",
+				),
+			)
+		},
+	}
+}
+
+// --- 4.33 ----------------------------------------------------------------
+
+// threadPageSize is how many messages 4.33's thread opens with and how many
+// each older page brings.
+const threadPageSize = 12
+
+// threadHistory is 4.33's pretend server: 48 messages, oldest first, between
+// Ana, Bruno and the reader. Generated rather than written out, because what
+// the lesson is about is how many there are and that they arrive in pages.
+func threadHistory() []comps.ThreadMessage {
+	who := []string{"Ana", "Ana", "", "Bruno", ""}
+	out := make([]comps.ThreadMessage, 48)
+	for i := range out {
+		from := who[i%len(who)]
+		out[i] = comps.ThreadMessage{
+			Key:    fmt.Sprintf("m%d", i+1),
+			Sender: from,
+			Mine:   from == "",
+			Text:   fmt.Sprintf("Message %d", i+1),
+			Time:   fmt.Sprintf("09:%02d", 12+i),
+		}
+	}
+	return out
+}
+
+// lessonMessageThread is comps.MessageThread over a pretend server that
+// answers each "load older" after a short delay, so the loading row and the
+// once-per-page guard are both visible.
+func lessonMessageThread() Lesson {
+	return Lesson{
+		Title:   "Message threads",
+		Summary: "comps.MessageThread opens at the newest message, loads older ones at the top, and keeps your place.",
+		Body: func(ctx *core.Context) core.View {
+			history := threadHistory()
+			// How many of the history's newest messages the thread holds.
+			shown := core.NewState(ctx, threadPageSize)
+			loading := core.NewState(ctx, false)
+			pages := core.NewState(ctx, 0)
+			sent := core.NewState(ctx, []comps.ThreadMessage(nil))
+			draft := core.NewState(ctx, "")
+
+			// The fetch: 700ms after loading starts, one page lands above.
+			hooks.UseTimeoutWhile(ctx, loading.Get(), func() {
+				shown.Set(min(shown.Get()+threadPageSize, len(history)))
+				pages.Set(pages.Get() + 1)
+				loading.Set(false)
+			}, 700*time.Millisecond)
+
+			msgs := append(append([]comps.ThreadMessage(nil), history[len(history)-shown.Get():]...), sent.Get()...)
+			var older func()
+			if shown.Get() < len(history) {
+				older = func() { loading.Set(true) }
+			}
+			send := func() {
+				text := strings.TrimSpace(draft.Get())
+				if text == "" {
+					return
+				}
+				next := append([]comps.ThreadMessage(nil), sent.Get()...)
+				next = append(next, comps.ThreadMessage{
+					Key: fmt.Sprintf("sent%d", len(next)+1), Mine: true, Text: text, Time: "10:00",
+				})
+				sent.Set(next)
+				draft.Set("")
+			}
+
+			return core.Column(
+				core.Gap(14),
+				prose("A conversation is the one list that grows upward. It opens on the newest "+
+					"message, and scrolling back to the top asks for the page before. When that page "+
+					"lands above you, you should still be looking at the message you were reading."),
+				codeBlock(`comps.MessageThread{
+    Messages:    msgs,        // oldest first, each with a stable Key
+    OnLoadOlder: loadOlder,   // nil once there is nothing older
+    Loading:     fetching,
+}`),
+				demoPanel("Scroll to the top of the thread: an older page loads, and your place is kept.",
+					comps.MessageThread{
+						Messages:    msgs,
+						OnLoadOlder: older,
+						Loading:     loading.Get(),
+						Height:      "320px",
+					},
+					caption(fmt.Sprintf("%d of %d messages loaded · %d older page%s fetched.",
+						shown.Get(), len(history), pages.Get(), plural(pages.Get()))),
+					comps.InputRow{
+						Value:       draft.Get(),
+						Placeholder: "Message…",
+						OnChange:    draft.Set,
+						OnSubmit:    send,
+						Button:      comps.Button{Label: "Send"},
+					},
+				),
+				prose("Three things here are the host's, and two List props declare them. "+
+					"core.StartAtEnd opens the list on its last row and keeps it there as rows arrive "+
+					"while you are at the end. core.OnStartReached fires when you reach the top, once "+
+					"per row count, like OnEndReached at the bottom. The place-keeping needs no prop: "+
+					"every bubble is Keyed by its message, and each host keeps the row you were "+
+					"looking at where it was."),
+				prose("Go never learns a scroll offset. It would only compare it with zero, and by the "+
+					"time Go could answer an offset with a correction, the host would already have "+
+					"drawn a frame in the wrong place."),
+				keyPoints(
+					"MessageThread: oldest first, every message with a stable Key, OnLoadOlder nil at the beginning.",
+					"core.StartAtEnd opens a List at its end; core.OnStartReached is the top edge, guarded per row count.",
+					"The loading caption is a line above the list, so the list's first row, which every host keeps your place by, is always a message.",
 				),
 			)
 		},

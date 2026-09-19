@@ -46,7 +46,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
 | Topic | What it covers | Declares |
 | --- | --- | --- |
 | [Views & state](core-views.md) | View, Node, Context and state slots; text and inline runs; conditionals, caching, error boundaries and debug-mode concerns. | 12 types, 60 functions and methods |
-| [Layout](core-layout.md) | Rows, columns, stacks, scrolls and lists, and the alignment vocabulary they are placed with. | 2 types, 25 functions and methods |
+| [Layout](core-layout.md) | Rows, columns, stacks, scrolls and lists, and the alignment vocabulary they are placed with. | 2 types, 27 functions and methods |
 | [Styling: the Style struct](core-style.md) | Style and the value types its fields take: alignment, flex, position, weights and edge insets. | 11 types, 11 functions and methods |
 | [Styling: style props](core-style-props.md) | The StyleProp constructors: spacing and per-side insets, flex, typography, colour, borders, per-corner radii and animation. | 2 types, 72 functions and methods |
 | [Theming](core-theme.md) | Themes, palettes, typography and spacing scales, and per-component defaults. | 5 types, 17 functions and methods |
@@ -120,12 +120,14 @@ Package core's reference is split into 11 topic pages by source file. The index 
     - [`func KeyboardAware`](core-layout.md#func-keyboardaware)
     - [`func List`](core-layout.md#func-list)
     - [`func OnEndReached`](core-layout.md#func-onendreached)
+    - [`func OnStartReached`](core-layout.md#func-onstartreached)
     - [`func PlacingContainers`](core-layout.md#func-placingcontainers)
     - [`func Row`](core-layout.md#func-row)
     - [`func SafeArea`](core-layout.md#func-safearea)
     - [`func Scroll`](core-layout.md#func-scroll)
     - [`func Spacer`](core-layout.md#func-spacer)
     - [`func StackAlign`](core-layout.md#func-stackalign)
+    - [`func StartAtEnd`](core-layout.md#func-startatend)
     - [`func StickyHeader`](core-layout.md#func-stickyheader)
     - [`func TextAlignments`](core-layout.md#func-textalignments)
     - [`func ZStack`](core-layout.md#func-zstack)
