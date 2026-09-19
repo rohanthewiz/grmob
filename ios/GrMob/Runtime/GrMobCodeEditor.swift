@@ -221,6 +221,28 @@ final class GrMobCodeEditorView: UIView {
     private var ink = UIColor.label
     private var lineCount = 1
 
+    /// The per-line paragraph style with the tab stops a code buffer wants: a
+    /// literal tab advances to the next multiple of `tabStops` columns.
+    ///
+    /// UIKit's default is a fixed 28pt interval, which at 13pt monospace is
+    /// about 3.6 columns: a tab-indented Go file drew its indents a fraction of
+    /// a column short of four and its tab-aligned comments out of line. The
+    /// width is measured off the font rather than assumed, so a Go-set font
+    /// size moves it with the text. `tabStops = []` clears UIKit's twelve
+    /// preset stops, which would otherwise win over `defaultTabInterval` for
+    /// the first twelve tabs on a line.
+    ///
+    /// Compose has no tab stops at all and expands each tab into spaces
+    /// instead (GrMobTabStops in GrMobCodeEditor.kt); the web sets CSS
+    /// tab-size. All three draw a tab to the same column.
+    func paragraph(tabStops: Int) -> NSParagraphStyle {
+        let style = GrMobCodeEditorView.leftToRight.mutableCopy() as! NSMutableParagraphStyle
+        let column = ("0" as NSString).size(withAttributes: [.font: font]).width
+        style.tabStops = []
+        style.defaultTabInterval = column * CGFloat(max(tabStops, 1))
+        return style
+    }
+
     override init(frame: CGRect) {
         super.init(frame: frame)
 
@@ -491,7 +513,9 @@ final class GrMobCodeCoordinator: NSObject, UITextViewDelegate {
         let plain: [NSAttributedString.Key: Any] = [
             .font: editor.font,
             .foregroundColor: textView.textColor ?? UIColor.label,
-            .paragraphStyle: GrMobCodeEditorView.leftToRight,
+            // tabSize columns per tab, or 4 for a literal-tab indent
+            // (tabSize 0) — the width the web and Compose give the same buffer.
+            .paragraphStyle: editor.paragraph(tabStops: tabSize > 0 ? tabSize : 4),
         ]
         // Newly typed characters inherit the *base*, not whatever run the caret
         // happens to sit at the end of — otherwise typing after a string

@@ -11,6 +11,7 @@ import android.text.style.QuoteSpan
 import android.text.style.RelativeSizeSpan
 import android.text.style.StrikethroughSpan
 import android.text.style.StyleSpan
+import android.text.style.TabStopSpan
 import android.text.style.TypefaceSpan
 import android.text.style.URLSpan
 import android.text.style.UnderlineSpan
@@ -516,17 +517,46 @@ internal object GrMobRichMapper {
      * The hanging indent on the list kinds is what makes a wrapped item line up
      * under its own text rather than back under its bullet — the one thing a
      * drawn prefix cannot do for itself.
+     *
+     * The tab stop at that same indent is what puts the *first* line's text
+     * there too. The prefix is "•\t", and with no TabStopSpan a Layout advances
+     * a tab to the next multiple of its fixed 20px increment. A bullet at 17sp
+     * is ~18px wide at 440dpi, so the tab stopped 2px later and the item drew
+     * as "•a bullet" (lesson 4.14 on the emulator and the Mi Max 3).
+     *
+     *	  without:  •|a bullet that wraps     with:  •    a bullet that
+     *	            |onto a second line                   wraps onto a line
+     *	            ^ 20px tab / hanging indent            ^ tab stop = indent
+     *
+     * Both lengths are pixels, which is what LeadingMarginSpan and TabStopSpan
+     * take; [GrMobRichStyle.size] is in sp, so it goes through [spToPx] first.
+     * Passing the sp number straight through (as this did) made the indent
+     * 23px, about 8dp, under the bullet's own width.
      */
     private fun paragraphSpans(kind: String, base: GrMobRichStyle): List<Any> = when (kind) {
         "h1" -> listOf(RelativeSizeSpan(1.6f), GrMobBlockBoldSpan())
         "h2" -> listOf(RelativeSizeSpan(1.35f), GrMobBlockBoldSpan())
         "h3" -> listOf(RelativeSizeSpan(1.15f), GrMobBlockBoldSpan())
-        "bullet", "numbered" -> listOf(LeadingMarginSpan.Standard(0, (base.size * 1.4f).toInt()))
+        "bullet", "numbered" -> {
+            val indent = spToPx(base.size * 1.4f)
+            listOf(LeadingMarginSpan.Standard(0, indent), TabStopSpan.Standard(indent))
+        }
         "quote" -> listOf(QuoteSpan())
         "code" -> listOf(GrMobBlockMonospaceSpan(),
-            LeadingMarginSpan.Standard((base.size * 0.5f).toInt()))
+            LeadingMarginSpan.Standard(spToPx(base.size * 0.5f)))
         else -> emptyList()
     }
+
+    /**
+     * sp -> px on the system's metrics. The mapper is a plain object with no
+     * Context to hand, and the system metrics carry the same density and font
+     * scale as the activity's for the single-display case this runtime runs
+     * in. An indent measured in sp also follows the user's font size setting
+     * along with the text it indents.
+     */
+    private fun spToPx(sp: Float): Int =
+        TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, sp,
+            android.content.res.Resources.getSystem().displayMetrics).toInt()
 
     private fun span(out: SpannableStringBuilder, what: Any, from: Int) {
         out.setSpan(what, from, out.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
@@ -538,7 +568,7 @@ internal object GrMobRichMapper {
     private fun isBlockDrawing(span: Any): Boolean =
         span is RelativeSizeSpan || span is GrMobBlockBoldSpan ||
             span is GrMobBlockMonospaceSpan || span is LeadingMarginSpan.Standard ||
-            span is QuoteSpan
+            span is TabStopSpan.Standard || span is QuoteSpan
 
     /**
      * Stretches every block's spans to the end of the paragraph they end in.

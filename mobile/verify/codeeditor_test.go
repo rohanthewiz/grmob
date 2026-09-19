@@ -124,6 +124,12 @@ func TestBothNativeCodeEditorsSkipAStaleRow(t *testing.T) {
 		{"OffsetMapping.Identity",
 			"the transformation is a colouring: it adds spans and never a " +
 				"character, so visual offset N is buffer offset N"},
+		{"if ('\\t' !in text.text) return TransformedText(styled, OffsetMapping.Identity)",
+			"Identity is kept for every buffer without a literal tab; only a tab, " +
+				"which Compose draws one space wide, earns characters and a mapping"},
+		{"return GrMobTabStops.expand(styled, tabStops)",
+			"a buffer with a tab is drawn to its tab stops through a real offset " +
+				"mapping, so caret and selection stay in buffer units"},
 		{"visualTransformation = transformation",
 			"the colours go through the transformation, never through the " +
 				"TextFieldValue — which is what keeps an IME composition alive"},

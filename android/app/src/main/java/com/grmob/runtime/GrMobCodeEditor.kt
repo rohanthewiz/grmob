@@ -70,6 +70,13 @@ import androidx.compose.ui.unit.sp
  * *colouring*: it adds spans and never a character, so visual offset N is
  * buffer offset N. Anything else here would misplace the caret.
  *
+ * The one exception is a buffer holding a literal tab. Compose's text layout
+ * has no tab stops: a "\t" draws about one space wide, so a Go file indented
+ * with tabs lost its indentation. Such a buffer gets each tab drawn as the
+ * spaces to the next stop, with a real mapping so caret and selection stay in
+ * buffer units; see [GrMobTabStops]. A tab-free buffer (the default, since the
+ * indent this editor inserts is spaces unless tabSize is 0) keeps Identity.
+ *
  * # The three rules, as they land here
  *
  *  1. **Echo guard.** GrMobTextField's TextEditLedger, one type wider: the
@@ -240,7 +247,11 @@ internal fun GrMobCodeEditor(node: GrMobNode, extra: Modifier) {
         // direction pinned around the Row below.
         textDirection = TextDirection.Ltr,
     )
-    val transformation = GrMobCodeRows(node.children, base.color)
+    // How wide a literal tab draws: tabSize columns, or 4 when tabSize is 0
+    // (a literal-tab indent), which is the width the web runtime gives the
+    // same buffer through CSS tab-size.
+    val transformation = GrMobCodeRows(node.children, base.color,
+        if (tabSize > 0) tabSize else 4)
 
     val vertical = rememberScrollState()
     val horizontal = rememberScrollState()
@@ -375,7 +386,17 @@ internal fun GrMobCodeEditor(node: GrMobNode, extra: Modifier) {
                         if (event.type != KeyEventType.KeyDown || event.key != Key.Tab) {
                             return@onPreviewKeyEvent false
                         }
-                        if (readOnly) return@onPreviewKeyEvent true
+                        // Read-only: nothing to indent, so Tab is the platform's
+                        // again and moves focus on. This consumed it (returned
+                        // true), which made every read-only editor a keyboard
+                        // trap (WCAG 2.1.2): the tutorial's code blocks are
+                        // read-only CodeEditors, and on the emulator Tab
+                        // reached the first one on lesson 4.9 and then went
+                        // nowhere for 36 presses — TalkBack said "Editing" once
+                        // and nothing after. The web returns early for a
+                        // read-only buffer and iOS only intercepts an editable
+                        // one; this was the one host that held on to it.
+                        if (readOnly) return@onPreviewKeyEvent false
                         commit(insertInCode(buffer, indentUnit(tabSize)))
                         true
                     },
@@ -401,6 +422,7 @@ internal fun GrMobCodeEditor(node: GrMobNode, extra: Modifier) {
 internal class GrMobCodeRows(
     private val rows: List<GrMobNode>,
     private val ink: Color,
+    private val tabStops: Int = 4,
 ) : VisualTransformation {
 
     override fun filter(text: AnnotatedString): TransformedText {
@@ -439,10 +461,12 @@ internal class GrMobCodeRows(
                 }
             }
         }
-        // Identity, and it has to be: this is a colouring, so it adds spans and
-        // never a character. Visual offset N is buffer offset N, which is what
-        // keeps the caret where the user put it.
-        return TransformedText(styled, OffsetMapping.Identity)
+        // Identity whenever it can be: this is a colouring, so it adds spans
+        // and never a character. Visual offset N is buffer offset N, which is
+        // what keeps the caret where the user put it. Only a literal tab needs
+        // characters added, and only a buffer that has one pays for a mapping.
+        if ('\t' !in text.text) return TransformedText(styled, OffsetMapping.Identity)
+        return GrMobTabStops.expand(styled, tabStops)
     }
 
     private fun runsText(runs: List<*>): String {
@@ -452,6 +476,75 @@ internal class GrMobCodeRows(
             out.append(run["t"] as? String ?: "")
         }
         return out.toString()
+    }
+}
+
+/**
+ * Literal tabs drawn to their tab stops, for a text layout that has none.
+ *
+ * Each "\t" becomes the spaces from its column to the next multiple of
+ * [expand]'s `stops`, so a tab after "ab" at 4 stops is two spaces and a tab
+ * at column 0 is four. Columns restart at every "\n", and count UTF-16 units,
+ * which is exact for the ASCII a code buffer is overwhelmingly made of and a
+ * column off per astral character otherwise.
+ *
+ * The mapping, for "a\tb" at 4 stops (buffer offsets above, drawn below):
+ *
+ *	  buffer   a  \t          b
+ *	           0  1           2  3
+ *	  drawn    a  ·  ·  ·     b
+ *	           0  1  2  3     4  5
+ *
+ *	  originalToTransformed: 0→0  1→1  2→4  3→5
+ *	  transformedToOriginal: 0→0  1→1  2→1  3→1  4→2  5→3
+ *
+ * A drawn offset inside a tab's spaces maps back to the tab's own offset, so a
+ * tap in the middle of an indent puts the caret before the tab rather than
+ * inside a character that does not exist in the buffer. Both tables have an
+ * entry for the end offset, which Compose asks for with the caret at the end.
+ *
+ * The spaces keep whatever span styles covered the tab (a background, say), so
+ * the colouring reads the same as it would have on the tab itself.
+ */
+internal object GrMobTabStops {
+    fun expand(styled: AnnotatedString, stops: Int): TransformedText {
+        val text = styled.text
+        val width = if (stops > 0) stops else 4
+        val toDrawn = IntArray(text.length + 1)
+        val toBuffer = ArrayList<Int>(text.length + 16)
+        val out = AnnotatedString.Builder()
+        var column = 0
+        var runStart = 0
+        for (i in text.indices) {
+            toDrawn[i] = toBuffer.size
+            val c = text[i]
+            if (c != '\t') {
+                toBuffer.add(i)
+                column = if (c == '\n') 0 else column + 1
+                continue
+            }
+            // Flush the untouched run before the tab with its spans intact.
+            if (runStart < i) out.append(styled.subSequence(runStart, i))
+            runStart = i + 1
+            val spaces = width - column % width
+            val covering = styled.spanStyles.filter { it.start <= i && i < it.end }
+            covering.forEach { out.pushStyle(it.item) }
+            out.append(" ".repeat(spaces))
+            repeat(covering.size) { out.pop() }
+            repeat(spaces) { toBuffer.add(i) }
+            column += spaces
+        }
+        if (runStart < text.length) out.append(styled.subSequence(runStart, text.length))
+        toDrawn[text.length] = toBuffer.size
+        toBuffer.add(text.length)
+
+        val mapping = object : OffsetMapping {
+            override fun originalToTransformed(offset: Int): Int =
+                toDrawn[offset.coerceIn(0, text.length)]
+            override fun transformedToOriginal(offset: Int): Int =
+                toBuffer[offset.coerceIn(0, toBuffer.size - 1)]
+        }
+        return TransformedText(out.toAnnotatedString(), mapping)
     }
 }
 
