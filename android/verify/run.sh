@@ -117,6 +117,11 @@ fi
 # skips rather than fails on a machine missing the Android half of the toolchain.
 sh ./sources.sh
 
+# Android lint, errors only. After sources.sh because lint over a tree that
+# does not compile reports the compile failure again, less legibly; see
+# lint.sh for why warnings do not fail the pass.
+sh ./lint.sh
+
 out="${TMPDIR:-/tmp}/grmob-android-verify"
 mkdir -p "$out"
 

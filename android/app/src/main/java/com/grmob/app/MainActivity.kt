@@ -1,5 +1,6 @@
 package com.grmob.app
 
+import android.annotation.SuppressLint
 import android.content.Intent
 import android.os.Bundle
 import android.view.KeyEvent
@@ -93,6 +94,24 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null) reportNotificationTap(intent)
     }
 
+    // core.AccessibilityKeyShortcuts from a hardware keyboard. Offered to the
+    // runtime before the window's own dispatch, so a declared chord is
+    // answered wherever focus is, including nowhere; see
+    // GrMobRuntime.handleKeyEvent.
+    //
+    // RestrictedApi is suppressed deliberately. dispatchKeyEvent is public
+    // Activity API; androidx's core ComponentActivity overrides it and marks
+    // its override @RestrictTo(LIBRARY_GROUP_PREFIX), so lint flags every
+    // subclass that overrides it again, and the super call. Overriding it is
+    // the documented way to see a key before the focused view does, and the
+    // super call keeps androidx's own handling (its KeyEventDispatcher) in
+    // the chain.
+    @SuppressLint("RestrictedApi")
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (runtime?.handleKeyEvent(event) == true) return true
+        return super.dispatchKeyEvent(event)
+    }
+
     /**
      * A link arriving while the app is already running.
      *
@@ -102,15 +121,6 @@ class MainActivity : ComponentActivity() {
      * recreation (a rotation) does not re-report the intent this launched with
      * — which would navigate the reader away from wherever they had got to.
      */
-    // core.AccessibilityKeyShortcuts from a hardware keyboard. Offered to the
-    // runtime before the window's own dispatch, so a declared chord is
-    // answered wherever focus is, including nowhere; see
-    // GrMobRuntime.handleKeyEvent.
-    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (runtime?.handleKeyEvent(event) == true) return true
-        return super.dispatchKeyEvent(event)
-    }
-
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)

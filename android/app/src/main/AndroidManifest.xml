@@ -45,6 +45,13 @@
          permission.Location on why one Go constant means the narrower thing on
          every platform. -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Declaring CAMERA implies android.hardware.camera is *required*, and a
+         store then hides the app from devices without one (Chromebooks, some
+         tablets). The camera is one permission among several that an app may
+         or may not use, so the feature is declared optional; a device with no
+         camera answers permission.Camera itself. Lint's
+         PermissionImpliesUnsupportedChromeOsHardware. -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
