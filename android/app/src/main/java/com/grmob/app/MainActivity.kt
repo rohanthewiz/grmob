@@ -28,6 +28,21 @@ class MainActivity : ComponentActivity() {
         // in the manifest, which is what makes the IME an inset rather than a
         // window pan. See Renderer.keyboardInset.
         enableEdgeToEdge()
+        // Opt out of force dark (API 29+). The theme is Theme.Material.Light
+        // and Go draws every colour itself, so from the platform's view this
+        // is a light app it may recolour. When force dark is on — the
+        // developer override, or a vendor's system-wide dark mode (MIUI sets
+        // debug.hwui.force_dark) — HWUI re-tints draw calls by its own
+        // heuristics, and on Compose's output they misfire: the page went
+        // dark while Cards stayed light, and black lesson titles were
+        // lightened until they vanished on those light Cards (a Mi Max 3 on
+        // Android 10). Colours are the Go theme's to choose, so the shell
+        // draws them as given. Set on the decor view, not via the theme
+        // attribute, because the manifest uses a platform theme and there is
+        // no res/values style to hang android:forceDarkAllowed on.
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            window.decorView.isForceDarkAllowed = false
+        }
         // The runtime mounts the initial Go-rendered tree and opens the push
         // channel; after that the composition tracks the TreeStore on its own.
         // Recreation (rotation, process restore) simply remounts from Go's
