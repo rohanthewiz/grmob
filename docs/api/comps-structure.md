@@ -564,7 +564,7 @@ What the Modal chassis would have supplied is the cost, and the widget buys back
 
   - Screen-reader confinement. A Dialog window and a sheet confine TalkBack and VoiceOver, and the DOM overlay says aria-modal. Here the content layer takes AccessibilityHidden while the drawer is open, which takes the screen behind out of the accessibility tree on every target, so exploration stays in the panel.
   - Focus. Nothing moves it on open, and the ☰ that had it is now inside a hidden layer. CloseRef names the ✕ so the opener can call core.Focus on it, as the example does; OnDismiss can hand focus back to the ☰ through that button's own FocusRef. The widget holds no ref itself, because a ref is a hook (see "No hooks").
-  - Keyboard containment on the web. aria-hidden does not stop Tab, so the content layer is also core.Inert while the drawer is open: Tab and Shift-Tab stay in the panel (and the browser's own chrome), and a pointer cannot reach the screen through a gap in the scrim. The phones do not read Inert; a hardware keyboard there can still reach the screen, which Style.Inert records.
+  - Keyboard containment on the web. aria-hidden does not stop Tab, so the content layer is also core.Inert while the drawer is open: Tab and Shift-Tab stay in the panel (and the browser's own chrome), and a pointer cannot reach the screen through a gap in the scrim. Compose reads Inert too, so a hardware keyboard on Android stays in the panel; SwiftUI does not, so one on an iPad can still reach the screen, which Style.Inert records.
   - The Android back button. A Dialog closes on it; a layer does not, so the panel layer carries core.OnBack(OnDismiss) while open. The panel is inside the screen and composed after it, so back closes the drawer before a Navigator pops or an AppBar's back runs; the next back is theirs. With OnDismiss nil there is nothing to call and back falls through to them.
 
 #### It covers its own box, so give it one
@@ -588,7 +588,7 @@ What a displayed shut panel would otherwise cost, and what buys it back:
 
   - Touch and pointer. The shut scrim has no fill and no tap handler, and the panel sits clipped away, so nothing on the layer takes a touch on the phones and taps reach the screen beneath. On the web the layer is Inert, which drops its pointer events, so clicks fall through too.
   - Readers and Tab. The whole layer is AccessibilityHidden and Inert while shut, so no reader finds the panel and, on the web, Tab skips it.
-  - A hardware keyboard on the phones. The natives do not read Inert (see core.Style.Inert), so a shut panel's rows are composed and reachable by a keyboard's focus traversal on an iPad or a Chromebook, where a Display none panel was not composed at all. Disabled would stop that and is not used: it dims the ✕, a native Button, for the length of the slide out. Recorded rather than approximated, as Inert's own gap is.
+  - A hardware keyboard on the phones. Compose reads Inert (see core.Style.Inert), so on Android Tab passes a shut panel by. SwiftUI does not, so on an iPad a shut panel's rows are composed and reachable by a keyboard's focus traversal, where a Display none panel was not composed at all. Disabled would stop that and is not used: it dims the ✕, a native Button, for the length of the slide out. Recorded rather than approximated, as Inert's own gap is.
   - Composition. The panel's subtree is composed while shut. A handful of rows is cheap; a Body holding a long list would pay for it.
 
 #### Picking a destination closes the drawer
@@ -610,7 +610,7 @@ Open and focus are both the caller's, so Drawer takes no hook slot and is condit
 	Icon       Typography.Subtitle
 	Scrim      Backdrop, else core.Modal's default #00000088
 
-<small>[comps/drawer.go:177](https://github.com/rohanthewiz/grmob/blob/master/comps/drawer.go#L177)</small>
+<small>[comps/drawer.go:179](https://github.com/rohanthewiz/grmob/blob/master/comps/drawer.go#L179)</small>
 
 #### func (Drawer) Render
 
@@ -620,7 +620,7 @@ func (d Drawer) Render(ctx *core.Context) *core.Node
 
 Render builds ZStack(content layer, panel layer) as drawn in the type doc.
 
-<small>[comps/drawer.go:265](https://github.com/rohanthewiz/grmob/blob/master/comps/drawer.go#L265)</small>
+<small>[comps/drawer.go:267](https://github.com/rohanthewiz/grmob/blob/master/comps/drawer.go#L267)</small>
 
 ### type DrawerItem
 
@@ -643,7 +643,7 @@ type DrawerItem struct {
 
 DrawerItem is one destination in a Drawer.
 
-<small>[comps/drawer.go:234](https://github.com/rohanthewiz/grmob/blob/master/comps/drawer.go#L234)</small>
+<small>[comps/drawer.go:236](https://github.com/rohanthewiz/grmob/blob/master/comps/drawer.go#L236)</small>
 
 ### type FAB
 

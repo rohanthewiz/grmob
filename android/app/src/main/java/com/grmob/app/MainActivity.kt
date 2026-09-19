@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Intent
 import android.os.Bundle
 import android.view.KeyEvent
+import android.view.View
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -109,7 +110,62 @@ class MainActivity : ComponentActivity() {
     @SuppressLint("RestrictedApi")
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (runtime?.handleKeyEvent(event) == true) return true
+        if (restoreFocusForNavigation(event)) return true
         return super.dispatchKeyEvent(event)
+    }
+
+    /**
+     * Gives the window its focus back when a focus-navigation key arrives and
+     * no View holds it, and answers whether the key was spent doing so.
+     *
+     * # How the window ends up with no focus
+     *
+     * Compose 1.7 clears the *View's* focus when the focused node leaves the
+     * composition: FocusOwnerImpl.invalidateOwnerFocusState calls
+     * AndroidComposeView.onClearFocusForOwner, which calls View.clearFocus.
+     * Every GrMob navigation does that to whatever had focus, because Push,
+     * Replace and Pop swap the screen's subtree: press "Next ›" from the
+     * keyboard, or follow a deep link, and the focused button is gone. After
+     * that, findFocus() is null and no Compose node hears a key.
+     *
+     * # Why the framework's own recovery is not enough
+     *
+     * ViewRootImpl answers an unhandled Tab or arrow with no focused View by
+     * calling restoreDefaultFocus(), which is how the first Tab after a
+     * navigation normally lands on the first control. With TalkBack running
+     * that recovery never happened: on a Galaxy Z Fold6 (Android 16,
+     * Samsung TalkBack 16.2) every Tab reached this Activity with no focused
+     * View, went unhandled, and the next Tab found the window unchanged, from
+     * both an injected key and a USB keyboard. Tab stayed dead until TalkBack
+     * was turned off. Calling the same restoreDefaultFocus() here worked in
+     * that state, so this does, ahead of the window's dispatch.
+     *
+     * # Why the key is consumed
+     *
+     * The framework's recovery consumes the key too (performFocusNavigation
+     * returns true), and that is what puts the first Tab on the *first*
+     * control. Passing it on as well would move focus a second time and skip
+     * that control. Only the keys ViewRootImpl itself navigates with are
+     * taken: Tab, with or without Shift, and the four arrows with no
+     * modifier. A chord or any other key goes on as before.
+     */
+    private fun restoreFocusForNavigation(event: KeyEvent): Boolean {
+        if (event.action != KeyEvent.ACTION_DOWN) return false
+        val navigates = when (event.keyCode) {
+            KeyEvent.KEYCODE_TAB ->
+                event.hasNoModifiers() || event.hasModifiers(KeyEvent.META_SHIFT_ON)
+            KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
+            KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> event.hasNoModifiers()
+            else -> false
+        }
+        if (!navigates || window.decorView.findFocus() != null) return false
+        // restoreDefaultFocus arrived in API 26 with android:focusedByDefault.
+        // This app declares no default-focus View, and with none declared it
+        // is requestFocus(FOCUS_DOWN), which is what API 24 and 25 get.
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.O) {
+            return window.decorView.requestFocus(View.FOCUS_DOWN)
+        }
+        return window.decorView.restoreDefaultFocus()
     }
 
     /**

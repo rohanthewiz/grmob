@@ -728,8 +728,9 @@ func Disabled(disabled bool) StyleProp {
 
 // Inert takes the node and everything inside it out of reach on the web: out
 // of the tab order, out of pointer events and out of the accessibility tree
-// (the HTML `inert` attribute). The phones do not read it. See Style.Inert
-// for why it is a flag of its own and for what the natives lack.
+// (the HTML `inert` attribute). On Compose it takes the subtree out of the
+// keyboard's focus traversal; SwiftUI does not read it. See Style.Inert for
+// why it is a flag of its own and for what each native does.
 //
 //	core.Box(core.Inert(drawerOpen), screen)
 //

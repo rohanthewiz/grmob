@@ -77,9 +77,10 @@ import "github.com/rohanthewiz/grmob/core"
 //   - Keyboard containment on the web. aria-hidden does not stop Tab, so the
 //     content layer is also core.Inert while the drawer is open: Tab and
 //     Shift-Tab stay in the panel (and the browser's own chrome), and a
-//     pointer cannot reach the screen through a gap in the scrim. The phones
-//     do not read Inert; a hardware keyboard there can still reach the screen,
-//     which Style.Inert records.
+//     pointer cannot reach the screen through a gap in the scrim. Compose
+//     reads Inert too, so a hardware keyboard on Android stays in the panel;
+//     SwiftUI does not, so one on an iPad can still reach the screen, which
+//     Style.Inert records.
 //   - The Android back button. A Dialog closes on it; a layer does not, so
 //     the panel layer carries core.OnBack(OnDismiss) while open. The panel is
 //     inside the screen and composed after it, so back closes the drawer
@@ -139,12 +140,13 @@ import "github.com/rohanthewiz/grmob/core"
 //     Inert, which drops its pointer events, so clicks fall through too.
 //   - Readers and Tab. The whole layer is AccessibilityHidden and Inert while
 //     shut, so no reader finds the panel and, on the web, Tab skips it.
-//   - A hardware keyboard on the phones. The natives do not read Inert (see
-//     core.Style.Inert), so a shut panel's rows are composed and reachable by
-//     a keyboard's focus traversal on an iPad or a Chromebook, where a Display
-//     none panel was not composed at all. Disabled would stop that and is not
-//     used: it dims the ✕, a native Button, for the length of the slide out.
-//     Recorded rather than approximated, as Inert's own gap is.
+//   - A hardware keyboard on the phones. Compose reads Inert (see
+//     core.Style.Inert), so on Android Tab passes a shut panel by. SwiftUI
+//     does not, so on an iPad a shut panel's rows are composed and reachable
+//     by a keyboard's focus traversal, where a Display none panel was not
+//     composed at all. Disabled would stop that and is not used: it dims the
+//     ✕, a native Button, for the length of the slide out. Recorded rather
+//     than approximated, as Inert's own gap is.
 //   - Composition. The panel's subtree is composed while shut. A handful of
 //     rows is cheap; a Body holding a long list would pay for it.
 //

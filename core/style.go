@@ -834,16 +834,23 @@ type Style struct {
 	// blurs focus already inside the subtree, skips the subtree in sequential
 	// navigation, drops pointer events and prunes the accessibility tree.
 	//
-	// Neither native reads it. On a phone the problem it solves is shaped
-	// differently: VoiceOver and TalkBack are kept out by AccessibilityHidden,
-	// and touch is kept out by whatever covers the layer (a Drawer's scrim).
-	// What remains is a hardware keyboard's focus traversal on an iPad or a
-	// Chromebook. SwiftUI's nearest tool, .disabled(true), dims system controls,
-	// and Compose's focusProperties cancel entry only on the node they sit on.
-	// Neither is the same claim, and neither can be checked here without a
-	// device, so the gap is recorded rather than approximated. Set
-	// AccessibilityHidden beside it when readers on the phones should be kept
-	// out too, as Drawer does.
+	// On a phone the problem it solves is shaped differently: VoiceOver and
+	// TalkBack are kept out by AccessibilityHidden, and touch is kept out by
+	// whatever covers the layer (a Drawer's scrim). What remains is a hardware
+	// keyboard's focus traversal, and that is the half the phones take:
+	//
+	//   - Compose reads it. Every node in the subtree gets focusProperties
+	//     { canFocus = false } at the head of its modifier chain, since the
+	//     property covers only the focus targets after it. Checked on a Galaxy
+	//     Z Fold6 with a USB keyboard: with a Drawer shut, Tab had gone
+	//     through the hidden panel's ✕ and rows, drawing and saying nothing;
+	//     it now goes from the screen's last control to the next one.
+	//   - SwiftUI does not. Its nearest tool, .disabled(true), dims system
+	//     controls, which is not the same claim, so the iPad's gap is recorded
+	//     rather than approximated.
+	//
+	// Set AccessibilityHidden beside it when readers on the phones should be
+	// kept out too, as Drawer does.
 	Inert bool `json:",omitzero"`
 
 	// AccentColor is the colour a platform-drawn control spends on its "on"

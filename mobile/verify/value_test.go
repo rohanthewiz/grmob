@@ -22,8 +22,8 @@ var kotlinProgress = nativeFile("android", "app", "src", "main", "java", "com", 
 //	web ×2     aria-valuenow / -valuemin / -valuemax / -valuetext, scoped to
 //	           the one range role core.Role carries
 //	Compose    the numbers, through progressBarRangeInfo, which TalkBack turns
-//	           into a percentage it localizes itself; and the words, through
-//	           stateDescription
+//	           into a percentage it localizes itself, on a progressbar only;
+//	           and the words, through stateDescription, on any node
 //	SwiftUI    the words alone, through accessibilityValue. There is no numeric
 //	           accessibility value on this platform at all.
 //
@@ -107,9 +107,10 @@ func TestKotlinAppliesTheValueThroughItsSemanticsPrimitives(t *testing.T) {
 			t.Errorf("%s: grMobValue never reaches %s — %s", kotlinStyle, pin.expr, pin.why)
 		}
 	}
-	if src := codeIn(t, kotlinStyle); !strings.Contains(src, "grMobValue(valueRange)") {
-		t.Errorf("%s: boxModifier never calls grMobValue — the mapping exists and "+
-			"nothing invokes it", kotlinStyle)
+	if src := codeIn(t, kotlinStyle); !strings.Contains(src, "grMobValue(valueRange, kind)") {
+		t.Errorf("%s: boxModifier never calls grMobValue with its role — the mapping "+
+			"exists and nothing invokes it, or it is invoked without the role that "+
+			"decides whether the range is stated", kotlinStyle)
 	}
 
 	// The third link, and the one this file used to *be*: the numeric reading
@@ -132,6 +133,35 @@ func TestKotlinAppliesTheValueThroughItsSemanticsPrimitives(t *testing.T) {
 			t.Errorf("%s: grMobValue does not name %s — the two readings that assign "+
 				"nothing say different things and both belong in the when", kotlinStyle, reading)
 		}
+	}
+}
+
+// The range is the part of the value that names the node. Compose reports any
+// node holding progressBarRangeInfo as android.widget.ProgressBar, and TalkBack
+// says "Progress bar": heard on a Galaxy Z Fold6 for comps.Stepper's group
+// ("2, Progress bar, Guests, 2") and comps.Rating's ("0 of 5, Progress bar,
+// Your rating") while grMobValue stated the range whatever the role. The words
+// still go on any node; only the numbers wait for the role core allows them on.
+func TestKotlinStatesTheRangeOnlyOnAProgressBar(t *testing.T) {
+	// Read with literals intact: the role's spelling is the subject.
+	body := valuesOf(t, kotlinStyle, "fun SemanticsPropertyReceiver.grMobValue(")
+	gate := `if (kind != "` + string(core.RoleProgressBar) + `") return`
+	words := strings.Index(body, "stateDescription = range.text")
+	at := strings.Index(body, gate)
+	rangeAt := strings.Index(body, "progressBarRangeInfo = ProgressBarRangeInfo(")
+	switch {
+	case at < 0:
+		t.Errorf("%s: grMobValue has no %q — without it a Stepper or a Rating group "+
+			"reads as a progress bar", kotlinStyle, gate)
+	case words < 0 || words > at:
+		t.Errorf("%s: grMobValue sets the words after the role gate — they belong on "+
+			"every node, before it", kotlinStyle)
+	case rangeAt >= 0 && rangeAt < at:
+		t.Errorf("%s: grMobValue states the range before the role gate", kotlinStyle)
+	}
+	if src := valuesIn(t, kotlinStyle); !strings.Contains(src, `grMobValue(valueRange, "")`) {
+		t.Errorf("%s: contentSemantics no longer passes an empty role to grMobValue — "+
+			"a Button caption has no role to gate the range on", kotlinStyle)
 	}
 }
 

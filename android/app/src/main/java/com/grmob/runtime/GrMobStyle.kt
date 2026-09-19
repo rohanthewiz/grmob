@@ -239,6 +239,12 @@ data class GrMobStyle(
     val accessibilityValue: ValueRange,
     /** Platform disabled state; see Go's core.Style.Disabled. */
     val disabled: Boolean,
+    /**
+     * core.Style.Inert: the subtree takes no keyboard focus. Renderer.kt reads
+     * it through LocalGrMobInert; the tree and pointer halves are left to
+     * AccessibilityHidden and whatever covers the layer, as core describes.
+     */
+    val inert: Boolean,
     /** Parsed Transition duration; 0 means "no transition, snap changes". */
     val transitionMs: Int,
     val transitionEasing: Easing,
@@ -397,6 +403,7 @@ data class GrMobStyle(
                 accessibilityExpanded = obj.optString("AccessibilityExpanded"),
                 accessibilityValue = parseValueRange(obj.optJSONObject("AccessibilityValue")),
                 disabled = obj.optBoolean("Disabled", false),
+                inert = obj.optBoolean("Inert", false),
                 transitionMs = parseTransitionMs(obj.optString("Transition")),
                 transitionEasing = parseTransitionEasing(obj.optString("Transition")),
                 corners = parseCorners(obj.optJSONObject("Corners")),
@@ -622,7 +629,7 @@ internal fun GrMobStyle?.contentSemantics(caption: String): Modifier {
         if (description.isNotEmpty()) contentDescription = description
         grMobSelected(selectedState)
         grMobCurrent(currentKind, selectedState)
-        grMobValue(valueRange)
+        grMobValue(valueRange, "")
         if (currentState.isNotEmpty()) stateDescription = currentState
     }
 }
@@ -698,7 +705,7 @@ fun GrMobStyle?.boxModifier(extra: Modifier = Modifier, gestures: Modifier = Mod
             grMobRole(kind)
             grMobSelected(selectedState)
             grMobCurrent(currentKind, selectedState)
-            grMobValue(valueRange)
+            grMobValue(valueRange, kind)
             if (currentState.isNotEmpty()) stateDescription = currentState
         }
     }
@@ -1229,14 +1236,23 @@ fun SemanticsPropertyReceiver.grMobRole(kind: String) {
  * are not what a listener wants to hear — "step 3 of 5" — and, unlike the
  * range, TalkBack honours it on any node at all.
  *
- * # The role is deliberately not consulted, for the reason grMobSelected's is
- * not
+ * # The words go on any node; the range only on a progress bar
  *
- * Compose honours both of these on any node, so guarding them the way the two
- * web exporters do would drop a value this platform would otherwise have
- * announced. ARIA scopes aria-valuenow to six roles because ARIA scopes
- * things; Compose does not, and the framework is not stricter than the
- * platform it is talking to.
+ * `stateDescription` is honoured on any node and names nothing, so it is set
+ * whatever the role, as SwiftUI's accessibilityValue is.
+ *
+ * `progressBarRangeInfo` was once set the same way, on the argument that
+ * Compose does not scope it and the framework should not be stricter than
+ * the platform. That was wrong: the range is not a neutral number. Compose
+ * reports any node holding it as android.widget.ProgressBar, and TalkBack
+ * says so. Heard on a Galaxy Z Fold6 (Samsung TalkBack 16.2): a
+ * comps.Stepper's group read "2, Progress bar, Guests, 2" and a comps.Rating's
+ * "0 of 5, Progress bar, Your rating". So the range now needs
+ * core.RoleProgressBar, the one role core allows aria-valuenow on
+ * (core.AccessibilityValue's doc), and the words carry the value everywhere
+ * else. Nothing is lost: both widgets state their value as text as well.
+ * `kind` is empty from [contentSemantics], which has no role to pass, so a
+ * Button's caption never takes the range either.
  *
  * # The branch on the numbers lives next door
  *
@@ -1259,8 +1275,10 @@ fun SemanticsPropertyReceiver.grMobRole(kind: String) {
  * `kind`: the surrounding lambda is a SemanticsPropertyReceiver, and a name
  * that shadows one of its properties stops the assignment compiling.
  */
-fun SemanticsPropertyReceiver.grMobValue(range: GrMobStyle.ValueRange) {
+fun SemanticsPropertyReceiver.grMobValue(range: GrMobStyle.ValueRange, kind: String) {
     if (range.text.isNotEmpty()) stateDescription = range.text
+    // See "The words go on any node; the range only on a progress bar".
+    if (kind != "progressbar") return
     // The decision is grMobProgressOf's, in a file that imports nothing, so
     // android/verify can run it on a JVM against core.ValueRange.Progress.
     // What is left here is the assignment, which is the only part that needs

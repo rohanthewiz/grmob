@@ -555,13 +555,13 @@ func Height(w string) StyleProp
 func Inert(inert bool) StyleProp
 ```
 
-Inert takes the node and everything inside it out of reach on the web: out of the tab order, out of pointer events and out of the accessibility tree (the HTML \`inert\` attribute). The phones do not read it. See Style.Inert for why it is a flag of its own and for what the natives lack.
+Inert takes the node and everything inside it out of reach on the web: out of the tab order, out of pointer events and out of the accessibility tree (the HTML \`inert\` attribute). On Compose it takes the subtree out of the keyboard's focus traversal; SwiftUI does not read it. See Style.Inert for why it is a flag of its own and for what each native does.
 
 	core.Box(core.Inert(drawerOpen), screen)
 
 A bool for Disabled's reason: passing false is the only way to clear a flag UseStyle has already put on the target.
 
-<small>[core/style_props.go:738](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L738)</small>
+<small>[core/style_props.go:739](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L739)</small>
 
 ### func Justify
 

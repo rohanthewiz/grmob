@@ -90,7 +90,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
@@ -104,6 +106,7 @@ import androidx.compose.ui.platform.LocalView
 // The disclosure pair. Compose says "expanded" with actions rather than with a
 // property, which is why these land in gestureModifier and not in
 // GrMobStyle.boxModifier's semantics block — see grMobDisclosure.
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.collapse
 import androidx.compose.ui.semantics.expand
 import androidx.compose.ui.semantics.semantics
@@ -166,6 +169,90 @@ val LocalGrMobRuntime = compositionLocalOf<GrMobRuntime> {
  * which is also how the two platform mechanisms it mirrors behave.
  */
 val LocalGrMobDisabled = compositionLocalOf { false }
+
+/**
+ * True at and below a core.Inert node: nothing in the subtree takes keyboard
+ * focus.
+ *
+ * # What it is for on a phone
+ *
+ * core.Style.Inert is the web's `inert`. On the phones the reader half is
+ * AccessibilityHidden's and the touch half is whatever covers the layer, so
+ * what is left is a hardware keyboard's focus traversal. That half was open:
+ * with a comps.Drawer shut on a Galaxy Z Fold6 and a USB keyboard, Tab went
+ * through the shut panel's ✕ and rows one by one. Nothing was drawn, since the
+ * panel is translated out of its clipped box, and TalkBack said nothing, since
+ * the layer is AccessibilityHidden. From the keyboard, Tab looked dead for five
+ * presses.
+ *
+ * # How it reaches every control
+ *
+ * Compose's focusProperties covers the focus targets after it in its own
+ * modifier chain, not a whole subtree. So RenderNode puts
+ * `focusProperties { canFocus = false }` at the head of the modifiers of
+ * *every* node under an Inert one. `extra` opens each node's own chain
+ * (boxModifier starts from it, and so do the controls), so the target a
+ * clickable, a Button or a field adds after it is covered. A core.Focus
+ * aimed inside is refused as well, since requestFocus asks the same target
+ * whether it can focus.
+ *
+ * One-way, like the disabled local: core has no way to un-inert a subtree.
+ */
+val LocalGrMobInert = compositionLocalOf { false }
+
+/**
+ * True below a *named control*: a node with an AccessibilityLabel that is
+ * also something you activate (see [namesItsContent]). A core.Text under one
+ * drops its own semantics, so the control is heard by its name alone.
+ *
+ * # Why the label does not already replace the text
+ *
+ * boxModifier merges a labelled node's descendants into it, meaning the name
+ * to *replace* them, as aria-label does on the web and a label after
+ * `.combine` does in SwiftUI. Compose does not read it that way. A merging
+ * node with children gets no contentDescription of its own: Compose 1.7
+ * emits the label as a fake child node
+ * (AndroidComposeViewAccessibilityDelegateCompat, populateAccessibility-
+ * NodeInfoProperties) and leaves each Text child in the tree beside it, and
+ * TalkBack speaks all of them. On a Galaxy Z Fold6 a comps.Rating star read
+ * "1 of 5, White star, Button" (the ☆ glyph by its Unicode name) and a
+ * comps.Calendar day "Not selected, Monday, March 2, 2026, 2, Button".
+ *
+ * # Why only a control
+ *
+ * On the web a name replaces the content only where the content *is* the
+ * name, which is a control's: a button's or a cell's. A labelled group or
+ * region keeps its content readable, which is why a comps.Stepper still says
+ * its number and why this local is not opened by a label alone.
+ *
+ * It is one-way, like the disabled local: nothing under a named control
+ * speaks its text again. A control inside a control is not something core
+ * builds, and a Button's caption is drawn by GrMobButton, not by GrMobText.
+ */
+val LocalGrMobNamedControl = compositionLocalOf { false }
+
+/**
+ * Whether [node] is a named control, whose AccessibilityLabel stands for its
+ * whole content (see [LocalGrMobNamedControl]).
+ *
+ * A label and one of two signs that the node is activated rather than read.
+ * The first is an onClick. The second is a role whose content is the name:
+ * ARIA's children-presentational roles that core carries (button, img, tab,
+ * radio, option, progressbar), plus link and gridcell, whose name comes from
+ * their content on the web. The role catches a control that is disabled
+ * this pass: a comps.Calendar day outside Min..Max has no onClick but is
+ * still a cell named by its date.
+ */
+internal fun namesItsContent(node: GrMobNode): Boolean {
+    val s = node.style ?: return false
+    if (s.accessibilityHidden || s.accessibilityLabel.isEmpty()) return false
+    if (node.stringProp("onClick").isNotEmpty()) return true
+    return s.accessibilityRole in NAME_IS_CONTENT_ROLES
+}
+
+private val NAME_IS_CONTENT_ROLES = setOf(
+    "button", "img", "tab", "radio", "option", "progressbar", "link", "gridcell",
+)
 
 /**
  * Whether the Column being composed has no height of its own to divide among
@@ -340,19 +427,32 @@ fun RenderNode(node: GrMobNode, extra: Modifier = Modifier) {
     // to divide again (see LocalGrMobUnboundedHeight). A points Width does the
     // same for the unbounded-width local (LocalGrMobUnboundedWidth).
     //
+    // A named control opens LocalGrMobNamedControl for its subtree the same
+    // way, so the Text inside it stops speaking over its name. The node itself
+    // is inside the scope too, which is why GrMobText asks namesItsContent of
+    // its own node before going quiet.
+    //
     // The values that change are collected and provided in one call, rather
-    // than one `when` arm per combination: three independent flags would be
-    // eight arms. An unchanged tree still provides nothing.
+    // than one `when` arm per combination: five independent flags would be
+    // thirty-two arms. An unchanged tree still provides nothing.
     val disable = node.style?.disabled == true && !LocalGrMobDisabled.current
     val bound = LocalGrMobUnboundedHeight.current && hasPointsHeight(node.style)
     val boundWidth = LocalGrMobUnboundedWidth.current && hasPointsWidth(node.style)
-    if (!disable && !bound && !boundWidth) {
+    val named = !LocalGrMobNamedControl.current && namesItsContent(node)
+    // core.Inert, and every node under it, takes no keyboard focus; see
+    // LocalGrMobInert for why every node rather than the inert one alone.
+    val inertHere = LocalGrMobInert.current || node.style?.inert == true
+    val inert = inertHere && !LocalGrMobInert.current
+    if (inertHere) mods = Modifier.focusProperties { canFocus = false }.then(mods)
+    if (!disable && !bound && !boundWidth && !named && !inert) {
         RenderNodeContent(node, mods)
     } else {
         val provided = buildList<ProvidedValue<*>> {
             if (disable) add(LocalGrMobDisabled provides true)
             if (bound) add(LocalGrMobUnboundedHeight provides false)
             if (boundWidth) add(LocalGrMobUnboundedWidth provides false)
+            if (named) add(LocalGrMobNamedControl provides true)
+            if (inert) add(LocalGrMobInert provides true)
         }
         CompositionLocalProvider(*provided.toTypedArray()) { RenderNodeContent(node, mods) }
     }
@@ -887,9 +987,16 @@ private fun GrMobText(node: GrMobNode, extra: Modifier) {
     // an uncapped Text has always drawn, and an ellipsis policy on text that
     // is never cut would change nothing but read as if it might.
     val cap = s?.maxLines ?: 0
+    // Inside a named control the name stands for this text, so the text is
+    // taken out of the accessibility tree rather than read after the name;
+    // see LocalGrMobNamedControl. Not when this Text is the named control
+    // itself: then its label is the thing being read. Appended after
+    // boxModifier so it clears the semantics Text adds inside the chain.
+    val quiet = LocalGrMobNamedControl.current && !namesItsContent(node)
     Text(
         text = node.stringProp("content"),
-        modifier = s.boxModifier(extra, gestureModifier(node)),
+        modifier = s.boxModifier(extra, gestureModifier(node))
+            .then(if (quiet) Modifier.clearAndSetSemantics { } else Modifier),
         style = textStyle(s),
         maxLines = if (cap > 0) cap else Int.MAX_VALUE,
         overflow = if (cap > 0) TextOverflow.Ellipsis else TextOverflow.Clip,
@@ -988,6 +1095,50 @@ internal fun textStyle(s: GrMobStyle?): TextStyle {
 
 @Composable
 private fun GrMobButton(node: GrMobNode, extra: Modifier) {
+    // core.Focus on a Button: a comps.Button with a FocusRef, such as a
+    // Drawer's ✕ (CloseRef) and the ☰ its OnDismiss hands focus back to.
+    // core.FocusTarget stamps the same focusEpoch/focusAction pair on a Button
+    // as on a field, and until this read it nothing here did, so the Drawer's
+    // handoff never happened on Compose: opening it from the keyboard left
+    // focus on the ☰, now inside the inert, hidden screen, and closing it
+    // left focus nowhere. Found on a Galaxy Z Fold6 with a USB keyboard.
+    //
+    // The epoch/action contract is the text field's (see the LaunchedEffect
+    // in GrMobTextField for why a counter and why no mount guard), minus the
+    // soft keyboard. The requester and the focus observer ride `extra`, the
+    // head of the chain every Button path starts from, so they reach the
+    // material3 clickable and the long-press substitute alike.
+    val focusEpoch = node.intProp("focusEpoch")
+    val focusAction = node.stringProp("focusAction")
+    val focusRequester = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
+    var focused by remember { mutableStateOf(false) }
+    LaunchedEffect(focusEpoch) {
+        if (focusEpoch == 0) return@LaunchedEffect
+        when (focusAction) {
+            // The field's reason for the catch applies: a requester whose
+            // node is composed but not yet placed throws.
+            //
+            // One frame first, which the field does not need. The command
+            // usually lands in the same pass that makes its target focusable
+            // at all: the Drawer opens and its panel stops being inert
+            // (LocalGrMobInert) as the ☰'s handler focuses the ✕. The focus
+            // tree takes that change in at the end of the pass, so a request
+            // made straight away can still see the panel as unfocusable.
+            "focus" -> {
+                withFrameNanos { }
+                runCatching { focusRequester.requestFocus() }
+            }
+            "blur" -> if (focused) focusManager.clearFocus()
+        }
+    }
+    val focusable = extra.focusRequester(focusRequester).onFocusChanged { focused = it.isFocused }
+    GrMobButtonControl(node, focusable)
+}
+
+/** GrMobButton with its focus command wired; see GrMobButton. */
+@Composable
+private fun GrMobButtonControl(node: GrMobNode, extra: Modifier) {
     // core.OnLongPress on a Button takes a different control, because
     // material3's Button has no long-click slot and a combinedClickable put
     // on its modifier would sit *outside* the Button's own clickable and
