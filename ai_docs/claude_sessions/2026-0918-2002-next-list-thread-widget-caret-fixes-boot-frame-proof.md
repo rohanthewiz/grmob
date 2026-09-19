@@ -250,47 +250,197 @@ apidoc topics).
 
 ## Next
 
-- **iOS UIKit field: a queued key during the caret correction** (narrowed,
-  carried). It was not observed in 6 correction writes, but the window
-  exists after a change strictly after the caret. The candidate fix is to
-  drain through `input.inputDelegate` (`_UIKeyboardStateManager`)
-  `selectionWillChange/DidChange` before `replace`, merging any keys it
-  delivers with `rebaseEdit(current, flushed, next)`.
-- **iOS Paragraph link colours on the iOS 17 floor** (new). They were
-  measured only on 26.5; the `.tint(firstLink)` fallback remains for older
-  OSes.
-- **`core.ScrollIntoView` inside an iOS `core.List`** (new, low-hanging).
-  GrMobList now has a ScrollViewReader and could inject
-  `\.grMobScrollProxy`, but row ids are now String (`rowKey`) while
-  `GrMobBringIntoView` scrolls by `viewID`. Measure before claiming it.
-- **`examples/chat` could use `comps.MessageThread`** (new). Its tests pin
-  the hand-built Scroll + Column + RoleLog structure.
-- **The web's thread place-keeping applies only when the List is its own
-  scroll box** (new, by design). A List inside another scrolling ancestor
-  keeps the browser's behaviour.
-- **A sixth low-hanging round** (carried shape). No candidates beyond the
-  above.
-- **F-keys through GameController have never reached the app from
-  XCUITest** (carried; needs hardware).
-- **The first hardware key after launch is lost on the iOS 26.5 simulator**
-  (carried; needs a real iPad).
-- *Non-goal, declined:* a smaller minimum for Buttons in general on Android.
-  Only CopyButton opts out (carried).
-- *Non-goal, declined:* making iOS keep focus on every submit by default
-  (carried).
-- *Non-goal, declined:* a two-pane layout on the natives (carried).
-- *Non-goal, declined:* restructuring lesson bodies into guide and demo
-  halves (carried).
-- *Non-goal, declined:* a year-wide scrolling `CalendarHeatmap` (carried).
-- *Non-goal, declined:* a caption-flip "Copied ✓" on CopyButton (carried).
-- *Non-goal, declined:* a separate `Alert` widget. Banner is it (carried).
-- *Non-goal, declined:* Heatmap as a continuous gradient (carried).
-- *Non-goal, declined:* a Sequential ramp interpolated from `Primary`
-  (carried).
-- *Non-goal, declined:* a native time wheel, and a sheet or Done on
-  TimePicker (carried).
-- *Non-goal, declined:* a right-padding gutter or a toolbar header for code
-  blocks (carried).
-- *Non-goal, declined:* a reported scroll offset from the hosts. The thread
-  needed only the two List props (decided this session; see
-  `core/list_start.go`).
+**Legend:** *age* is how many session docs ago the item was first raised,
+counted from this doc (0 = raised here; `≥ 24` = older than this 25-doc
+window, 2026-0915-1926 → this doc). *value* is the payoff, not the effort:
+**high** = worked around today or a second consumer has arrived; **medium** =
+blocks one named thing or is a visible defect; **low** = nobody has hit the
+gap yet. Sorted by age, oldest first, then by value. `lapsed@<doc>` = the item
+fell off the list without being done; the doc named is where it went missing.
+
+**Rebuilt from history.** A whole list of 62 items was dropped at
+`2026-0917-1659-fab-screen-floating-and-round-two-plan`: from there the Next
+section held only the plan's next step, and the list restarted fresh at
+2026-0917-2309. None of the dropped items were worked in the 15 docs since,
+except the F-key and first-key threads. They are restored below.
+
+1. **(age ≥24 · value medium · lapsed@0917-1659) Lessons on hardware, and
+   checks still open.**
+   - Screen readers: radio and StepIndicator semantics, combobox active
+     option, "pop-up" triggers, aria-current, Calendar's grid, CodeEditor
+     toolbar role on Compose, SearchableSelect on the natives,
+     AccessibilityHidden behind a Drawer.
+   - iOS: sheet Dialog and ActionSheet filler, Drawer under Reduce Motion,
+     RTL for Drawer and CodeEditor, the sideways editor, 4.6's list.
+   - Pinning and Drawer: `Screen.Footer`, 100% layers in a pinned ZStack,
+     `core.Focus` on a Button, a hardware keyboard reaching a shut panel.
+   - Android: predictive back, MaxWidth on a tablet, RTL capped child.
+   - *Partly stale premise:* simulator device passes and a TalkBack utterance
+     log now exist. Re-sort into what a simulator can check and what truly
+     needs hardware.
+2. **(age ≥24 · value medium · lapsed@0917-1659) `.claude/settings.json`
+   cannot be edited from a session** (`[Self-Modification]`). Worth an
+   upstream report. Not re-checked since 2026-09-15.
+3. **(age ≥24 · value low) F-keys through GameController have never reached
+   the app from XCUITest.** `testFunctionKeyPressesTheButton` is a strict
+   expected failure; needs a real iPad keyboard. Merges the older "F-keys on
+   iOS unverified" and "GameController cannot take a key".
+4. **(age ≥24 · value low · lapsed@0917-1659) Compose's today
+   `stateDescription` is not heard.** Now cheap: TalkBack logs its utterances
+   when it has no TTS engine (2026-0918-1310, section 2), the method this item
+   said was missing.
+5. **(age ≥24 · value low · lapsed@0917-1659) Merging a labelled node is
+   unheard under TalkBack.** The shape is a labelled container holding two
+   controls; 2026-0918-1310 covered only a labelled Button. Same method as
+   item 4; they land together.
+6. **(age ≥24 · value low · lapsed@0917-1659) iOS chords.** Page-global chords
+   were verified once, and the chord gate (behind a modal, inside a shut
+   Drawer panel) is unheard. `primeKeyboard` now makes simulator delivery
+   dependable enough to retry.
+7. **(age ≥24 · value low · lapsed@0917-1659) The cost of a paused
+   TimelineView per node** in `GrMobMotion`. Not profiled.
+8. **(age ≥24 · non-goal · lapsed@0917-1659)**
+   - Rename `docs/components.md` to `comps.md`; rewrite `components` in the
+     older plans.
+   - Trim the copied Android shell's permissions; replace the iOS usage
+     strings further.
+   - C4 `Carousel` until the host reports a scroll offset. Item 58 now
+     declines that offset, so this is effectively permanent.
+   - Android `onBack` ranking: a parent gaining `onBack` late, and an AppBar
+     outside the Navigator.
+   - Forward does not re-open a screen left by browser back.
+   - Sticky headers, placement animation and `OnEndReached` in a List with
+     no viewport on Compose.
+   - MaxWidth with a growing sibling on the natives.
+   - The typed-hash fold's `history.length` fallback; a page's own
+     `pushState` while a claim is on screen.
+   - A Drawer's shut panel is composed on the natives.
+   - A List with no Height in a scrolled page is not lazy.
+   - Commits already on a remote carrying an unformatted file.
+9. **(age 23 · value low · lapsed@0917-1659) Alarm sound and haptics are
+   unheard,** and so is the Notify banner's default sound.
+10. **(age 23 · value low · lapsed@0917-1659) Canvas still omits** text,
+    clipping and per-shape hit-testing.
+11. **(age 23 · non-goal · lapsed@0917-1659)** `DigitalClock` digits shifting
+    by a pixel; `AnalogClock{Smooth}` spinning back when the 00:00:00 tick is
+    skipped.
+12. **(age 22 · value low · lapsed@0917-1659) A chart's hidden data table** was
+    not built. It needs a screen-reader-only primitive: an API decision.
+13. **(age 22 · value low · lapsed@0917-1659) Chart summaries are English.**
+14. **(age 22 · non-goal · lapsed@0917-1659)** A 180° `Gauge` leaves its bottom
+    half empty.
+15. **(age 21 · value low · lapsed@0917-1659) A Notify alarm is a banner, not a
+    ringing screen.** The route is AlarmKit or full-screen intents.
+16. **(age 21 · value low · lapsed@0917-1659) `mobile.SetTimeZone` runs once at
+    startup.** A fix needs core to hold the location: an API decision.
+17. **(age 21 · value low · lapsed@0917-1659) The web's scheduled notification
+    and its sweep are unseen in a real browser.**
+18. **(age 20 · value low · user's decision · lapsed@0917-1659) Compose Rows
+    don't shrink children in proportion.**
+19. **(age 19 · value low · lapsed@0917-1659)
+    `testRelaunchSweepsWhatTheDeadProcessScheduled` needs notifications
+    already granted.**
+20. **(age 19 · value low · delete?) The double-post claim is unreproduced.**
+    Carried nine times without a reproduction. Proposed for deletion.
+21. **(age 19 · non-goal · lapsed@0917-1659)** `MaxLines` on the natives
+    applies to Text only; a stacked chart counts NaN as 0.
+22. **(age 18 · value low · lapsed@0917-1659) `DefaultDarkChartColors` has no
+    bundled consumer.**
+23. **(age 18 · value low · delete?) `TutorialChartsUITests` failed once,
+    reason not captured.** It never recurred. Proposed for deletion.
+24. **(age 18 · non-goal · lapsed@0917-1659)** `core.LinearGradient` is unused;
+    kept per the no-removal rule.
+25. **(age 17 · value medium · lapsed@0917-1659) The alarm changes are unseen
+    on devices.** Kept banners after a force stop, the Android exact-alarm
+    re-check, and a re-run of `TutorialAlarmNotifyUITests`. Merges old items 43
+    and 46, which land together.
+26. **(age 17 · value medium · blocked · lapsed@0917-1659) The iOS Image floor
+    runs high for an image narrower in proportion than its box.** Unblocking
+    it needs a px-width box that can shrink (`grMobDimension`).
+27. **(age 17 · value low → non-goal? · lapsed@0917-1659) A zero basis is
+    honoured on iOS only with a definite main extent.** Documented as
+    deliberate (`GrMobFlexZeroBasis`). Proposed as a non-goal.
+28. **(age 17 · non-goal · lapsed@0917-1659)** Renaming a `NotifyGroup`
+    strands what the old name scheduled.
+29. **(age 16 · value medium · lapsed@0917-1659) An iOS Image with no
+    background shows a black letterbox** on a "fit" image. No letterbox
+    handling exists in `ios/`, so it is presumably open; unverified on 26.5.
+30. **(age 16 · value low · lapsed@0917-1659) `barValueRoom` is still an
+    estimate** (a 220px plot, 0.6em per rune).
+31. **(age 16 · value low · lapsed@0917-1659) Square scatter dots are unseen**
+    on Compose and Chrome.
+32. **(age 16 · value low · lapsed@0917-1659) `testStatTilesShareTheRow`
+    asserts weakly.**
+33. **(age 16 · value low · lapsed@0917-1659) Comps on Android were seen at
+    phone size only.** Tablet widths and landscape are unswept.
+34. **(age 16 · value low → non-goal? · lapsed@0917-1659) Sparkline's `Area` is
+    a flat tint.** It was left alone on purpose. Proposed as a non-goal.
+35. **(age 15 · value medium · lapsed@0917-1659) Foldable behaviour is
+    unverified on real hardware** (tabletop and book postures).
+36. **(age 15 · value medium · lapsed@0917-1659) Safe-area insets are not a
+    record.** A TwoPane under the status bar can't find its `Origin.Y`.
+    Verified: `core/` has no `SafeInsets`.
+37. **(age 15 · value low · lapsed@0917-1659) Lesson 4.21's TwoPane sets no
+    `Origin`,** so the split lands ~30dp right of the hinge.
+38. **(age 15 · value low · lapsed@0917-1659) iOS `AppWindowReader` is
+    type-checked only.** Not run in Split View or Stage Manager.
+39. **(age 15 · value low · lapsed@0917-1659) The browser's segments/posture
+    path is unseen in a real browser.**
+40. **(age 15 · value low · lapsed@0917-1659) Folding shut onto the outer
+    display is unseen.**
+41. **(age 15 · value low · lapsed@0917-1659) Housekeeping:** the
+    `GrMob_Foldable` AVD is still installed (verified in `~/.android/avd`).
+42. **(age 15 · non-goal · lapsed@0917-1659)** More than one fold; a static
+    HTML export of a TwoPane.
+43. **(age 14 · value medium · lapsed@0917-2309) The round-two widgets have
+    never been seen on a device:** Screen.Floating and the FAB (4.22), the
+    QRCode module seams (a hairline between runs could stop a scan), and
+    Countdown/Stopwatch (4.24). They sat in "Not verified" sections; the device
+    pass (2026-0918-0713) covered 4.25–4.32 and 5.8. SliderRow was seen in
+    2026-0918-0910's accent check, and PINInput was redone and seen since.
+44. **(age 10 · value medium) Examples should adopt the shipped widgets.**
+    `examples/chat` hand-builds what `comps.MessageThread` does (Scroll +
+    Column + RoleLog, `main.go:148`), and `examples/signup` never got
+    `PINInput`. Both change shotclaims, so they land together. The signup half
+    was first written in 2026-0917-1935 and dropped; this doc raised the chat
+    half.
+45. **(age 8 · non-goal)** A native time wheel; a sheet or Done on TimePicker.
+46. **(age 7 · non-goal)** Heatmap as a continuous gradient; a Sequential ramp
+    interpolated from `Primary`.
+47. **(age 6 · value low · delete?) A sixth low-hanging-fruit round.** No
+    candidates across four carries. Proposed for deletion until one exists.
+48. **(age 6 · non-goal)** A year-wide scrolling `CalendarHeatmap`; a
+    caption-flip "Copied ✓" on CopyButton; a separate `Alert` widget (Banner
+    is it).
+49. **(age 5 · non-goal)** A two-pane layout on the natives; restructuring
+    lesson bodies into guide and demo halves.
+50. **(age 4 · non-goal)** Making iOS keep focus on every submit by default.
+51. **(age 3 · value medium) The first hardware key after launch is lost on
+    the iOS 26.5 simulator.** Every keyboard UI test works around it with
+    `primeKeyboard`. Unchecked on a real iPad.
+52. **(age 3 · non-goal)** A right-padding gutter or a toolbar header for code
+    blocks.
+53. **(age 2 · non-goal)** A smaller minimum for Buttons in general on
+    Android. Only CopyButton opts out.
+54. **(age 1 · value low) iOS UIKit field: a queued key during the caret
+    correction.** Not observed in 6 correction writes, but the window exists
+    after a change strictly after the caret. The candidate fix is to drain
+    through `input.inputDelegate` (`_UIKeyboardStateManager`)
+    `selectionWillChange/DidChange` before `replace`, merging any keys it
+    delivers with `rebaseEdit(current, flushed, next)`.
+55. **(age 0 · value low) `core.ScrollIntoView` inside an iOS `core.List`.**
+    Verified: `GrMobList`'s `ScrollViewReader` (Renderer.swift:1454) does not
+    inject `\.grMobScrollProxy`; only `GrMobScroll` does (1316, 1355). Rows
+    are keyed by `rowKey` (String) while `GrMobBringIntoView` scrolls by
+    `viewID`. Measure before claiming it.
+56. **(age 0 · value low) iOS Paragraph link colours on the iOS 17 floor.**
+    Measured only on 26.5; the `.tint(firstLink)` fallback remains.
+57. **(age 0 · value low · by design) The web's thread place-keeping applies
+    only when the List is its own scroll box.** A List inside another
+    scrolling ancestor keeps the browser's behaviour.
+58. **(age 0 · non-goal)** A reported scroll offset from the hosts. The thread
+    needed only the two List props (see `core/list_start.go`).
+
+Read by value instead: **high** none · **medium** 1, 2, 25, 26, 29, 35, 36,
+43, 44, 51 · **low** 3–7, 9, 10, 12, 13, 15–20, 22, 23, 27, 30–34, 37–41, 47,
+54–57 · **non-goal** 8, 11, 14, 21, 24, 28, 42, 45, 46, 48–50, 52, 53, 58.
