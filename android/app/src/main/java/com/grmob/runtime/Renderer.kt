@@ -1707,17 +1707,41 @@ private fun GrMobTextField(
         // field: single-line by construction, and it refuses cut and copy.
         // Hidden obfuscation rather than the platform's reveal-the-last-key,
         // which is what PasswordVisualTransformation drew before it.
-        BasicSecureTextField(
-            state = field,
-            modifier = modifier,
-            enabled = !node.isDisabled(),
-            textStyle = textStyle(s),
-            keyboardOptions = keyboard,
-            onKeyboardAction = action,
-            interactionSource = interactions,
-            decorator = decorator,
-            textObfuscationMode = TextObfuscationMode.Hidden,
-        )
+        //
+        // Foundation 1.7.x composes BasicSecureTextField inside a Box of its
+        // own (DisableCutCopy, which hangs the cut/copy key filter on it), so
+        // the field is NOT the parent's direct child:
+        //
+        //   Row ─ Box(onPreviewKeyEvent)   ← what the Row measures
+        //          └ BasicTextField(modifier = ours)
+        //
+        // Parent data on our modifier — a Row's weight, a FlowRow's align —
+        // lands one layout too deep and is ignored, and that Box hands its
+        // child a zero minimum. comps.PasswordField's FlexGrow(1) input hugged
+        // its content beside "Show" (378px of a 1423px slot on a Fold6,
+        // lesson 4.27) while the revealed core.Input filled it.
+        //
+        // So the parent's modifiers go on this wrapper, which IS the direct
+        // child, and a width the wrapper is given tight — a weight's share,
+        // or a stretch's fill — is passed on by filling it. Anything looser
+        // leaves the field at its own size, as before. The fill is appended
+        // after the box modifier so a declared Width still wins. Foundation
+        // 1.10 moved the filter into the modifier chain; with a BOM past it
+        // this wrapper can go.
+        BoxWithConstraints(extra, propagateMinConstraints = true) {
+            val fill = if (constraints.hasFixedWidth) Modifier.fillMaxWidth() else Modifier
+            BasicSecureTextField(
+                state = field,
+                modifier = s.boxModifier().focusRequester(focusRequester).then(fill),
+                enabled = !node.isDisabled(),
+                textStyle = textStyle(s),
+                keyboardOptions = keyboard,
+                onKeyboardAction = action,
+                interactionSource = interactions,
+                decorator = decorator,
+                textObfuscationMode = TextObfuscationMode.Hidden,
+            )
+        }
     } else {
         BasicTextField(
             state = field,

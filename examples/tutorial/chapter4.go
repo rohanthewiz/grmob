@@ -4438,7 +4438,7 @@ comps.Stopwatch{Since: startedAt.Get(), Elapsed: banked.Get(), Running: running.
 							OnTap:    reset,
 						},
 					),
-					caption(fmt.Sprintf("Ran out %d times", ranOut.Get())),
+					caption(fmt.Sprintf("Ran out %d time%s", ranOut.Get(), plural(ranOut.Get()))),
 				),
 				prose("The two roundings go opposite ways, and both are conservative. The "+
 					"countdown rounds up, so it never says you have less time than you do; the "+
