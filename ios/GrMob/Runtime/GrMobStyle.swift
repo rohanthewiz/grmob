@@ -640,8 +640,24 @@ struct GrMobGestureAccessibility: ViewModifier {
 /// never ticks, so a still node evaluates the closure once and draws at 0°,
 /// the identity rotation.
 ///
-/// Unmeasured: what a TimelineView per node costs across a long tree. The
-/// alternative, a conditional, costs correctness instead.
+/// # What it costs
+///
+/// Measured on 2026-09-19 with a scratch macOS harness: a VStack of N Texts,
+/// hosted in an NSHostingView, with and without a paused GrMobSpin on each
+/// row, timing the first layout-and-draw and then 20 updates that change
+/// every row's text. Release build (-O), three rounds each, steady rounds
+/// shown:
+///
+///	rows   first render (ms)       one update (ms)
+///	       plain    paused spin    plain    paused spin
+///	200    28       29             24.0     24.6
+///	1000   143      155–162        124      126–129
+///
+/// So about 10–20 µs a node on first render (8–13%) and 1–3% on an update.
+/// That's macOS SwiftUI on an M-series Mac, not a phone; the ratio is the
+/// useful part. A paused schedule never ticks, so a still tree pays nothing
+/// between updates. The alternative, a conditional wrapper, costs
+/// correctness instead.
 struct GrMobSpin: ViewModifier {
     let periodMs: Int
 
@@ -1150,7 +1166,10 @@ extension View {
     ///	none              nothing (grMobGrow's reason: no floor, no frame)
     ///	points only       frame(minWidth:minHeight:alignment:)
     ///	any percentage    GrMobMinimumModifier → GrMobMinimumLayout
-    @ViewBuilder fileprivate func grMobMinimum(width: String, height: String, alignment: Alignment) -> some View {
+    ///
+    /// Internal rather than fileprivate for GrMobButton, which applies the
+    /// floors to its label as well, so the fill covers them.
+    @ViewBuilder func grMobMinimum(width: String, height: String, alignment: Alignment) -> some View {
         let w = grMobFloorPoints(width)
         let h = grMobFloorPoints(height)
         if width.hasSuffix("%") || height.hasSuffix("%") {

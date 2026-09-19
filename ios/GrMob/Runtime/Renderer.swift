@@ -2036,6 +2036,15 @@ private struct GrMobButton: View {
         //	  └─────────────┘            └─────────────┘
         //
         // The label stays centred in it: a frame's default alignment.
+        //
+        // A MinWidth or MinHeight is the fill's floor for the same reason.
+        // grMobBox still applies it outside, where it sizes the slot, and
+        // the fill hugged the label inside that slot. The floor is applied
+        // to the label too, after its padding, so the fill grows to it as
+        // the web's min-height and Compose's heightIn on the Button's own
+        // modifier already do. The outer floor stays: it is now never larger
+        // than the Button, so it changes nothing, and it keeps grMobBox's
+        // contract the same for every node type.
         let fixedWidth = grMobIsStated(s?.width)
         let fixedHeight = grMobIsStated(s?.height)
         Button(action: press) {
@@ -2044,6 +2053,7 @@ private struct GrMobButton: View {
                               weight: grMobFontWeight(s?.fontWeight ?? 0)))
                 .foregroundStyle(s?.textColor ?? .white)
                 .padding(paddingOrDefault(s, fixedBox: fixedWidth && fixedHeight))
+                .grMobMinimum(width: s?.minWidth ?? "", height: s?.minHeight ?? "", alignment: .center)
                 .frame(maxWidth: grow == .horizontal || fixedWidth ? .infinity : nil,
                        maxHeight: fixedHeight ? .infinity : nil)
         }

@@ -23,13 +23,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.text
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
@@ -132,6 +138,8 @@ internal fun GrMobCodeEditor(node: GrMobNode, extra: Modifier) {
     val focused by interactions.collectIsFocusedAsState()
     val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
+    // Whether a read-only buffer may take focus right now; see ReadOnlyFocusGate.
+    val gate = remember { ReadOnlyFocusGate() }
 
     var buffer by remember { mutableStateOf(TextFieldValue(upstream)) }
     // Go's edit stamps and this editor's half of them. See core/text_edit.go
@@ -283,7 +291,13 @@ internal fun GrMobCodeEditor(node: GrMobNode, extra: Modifier) {
             // composed but not yet placed — inside a lazy list row that has not
             // laid out — where the honest outcome is "the command missed"
             // rather than a crashed screen. GrMobTextField says the same.
-            "focus" -> runCatching { focusRequester.requestFocus() }
+            // The gate opens first: a command is the one keyboard-free way a
+            // read-only buffer is still allowed to focus, as a programmatic
+            // focus() still reaches the web's tabindex="-1" textarea.
+            "focus" -> runCatching {
+                gate.open = true
+                focusRequester.requestFocus()
+            }
             "blur" -> if (focused) focusManager.clearFocus()
         }
     }
@@ -328,7 +342,12 @@ internal fun GrMobCodeEditor(node: GrMobNode, extra: Modifier) {
                         .copy(alpha = 0.45f),
                     textAlign = TextAlign.End,
                 )
-                Column(Modifier.width(gutterWidth).padding(end = 4.dp)) {
+                // Hidden from TalkBack, as the web's gutter is aria-hidden: the
+                // numbers are chrome, and each was its own stop reading "1",
+                // "2", "3" ahead of the code.
+                Column(
+                    Modifier.width(gutterWidth).padding(end = 4.dp).clearAndSetSemantics { }
+                ) {
                     for (i in 1..lines) {
                         Text(
                             text = "$i",
@@ -343,7 +362,23 @@ internal fun GrMobCodeEditor(node: GrMobNode, extra: Modifier) {
             // helper, on the other axis. The Row hands the field whatever width is
             // left beside the gutter, which is infinite when the editor sits in a
             // sideways Scroll. A bare horizontalScroll throws there.
-            Box(Modifier.horizontalScrollWhenBounded(horizontal)) {
+            //
+            // A read-only buffer reads as text, not as a field. Compose 1.7
+            // reports every BasicTextField as editable to accessibility:
+            // AndroidComposeViewAccessibilityDelegateCompat sets
+            // `info.isEditable` from whether IsEditable is *present* in the
+            // semantics, not from its value, and readOnly writes it as false.
+            // So TalkBack said "Editing" on a code block nobody can edit, and
+            // gave it the EditText class. Clearing the field's semantics here
+            // and stating the text is what iOS already does (a UITextView that
+            // is not editable reads as static text). The scroll's semantics
+            // sit on this same node, ahead of the clear, and are kept.
+            Box(
+                Modifier.horizontalScrollWhenBounded(horizontal).then(
+                    if (readOnly) Modifier.clearAndSetSemantics { text = AnnotatedString(buffer.text) }
+                    else Modifier
+                )
+            ) {
                 BasicTextField(
                     value = buffer,
                     onValueChange = { next ->
@@ -378,7 +413,34 @@ internal fun GrMobCodeEditor(node: GrMobNode, extra: Modifier) {
                     // the Row is the scroll box and holds the gutter, which is
                     // chrome the caret must never reach. Compose would happily give
                     // focus to the container, and the keyboard would not come up.
-                    modifier = Modifier.focusRequester(focusRequester).onPreviewKeyEvent { event ->
+                    modifier = Modifier
+                        // Out of the Tab order when read-only; see ReadOnlyFocusGate.
+                        // A pointer press opens the gate on the Initial pass, which
+                        // runs before the field's own tap handler asks for focus.
+                        .focusProperties { canFocus = !readOnly || gate.open }
+                        .onFocusChanged { state ->
+                            gate.focused = state.isFocused
+                            if (!state.isFocused) gate.open = false
+                        }
+                        .pointerInput(readOnly) {
+                            if (!readOnly) return@pointerInput
+                            awaitPointerEventScope {
+                                while (true) {
+                                    val initial = awaitPointerEvent(PointerEventPass.Initial)
+                                    if (initial.changes.any { it.pressed }) gate.open = true
+                                    // A press that ended without focus (a drag
+                                    // that scrolled the page) must not leave the
+                                    // buffer as a Tab stop. The Final pass runs
+                                    // after the field's tap handler has had its
+                                    // chance to focus it.
+                                    val last = awaitPointerEvent(PointerEventPass.Final)
+                                    if (last.changes.none { it.pressed } && !gate.focused) {
+                                        gate.open = false
+                                    }
+                                }
+                            }
+                        }
+                        .focusRequester(focusRequester).onPreviewKeyEvent { event ->
                         // Tab, which would otherwise move focus out of the editor
                         // and make indenting impossible. Hardware keyboards only —
                         // a soft keyboard has no Tab — which is why this is the one
@@ -404,6 +466,34 @@ internal fun GrMobCodeEditor(node: GrMobNode, extra: Modifier) {
             }
         }
     }
+}
+
+/**
+ * Whether a read-only CodeEditor may take input focus right now.
+ *
+ * The web takes a read-only buffer out of the Tab order with tabindex="-1":
+ * a page of code blocks would otherwise put a stop in front of each one with
+ * nothing to do there. A pointer and a programmatic focus() still reach it,
+ * so it can still be selected. Compose has no tabindex; `canFocus` is all or
+ * nothing. So the answer is a gate that only a pointer press or Go's focus
+ * command opens, and that closes when focus leaves:
+ *
+ *     Tab / Shift+Tab ──▶ focus search ──▶ canFocus? gate shut ──▶ skipped
+ *     press ──▶ gate open ──▶ field's tap handler focuses ──▶ select, copy
+ *     core.Focus ──▶ gate open ──▶ requestFocus()
+ *     focus leaves ──▶ gate shut
+ *
+ * Plain fields rather than Compose state, on purpose. Compose observes the
+ * reads inside `focusProperties` while a node holds focus and clears focus
+ * the moment `canFocus` turns false. Keying the gate on observed state (the
+ * input mode, say) would drop the caret out of a tapped code block the
+ * instant Tab switched the window to keyboard mode, and the Tab would then
+ * start again from the top of the screen. The gate is read at search time
+ * and never watched, which is the tabindex behaviour exactly.
+ */
+internal class ReadOnlyFocusGate {
+    var open = false
+    var focused = false
 }
 
 /**

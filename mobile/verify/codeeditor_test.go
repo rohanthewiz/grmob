@@ -253,6 +253,30 @@ func TestBothNativeCodeEditorsTreatReadOnlyAsNotDisabled(t *testing.T) {
 	})
 }
 
+// A read-only buffer is not a Tab stop and does not read as a field.
+//
+// The web takes a read-only textarea out of the Tab order (tabindex="-1") and
+// iOS's non-editable UITextView reads as static text. Compose has neither
+// spelling. Its canFocus is all or nothing, so a gate that a pointer press or
+// Go's focus command opens stands in for tabindex. Compose 1.7 also reports
+// every BasicTextField as editable (it tests IsEditable for presence, not
+// value), so TalkBack said "Editing" on every tutorial code block; the field's
+// semantics are replaced with its text when read-only.
+func TestReadOnlyCodeEditorLeavesTheTabOrderOnCompose(t *testing.T) {
+	pinExprs(t, kotlinCodeEditor, []struct{ expr, why string }{
+		{".focusProperties { canFocus = !readOnly || gate.open }",
+			"Tab and Shift+Tab skip a read-only buffer, as tabindex=-1 does"},
+		{"if (initial.changes.any { it.pressed }) gate.open = true",
+			"a press still focuses it, so it can still be selected and copied"},
+		{"if (!state.isFocused) gate.open = false",
+			"the gate shuts when focus leaves, so the next Tab skips it again"},
+		{"if (readOnly) Modifier.clearAndSetSemantics { text = AnnotatedString(buffer.text) }",
+			"TalkBack reads a code block as text, not as an edit box"},
+		{"if (readOnly) return@onPreviewKeyEvent false",
+			"Tab inside a read-only buffer is the platform's, or the buffer is a keyboard trap"},
+	})
+}
+
 // Neither host may wrap. A wrapped code line restarts at column zero, which
 // reads as a new statement at the outermost indent — so wrapping destroys
 // exactly the structure indentation exists to show. Both hosts therefore give
@@ -264,7 +288,7 @@ func TestNeitherNativeCodeEditorWraps(t *testing.T) {
 		{"textView.textContainer.lineBreakMode = .byClipping", "and must not break lines"},
 	})
 	pinExprs(t, kotlinCodeEditor, []struct{ expr, why string }{
-		{"Box(Modifier.horizontalScrollWhenBounded(horizontal))",
+		{"Modifier.horizontalScrollWhenBounded(horizontal).then(",
 			"the field sits in an unbounded-width scroll, so a long line pans " +
 				"rather than wrapping"},
 	})
@@ -279,9 +303,13 @@ func TestBothNativeCodeEditorsDrawTheGutterBesideTheBuffer(t *testing.T) {
 		{"private let gutter = UILabel()", "a sibling view, not text in the buffer"},
 		{"gutter.isUserInteractionEnabled = false",
 			"a drag over the numbers must reach the buffer behind them"},
+		{"gutter.isAccessibilityElement = false",
+			"VoiceOver skips the numbers, as the web's aria-hidden gutter"},
 	})
 	pinExprs(t, kotlinCodeEditor, []struct{ expr, why string }{
 		{"if (lineNumbers) {", "the gutter is a sibling composable, not text in the field"},
+		{"Modifier.width(gutterWidth).padding(end = 4.dp).clearAndSetSemantics { }",
+			"TalkBack skips the numbers, as the web's aria-hidden gutter"},
 		{"Row(s.boxModifier(extra).verticalScrollWhenBounded(vertical))",
 			"the gutter and the field share one vertical scroll, so number N " +
 				"stays beside line N"},
@@ -314,7 +342,7 @@ func TestBothNativeCodeEditorsTakeFocusCommands(t *testing.T) {
 		{"LaunchedEffect(focusEpoch)",
 			"keyed on the epoch alone: a second core.Focus on the focused editor" +
 				" has to re-fire, which only a changed value can express"},
-		{"Modifier.focusRequester(focusRequester).onPreviewKeyEvent",
+		{".focusRequester(focusRequester).onPreviewKeyEvent",
 			"the requester on the field, not on the Row that also holds the gutter"},
 		{`"blur" -> if (focused) focusManager.clearFocus()`,
 			"one dismiss reaches every leaf; only the one holding focus acts"},

@@ -294,6 +294,10 @@ final class GrMobCodeEditorView: UIView {
         gutter.numberOfLines = 0
         gutter.textAlignment = .right
         gutter.isUserInteractionEnabled = false
+        // Chrome, not content: the web's gutter is aria-hidden, and a UILabel
+        // is an accessibility element by default, so VoiceOver read the whole
+        // column of numbers as one stop ahead of the code.
+        gutter.isAccessibilityElement = false
         gutter.isHidden = true
 
         sideways.addSubview(textView)
