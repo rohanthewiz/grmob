@@ -633,11 +633,11 @@ func (m StaticMap) Render(ctx *core.Context) *core.Node {
 	// on the web, which for a provider URL is a minute of read-aloud query
 	// string.
 	//
-	// The fill is stated because core.Image's theme base is Components.Camera,
-	// whose background is black in every bundled theme — right for a
-	// viewfinder showing nothing yet, wrong for a map, where it is a black
-	// rectangle for the length of a network fetch. Surface is what the frame
-	// behind it is, so the widget is one colour until the tiles arrive.
+	// The fill is stated so the widget is one colour until the tiles arrive:
+	// Surface is what the frame behind it is. core.Image used to inherit
+	// Components.Camera's black here, a black rectangle for the length of a
+	// network fetch; it is transparent now, and the stated fill is what keeps
+	// the map from showing whatever sits behind the box meanwhile.
 	img := append([]core.StyleProp{
 		core.AccessibilityHidden(),
 		core.BackgroundColor(t.Colors.Surface),

@@ -168,17 +168,13 @@ struct RenderNode: View {
                 // the legacy "alt" prop fills in only when no style label is set
                 // (an unconditional outer accessibilityLabel would override the
                 // box's label with an empty string).
-                AsyncImage(url: URL(string: node.stringProp("src"))) { image in
-                    grMobScaled(image, mode: node.stringProp("contentMode"))
-                } placeholder: {
-                    ProgressView()
-                }
-                .grMobBox(node.style, grow: grow,
-                            onTap: node.stringProp("onClick"),
-                            onLongPress: node.stringProp("onLongPress"))
-                .grMobAltLabel(
-                    (node.style?.accessibilityLabel ?? "").isEmpty
-                        ? node.stringProp("alt") : "")
+                GrMobImage(node: node)
+                    .grMobBox(node.style, grow: grow,
+                                onTap: node.stringProp("onClick"),
+                                onLongPress: node.stringProp("onLongPress"))
+                    .grMobAltLabel(
+                        (node.style?.accessibilityLabel ?? "").isEmpty
+                            ? node.stringProp("alt") : "")
 
             // Camera capture needs an AVFoundation integration pass of its
             // own; until then render the styled surface and any overlay so
@@ -217,6 +213,43 @@ struct RenderNode: View {
             default: VStack(alignment: .leading, spacing: 0) { PlainChildren(node: node) }.grMobBox(node.style, grow: grow)
             }
         }
+    }
+}
+
+/// core.Image's bitmap, placed in the box grMobBox sizes.
+///
+/// Centred in a box with a stated side. grMobBox's size frames align their
+/// content top-leading (CSS's rule for a box's children), which put a "fit"
+/// image's letterbox all on one side: a wide image at the top of a square, a
+/// tall one at its left (seen on the iOS 26.5 simulator). An image is not a
+/// box's children: CSS object-fit centres it (object-position 50% 50%) and
+/// Compose's Image defaults to Alignment.Center. The flexible frame takes the
+/// stated box's proposal on that axis and centres the image in it (a frame's
+/// default alignment); an unstated axis keeps the image's own size, so an
+/// unsized image stays at its size rather than turning greedy.
+///
+///	  before (top-leading)        after (centred)
+///	  ┌──────────────┐          ┌──────────────┐
+///	  │▓▓▓▓ image ▓▓▓│          │              │
+///	  │▓▓▓▓▓▓▓▓▓▓▓▓▓▓│          │▓▓▓▓ image ▓▓▓│
+///	  │              │          │▓▓▓▓▓▓▓▓▓▓▓▓▓▓│
+///	  │              │          │              │
+///	  └──────────────┘          └──────────────┘
+///
+/// The bars used to be black on every host. That was Go's doing, not this
+/// view's: core.Image inherited Components.Camera's black fill (see
+/// core/image.go).
+private struct GrMobImage: View {
+    let node: GrMobNode
+
+    var body: some View {
+        AsyncImage(url: URL(string: node.stringProp("src"))) { image in
+            grMobScaled(image, mode: node.stringProp("contentMode"))
+        } placeholder: {
+            ProgressView()
+        }
+        .frame(maxWidth: grMobIsStated(node.style?.width) ? .infinity : nil,
+               maxHeight: grMobIsStated(node.style?.height) ? .infinity : nil)
     }
 }
 
@@ -1985,13 +2018,34 @@ private struct GrMobButton: View {
             }
             if !onClick.isEmpty { runtime?.click(onClick) }
         }
+        // A stated Width or Height is the size of the *fill*, not only of the
+        // slot. grMobBox applies it as a frame outside the Button, while
+        // GrMobButtonStyle paints the background around the label, so the fill
+        // used to hug the text inside a larger, empty frame. comps.FAB showed
+        // it on the simulator (lesson 4.22): the 56-point disc drew 47 by
+        // 48.7 (a 24pt "+" plus the default padding) and the extended pill,
+        // Height 56, drew 20 tall. Letting the label take the whole proposal
+        // on a stated axis puts the fill on the declared box, which is what
+        // Compose's Button (sized by its modifier) and the DOM already draw.
+        //
+        //	  before                     after
+        //	  ┌ frame 56×56 ┐            ┌ frame 56×56 ┐
+        //	  │   ┌─fill─┐  │            │█████████████│
+        //	  │   │  +   │  │            │██████+██████│
+        //	  │   └──────┘  │            │█████████████│
+        //	  └─────────────┘            └─────────────┘
+        //
+        // The label stays centred in it: a frame's default alignment.
+        let fixedWidth = grMobIsStated(s?.width)
+        let fixedHeight = grMobIsStated(s?.height)
         Button(action: press) {
             Text(node.stringProp("label"))
                 .font(.system(size: (s?.fontSize ?? 0) > 0 ? s!.fontSize : 17,
                               weight: grMobFontWeight(s?.fontWeight ?? 0)))
                 .foregroundStyle(s?.textColor ?? .white)
-                .padding(paddingOrDefault(s))
-                .frame(maxWidth: grow == .horizontal ? .infinity : nil)
+                .padding(paddingOrDefault(s, fixedBox: fixedWidth && fixedHeight))
+                .frame(maxWidth: grow == .horizontal || fixedWidth ? .infinity : nil,
+                       maxHeight: fixedHeight ? .infinity : nil)
         }
         .buttonStyle(GrMobButtonStyle(
             background: s?.background ?? .accentColor,
@@ -2032,11 +2086,31 @@ private struct GrMobButton: View {
         .grMobBox(marginAndSizeOnly(s), grow: grow)
     }
 
-    private func paddingOrDefault(_ s: GrMobStyle?) -> EdgeInsets {
+    /// The label's inset: the style's padding, or a default when it has none.
+    ///
+    /// The default exists to give an *unsized* button its size. A zero padding
+    /// never reaches the host (the Style field is `omitzero`), so "none" and
+    /// core.Padding(0) arrive alike. When both Width and Height are stated the
+    /// box's size is already decided, and the default could only squeeze the
+    /// label: comps.FABSmall's 40-point disc less 16 a side left 8 points for
+    /// its glyph. So a fixed box with no padding gets none — which is what
+    /// the FAB's Padding(0) asked for. A padding the style does carry is
+    /// honoured either way.
+    private func paddingOrDefault(_ s: GrMobStyle?, fixedBox: Bool = false) -> EdgeInsets {
         let p = s?.padding ?? .zero
-        if p == .zero { return EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16) }
+        if p == .zero {
+            if fixedBox { return EdgeInsets() }
+            return EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16)
+        }
         return p.insets
     }
+}
+
+/// Whether a Width or Height string states a size: anything but empty or
+/// "auto", which is grMobDimension's own identity case.
+private func grMobIsStated(_ dimension: String?) -> Bool {
+    guard let d = dimension else { return false }
+    return !d.isEmpty && d != "auto"
 }
 
 private struct GrMobButtonStyle: ButtonStyle {

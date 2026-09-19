@@ -110,7 +110,18 @@ func ImageWithMode(src string, mode ContentMode, styleProps ...StyleProp) View {
 // identical to what Image produced before ContentMode existed.
 func imageNode(src string, mode ContentMode, styleProps []StyleProp) View {
 	return ComponentFunc(func(ctx *Context) *Node {
+		// The Camera base for its block display, without its fill. Camera's
+		// Background is black in every bundled theme, which is right for a
+		// viewfinder before its first frame and wrong for a picture: a "fit"
+		// image that does not fill its box showed black letterbox bars, and
+		// every image was a black rectangle for the length of its fetch.
+		// Found as "an iOS Image with no background shows a black letterbox";
+		// it was every host, since every host paints Style.Background. An
+		// <img> and a Compose Image are transparent where the bitmap is not,
+		// and so is this now. A caller that wants a placeholder colour states
+		// one (comps.Avatar and comps.StaticMap state Surface).
 		base := ctx.Theme().Components.Camera
+		base.Background = ""
 		style := &base
 		for _, sp := range styleProps {
 			sp.Apply(style)

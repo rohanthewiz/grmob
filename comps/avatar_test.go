@@ -27,8 +27,10 @@ func TestAvatarImageBranch(t *testing.T) {
 	if n.Style.AccessibilityLabel != "Ada Lovelace" {
 		t.Errorf("AccessibilityLabel = %q, want the Name", n.Style.AccessibilityLabel)
 	}
-	// core.Image's theme base is Components.Camera, whose background is black:
-	// unoverridden, an avatar is a black disc until the image downloads.
+	// The loading placeholder is stated, not inherited: core.Image is
+	// transparent (it once inherited Components.Camera's black, a black disc
+	// until the image downloaded), so without Surface an avatar would be an
+	// invisible disc until then.
 	if n.Style.Background != core.DefaultTheme.Colors.Surface {
 		t.Errorf("loading placeholder = %q, want the neutral Surface %q",
 			n.Style.Background, core.DefaultTheme.Colors.Surface)

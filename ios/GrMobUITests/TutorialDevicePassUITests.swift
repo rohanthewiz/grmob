@@ -4,7 +4,8 @@ import XCTest
 /// D6's range band (4.25), D7's TimePicker menus (4.26), Tier E's small
 /// pieces (4.27), Tier F's heat canvases (4.28), and round three's CopyButton,
 /// Link, BulletList, AudioPlayer, MessageBubble, ExpandableText, half-star
-/// Rating (4.29–4.32) and TagInput (5.8), the theme accent on a
+/// Rating (4.29–4.32) and TagInput (5.8), round two's FAB, QRCode and
+/// Countdown/Stopwatch (4.22–4.24), the theme accent on a
 /// Toggle and a Slider (2.6, 6.8), and 2.3's TextArea.
 ///
 /// Mostly a driver for screenshots: what these widgets can get wrong on a
@@ -852,5 +853,93 @@ final class TutorialDevicePassUITests: XCTestCase {
         scroll(app, to: slider)
         XCTAssertTrue(slider.exists, "lesson 6.8 draws no slider")
         shot("dp-6.8-accent")
+    }
+
+    // MARK: 4.22–4.24 — the round-two widgets, first seen on iOS
+
+    /// The FAB's three shapes and the layer it floats on. All three were
+    /// verified on Android only. The sizes are the widget's contract
+    /// (comps/fab.go): a regular disc is 56 points square, a small one 40, and
+    /// an extended pill keeps the regular height so naming the action does not
+    /// move it. The disc is also asserted to sit bottom-end in its stack, which
+    /// is what Screen.Floating promises: its bottom-right corner is below and
+    /// right of every other layer's content.
+    func testFloatingActionButtonShapes() throws {
+        let app = XCUIApplication()
+        open(app, lesson: "4.22")
+        let disc = button(app, "New note")
+        scroll(app, to: disc)
+        lift(app)
+        shot("dp-4.22-fab")
+        dump(app, "dp-4.22-fab")
+
+        XCTAssertEqual(disc.frame.width, 56, accuracy: 1, "the regular FAB is \(disc.frame)")
+        XCTAssertEqual(disc.frame.height, 56, accuracy: 1, "the regular FAB is \(disc.frame)")
+        // The pill's label is the glyph and the word, "✎  Compose".
+        let pill = app.buttons.matching(NSPredicate(format: "label ENDSWITH %@", "Compose")).firstMatch
+        XCTAssertEqual(pill.frame.height, 56, accuracy: 1, "the extended FAB is \(pill.frame)")
+        XCTAssertGreaterThan(pill.frame.width, pill.frame.height, "the extended FAB is not a pill: \(pill.frame)")
+        let small = button(app, "Back to top")
+        XCTAssertEqual(small.frame.width, 40, accuracy: 1, "the small FAB is \(small.frame)")
+        XCTAssertEqual(small.frame.height, 40, accuracy: 1, "the small FAB is \(small.frame)")
+
+        // Bottom-end in the stack: the disc sits above the pill row (the stack
+        // comes first in the panel) and at the panel's trailing side, right
+        // of the pill row's middle.
+        XCTAssertLessThan(disc.frame.maxY, pill.frame.minY, "the disc is not in the stack above the row")
+        XCTAssertGreaterThan(disc.frame.midX, app.frame.midX, "the disc is not at the trailing end")
+
+        // The demo seeds three notes, so two taps make five.
+        XCTAssertTrue(any(app, labelled: "3 notes").exists, "4.22's caption did not start at 3 notes")
+        disc.tap()
+        disc.tap()
+        XCTAssertTrue(any(app, labelled: "5 notes").waitForExistence(timeout: 3),
+                      "two taps on the FAB did not reach Go")
+        shot("dp-4.22-tapped")
+    }
+
+    /// The QR symbol is one Canvas path; on iOS the risk is seams between
+    /// modules (anti-aliased edges of adjacent squares), which only a picture
+    /// shows. The geometric half: it is square and the size it was given.
+    func testQRCodeIsASquareOfItsSize() throws {
+        let app = XCUIApplication()
+        open(app, lesson: "4.23")
+        let code = any(app, labelled: "Scan to pair this device")
+        scroll(app, to: code)
+        lift(app)
+        shot("dp-4.23-qr")
+        XCTAssertTrue(code.exists, "lesson 4.23 draws no QR code")
+        XCTAssertEqual(code.frame.width, code.frame.height, accuracy: 1, "the QR code is \(code.frame)")
+        XCTAssertEqual(code.frame.width, 200, accuracy: 2, "the QR code is \(code.frame)")
+    }
+
+    /// Countdown and Stopwatch own a tick. The countdown is restarted at 10s
+    /// and waited out: OnDone must fire once, from the effect, and the caption
+    /// counts it. The stopwatch is started, left for two ticks, and paused.
+    func testCountdownRunsOutOnceAndTheStopwatchPauses() throws {
+        let app = XCUIApplication()
+        open(app, lesson: "4.24")
+        let restart = button(app, "Restart 10s")
+        scroll(app, to: restart)
+        lift(app)
+        dump(app, "dp-4.24-before")
+        let ranOut = any(app, beginningWith: "Ran out ")
+        XCTAssertTrue(ranOut.exists, "lesson 4.24 has no ran-out caption")
+        let was = ranOut.label
+
+        restart.tap()
+        shot("dp-4.24-restarted")
+        button(app, "Start").tap()
+        sleep(3)
+        shot("dp-4.24-running")
+        button(app, "Pause").tap()
+        XCTAssertTrue(button(app, "Start").waitForExistence(timeout: 3), "Pause did not stop the stopwatch")
+
+        // 10s from the restart, plus a tick's slack.
+        sleep(9)
+        let now = any(app, beginningWith: "Ran out ").label
+        XCTAssertNotEqual(now, was, "the countdown ran out and OnDone did not fire (still \(now))")
+        shot("dp-4.24-ran-out")
+        dump(app, "dp-4.24-after")
     }
 }
