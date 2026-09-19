@@ -20,7 +20,9 @@ Serve `main.wasm` alongside Go's `wasm_exec.js` (from
 
 The repository's own route does both: `./build.sh` writes `wasm/main.wasm`
 with `-trimpath -ldflags='-s -w'` and refreshes `wasm/wasm_exec.js` from the
-toolchain, and `go run ./serve` hosts `wasm/` on port 8080. Those are the
+toolchain, and `go run ./serve` hosts `wasm/` on port 8080 (an
+[RWeb](https://github.com/rohanthewiz/rweb) server, so there is no second
+toolchain to install). Those are the
 files the site workflow publishes to
 <https://rohanthewiz.github.io/grmob/>, so the local page and the live one
 are the same bytes.
@@ -1713,7 +1715,7 @@ The pieces, and where each lives:
 |---|---|---|
 | `GrMobWASM.Shutdown` | `wasm/main.go` | closes the `render.Manager` (which closes the context tree and every ticker on it) and releases `main`, so the runtime calls `wasmExit` and the old instance can be collected |
 | `GrMobHost.boot` | `wasm/index.html` | the page's own boot, made re-callable; resolves to `{go, exited}` so a caller can await the old module's actual exit before starting the next |
-| the watcher, the build, the event stream | `serve/dev.go` | zero dependencies — polling stats, `sh build.sh`, server-sent events |
+| the watcher, the build, the event stream | `serve/dev.go` | polling stats (no fsnotify), `sh build.sh`, server-sent events fanned out through an `rweb.SSEHub` |
 | the client | `serve/devclient.js` | injected at `</body>` only in dev; the shipped page never carries it |
 
 **What survives a swap is decided by where the state lives.** Go-side state —

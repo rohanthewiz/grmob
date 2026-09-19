@@ -128,6 +128,15 @@ func cmdNew(args []string) error {
 			return fmt.Errorf("%w\n\nIf that version predates `grmob new` (it needs the webhost package), pass -grmob master", err)
 		}
 	}
+	// dev.sh is `go run github.com/rohanthewiz/grmob/serve`, a package the
+	// app never imports, so tidy on its own would drop the go.sum lines for
+	// serve's dependencies (RWeb, which grmob's library packages do not use)
+	// and the first ./dev.sh would stop at "missing go.sum entry". A tool
+	// directive is the go command's own way to say "this module runs that
+	// package": tidy then keeps its dependencies, and dev.sh needs no change.
+	if err := run(abs, nil, "go", "mod", "edit", "-tool="+grmobModule+"/serve"); err != nil {
+		return err
+	}
 	if err := run(abs, nil, "go", "mod", "tidy"); err != nil {
 		return err
 	}

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"html"
 	"log"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/rohanthewiz/rweb"
 )
 
 // Hot reload for the WASM target.
@@ -47,7 +48,7 @@ import (
 // event. Positional replay of hook slots is discussed in docs/platforms/wasm.md
 // and deliberately not attempted here.
 //
-// Polling instead of fsnotify keeps the module at zero non-Go dependencies;
+// Polling instead of fsnotify keeps the watcher free of dependencies;
 // a stat of a few hundred files every quarter second is not measurable. The
 // file set is not "every .go under the repo" but the build graph of ./wasm
 // as `go list -deps` reports it, so an edit to examples/social does not
@@ -57,16 +58,30 @@ import (
 //go:embed devclient.js
 var devClient []byte
 
-// devServer wraps the static file server with the three things hot reload
+// devServer adds to the static file server the three things hot reload
 // needs from the HTTP side: an injected client script, an event stream, and
 // no caching.
+//
+// Every open page holds one SSE connection, and each connection is one
+// buffered channel registered with an rweb.SSEHub. The hub is the fan-out
+// (BroadcastRaw puts an event on every channel without blocking), the
+// keepalive (a comment line every 20 s) and the reaper (a channel that has
+// refused MaxDropped consecutive events is closed and forgotten); RWeb's SSE
+// sender drains each channel onto its socket.
+//
+//	watch/build ──broadcast──▶ SSEHub ──▶ chan(page 1) ──▶ rweb sendSSE ──▶ EventSource
+//	                                 ├──▶ chan(page 2) ──▶ ...
+//	/__dev/events ──subscribe──▶ (hello queued first, then Register)
 type devServer struct {
-	dir  string       // the directory being served (wasm/)
-	root string       // the module root, where build.sh lives
-	next http.Handler // the plain file server
+	dir  string // the directory being served (wasm/)
+	root string // the module root, where build.sh lives
+	hub  *rweb.SSEHub
 
+	// mu makes "read the build state, then tell the pages" one step. It is
+	// held across every broadcast and across a subscribe, which is what keeps
+	// a page from getting a hello that is older than a reload it already
+	// has; see subscribe.
 	mu       sync.Mutex
-	subs     map[chan sseEvent]struct{}
 	buildID  string // identity of the main.wasm currently on disk
 	lastFail string // compiler output of the last failed build, "" if it passed
 }
@@ -76,7 +91,12 @@ type sseEvent struct {
 	data map[string]any
 }
 
-func newDevServer(dir string, next http.Handler) (*devServer, error) {
+// sseChannelSize is how many events a page may fall behind before the hub
+// starts dropping for it. The traffic is a handful of events per save, so a
+// page eight behind is a page whose stream is dead.
+const sseChannelSize = 8
+
+func newDevServer(dir string) (*devServer, error) {
 	out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}").Output()
 	if err != nil {
 		return nil, fmt.Errorf("serve -dev: locating the module root: %w", err)
@@ -85,28 +105,52 @@ func newDevServer(dir string, next http.Handler) (*devServer, error) {
 	if _, err := os.Stat(filepath.Join(root, "build.sh")); err != nil {
 		return nil, fmt.Errorf("serve -dev: %s has no build.sh to run", root)
 	}
-	d := &devServer{dir: dir, root: root, next: next, subs: map[chan sseEvent]struct{}{}}
+	d := &devServer{dir: dir, root: root, hub: newDevHub()}
 	d.buildID = d.stampMainWasm()
 	return d, nil
 }
 
-func (d *devServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+// newDevHub builds the hub the pages subscribe to. MaxDropped is what
+// eventually frees the channel of a page that has gone away: RWeb stops
+// draining a channel when its connection closes, but only a channel handed
+// out by the hub's own Handler is unregistered at that moment, and
+// subscribe cannot use that Handler (it has to queue the hello before the
+// channel is shared). So a dead page's channel fills up — the keepalive
+// alone does that in under three minutes — and is closed on the third event
+// it then refuses. A few idle channels for a few minutes is the whole cost.
+func newDevHub() *rweb.SSEHub {
+	return rweb.NewSSEHub(rweb.SSEHubOptions{
+		ChannelSize: sseChannelSize,
+		MaxDropped:  3,
+		// The comment line is a keepalive: proxies and some browsers drop an
+		// idle stream, and EventSource's reconnect would then re-"hello" for
+		// no reason.
+		HeartbeatInterval: 20 * time.Second,
+	})
+}
+
+// routes registers the dev server's handlers on s, in front of the plain
+// file server. The router prefers a fixed route to the wildcard, so the four
+// fixed paths are claimed here and everything else falls through to files.
+func (d *devServer) routes(s *rweb.Server, files *staticFiles) {
 	// Nothing may be cached in dev: the module changes under the same URL,
 	// and a cached main.wasm would hand a hot reload the build it just
 	// replaced. Set on everything rather than on main.wasm alone so an edit
-	// to the runtime JS or the page is honoured by a plain refresh too.
-	w.Header().Set("Cache-Control", "no-store")
-	switch r.URL.Path {
-	case "/__dev/events":
-		d.serveEvents(w, r)
-	case "/__dev/client.js":
-		w.Header().Set("Content-Type", "application/javascript")
-		w.Write(devClient)
-	case "/", "/index.html":
-		d.serveIndex(w, r)
-	default:
-		d.next.ServeHTTP(w, r)
-	}
+	// to the runtime JS or the page is honoured by a plain refresh too. (The
+	// event stream overrides it with RWeb's SSE headers, which is harmless:
+	// a stream is not cached either way.)
+	s.Use(func(ctx rweb.Context) error {
+		ctx.Response().SetHeader("Cache-Control", "no-store")
+		return ctx.Next()
+	})
+	s.Get("/__dev/events", d.serveEvents)
+	getAndHead(s, "/__dev/client.js", func(ctx rweb.Context) error {
+		ctx.Response().SetHeader("Content-Type", "application/javascript")
+		return ctx.Bytes(devClient)
+	})
+	getAndHead(s, "/", d.serveIndex)
+	getAndHead(s, "/index.html", d.serveIndex)
+	getAndHead(s, "/*path", files.serve)
 }
 
 // serveIndex hands out the shipped page with the client script appended, so
@@ -115,11 +159,10 @@ func (d *devServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // client knows which main.wasm this document booted with, and can tell on
 // its first "hello" whether a build slipped in between the page load and the
 // stream connecting.
-func (d *devServer) serveIndex(w http.ResponseWriter, r *http.Request) {
+func (d *devServer) serveIndex(ctx rweb.Context) error {
 	page, err := os.ReadFile(filepath.Join(d.dir, "index.html"))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
+		return ctx.SetStatus(404).WriteString(err.Error())
 	}
 	d.mu.Lock()
 	id := d.buildID
@@ -130,72 +173,56 @@ func (d *devServer) serveIndex(w http.ResponseWriter, r *http.Request) {
 	} else {
 		page = append(page, []byte("\n"+tag)...)
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write(page)
+	ctx.Response().SetHeader("Content-Type", "text/html; charset=utf-8")
+	return ctx.Bytes(page)
 }
 
 // serveEvents is the server-sent event stream every open page subscribes to.
 // SSE rather than a WebSocket because the traffic is one-way, EventSource
-// reconnects by itself when the server restarts, and it needs no library on
-// either side. The opening "hello" carries the current build identity and
-// the standing compile error, if any, so a page that connects (or reconnects)
-// late is brought up to date rather than told only about what happens next.
-func (d *devServer) serveEvents(w http.ResponseWriter, r *http.Request) {
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Connection", "keep-alive")
-
-	ch := make(chan sseEvent, 8)
-	d.mu.Lock()
-	d.subs[ch] = struct{}{}
-	hello := sseEvent{"hello", map[string]any{"build": d.buildID, "error": d.lastFail}}
-	d.mu.Unlock()
-	defer func() {
-		d.mu.Lock()
-		delete(d.subs, ch)
-		d.mu.Unlock()
-	}()
-
-	write := func(ev sseEvent) {
-		data, _ := json.Marshal(ev.data)
-		fmt.Fprintf(w, "event: %s\ndata: %s\n\n", ev.name, data)
-		flusher.Flush()
-	}
-	write(hello)
-	// The comment line is a keepalive: proxies and some browsers drop an
-	// idle stream, and EventSource's reconnect would then re-"hello" for no
-	// reason.
-	keepalive := time.NewTicker(20 * time.Second)
-	defer keepalive.Stop()
-	for {
-		select {
-		case <-r.Context().Done():
-			return
-		case ev := <-ch:
-			write(ev)
-		case <-keepalive.C:
-			fmt.Fprint(w, ": ping\n\n")
-			flusher.Flush()
-		}
-	}
+// reconnects by itself when the server restarts, and the browser side needs
+// no library. The handler only hands RWeb a channel and returns; RWeb then
+// streams whatever arrives on it until the page disconnects.
+func (d *devServer) serveEvents(ctx rweb.Context) error {
+	return ctx.Server().SetupSSE(ctx, d.subscribe())
 }
 
-// broadcast fans an event out to every subscribed page. A page that has
-// fallen eight events behind is a page whose stream is dead; its event is
-// dropped rather than letting it stall the watcher.
+// subscribe makes a page's channel and registers it with the hub. The
+// opening "hello" carries the current build identity and the standing
+// compile error, if any, so a page that connects (or reconnects) late is
+// brought up to date rather than told only about what happens next.
+//
+// The hello goes into the channel before the hub knows about it, and under
+// mu, which every broadcast also holds. Between them those two make the
+// page's view consistent: either it registers before a build lands, and gets
+// hello(old) and then reload(new), or after, and gets hello(new). Without the
+// lock the order hello(old)-after-reload(new) is possible, and the client
+// would read it as a newer build to swap back to.
+func (d *devServer) subscribe() chan any {
+	ch := make(chan any, sseChannelSize)
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	ch <- rawEvent(sseEvent{"hello", map[string]any{"build": d.buildID, "error": d.lastFail}})
+	d.hub.Register(ch)
+	return ch
+}
+
+// broadcast fans an event out to every subscribed page. The hub never
+// blocks on a page: a full channel drops the event, and a page that keeps
+// refusing them is evicted (see newDevHub).
 func (d *devServer) broadcast(ev sseEvent) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	for ch := range d.subs {
-		select {
-		case ch <- ev:
-		default:
-		}
-	}
+	d.hub.BroadcastRaw(rawEvent(ev))
+}
+
+// rawEvent renders an event as RWeb writes it on the wire: the name as the
+// SSE "event:" field, the data as a pre-encoded JSON string, which RWeb
+// prints verbatim with %s. BroadcastRaw rather than Broadcast because the
+// client listens by event name (addEventListener("reload", …)); Broadcast
+// would wrap everything as one "message" event.
+func rawEvent(ev sseEvent) rweb.SSEvent {
+	data, _ := json.Marshal(ev.data)
+	return rweb.SSEvent{Type: ev.name, Data: string(data)}
 }
 
 // --- The watcher -------------------------------------------------------------
@@ -262,19 +289,23 @@ func (d *devServer) build() {
 	if err != nil {
 		msg := strings.TrimSpace(string(out))
 		log.Printf("build failed:\n%s", msg)
-		d.mu.Lock()
-		d.lastFail = msg
-		d.mu.Unlock()
-		d.broadcast(sseEvent{"buildfail", map[string]any{"output": msg}})
+		d.setStateAndBroadcast(d.buildID, msg, sseEvent{"buildfail", map[string]any{"output": msg}})
 		return
 	}
 	id := d.stampMainWasm()
-	d.mu.Lock()
-	d.lastFail = ""
-	d.buildID = id
-	d.mu.Unlock()
 	log.Printf("built in %s", time.Since(start).Round(time.Millisecond))
-	d.broadcast(sseEvent{"reload", map[string]any{"kind": "wasm", "build": id}})
+	d.setStateAndBroadcast(id, "", sseEvent{"reload", map[string]any{"kind": "wasm", "build": id}})
+}
+
+// setStateAndBroadcast records a build's outcome and tells the pages in one
+// hold of mu, so no subscribe can slip in between and hand a new page the
+// old state after this event (see subscribe).
+func (d *devServer) setStateAndBroadcast(buildID, lastFail string, ev sseEvent) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.buildID = buildID
+	d.lastFail = lastFail
+	d.hub.BroadcastRaw(rawEvent(ev))
 }
 
 // stampMainWasm identifies the module on disk by size and modification time —

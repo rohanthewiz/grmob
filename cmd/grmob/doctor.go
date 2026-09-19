@@ -41,7 +41,14 @@ func cmdDoctor(args []string) error {
 	if len(args) > 0 {
 		return fmt.Errorf("doctor takes no arguments")
 	}
-	report("Browser (WASM)", wasmChecks())
+	browser := wasmChecks()
+	// Run inside an app, doctor also checks the app's own module, not just
+	// the machine: the dev server is compiled from it. Outside one there is
+	// no module to check, and the row is left out rather than failed.
+	if root, err := findAppRoot(); err == nil {
+		browser = append(browser, devServerCheck(root))
+	}
+	report("Browser (WASM)", browser)
 	report("Android", androidChecks())
 	report("iOS", iosChecks())
 	return nil
@@ -119,6 +126,58 @@ func wasmChecks() []check {
 		}
 	}
 	return append(out, c)
+}
+
+// devServerCheck asks whether the app's dev.sh can compile the dev server,
+// github.com/rohanthewiz/grmob/serve, from the app's module. It can fail
+// where the build does not: serve imports RWeb, the app's own code does not,
+// so an app whose go.mod does not name serve as a tool has had RWeb's go.sum
+// lines removed by `go mod tidy`. Every app made before `grmob new` wrote that
+// tool line is one, the first time it upgrades to a grmob whose serve uses
+// RWeb.
+//
+// The probe is `go list -deps` on the package, which loads every import and
+// so fails exactly as `go run` would, on a missing go.sum line or anything
+// else. Plain `go list` of the package is not enough: it resolves the
+// package without its imports and passes with the sums missing. Checking the
+// tool line in go.mod would not be enough either: a tool line added without
+// a tidy after it still fails.
+//
+// Optional because it does not block a build: ./build.sh and `grmob web` do
+// not compile serve. Only ./dev.sh does.
+func devServerCheck(root string) check {
+	c := check{item: "dev server (dev.sh)", optional: true,
+		fix: "In " + root + ", run:\n" +
+			"  go mod edit -tool=" + grmobModule + "/serve && go mod tidy"}
+	if _, err := output(root, "go", "list", "-deps", grmobModule+"/serve"); err != nil {
+		// The first line of go's stderr is the reason ("missing go.sum entry
+		// for module providing package github.com/rohanthewiz/rweb ..."); the
+		// rest is go's own remedy, which with a replace directive names a
+		// pseudo-version that does not exist, so the fix above replaces it.
+		msg := err.Error()
+		if i := strings.Index(msg, "\n"); i >= 0 {
+			msg = msg[i+1:]
+		}
+		if i := strings.Index(msg, "; to add:"); i >= 0 {
+			msg = msg[:i]
+		}
+		// go prefixes the reason with the importing file's position
+		// (".../serve/dev.go:18:2: "), which is grmob's source, not the
+		// app's, and only lengthens the row.
+		c.detail = goPosPrefix.ReplaceAllString(firstLine(msg), "")
+		return c
+	}
+	c.ok, c.detail = true, "compiles from this app's module"
+	return c
+}
+
+var goPosPrefix = regexp.MustCompile(`^\S+\.go:\d+:\d+: `)
+
+func firstLine(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		return s[:i]
+	}
+	return s
 }
 
 // goAtLeast compares a GOVERSION string ("go1.26.1", "go1.27rc1") against a

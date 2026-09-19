@@ -203,6 +203,24 @@ func TestNewScaffoldsAnAppThatBuildsAndPasses(t *testing.T) {
 	if !before.ModTime().Equal(after.ModTime()) {
 		t.Error("a rebuild with no runtime change rewrote wasm/grmob-runtime.js")
 	}
+
+	// dev.sh compiles grmob's serve, which imports RWeb, from the app's
+	// module. The tool line new writes is what keeps RWeb's go.sum entries
+	// through tidy; doctor's check must pass with it and name the missing
+	// sum without it — the state of every app made before new wrote it.
+	if c := devServerCheck(dir); !c.ok {
+		t.Errorf("dev server check on a fresh scaffold: %s", c.detail)
+	}
+	for _, args := range [][]string{{"mod", "edit", "-droptool=" + grmobModule + "/serve"}, {"mod", "tidy"}} {
+		cmd := exec.Command("go", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("go %s: %v\n%s", strings.Join(args, " "), err, out)
+		}
+	}
+	if c := devServerCheck(dir); c.ok || !strings.Contains(c.detail, "missing go.sum entry") {
+		t.Errorf("dev server check without the tool line = ok %v, %q; want a missing go.sum entry", c.ok, c.detail)
+	}
 }
 
 // TestWebHostPageSync walks cmdWeb's table against a scaffold of this

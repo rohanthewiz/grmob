@@ -30,7 +30,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-060
+**Next ID:** N-061
 
 ## Open
 
@@ -192,6 +192,14 @@ with each item's `raised` traced back through all session docs.
   **A control that sets its own `canFocus` later in its chain may override
   Inert.** The read-only CodeEditor's focus gate does. Unchecked; no bundled
   Inert subtree holds a CodeEditor. (was #81)
+- **N-060** · raised `2026-0919-1421-rweb-serve-and-doctor-dev-server-check` · value low
+  **RWeb: no public close hook for an SSE channel the handler filled itself.**
+  `serve/dev.go`'s subscribe queues the "hello" before registering, so it
+  cannot use `SSEHub.Handler` (the only thing that sets `sseCleanup`). A
+  closed page's channel lingers until the keepalive fills it and three real
+  broadcasts are refused (a few minutes). An upstream hook (an init callback on
+  `Handler`, or a public on-close for `SetupSSE`) would free it at once. RWeb
+  also prints "SSE Channel closed and drained" to stdout on every eviction.
 
 ## Non-goals
 
