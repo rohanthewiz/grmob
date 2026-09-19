@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!--
+    The shell's one theme: the platform's light Material theme, which is what
+    the manifest named directly before this file existed, plus one attribute.
+
+    android:forceDarkAllowed=false opts the whole window out of force dark
+    (API 29+). Go draws every colour itself, so the platform must not recolour
+    any of it. With force dark on (the developer override, or a vendor's
+    system-wide dark mode: MIUI sets debug.hwui.force_dark) HWUI re-tints draw
+    calls by heuristic, and on Compose's output it lightens dark text inside
+    light Cards until it vanishes.
+
+    Why the theme and not only View.setForceDarkAllowed on the decor view
+    (MainActivity keeps that line too): ViewRootImpl reads this attribute to
+    decide whether the window's renderer applies force dark at all. The
+    per-view flag only asks HWUI to skip a subtree while it walks the render
+    node tree, and on a Mi Max 3 (Android 10) that walk stopped honouring it
+    once lesson 4.12's osmdroid MapView (an AndroidView) had been attached:
+    every later lesson drew its Cards' text faded. A switch on the renderer has
+    no tree to walk.
+
+    tools:targetApi because the attribute is API 29 and minSdk is 24. Older
+    releases ignore an unknown theme attribute, and they have no force dark.
+    -->
+    <style name="Theme.GrMob" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:forceDarkAllowed" tools:targetApi="q">false</item>
+    </style>
+</resources>

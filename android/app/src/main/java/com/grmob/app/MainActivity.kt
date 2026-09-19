@@ -37,9 +37,15 @@ class MainActivity : ComponentActivity() {
         // dark while Cards stayed light, and black lesson titles were
         // lightened until they vanished on those light Cards (a Mi Max 3 on
         // Android 10). Colours are the Go theme's to choose, so the shell
-        // draws them as given. Set on the decor view, not via the theme
-        // attribute, because the manifest uses a platform theme and there is
-        // no res/values style to hang android:forceDarkAllowed on.
+        // draws them as given.
+        //
+        // The primary switch is now android:forceDarkAllowed in Theme.GrMob
+        // (res/values/themes.xml), which turns force dark off for the window's
+        // renderer. This per-view flag alone proved not enough: it is honoured
+        // while HWUI walks the render node tree, and on the Mi Max 3 the walk
+        // stopped honouring it once 4.12's MapView (an AndroidView) had been
+        // attached, fading every later lesson's Card text. It stays as a
+        // second statement of the same intent, and is harmless.
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
             window.decorView.isForceDarkAllowed = false
         }
