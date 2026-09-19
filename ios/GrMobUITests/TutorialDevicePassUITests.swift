@@ -919,7 +919,7 @@ final class TutorialDevicePassUITests: XCTestCase {
     func testCountdownRunsOutOnceAndTheStopwatchPauses() throws {
         let app = XCUIApplication()
         open(app, lesson: "4.24")
-        let restart = button(app, "Restart 10s")
+        let restart = button(app, "Restart")
         scroll(app, to: restart)
         lift(app)
         dump(app, "dp-4.24-before")

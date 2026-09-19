@@ -2480,7 +2480,7 @@ func TestTimersLessonRestartsTheDeadlineAndBanksTheStopwatch(t *testing.T) {
 
 	// The restart. Nothing is reset: Until moves, and the widget's reading
 	// follows it — which is the whole of the claim.
-	tap(t, mgr, "Restart 10s")
+	tap(t, mgr, "Restart")
 	if got := digits("remaining"); got != "0:10" {
 		t.Errorf("restarted countdown reads %q, want 0:10", got)
 	}

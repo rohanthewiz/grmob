@@ -4418,7 +4418,14 @@ comps.Stopwatch{Since: startedAt.Get(), Elapsed: banked.Get(), Running: running.
 						core.Gap(8),
 						core.Justify(core.JustifyCenter),
 						comps.Button{
-							Label:    "Restart 10s",
+							// "Restart", not "Restart 10s": the three
+							// buttons came to 278pt against the 276 a
+							// 402pt iPhone leaves this row, and the
+							// flex shrink (CSS's, on iOS and the web)
+							// takes the shortfall from the one label
+							// that can wrap. The countdown itself shows
+							// the 10s the moment it restarts.
+							Label:    "Restart",
 							Emphasis: comps.EmphasisOutlined,
 							OnTap:    func() { deadline.Set(time.Now().Add(10 * time.Second)) },
 						},
