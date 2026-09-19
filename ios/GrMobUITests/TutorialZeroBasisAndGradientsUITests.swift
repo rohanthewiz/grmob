@@ -115,13 +115,21 @@ final class TutorialZeroBasisAndGradientsUITests: XCTestCase {
         // (rowWidth - 16) / 2.
         let screen = app.windows.firstMatch.frame.width
         let stride = filter.frame.minX - showing.frame.minX
-        // The tile's own padding is unknown here, so solve for it: with
-        // p = tile padding and L = showing.minX, rowLeft = L - p and
-        // stride = (screen - 2(L - p) - 16) / 2 + 16. One unknown, one
-        // equation: it must come out as a small non-negative padding.
+        // Solve for the tile's padding: with p = tile padding and
+        // L = showing.minX, rowLeft = L - p and
+        // stride = (screen - 2(L - p) - 16) / 2 + 16.
+        //
+        // p is not unknown, though: StatTile paints and insets nothing (a Box
+        // with no padding, comps/stat_tile.go) and the lesson's Row states
+        // Padding(0), so a label sits exactly at its tile's left edge and p
+        // must come out as 0. This used to accept anything in 0...24, which a
+        // content-biased split could also satisfy: "Showing" over "12" and
+        // "Filter" over "All" are different widths, and a basis that followed
+        // them would move the second tile by a few points and still pass.
+        // Pinned to zero, the check is that the second tile starts at the
+        // screen's centre plus half the gap, which only equal tiles give.
         let p = (2 * (stride - 16) + 16 - screen) / 2 + showing.frame.minX
-        XCTAssertGreaterThanOrEqual(p, -0.5, "the second tile starts too early for equal tiles: stride \(stride), screen \(screen), first label at \(showing.frame.minX)")
-        XCTAssertLessThanOrEqual(p, 24.5, "the second tile starts too late for equal tiles: stride \(stride), screen \(screen), first label at \(showing.frame.minX)")
+        XCTAssertEqual(p, 0, accuracy: 0.5, "the tiles are not equal: solved padding \(p) (want 0), stride \(stride), screen \(screen), first label at \(showing.frame.minX), second at \(filter.frame.minX)")
     }
 
     func testGradientRowsDraw() throws {

@@ -44,20 +44,21 @@ final class LiveMapUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    /// The lesson list is 49 rows of two lines each, and the natives have no
-    /// deep-link intent filter — the tutorial's route channel is a host event
-    /// the web page speaks and the shells drop — so reaching a lesson is a
-    /// scroll on every device run. This is that scroll, bounded.
+    /// Opens a lesson by its deep link. `label` is the contents row's name
+    /// ("Lesson 4.12"); the id after "Lesson " is the route.
+    ///
+    /// This used to scroll the contents list for the row, on the grounds that
+    /// the natives had no deep-link intent filter. They have one now
+    /// (`grmob://lesson/<id>`, examples/tutorial/deeplink.go), and the list
+    /// grew collapsible chapters that start shut, so the row was never on
+    /// screen and both tests failed at "never reached a row labelled 'Lesson
+    /// 4.12' in 40 swipes". The other tutorial suites open lessons this way.
     private func openLesson(_ app: XCUIApplication, _ label: String) {
-        let row = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "label BEGINSWITH %@", label)).firstMatch
-        for _ in 0..<40 {
-            if row.exists && row.isHittable { break }
-            app.swipeUp()
-        }
-        XCTAssertTrue(row.waitForExistence(timeout: 5),
-                      "never reached a row labelled '\(label)' in 40 swipes")
-        row.tap()
+        let id = label.replacingOccurrences(of: "Lesson ", with: "")
+        app.open(URL(string: "grmob://lesson/\(id)")!)
+        let title = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label BEGINSWITH %@", id)).firstMatch
+        XCTAssertTrue(title.waitForExistence(timeout: 15), "lesson \(id) did not open from its deep link")
     }
 
     /// Whether any static text on screen begins with `prefix`, and its label.

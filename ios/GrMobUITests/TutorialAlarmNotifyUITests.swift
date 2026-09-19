@@ -40,13 +40,7 @@ final class TutorialAlarmNotifyUITests: XCTestCase {
         let app = XCUIApplication()
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
 
-        // The system's permission alert belongs to SpringBoard; the monitor
-        // answers it whenever the app next receives an interaction.
-        addUIInterruptionMonitor(withDescription: "notifications") { alert in
-            let allow = alert.buttons["Allow"]
-            if allow.exists { allow.tap(); return true }
-            return false
-        }
+        watchForThePermissionAlert()
 
         app.launch()
         app.open(URL(string: "grmob://lesson/4.19")!)
@@ -60,19 +54,7 @@ final class TutorialAlarmNotifyUITests: XCTestCase {
             app.swipeUp(velocity: .slow)
             swipes += 1
         }
-        let allow = app.buttons["Allow notifications"]
-        if allow.exists {
-            if !allow.isHittable { app.swipeUp(velocity: .slow) }
-            allow.tap()
-            // The alert is SpringBoard's; answer it directly when it is up,
-            // and nudge the monitor otherwise.
-            let sbAllow = springboard.buttons["Allow"]
-            if sbAllow.waitForExistence(timeout: 5) {
-                sbAllow.tap()
-            } else {
-                app.tap()
-            }
-        }
+        grantNotificationsIfOffered(app, springboard: springboard)
 
         // Too close to the minute and the banner could come before the app
         // is gone; wait into the next one.
@@ -117,6 +99,7 @@ final class TutorialAlarmNotifyUITests: XCTestCase {
     func testRelaunchSweepsWhatTheDeadProcessScheduled() throws {
         let app = XCUIApplication()
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        watchForThePermissionAlert()
 
         app.launch()
         app.open(URL(string: "grmob://lesson/4.19")!)
@@ -127,9 +110,14 @@ final class TutorialAlarmNotifyUITests: XCTestCase {
             app.swipeUp(velocity: .slow)
             swipes += 1
         }
-        // The Allow branch is the other test's; this one needs it granted.
+        // Granted here rather than asserted: this test used to fail on a fresh
+        // simulator unless the other one had run first, which made its result
+        // depend on test order. A banner that never comes is only evidence of
+        // the sweep if one would otherwise have come, so the grant has to be
+        // in place and this makes sure it is.
+        grantNotificationsIfOffered(app, springboard: springboard)
         XCTAssertFalse(app.buttons["Allow notifications"].exists,
-                       "notifications not granted; run testAlarmRingsAsANotificationWithTheAppClosed first")
+                       "notifications are still not granted; the missing banner would prove nothing")
 
         // Room for the relaunch before the minute turns.
         let second = Calendar.current.component(.second, from: Date())
@@ -157,5 +145,37 @@ final class TutorialAlarmNotifyUITests: XCTestCase {
         let wait = max(5, due.timeIntervalSinceNow + 15)
         XCTAssertFalse(banner.waitForExistence(timeout: wait),
                        "the dead process's alarm still rang after a relaunch swept it")
+    }
+
+    // MARK: permission
+
+    /// The system's permission alert belongs to SpringBoard; the monitor
+    /// answers it whenever the app next receives an interaction.
+    private func watchForThePermissionAlert() {
+        addUIInterruptionMonitor(withDescription: "notifications") { alert in
+            let allow = alert.buttons["Allow"]
+            if allow.exists { allow.tap(); return true }
+            return false
+        }
+    }
+
+    /// Taps 4.19's "Allow notifications" when the lesson still offers it, and
+    /// answers the system alert that follows. A no-op once granted, since the
+    /// lesson stops offering the button.
+    private func grantNotificationsIfOffered(_ app: XCUIApplication, springboard: XCUIApplication) {
+        let allow = app.buttons["Allow notifications"]
+        guard allow.exists else { return }
+        if !allow.isHittable { app.swipeUp(velocity: .slow) }
+        allow.tap()
+        // The alert is SpringBoard's; answer it directly when it is up,
+        // and nudge the monitor otherwise.
+        let sbAllow = springboard.buttons["Allow"]
+        if sbAllow.waitForExistence(timeout: 5) {
+            sbAllow.tap()
+        } else {
+            app.tap()
+        }
+        // The lesson re-renders once the grant reaches Go.
+        _ = allow.waitForNonExistence(timeout: 5)
     }
 }
