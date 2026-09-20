@@ -77,6 +77,15 @@ func TestDrawerShutHidesThePanelAndLeavesTheScreenReadable(t *testing.T) {
 		t.Errorf("panel a11y = role %q label %q, want a navigation landmark named by Title",
 			panel.Style.AccessibilityRole, panel.Style.AccessibilityLabel)
 	}
+	// The panel's label and its drawn heading are the same string, on purpose:
+	// the landmark is named by what the eye reads. Compose is the one target
+	// that would otherwise speak both ("Notebook, Notebook"), and its renderer
+	// drops a Text that repeats the group's label — a rule keyed on the two
+	// being *equal*, so this pins the premise. See LocalGrMobGroupSaid in
+	// android/…/Renderer.kt and mobile/verify/group_echo_test.go.
+	if findText(panel, panel.Style.AccessibilityLabel) == nil {
+		t.Error("Title must be drawn in the header as well as naming the landmark")
+	}
 	if panel.Style.Width != "280px" {
 		t.Errorf("default panel width = %q, want 280px", panel.Style.Width)
 	}

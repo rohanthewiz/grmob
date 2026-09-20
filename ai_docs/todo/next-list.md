@@ -41,6 +41,11 @@ with each item's `raised` traced back through all session docs.
     and a keyboard reaching a shut panel fixed.
   - Screen readers: combobox active option, "pop-up" triggers, CodeEditor
     toolbar role on Compose, SearchableSelect on the natives.
+  - Fixed but unheard (2026-0919-2146): the Stepper group's and the Drawer
+    panel's utterances on Compose. The duplicate is gone from the
+    accessibility tree, measured on the emulator; a group node is not
+    reachable by Tab and TalkBack's reading-order keys ignore `adb input`, so
+    hearing the line needs the Fold6's HID keyboard (Meta+Right).
   - iOS: sheet Dialog and ActionSheet filler, Drawer under Reduce Motion, RTL
     for Drawer and CodeEditor, the sideways editor, 4.6's list; `core.Focus`
     on a Button and Inert (an iPad keyboard still reaches a shut panel).
@@ -173,14 +178,6 @@ with each item's `raised` traced back through all session docs.
 - **N-051** · raised `2026-0918-2310-mi-max-3-android-10-force-dark-theme-sweep` · value low
   **Why the decor-view force-dark flag stopped holding after an AndroidView
   attached is undiagnosed.** Moot for this app. (was #68)
-- **N-055** · raised `2026-0919-1254-fold6-talkback-hid-harness-focus-after-navigation-inert-named-controls` · value low
-  **The Stepper says its value twice on Compose:** "2, Guests, 2". The group's
-  `stateDescription` plus its merged "2" Text. The web drops the value on a
-  group, so the Text is needed there; a fix is Compose-side (hide a labelled
-  group's Text that equals its value text?). (was #77)
-- **N-056** · raised `2026-0919-1254-fold6-talkback-hid-harness-focus-after-navigation-inert-named-controls` · value low
-  **A Drawer's panel reads "Notebook, Notebook"** : the navigation group's
-  label plus its title Text. Same shape as N-055. (was #78)
 - **N-057** · raised `2026-0919-1254-fold6-talkback-hid-harness-focus-after-navigation-inert-named-controls` · value low
   **Escape does not close an open Drawer on Android.** It reaches the app
   unhandled; Back closes it. Check what the web and iPad do. (was #79)
@@ -278,6 +275,26 @@ with each item's `raised` traced back through all session docs.
 
 ## Closed
 
-Nothing yet. Closures before the seed are written up in the session docs; the
+- **N-055** · raised
+  `2026-0919-1254-fold6-talkback-hid-harness-focus-after-navigation-inert-named-controls`
+  · closed `2026-0919-2146-labelled-group-echo-on-compose` — the Stepper said its value
+  twice on Compose ("2, Guests, 2"). (was #77)
+- **N-056** · raised
+  `2026-0919-1254-fold6-talkback-hid-harness-focus-after-navigation-inert-named-controls`
+  · closed `2026-0919-2146-labelled-group-echo-on-compose` — a Drawer panel read
+  "Notebook, Notebook". (was #78)
+
+  Both were one bug: a labelled node merges its descendants, and Compose emits
+  the label as a fake child beside the Texts rather than in place of them, so
+  any child Text repeating the label or the stated value was spoken twice.
+  `LocalGrMobGroupSaid` in `android/…/Renderer.kt` carries the nearest labelled
+  ancestor's label and value text, and `GrMobText` clears the semantics of a
+  Text that folds to either. Measured on the emulator's accessibility tree:
+  the Stepper group's `'2'` TextView child and the panel's `'Notebook'`
+  TextView child are both gone. Not the same fix as `LocalGrMobNamedControl`,
+  which silences a *control's* whole content; a group's content stays readable
+  apart from the echo.
+
+Closures before the seed are written up in the session docs; the
 most recent are in `2026-0919-1254-…` (#5, #62, #71, #75) and
 `2026-0919-1118-…` (#7, #25, #70, #72, #73).

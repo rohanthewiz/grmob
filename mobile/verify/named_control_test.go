@@ -39,7 +39,10 @@ func TestComposeHearsANamedControlByItsNameAlone(t *testing.T) {
 	for _, pin := range []struct{ expr, why string }{
 		{"val quiet = LocalGrMobNamedControl.current && !namesItsContent(node)",
 			"a Text that is itself the named control keeps its label"},
-		{".then(if (quiet) Modifier.clearAndSetSemantics { } else Modifier)",
+		// `echo` is the labelled-*group* half of the same repair, pinned by
+		// TestComposeDoesNotRepeatWhatALabelledGroupAlreadySaid; both reach
+		// the accessibility tree through this one clearAndSetSemantics.
+		{".then(if (quiet || echo) Modifier.clearAndSetSemantics { } else Modifier)",
 			"after boxModifier, so it clears the text semantics Text adds inside the chain"},
 	} {
 		if !strings.Contains(text, pin.expr) {

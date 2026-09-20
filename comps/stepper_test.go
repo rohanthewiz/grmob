@@ -119,6 +119,12 @@ func TestStepperFormatLabelsAndStyle(t *testing.T) {
 		Disabled:      true,
 		Style:         []core.StyleProp{core.Gap(1)},
 	})
+	// Format drives both the drawn and the announced value, and the two are
+	// the same string. Compose's renderer leans on that equality: the group's
+	// value becomes a stateDescription, so it drops the Text that repeats it
+	// rather than say "2 guests, Guests, 2 guests". A Format that diverged
+	// here would quietly switch that off, which is why the tie is asserted
+	// and not just each half. See LocalGrMobGroupSaid in Renderer.kt.
 	if findText(n, "2 guests") == nil || n.Style.AccessibilityValue.Text != "2 guests" {
 		t.Error("Format drives both the drawn and the announced value")
 	}

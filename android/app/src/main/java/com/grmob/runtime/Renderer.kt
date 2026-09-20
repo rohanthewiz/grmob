@@ -255,6 +255,66 @@ private val NAME_IS_CONTENT_ROLES = setOf(
 )
 
 /**
+ * What the nearest labelled ancestor already says about itself: its
+ * AccessibilityLabel and its AccessibilityValue's text, folded for comparison
+ * (see [spokenByLabel]). A core.Text under one whose content is one of these
+ * says nothing the listener has not heard, so GrMobText drops its semantics.
+ *
+ * # Why a labelled *group* still echoes
+ *
+ * [LocalGrMobNamedControl] silences a named control's whole content, because
+ * a control's name stands for it. A group's does not: a comps.Stepper's
+ * number and a comps.Drawer panel's rows are content the label introduces
+ * rather than replaces, which is why that local is not opened by a label
+ * alone. But the label becomes a fake child beside them, and a stated value
+ * becomes a stateDescription TalkBack reads as well, so any content that
+ * repeats either is heard twice over. Measured on a Galaxy Z Fold6 (Samsung
+ * TalkBack 16.2):
+ *
+ *	  comps.Stepper  label "Guests", value "2", a Text "2" between the buttons
+ *	    before  "2, Guests, 2"
+ *	    after   "2, Guests"
+ *	  comps.Drawer   label "Notebook", a Text "Notebook" in its header
+ *	    before  "Notebook, Notebook"
+ *	    after   "Notebook"
+ *
+ * Neither widget can drop the Text instead: the web scopes aria-value* to
+ * progressbar and drops a group's value, so the number between the buttons is
+ * the only place the web hears it, and the drawer's title is a visible
+ * heading. This is Compose reading a merged label differently from the other
+ * two targets, so the repair belongs here.
+ *
+ * # Where the scope ends
+ *
+ * The set is replaced, not added to, at every labelled node, because that is
+ * exactly where Compose's merge stops: `mergeConfig` skips a child that
+ * merges its own descendants ("they're independently screen-reader-
+ * focusable"), so a nested labelled node's Texts are spoken under *its* name
+ * and have nothing to do with the outer one's. A node with no label inherits,
+ * since it was merged into whatever labelled ancestor holds it.
+ */
+val LocalGrMobGroupSaid = compositionLocalOf { emptySet<String>() }
+
+/**
+ * The strings [node]'s own accessibility statement puts into the announcement
+ * — its label and, when stated, its value text — folded to compare by ear.
+ * Empty when the node states no label, which is also when boxModifier does not
+ * merge and so nothing of the node's is read with its children's.
+ *
+ * Folding is trim + lowercase because a screen reader speaks "Notebook" and
+ * "notebook " identically; a duplicate to the ear is the thing being removed,
+ * not a duplicate to the byte.
+ */
+internal fun spokenByLabel(node: GrMobNode): Set<String> {
+    val s = node.style ?: return emptySet()
+    if (s.accessibilityHidden || s.accessibilityLabel.isEmpty()) return emptySet()
+    val said = mutableSetOf(s.accessibilityLabel.trim().lowercase())
+    val value = s.accessibilityValue.text
+    if (value.isNotEmpty()) said.add(value.trim().lowercase())
+    return said
+}
+
+/**
  * Whether the Column being composed has no height of its own to divide among
  * FlexGrow children: true inside a vertical scroll's content, until something
  * on the way down gives a height back.
@@ -433,18 +493,25 @@ fun RenderNode(node: GrMobNode, extra: Modifier = Modifier) {
     // its own node before going quiet.
     //
     // The values that change are collected and provided in one call, rather
-    // than one `when` arm per combination: five independent flags would be
-    // thirty-two arms. An unchanged tree still provides nothing.
+    // than one `when` arm per combination: six independent values would be
+    // sixty-four arms. An unchanged tree still provides nothing.
     val disable = node.style?.disabled == true && !LocalGrMobDisabled.current
     val bound = LocalGrMobUnboundedHeight.current && hasPointsHeight(node.style)
     val boundWidth = LocalGrMobUnboundedWidth.current && hasPointsWidth(node.style)
     val named = !LocalGrMobNamedControl.current && namesItsContent(node)
+    // What a labelled node already says, for the Texts merged into it; see
+    // LocalGrMobGroupSaid. Unlike the flags above this one is *replaced* at
+    // each labelled node rather than latched on, because Compose's merge
+    // stops at a node that merges its own descendants. An unlabelled node
+    // says nothing of its own, so `said` is empty and the scope is inherited.
+    val said = spokenByLabel(node)
+    val says = said.isNotEmpty() && said != LocalGrMobGroupSaid.current
     // core.Inert, and every node under it, takes no keyboard focus; see
     // LocalGrMobInert for why every node rather than the inert one alone.
     val inertHere = LocalGrMobInert.current || node.style?.inert == true
     val inert = inertHere && !LocalGrMobInert.current
     if (inertHere) mods = Modifier.focusProperties { canFocus = false }.then(mods)
-    if (!disable && !bound && !boundWidth && !named && !inert) {
+    if (!disable && !bound && !boundWidth && !named && !inert && !says) {
         RenderNodeContent(node, mods)
     } else {
         val provided = buildList<ProvidedValue<*>> {
@@ -453,6 +520,7 @@ fun RenderNode(node: GrMobNode, extra: Modifier = Modifier) {
             if (boundWidth) add(LocalGrMobUnboundedWidth provides false)
             if (named) add(LocalGrMobNamedControl provides true)
             if (inert) add(LocalGrMobInert provides true)
+            if (says) add(LocalGrMobGroupSaid provides said)
         }
         CompositionLocalProvider(*provided.toTypedArray()) { RenderNodeContent(node, mods) }
     }
@@ -993,10 +1061,19 @@ private fun GrMobText(node: GrMobNode, extra: Modifier) {
     // itself: then its label is the thing being read. Appended after
     // boxModifier so it clears the semantics Text adds inside the chain.
     val quiet = LocalGrMobNamedControl.current && !namesItsContent(node)
+    val content = node.stringProp("content")
+    // The other half of the same problem, for a labelled *group*, whose
+    // content is not replaced by its name: this Text repeats the group's own
+    // label or its stated value, so it is dropped rather than heard a second
+    // time (see LocalGrMobGroupSaid). Asked only of a Text that states no
+    // label of its own — a labelled Text is inside the scope it opened, and
+    // would otherwise silence itself.
+    val echo = node.style?.accessibilityLabel.isNullOrEmpty() &&
+        content.trim().lowercase() in LocalGrMobGroupSaid.current
     Text(
-        text = node.stringProp("content"),
+        text = content,
         modifier = s.boxModifier(extra, gestureModifier(node))
-            .then(if (quiet) Modifier.clearAndSetSemantics { } else Modifier),
+            .then(if (quiet || echo) Modifier.clearAndSetSemantics { } else Modifier),
         style = textStyle(s),
         maxLines = if (cap > 0) cap else Int.MAX_VALUE,
         overflow = if (cap > 0) TextOverflow.Ellipsis else TextOverflow.Clip,
