@@ -90,7 +90,8 @@ func TestDevServerHelloCarriesBuildAndError(t *testing.T) {
 	d := &devServer{hub: newDevHub(), buildID: "1-2", lastFail: "boom"}
 	t.Cleanup(d.hub.Close)
 
-	ch := d.subscribe()
+	ch := make(chan any, sseChannelSize)
+	d.subscribe(func() { d.hub.Register(ch) })
 	d.broadcast(sseEvent{"building", map[string]any{}})
 
 	first := (<-ch).(rweb.SSEvent)
@@ -112,9 +113,43 @@ func TestBuildStateReachesLaterHello(t *testing.T) {
 	t.Cleanup(d.hub.Close)
 	d.setStateAndBroadcast("new", "", sseEvent{"reload", map[string]any{"kind": "wasm", "build": "new"}})
 
-	hello := (<-d.subscribe()).(rweb.SSEvent)
+	ch := make(chan any, sseChannelSize)
+	d.subscribe(func() { d.hub.Register(ch) })
+	hello := (<-ch).(rweb.SSEvent)
 	if hello.Data != `{"build":"new","error":""}` {
 		t.Fatalf("hello after a build = %s", hello.Data)
+	}
+}
+
+// The hello is a broadcast, so a page that connects while others are open
+// greets them too. That is tolerable only because it can never *lose* a
+// greeting: the page that just registered must receive it, and it must
+// arrive after the registration rather than before it (the ordering
+// subscribe's comment sets out).
+func TestSubscribeGreetsTheNewPageAndTheOpenOnes(t *testing.T) {
+	d := &devServer{hub: newDevHub(), buildID: "1-2"}
+	t.Cleanup(d.hub.Close)
+
+	open := make(chan any, sseChannelSize)
+	d.subscribe(func() { d.hub.Register(open) })
+	<-open // the first page's own hello
+
+	joined := make(chan any, sseChannelSize)
+	d.subscribe(func() {
+		// Registered from inside join, i.e. before the hello goes out, which
+		// is the whole reason the hub's Handler can be used in serveEvents.
+		d.hub.Register(joined)
+	})
+
+	for name, ch := range map[string]chan any{"the joining page": joined, "the open page": open} {
+		select {
+		case ev := <-ch:
+			if e := ev.(rweb.SSEvent); e.Type != "hello" {
+				t.Fatalf("%s received %+v, want hello", name, e)
+			}
+		default:
+			t.Fatalf("%s received nothing", name)
+		}
 	}
 }
 

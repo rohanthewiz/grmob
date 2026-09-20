@@ -37,6 +37,38 @@ func TestComposeReadsInertAsNoKeyboardFocus(t *testing.T) {
 	}
 }
 
+// The one control the head-of-chain modifier cannot reach.
+//
+// Compose resolves a focus target's properties by walking up the modifier
+// chain from the target, and the walk stops at the first FocusTarget it meets
+// (visitSelfAndAncestors takes untilType = Nodes.FocusTarget). A scroll
+// container delegates a focus target, so any field composed behind one inside
+// a single GrMob node is cut off from the `extra` RenderNode prepended:
+//
+//	Row(extra: canFocus = false)        ← where Inert lands
+//	 └ verticalScroll     ── FocusTarget
+//	    └ horizontalScroll ── FocusTarget   ← the walk from the field ends here
+//	       └ BasicTextField ── FocusTarget  ← never sees canFocus = false
+//
+// The CodeEditor is the only bundled control shaped that way, and only an
+// *editable* one showed it: a read-only buffer's own gate answers no to a Tab
+// search regardless. So the editor reads the local itself, and its refusal is
+// the conjunction of the two — whichever says no, wins.
+func TestComposeCodeEditorHonoursAnInertAncestor(t *testing.T) {
+	editor := valuesIn(t, kotlinCodeEditor)
+	for _, pin := range []struct{ expr, why string }{
+		{"val inert = LocalGrMobInert.current",
+			"read in the editor's own composition, which is where the local is in scope"},
+		{".focusProperties { canFocus = !inert && (!readOnly || gate.open) }",
+			"applied on the field itself, the only chain the walk from the field sees"},
+	} {
+		if !strings.Contains(editor, pin.expr) {
+			t.Errorf("%s: the editor has lost %q — %s; an editable CodeEditor in a "+
+				"shut Drawer panel is a Tab stop again", kotlinCodeEditor, pin.expr, pin.why)
+		}
+	}
+}
+
 func TestComposeButtonTakesAFocusCommand(t *testing.T) {
 	button := valuesOf(t, kotlinRenderer, "private fun GrMobButton(")
 	for _, pin := range []struct{ expr, why string }{

@@ -1200,7 +1200,8 @@ type TwoPane struct {
 
 	// Origin is the TwoPane's top-left in window coordinates, for aligning to
 	// a hinge when the pane does not start at the window's corner. Only X and
-	// Y are read.
+	// Y are read. The system-bar part of it is core.Window.Insets; see
+	// "Lining up with the hinge" above.
 	Origin core.WindowRect
 
 	// IgnoreHorizontalFold skips rule 2, for a TwoPane inside a scrolling
@@ -1238,7 +1239,7 @@ Only a \*separating\* fold is laid out around. A flat, continuous panel (a Galax
 
 #### Lining up with the hinge
 
-Fold bounds are in window coordinates (see core/window.go) and a TwoPane lays out in its own, so the two agree only when the TwoPane starts where the window does. Origin is the pane's top-left corner in window coordinates, for the layouts where it does not: a TwoPane under an 64dp app bar in tabletop posture passes Origin{Y: statusBar + 64}. A TwoPane that fills the window along the split axis — the usual arrangement for a vertical hinge, where nothing sits to its left — needs none.
+Fold bounds are in window coordinates (see core/window.go) and a TwoPane lays out in its own, so the two agree only when the TwoPane starts where the window does. Origin is the pane's top-left corner in window coordinates, for the layouts where it does not: a TwoPane under an 64dp app bar in tabletop posture passes Origin{Y: statusBar + 64}. The status bar's share of that is core.Window.Insets.Top (see core.SafeInsets), so the value is a sum of what the window reports and what the caller drew itself, not a measurement it has to guess. A TwoPane that fills the window along the split axis — the usual arrangement for a vertical hinge, where nothing sits to its left — needs none.
 
 First is sized to end exactly at the hinge (a fixed width or height) and Second grows to fill what remains, which means the split is exact on the First side and assumes the TwoPane reaches the window's far edge on the Second. A hinge the pane does not actually contain (First would be zero or negative, or the hinge sits past the window) falls through to the ratio rules rather than drawing a pane with no room.
 
@@ -1252,7 +1253,7 @@ TwoPane calls hooks.UseWindow, so it re-renders itself when the device folds, un
 
 The container grows (FlexGrow 1) and stretches its panes along the cross axis. A side-by-side split has to fill the height it is given to look like two panes rather than two cards, and a top/bottom split has to fill the height for the hinge arithmetic to mean anything, so filling is the default and Style can undo it.
 
-<small>[comps/two_pane.go:76](https://github.com/rohanthewiz/grmob/blob/master/comps/two_pane.go#L76)</small>
+<small>[comps/two_pane.go:79](https://github.com/rohanthewiz/grmob/blob/master/comps/two_pane.go#L79)</small>
 
 #### func (TwoPane) Render
 
@@ -1262,7 +1263,7 @@ func (p TwoPane) Render(ctx *core.Context) *core.Node
 
 Render reads the window, resolves the arrangement and builds it.
 
-<small>[comps/two_pane.go:228](https://github.com/rohanthewiz/grmob/blob/master/comps/two_pane.go#L228)</small>
+<small>[comps/two_pane.go:232](https://github.com/rohanthewiz/grmob/blob/master/comps/two_pane.go#L232)</small>
 
 ### type TwoPaneCompact
 
@@ -1272,7 +1273,7 @@ type TwoPaneCompact int
 
 TwoPaneCompact chooses what a compact window shows.
 
-<small>[comps/two_pane.go:119](https://github.com/rohanthewiz/grmob/blob/master/comps/two_pane.go#L119)</small>
+<small>[comps/two_pane.go:123](https://github.com/rohanthewiz/grmob/blob/master/comps/two_pane.go#L123)</small>
 
 ```go
 const (

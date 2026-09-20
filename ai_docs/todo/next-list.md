@@ -30,7 +30,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-061
+**Next ID:** N-062
 
 ## Open
 
@@ -111,12 +111,13 @@ with each item's `raised` traced back through all session docs.
 - **N-025** · raised `2026-0916-1643-zero-basis-floor-area-fades-scatter-squares-android-look` · value low → non-goal?
   **Sparkline's `Area` is a flat tint.** Proposed as a non-goal. (was #34;
   lapsed@0917-1659)
-- **N-026** · raised `2026-0917-0227-foldables-window-record-and-two-pane` · value medium (API decision)
-  **Safe-area insets are not a record.** `core/` has no `SafeInsets`. (was
-  #35; lapsed@0917-1659)
 - **N-027** · raised `2026-0917-0227-foldables-window-record-and-two-pane` · value low
-  **Lesson 4.21's TwoPane sets no `Origin`.** Waits on N-026. (was #36;
-  lapsed@0917-1659)
+  **Lesson 4.21's TwoPane sets no `Origin`.** No longer waits on N-026:
+  4.21 sets `IgnoreHorizontalFold`, so its live axis is the vertical hinge
+  and the missing term is `Origin.X` — the demo panel's own left padding, a
+  layout constant no host reports. A correct `Origin` there would be a
+  hard-coded guess; showing the documented `Origin{Y: insets.Top + bar}`
+  case honestly needs a non-scrolling demo. (was #36; lapsed@0917-1659)
 - **N-028** · raised `2026-0917-0227-foldables-window-record-and-two-pane` · value low
   **iOS `AppWindowReader` is type-checked only.** Not run in Split View or
   Stage Manager. (was #37; lapsed@0917-1659)
@@ -179,24 +180,34 @@ with each item's `raised` traced back through all session docs.
   **Why the decor-view force-dark flag stopped holding after an AndroidView
   attached is undiagnosed.** Moot for this app. (was #68)
 - **N-057** · raised `2026-0919-1254-fold6-talkback-hid-harness-focus-after-navigation-inert-named-controls` · value low
-  **Escape does not close an open Drawer on Android.** It reaches the app
-  unhandled; Back closes it. Check what the web and iPad do. (was #79)
+  **Nothing closes on Escape, on any host** — not Drawer, and not Dialog,
+  Menu, ActionSheet or Lightbox either. Read off the source
+  (2026-0919-2303), so the item's "check the web and iPad" is answered:
+  - Web: `core.Modal` renders as a plain `div`, not `<dialog>`, so there is
+    no free browser Escape; the only bare-key listener is the combobox's,
+    which clears its active option and explicitly leaves Escape to the page.
+  - Android: `dispatchKeyEvent` names the key "Escape" and looks for a
+    page-global chord, but `pageGlobal` requires a modifier or an F-key, and
+    `findKeyShortcut` only matches nodes with an `onClick` — a Drawer panel
+    carries `onBack`. Hence "unhandled".
+  - iPad: the chord gate drops every bare key too. A sheet-backed Modal may
+    still close for free through SwiftUI's `isPresented` binding, which
+    already calls `onDismiss`; a Drawer is a ZStack layer and never can.
+  Two shapes if it is ever built: route Escape into the existing back claim
+  (`onBackPressedDispatcher`, the web's `innermostBackClaim()`) — no Go API,
+  but it would also pop a Navigator route and fire an AppBar back arrow — or
+  a layer-only `core.OnEscape` beside `OnBack`. (was #79)
 - **N-058** · raised `2026-0919-1254-fold6-talkback-hid-harness-focus-after-navigation-inert-named-controls` · value low
   **TalkBack does not follow Tab onto 4.18's ☰.** Compose's focus is right
   (TalkBack off shows it), but TalkBack said "Showing Inbox" or stayed on the
   previous node. (was #80)
-- **N-059** · raised `2026-0919-1254-fold6-talkback-hid-harness-focus-after-navigation-inert-named-controls` · value low
-  **A control that sets its own `canFocus` later in its chain may override
-  Inert.** The read-only CodeEditor's focus gate does. Unchecked; no bundled
-  Inert subtree holds a CodeEditor. (was #81)
-- **N-060** · raised `2026-0919-1421-rweb-serve-and-doctor-dev-server-check` · value low
-  **RWeb: no public close hook for an SSE channel the handler filled itself.**
-  `serve/dev.go`'s subscribe queues the "hello" before registering, so it
-  cannot use `SSEHub.Handler` (the only thing that sets `sseCleanup`). A
-  closed page's channel lingers until the keepalive fills it and three real
-  broadcasts are refused (a few minutes). An upstream hook (an init callback on
-  `Handler`, or a public on-close for `SetupSSE`) would free it at once. RWeb
-  also prints "SSE Channel closed and drained" to stdout on every eviction.
+- **N-061** · raised `2026-0919-2303-safe-insets-record-inert-codeeditor-sse-cleanup` · value low
+  **The browser reports no safe-area insets.** `Window.Insets` is zero on the
+  web, which is right for a page in a browser window but wrong for an
+  installed PWA drawn behind a notch. The values exist only as CSS
+  `env(safe-area-inset-*)`; reading them means a probe element and a
+  `getComputedStyle` per report. Left undone on purpose (the reason is in
+  `wasm/grmob-runtime.js`'s windowMetrics comment), not overlooked.
 
 ## Non-goals
 
@@ -294,6 +305,50 @@ with each item's `raised` traced back through all session docs.
   TextView child are both gone. Not the same fix as `LocalGrMobNamedControl`,
   which silences a *control's* whole content; a group's content stays readable
   apart from the echo.
+
+- **N-026** · raised `2026-0917-0227-foldables-window-record-and-two-pane`
+  · closed `2026-0919-2303-safe-insets-record-inert-codeeditor-sse-cleanup` — safe-area insets are a record. `core.SafeInsets`
+  (`Top`/`Bottom`/`Left`/`Right`) is a field on `core.Window` rather than a
+  record of its own: `Window` is `==`-comparable by design and dedupes on
+  that, so insets ride the same `"window"` host event, the same dedupe and
+  the existing `hooks.UseWindow` with no second pub/sub. Invalid insets are
+  dropped on their own and the size kept, the same stance an unknown fold
+  gets. Android reports `systemBars | displayCutout` — `safeDrawing` minus
+  the IME, so the numbers match what its own `SafeArea` node applies — on an
+  additive `OnGlobalLayoutListener` rather than
+  `setOnApplyWindowInsetsListener`, which would displace the inset chain
+  edge-to-edge and Compose depend on. iOS reads the root `GeometryReader`'s
+  `safeAreaInsets`, which are the window's because the reader already
+  ignores the safe area, and watches them as well as the size. The browser
+  sends nothing (see N-061). Unrun on a device. (was #35)
+- **N-059** · raised
+  `2026-0919-1254-fold6-talkback-hid-harness-focus-after-navigation-inert-named-controls`
+  · closed `2026-0919-2303-safe-insets-record-inert-codeeditor-sse-cleanup` — the premise was inverted, the leak was real. On this
+  Compose version a nearer `focusProperties` does *not* beat an outer one:
+  `fetchFocusProperties` walks up and the outermost wins, so RenderNode's
+  head-of-chain placement was already right. What it cannot do is *reach*
+  the CodeEditor's field — the walk takes `untilType = Nodes.FocusTarget`
+  and stops at the first one it meets, and the field sits behind two scroll
+  boxes that each delegate a focus target. An *editable* CodeEditor in a
+  shut Drawer panel therefore stayed a hardware-keyboard Tab stop (a
+  read-only one was saved by its own gate answering no). Fixed by reading
+  `LocalGrMobInert.current` in the editor and conjoining it into the gate:
+  `canFocus = !inert && (!readOnly || gate.open)`. Pinned by
+  `TestComposeCodeEditorHonoursAnInertAncestor`. Still no bundled Inert
+  subtree holds a CodeEditor, so it is unrun on a device. (was #81)
+- **N-060** · raised `2026-0919-1421-rweb-serve-and-doctor-dev-server-check`
+  · closed `2026-0919-2303-safe-insets-record-inert-codeeditor-sse-cleanup` — no upstream hook was needed after all. The constraint
+  was self-imposed: `subscribe` queued the "hello" *into* the channel before
+  registering it, which is what ruled out `SSEHub.Handler` and with it
+  RWeb's on-close cleanup. Registering first and *broadcasting* the hello
+  second keeps the same ordering guarantee — `mu` is held across both steps
+  and across every broadcast, so no build can land in between — and lets the
+  channel come from `Handler`, which unregisters it the instant the stream
+  ends. The lingering channel and the "SSE Channel closed and drained"
+  stdout line both go with it (the line came from the eviction closing a
+  channel `sendSSE` was still reading; now the close happens after it has
+  returned). The price is that hello reaches every open page, so
+  `devclient.js` ignores a hello that tells it nothing.
 
 Closures before the seed are written up in the session docs; the
 most recent are in `2026-0919-1254-…` (#5, #62, #71, #75) and

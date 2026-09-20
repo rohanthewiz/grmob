@@ -44,9 +44,12 @@ import (
 // lays out in its own, so the two agree only when the TwoPane starts where
 // the window does. Origin is the pane's top-left corner in window
 // coordinates, for the layouts where it does not: a TwoPane under an 64dp
-// app bar in tabletop posture passes Origin{Y: statusBar + 64}. A TwoPane
-// that fills the window along the split axis — the usual arrangement for a
-// vertical hinge, where nothing sits to its left — needs none.
+// app bar in tabletop posture passes Origin{Y: statusBar + 64}. The status
+// bar's share of that is core.Window.Insets.Top (see core.SafeInsets), so
+// the value is a sum of what the window reports and what the caller drew
+// itself, not a measurement it has to guess. A TwoPane that fills the window
+// along the split axis — the usual arrangement for a vertical hinge, where
+// nothing sits to its left — needs none.
 //
 // First is sized to end exactly at the hinge (a fixed width or height) and
 // Second grows to fill what remains, which means the split is exact on the
@@ -101,7 +104,8 @@ type TwoPane struct {
 
 	// Origin is the TwoPane's top-left in window coordinates, for aligning to
 	// a hinge when the pane does not start at the window's corner. Only X and
-	// Y are read.
+	// Y are read. The system-bar part of it is core.Window.Insets; see
+	// "Lining up with the hinge" above.
 	Origin core.WindowRect
 
 	// IgnoreHorizontalFold skips rule 2, for a TwoPane inside a scrolling

@@ -140,6 +140,28 @@ internal fun GrMobCodeEditor(node: GrMobNode, extra: Modifier) {
     val focusManager = LocalFocusManager.current
     // Whether a read-only buffer may take focus right now; see ReadOnlyFocusGate.
     val gate = remember { ReadOnlyFocusGate() }
+    // core.Inert, read here rather than left to RenderNode's head-of-chain
+    // modifier, which cannot reach this editor's field.
+    //
+    // Compose applies a focus target's properties by walking up from the
+    // target through the modifier chain — but the walk stops at the first
+    // FocusTarget it meets on the way (DelegatableNode.visitSelfAndAncestors
+    // takes `untilType = Nodes.FocusTarget`). The field below sits behind two
+    // scroll boxes, and a Compose scroll container delegates a focus target of
+    // its own, so the walk from the field ends at the horizontal scroll and
+    // never reaches the `focusProperties { canFocus = false }` that RenderNode
+    // prepended to `extra` on the Row.
+    //
+    //	Row(extra: canFocus=false)      ← Inert lands here
+    //	 └ verticalScroll   ─ FocusTarget
+    //	    └ Box + horizontalScroll ─ FocusTarget  ← the walk stops here
+    //	       └ BasicTextField ─ FocusTarget        ← never sees it
+    //
+    // Unnoticed until now because it only bites an *editable* editor: a
+    // read-only one answers `false` to a Tab search through its own gate
+    // whatever the ancestor says. An editable one inside a shut Drawer panel
+    // stayed a hardware-keyboard Tab stop.
+    val inert = LocalGrMobInert.current
 
     var buffer by remember { mutableStateOf(TextFieldValue(upstream)) }
     // Go's edit stamps and this editor's half of them. See core/text_edit.go
@@ -417,7 +439,10 @@ internal fun GrMobCodeEditor(node: GrMobNode, extra: Modifier) {
                         // Out of the Tab order when read-only; see ReadOnlyFocusGate.
                         // A pointer press opens the gate on the Initial pass, which
                         // runs before the field's own tap handler asks for focus.
-                        .focusProperties { canFocus = !readOnly || gate.open }
+                        // Inert wins over both: it is the ancestor's refusal, and
+                        // this is the only place it can be applied to the field
+                        // (see `inert` above).
+                        .focusProperties { canFocus = !inert && (!readOnly || gate.open) }
                         .onFocusChanged { state ->
                             gate.focused = state.isFocused
                             if (!state.isFocused) gate.open = false

@@ -264,7 +264,7 @@ func TestBothNativeCodeEditorsTreatReadOnlyAsNotDisabled(t *testing.T) {
 // semantics are replaced with its text when read-only.
 func TestReadOnlyCodeEditorLeavesTheTabOrderOnCompose(t *testing.T) {
 	pinExprs(t, kotlinCodeEditor, []struct{ expr, why string }{
-		{".focusProperties { canFocus = !readOnly || gate.open }",
+		{".focusProperties { canFocus = !inert && (!readOnly || gate.open) }",
 			"Tab and Shift+Tab skip a read-only buffer, as tabindex=-1 does"},
 		{"if (initial.changes.any { it.pressed }) gate.open = true",
 			"a press still focuses it, so it can still be selected and copied"},

@@ -74,6 +74,36 @@ func TestTwoPaneResolvesEachDeviceShape(t *testing.T) {
 	}
 }
 
+// What core.SafeInsets is for, end to end: the status bar's height is the
+// Origin a pane below it needs, and reading it off the window is the whole
+// of the arithmetic a caller has to do.
+//
+//	window top ──────────────  y = 0     ← the fold's bounds are measured here
+//	  status bar   24dp             = win.Insets.Top
+//	pane top   ──────────────  y = 24    ← Origin
+//	  ⋮
+//	hinge      ──────────────  y = 420.5 ← Fold.Bounds.Y, still in window space
+//
+// lead = 420.5 − 24: First gets 396.5dp and the crease falls exactly on the
+// boundary between the panes rather than 24dp into Second.
+func TestTwoPaneTakesItsOriginFromTheWindowInsets(t *testing.T) {
+	win := tabletop
+	win.Insets = core.SafeInsets{Top: 24, Bottom: 48}
+
+	pane := TwoPane{Origin: core.WindowRect{Y: win.Insets.Top}}
+	want := twoPaneLayout{arrange: arrangeHingeColumn, lead: tabletop.Fold.Bounds.Y - 24}
+	if got := pane.resolve(win); got != want {
+		t.Errorf("got %+v, want %+v", got, want)
+	}
+
+	// And a pane that forgets its origin is off by exactly the bar, which is
+	// the bug the record exists to let a caller avoid.
+	if got := (TwoPane{}).resolve(win); got.lead != tabletop.Fold.Bounds.Y {
+		t.Errorf("no Origin gave lead %v, want the raw hinge position %v",
+			got.lead, tabletop.Fold.Bounds.Y)
+	}
+}
+
 func TestTwoPaneRatioClamps(t *testing.T) {
 	for in, want := range map[float64]float64{0: 0.5, -1: 0.5, 1: 0.5, 2: 0.5, 0.4: 0.4} {
 		if got := (TwoPane{Ratio: in}).ratio(); got != want {

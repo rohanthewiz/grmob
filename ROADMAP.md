@@ -785,8 +785,11 @@
       lesson 4.21. Checked on the 7.6" foldable emulator, whose window
       extension reports the hinge state one posture change late — the shell
       passes WindowManager's word through rather than second-guessing it.
-      Not done: safe-area insets as a record, so a TwoPane under system bars
-      could find its own Origin in tabletop posture
+      `Window.Insets` (`core.SafeInsets`) carries the safe-area edges in the
+      same record and the same host event, so a TwoPane under the system
+      bars can find its own `Origin` in tabletop posture: Android reports
+      `safeDrawing` minus the IME, iOS the root proxy's `safeAreaInsets`,
+      and a browser page has none to report. Unrun on a device
 - [x] Clipboard — `core.WriteClipboard` / `core.ReadClipboard` over the
       `"clipboard"` system event, the read answered by the `"clipboard"` host
       event under the id it carried (core's first reply to one request rather

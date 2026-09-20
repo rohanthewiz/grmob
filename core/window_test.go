@@ -182,6 +182,62 @@ func TestWindowUnknownFoldKeepsTheSize(t *testing.T) {
 	}
 }
 
+// Safe-area insets decode from the same payload, and a shell that predates
+// them still reports a window: the key is optional and its absence is zero,
+// which is also what a host with no system bars sends.
+func TestWindowHostEventDecodesInsets(t *testing.T) {
+	freshWindow(t)
+	ReceiveHostEvent("window", map[string]any{
+		"width": 411, "height": 891,
+		"insets": map[string]any{"top": 24.0, "bottom": 48.0, "left": 0.0, "right": 0.0},
+	})
+	if got := CurrentWindow().Insets; got != (SafeInsets{Top: 24, Bottom: 48}) {
+		t.Fatalf("insets = %+v", got)
+	}
+
+	ReceiveHostEvent("window", map[string]any{"width": 411, "height": 892})
+	if got := CurrentWindow().Insets; got != (SafeInsets{}) {
+		t.Errorf("a payload with no insets kept the previous ones: %+v", got)
+	}
+}
+
+// A change in the insets alone is a change: the bars come and go (immersive
+// mode, a rotation that moves the cutout) without the window resizing, and a
+// layout that positions against them has to hear it.
+func TestWindowInsetsAloneAreAChange(t *testing.T) {
+	freshWindow(t)
+	var heard int
+	cancel := OnWindow(func(Window) { heard++ })
+	defer cancel()
+
+	ReceiveWindow(Window{Width: 411, Height: 891, Insets: SafeInsets{Top: 24}})
+	ReceiveWindow(Window{Width: 411, Height: 891, Insets: SafeInsets{Top: 24}})
+	ReceiveWindow(Window{Width: 411, Height: 891, Insets: SafeInsets{Top: 40}})
+	if heard != 2 {
+		t.Fatalf("heard %d reports, want 2", heard)
+	}
+}
+
+// Insets that cannot be insets are dropped on their own, the way an unknown
+// fold is: the window they arrived with was measured correctly and is kept.
+// A negative edge is the signature of a conversion that divided by a zero
+// density, which is exactly when the size is still right.
+func TestWindowInvalidInsetsKeepTheSize(t *testing.T) {
+	freshWindow(t)
+	for _, bad := range []SafeInsets{
+		{Top: -1},
+		{Bottom: math.NaN()},
+		{Left: math.Inf(1)},
+		{Right: -0.5},
+	} {
+		ReceiveWindow(Window{Width: 700, Height: 800, Insets: bad})
+		w := CurrentWindow()
+		if w.Width != 700 || w.Insets != (SafeInsets{}) {
+			t.Errorf("%+v gave %+v, want the size with no insets", bad, w)
+		}
+	}
+}
+
 // A subscriber may read the record and cancel itself from inside its handler
 // without deadlocking.
 func TestWindowSubscriberMayReadAndCancel(t *testing.T) {

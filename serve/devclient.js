@@ -147,11 +147,21 @@
 
     // --- The stream -------------------------------------------------------
     const events = new EventSource("/__dev/events");
+    // The server greets a connecting page by broadcasting, so this page also
+    // hears the hello sent to every *other* page that connects later (the
+    // reason is in serve/dev.go's subscribe). Only the first hello of a
+    // connection is worth a pill: after that, a hello that carries a build
+    // this page already has, and no compile error, is a greeting meant for
+    // somebody else. One that carries a *different* build still matters —
+    // that is the late-build case hello exists for — and is acted on however
+    // often it arrives.
+    let greeted = false;
     events.addEventListener("hello", e => {
         const d = JSON.parse(e.data);
         if (d.error) showError("Build failed", d.error);
         if (d.build && d.build !== build) swap(d.build);
-        else status("hot reload on");
+        else if (!greeted) status("hot reload on");
+        greeted = true;
     });
     events.addEventListener("building", () => status("building…", { hold: true }));
     events.addEventListener("buildfail", e => {
@@ -166,5 +176,11 @@
         swap(d.build);
     });
     // EventSource reconnects on its own; the pill just says so meanwhile.
-    events.onerror = () => status("dev server offline", { err: true, hold: true });
+    // Clearing `greeted` here is what makes the reconnect's own hello say
+    // "hot reload on" again, so the pill goes back to reporting the truth
+    // after having said the server was gone.
+    events.onerror = () => {
+        greeted = false;
+        status("dev server offline", { err: true, hold: true });
+    };
 })();

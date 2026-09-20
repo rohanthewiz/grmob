@@ -28,13 +28,19 @@ func TestWindowEventSpellingsAgree(t *testing.T) {
 		`"` + string(core.FoldVertical) + `"`,
 		`"` + string(core.FoldHorizontal) + `"`,
 	}
+	// The safe-area insets, on the two shells whose platform has system
+	// bars. The browser sends no insets key at all — a page in a browser
+	// window has the whole viewport, and an installed PWA's env() values
+	// have no JS reading — and core decodes the absence as zero, which is
+	// the same answer.
+	insetWords := []string{`"insets"`, `"top"`, `"bottom"`, `"left"`, `"right"`}
 	for _, shell := range []struct {
-		file string
-		fold bool
+		file         string
+		fold, insets bool
 	}{
-		{nativeFile("android", "app", "src", "main", "java", "com", "grmob", "app", "AppWindow.kt"), true},
-		{nativeFile("ios", "GrMob", "App", "AppWindow.swift"), false},
-		{nativeFile("wasm", "grmob-runtime.js"), true},
+		{nativeFile("android", "app", "src", "main", "java", "com", "grmob", "app", "AppWindow.kt"), true, true},
+		{nativeFile("ios", "GrMob", "App", "AppWindow.swift"), false, true},
+		{nativeFile("wasm", "grmob-runtime.js"), true, false},
 	} {
 		raw, err := os.ReadFile(shell.file)
 		if err != nil {
@@ -44,6 +50,9 @@ func TestWindowEventSpellingsAgree(t *testing.T) {
 		words := sizeKeys
 		if shell.fold {
 			words = append(append([]string{}, sizeKeys...), foldWords...)
+		}
+		if shell.insets {
+			words = append(append([]string{}, words...), insetWords...)
 		}
 		for _, w := range words {
 			// The browser runtime writes object keys unquoted (x: aRight),

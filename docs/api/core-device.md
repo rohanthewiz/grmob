@@ -92,6 +92,7 @@ One of 11 topic pages of [package core](core.md), which has the package overview
 - [`type Posture`](#type-posture)
 - [`type Region`](#type-region)
     - [`func ParseRegion`](#func-parseregion)
+- [`type SafeInsets`](#type-safeinsets)
 - [`type SizeClass`](#type-sizeclass)
 - [`type Window`](#type-window)
     - [`func CurrentWindow`](#func-currentwindow)
@@ -550,7 +551,7 @@ OnWindow subscribes fn to window changes. The returned function cancels the subs
 
 Process-wide like OnLifecycle, and for the same reason: one app, one window. fn runs on whichever goroutine delivered the event and must not block; writing State and calling RequestRender are fine from there.
 
-<small>[core/window.go:259](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L259)</small>
+<small>[core/window.go:309](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L309)</small>
 
 ### func ParseLatLng
 
@@ -653,7 +654,7 @@ Validation is split by what a bad value would do downstream:
 
 Received is set here, whatever the caller passed, since arriving through this function is what receiving means. A repeat of the current window is absorbed silently. Subscribers are notified outside the lock.
 
-<small>[core/window.go:290](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L290)</small>
+<small>[core/window.go:340](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L340)</small>
 
 ### func ShowUserLocation
 
@@ -983,7 +984,7 @@ type Fold struct {
 
 Fold is one hinge or seam crossing the window.
 
-<small>[core/window.go:141](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L141)</small>
+<small>[core/window.go:181](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L181)</small>
 
 ### type FoldOrientation
 
@@ -993,7 +994,7 @@ type FoldOrientation string
 
 FoldOrientation is the direction the hinge \*line\* runs across the window. A vertical hinge splits the window into left and right; a horizontal one into top and bottom.
 
-<small>[core/window.go:109](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L109)</small>
+<small>[core/window.go:111](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L111)</small>
 
 ```go
 const (
@@ -1010,7 +1011,7 @@ type FoldState string
 
 FoldState is how far the hinge is bent.
 
-<small>[core/window.go:94](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L94)</small>
+<small>[core/window.go:96](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L96)</small>
 
 ```go
 const (
@@ -1273,7 +1274,7 @@ type Posture string
 
 Posture names the two half-opened shapes a layout designs for, derived from FoldState and FoldOrientation rather than reported, because every platform reports the two underlying facts and none reports these words.
 
-<small>[core/window.go:119](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L119)</small>
+<small>[core/window.go:121](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L121)</small>
 
 ```go
 const (
@@ -1329,6 +1330,38 @@ Exported because all three hosts format this string and a test in each harness h
 
 <small>[core/mapview.go:359](https://github.com/rohanthewiz/grmob/blob/master/core/mapview.go#L359)</small>
 
+### type SafeInsets
+
+```go
+type SafeInsets struct {
+	Top, Bottom, Left, Right float64
+}
+```
+
+SafeInsets is how far in from each window edge the content area starts: the status bar, the navigation bar or home indicator, the display cutout, and on a browser whatever the platform puts over the viewport.
+
+#### Why the record has it when SafeArea already handles it
+
+core.SafeArea insets a subtree, and that covers the ordinary case completely — a screen does not need to know the numbers to keep its content out from under the bars, and comps.Screen builds one so most apps never think about it. What a subtree cannot do is answer a question about \*position\*, and a foldable asks one: comps.TwoPane aligns its split with a hinge reported in window coordinates, so a TwoPane that starts below the status bar has to subtract that bar's height to find the hinge in its own coordinates. That is TwoPane.Origin, and Top is the value it wants.
+
+	window top ─────────────────────  y = 0      ← fold bounds are measured here
+	  status bar        Insets.Top
+	content top ─────────────────────  y = Insets.Top   ← a SafeArea's child starts here
+
+The same numbers answer "how tall is the bar I am drawing my own colour behind" and "may I put a control this close to the home indicator", which are the other two reasons an app reaches for them.
+
+#### What each host can report
+
+	Android   WindowInsets.safeDrawing minus the IME, in dp — the same
+	          insets the SafeArea node applies, so the two agree
+	iOS       the root GeometryReader's safeAreaInsets, in points
+	Browser   zero: there is no JS reading of env(safe-area-inset-*), and a
+	          page in a normal browser window has no system bars anyway
+
+Left and Right are physical edges, not leading and trailing: a cutout is where it is whatever the writing direction is, and the fold bounds beside them are physical too.
+
+<small>[core/window.go:176](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L176)</small>
+
 ### type SizeClass
 
 ```go
@@ -1337,7 +1370,7 @@ type SizeClass string
 
 SizeClass buckets a window dimension into Material's three window size classes. The buckets, not the raw width, are what a layout should branch on: a Z Fold's inner screen and a small tablet differ by 100dp and want the same layout, and a breakpoint shared across apps is one users learn.
 
-<small>[core/window.go:70](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L70)</small>
+<small>[core/window.go:72](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L72)</small>
 
 ```go
 const (
@@ -1369,6 +1402,16 @@ type Window struct {
 	HasFold bool
 	Fold    Fold
 
+	// Insets is the content area's distance from each window edge. Zero
+	// before the host reports, and zero from a host that has no such
+	// concept, which reads the same as "the whole window is usable" — the
+	// right answer in both cases.
+	//
+	// A plain four-float struct rather than a pointer or a bool-and-value
+	// pair for the same reason HasFold is a bool: Window must stay
+	// comparable with ==, which is what lets the record dedupe repeats.
+	Insets SafeInsets
+
 	// Received is true once any host has reported. Before that the size is
 	// unknown rather than zero, and WidthClass answers compact — a phone is
 	// the safest layout to draw into a window of unknown size.
@@ -1378,7 +1421,7 @@ type Window struct {
 
 Window is the last report of the app window's size and fold.
 
-<small>[core/window.go:166](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L166)</small>
+<small>[core/window.go:206](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L206)</small>
 
 #### func CurrentWindow
 
@@ -1388,7 +1431,7 @@ func CurrentWindow() Window
 
 CurrentWindow reports the last window the host announced; the zero Window (Received false) until it has announced one.
 
-<small>[core/window.go:247](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L247)</small>
+<small>[core/window.go:297](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L297)</small>
 
 #### func (Window) HeightClass
 
@@ -1398,7 +1441,7 @@ func (w Window) HeightClass() SizeClass
 
 HeightClass is the window's height bucketed into a SizeClass. Most layouts only need WidthClass; height is what tells a landscape phone (compact height) from a tablet in landscape, which a bottom sheet or a video player cares about.
 
-<small>[core/window.go:202](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L202)</small>
+<small>[core/window.go:252](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L252)</small>
 
 #### func (Window) Posture
 
@@ -1408,7 +1451,7 @@ func (w Window) Posture() Posture
 
 Posture derives the named posture from the fold. See Posture's constants.
 
-<small>[core/window.go:213](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L213)</small>
+<small>[core/window.go:263](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L263)</small>
 
 #### func (Window) SeparatingFold
 
@@ -1418,7 +1461,7 @@ func (w Window) SeparatingFold() (Fold, bool)
 
 SeparatingFold returns the fold when content should be laid out around it, which is the one question a two-pane layout asks. A non-separating fold (a flat, continuous panel) is reported as none, since there is nothing to avoid.
 
-<small>[core/window.go:227](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L227)</small>
+<small>[core/window.go:277](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L277)</small>
 
 #### func (Window) WidthClass
 
@@ -1428,7 +1471,7 @@ func (w Window) WidthClass() SizeClass
 
 WidthClass is the window's width bucketed into a SizeClass. See the breakpoint constants above.
 
-<small>[core/window.go:188](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L188)</small>
+<small>[core/window.go:238](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L238)</small>
 
 ### type WindowRect
 
@@ -1440,5 +1483,5 @@ type WindowRect struct {
 
 WindowRect is an axis-aligned rectangle in window coordinates. Not "Rect": that name is the canvas shape constructor (canvas.go).
 
-<small>[core/window.go:136](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L136)</small>
+<small>[core/window.go:138](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L138)</small>
 

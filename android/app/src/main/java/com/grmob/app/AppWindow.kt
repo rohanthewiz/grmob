@@ -1,6 +1,8 @@
 package com.grmob.app
 
 import androidx.activity.ComponentActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -20,6 +22,7 @@ import org.json.JSONObject
  *   WindowMetricsCalculator ──▶ width, height          (px ÷ density → dp)
  *   FoldingFeature          ──▶ fold { state, orientation, separating,
  *                                      occluding, x, y, width, height }
+ *   root WindowInsetsCompat ──▶ insets { top, bottom, left, right }
  *
  * # Why Jetpack WindowManager
  *
@@ -45,6 +48,24 @@ import org.json.JSONObject
  * a report could describe. Coming back to STARTED re-emits the current
  * layout, so a posture change made while backgrounded still lands.
  *
+ * The insets have their own trigger, because they move without the fold or
+ * the window doing anything — a rotation that carries the cutout to the
+ * other edge, a gesture-nav bar that changes height. The natural hook,
+ * setOnApplyWindowInsetsListener, is *not* used: it replaces a view's
+ * inset handling rather than observing it, and on the decor view that is
+ * the chain edge-to-edge and Compose's own WindowInsets depend on.
+ * OnGlobalLayoutListener is additive, consumes nothing, and fires on the
+ * layout pass an inset change causes anyway; the reported set is remembered
+ * so the frequent calls turn into a comparison and nothing more.
+ *
+ * # Which insets
+ *
+ * systemBars + displayCutout, which is WindowInsets.safeDrawing minus the
+ * IME — the same set Renderer.kt's SafeArea node applies, on purpose, so
+ * the numbers Go reads describe the edge its own SafeArea keeps content
+ * off. The keyboard is deliberately not in them: it is a transient overlay
+ * with its own story (core/keyboard.go), not an edge of the window.
+ *
  * # Units and coordinates
  *
  * Both the window bounds and FoldingFeature.bounds are in window pixels with
@@ -62,16 +83,70 @@ object AppWindow {
      */
     fun attach(activity: ComponentActivity, runtime: GrMobRuntime) {
         val tracker = WindowInfoTracker.getOrCreate(activity)
+        // The two triggers share what the other one knows. Both run on the
+        // main thread — collect resumes on the lifecycleScope's Main
+        // dispatcher and a layout pass is by definition on it — so plain
+        // vars need no synchronization, and both die with this Activity
+        // rather than living on the object across a recreation.
+        var latest: WindowLayoutInfo? = null
+        var reported: Insets? = null
+
         activity.lifecycleScope.launch {
             activity.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 tracker.windowLayoutInfo(activity).collect { info ->
-                    report(activity, runtime, info)
+                    latest = info
+                    val now = currentInsets(activity)
+                    reported = now
+                    report(activity, runtime, info, now)
                 }
             }
         }
+
+        activity.window.decorView.viewTreeObserver.addOnGlobalLayoutListener {
+            val now = currentInsets(activity)
+            if (now == reported) return@addOnGlobalLayoutListener
+            reported = now
+            // latest is null only before the first emission, which is the
+            // one case where the size may not be measured yet either; the
+            // collector above will report both together in a moment.
+            latest?.let { report(activity, runtime, it, now) }
+        }
     }
 
-    private fun report(activity: ComponentActivity, runtime: GrMobRuntime, info: WindowLayoutInfo) {
+    /** The window's safe-drawing edges in dp. See "Which insets" above. */
+    private fun currentInsets(activity: ComponentActivity): Insets {
+        val density = activity.resources.displayMetrics.density
+        val root = ViewCompat.getRootWindowInsets(activity.window.decorView)
+            ?: return Insets(0.0, 0.0, 0.0, 0.0)
+        val i = root.getInsets(
+            WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout(),
+        )
+        return Insets(
+            top = i.top / density.toDouble(),
+            bottom = i.bottom / density.toDouble(),
+            left = i.left / density.toDouble(),
+            right = i.right / density.toDouble(),
+        )
+    }
+
+    /**
+     * One report's insets, in dp. A data class so the "did they change?"
+     * test above is a value comparison, which is the same thing core's
+     * record does with the whole Window.
+     */
+    private data class Insets(
+        val top: Double,
+        val bottom: Double,
+        val left: Double,
+        val right: Double,
+    )
+
+    private fun report(
+        activity: ComponentActivity,
+        runtime: GrMobRuntime,
+        info: WindowLayoutInfo,
+        insets: Insets,
+    ) {
         val density = activity.resources.displayMetrics.density
         // computeCurrentWindowMetrics, not the display's size: in split
         // screen or a freeform window the app has a fraction of the display,
@@ -82,6 +157,14 @@ object AppWindow {
         val payload = JSONObject()
             .put("width", bounds.width() / density)
             .put("height", bounds.height() / density)
+            .put(
+                "insets",
+                JSONObject()
+                    .put("top", insets.top)
+                    .put("bottom", insets.bottom)
+                    .put("left", insets.left)
+                    .put("right", insets.right),
+            )
 
         // At most one fold is reported. Every shipping foldable has one
         // hinge, and core's record has room for one; a device that someday

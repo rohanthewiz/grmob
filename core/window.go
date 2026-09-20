@@ -38,7 +38,9 @@ import (
 // system bars. That is the space Android's FoldingFeature reports in and the
 // one the viewport segments report in, so the shells convert units and
 // nothing else. A component that is not at the window's origin has to know
-// its own offset to line up with the hinge; comps.TwoPane takes it as Origin.
+// its own offset to line up with the hinge; comps.TwoPane takes it as Origin,
+// and Insets (see SafeInsets) is where the system-bar part of that offset
+// comes from.
 //
 // # How it arrives
 //
@@ -137,6 +139,44 @@ type WindowRect struct {
 	X, Y, Width, Height float64
 }
 
+// SafeInsets is how far in from each window edge the content area starts:
+// the status bar, the navigation bar or home indicator, the display cutout,
+// and on a browser whatever the platform puts over the viewport.
+//
+// # Why the record has it when SafeArea already handles it
+//
+// core.SafeArea insets a subtree, and that covers the ordinary case
+// completely — a screen does not need to know the numbers to keep its
+// content out from under the bars, and comps.Screen builds one so most apps
+// never think about it. What a subtree cannot do is answer a question about
+// *position*, and a foldable asks one: comps.TwoPane aligns its split with a
+// hinge reported in window coordinates, so a TwoPane that starts below the
+// status bar has to subtract that bar's height to find the hinge in its own
+// coordinates. That is TwoPane.Origin, and Top is the value it wants.
+//
+//	window top ─────────────────────  y = 0      ← fold bounds are measured here
+//	  status bar        Insets.Top
+//	content top ─────────────────────  y = Insets.Top   ← a SafeArea's child starts here
+//
+// The same numbers answer "how tall is the bar I am drawing my own colour
+// behind" and "may I put a control this close to the home indicator", which
+// are the other two reasons an app reaches for them.
+//
+// # What each host can report
+//
+//	Android   WindowInsets.safeDrawing minus the IME, in dp — the same
+//	          insets the SafeArea node applies, so the two agree
+//	iOS       the root GeometryReader's safeAreaInsets, in points
+//	Browser   zero: there is no JS reading of env(safe-area-inset-*), and a
+//	          page in a normal browser window has no system bars anyway
+//
+// Left and Right are physical edges, not leading and trailing: a cutout is
+// where it is whatever the writing direction is, and the fold bounds beside
+// them are physical too.
+type SafeInsets struct {
+	Top, Bottom, Left, Right float64
+}
+
 // Fold is one hinge or seam crossing the window.
 type Fold struct {
 	State       FoldState
@@ -176,6 +216,16 @@ type Window struct {
 	// comparable with ==, which is what lets the record dedupe repeats.
 	HasFold bool
 	Fold    Fold
+
+	// Insets is the content area's distance from each window edge. Zero
+	// before the host reports, and zero from a host that has no such
+	// concept, which reads the same as "the whole window is usable" — the
+	// right answer in both cases.
+	//
+	// A plain four-float struct rather than a pointer or a bool-and-value
+	// pair for the same reason HasFold is a bool: Window must stay
+	// comparable with ==, which is what lets the record dedupe repeats.
+	Insets SafeInsets
 
 	// Received is true once any host has reported. Before that the size is
 	// unknown rather than zero, and WidthClass answers compact — a phone is
@@ -299,6 +349,12 @@ func ReceiveWindow(w Window) {
 		// HasFold=false compare equal and dedupe.
 		w.Fold = Fold{}
 	}
+	if !validInsets(w.Insets) {
+		// Dropped on their own, like an unknown fold: a nonsense inset is no
+		// reason to throw away a window that was measured correctly, and zero
+		// is the same value a host with no system bars sends.
+		w.Insets = SafeInsets{}
+	}
 	w.Received = true
 
 	windowMu.Lock()
@@ -320,6 +376,15 @@ func ReceiveWindow(w Window) {
 
 func validLength(v float64) bool {
 	return v >= 0 && !math.IsNaN(v) && !math.IsInf(v, 0)
+}
+
+// validInsets rejects a set with any negative, NaN or infinite edge. Unlike
+// the fold there is no vocabulary to check — an inset is only a length —
+// and a negative one is the giveaway of a unit conversion that divided by a
+// zero density.
+func validInsets(in SafeInsets) bool {
+	return validLength(in.Top) && validLength(in.Bottom) &&
+		validLength(in.Left) && validLength(in.Right)
 }
 
 func validFold(f Fold) bool {
@@ -350,9 +415,15 @@ func validFold(f Fold) bool {
 //	  separating   bool
 //	  occluding    bool
 //	  x, y, width, height   number   the fold's bounds, window coordinates
+//	insets  object   absent from a host with no system bars, else:
+//	  top, bottom, left, right   number   layout units
 //
 // A report with no width or height is dropped: a host that measured nothing
 // has nothing to say, and a zero default would read as a zero-sized window.
+//
+// Both objects are optional and every key inside them defaults to zero, so a
+// shell built before either was added decodes without error — which is the
+// point of a JSON payload rather than a positional one.
 func receiveWindow(data map[string]any) {
 	width, okW := numberProp(data, "width")
 	height, okH := numberProp(data, "height")
@@ -377,6 +448,13 @@ func receiveWindow(data map[string]any) {
 			Occluding:   occ,
 			Bounds:      WindowRect{X: x, Y: y, Width: fw, Height: fh},
 		}
+	}
+	if in, ok := data["insets"].(map[string]any); ok {
+		top, _ := numberProp(in, "top")
+		bottom, _ := numberProp(in, "bottom")
+		left, _ := numberProp(in, "left")
+		right, _ := numberProp(in, "right")
+		w.Insets = SafeInsets{Top: top, Bottom: bottom, Left: left, Right: right}
 	}
 	ReceiveWindow(w)
 }

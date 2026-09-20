@@ -71,7 +71,7 @@ var devClient []byte
 //
 //	watch/build ──broadcast──▶ SSEHub ──▶ chan(page 1) ──▶ rweb sendSSE ──▶ EventSource
 //	                                 ├──▶ chan(page 2) ──▶ ...
-//	/__dev/events ──subscribe──▶ (hello queued first, then Register)
+//	/__dev/events ──subscribe──▶ (SSEHub.Handler registers, then hello is broadcast)
 type devServer struct {
 	dir  string // the directory being served (wasm/)
 	root string // the module root, where build.sh lives
@@ -110,14 +110,13 @@ func newDevServer(dir string) (*devServer, error) {
 	return d, nil
 }
 
-// newDevHub builds the hub the pages subscribe to. MaxDropped is what
-// eventually frees the channel of a page that has gone away: RWeb stops
-// draining a channel when its connection closes, but only a channel handed
-// out by the hub's own Handler is unregistered at that moment, and
-// subscribe cannot use that Handler (it has to queue the hello before the
-// channel is shared). So a dead page's channel fills up — the keepalive
-// alone does that in under three minutes — and is closed on the third event
-// it then refuses. A few idle channels for a few minutes is the whole cost.
+// newDevHub builds the hub the pages subscribe to. Every channel comes from
+// the hub's own Handler, which registers an on-close cleanup with RWeb, so a
+// page that goes away is unregistered the moment its stream ends. MaxDropped
+// is therefore only the backstop it was meant to be: a page whose socket is
+// alive but not draining (a suspended tab, a wedged proxy) is dropped from
+// after the third event it refuses, rather than holding events for pages
+// that are still reading.
 func newDevHub() *rweb.SSEHub {
 	return rweb.NewSSEHub(rweb.SSEHubOptions{
 		ChannelSize: sseChannelSize,
@@ -180,30 +179,46 @@ func (d *devServer) serveIndex(ctx rweb.Context) error {
 // serveEvents is the server-sent event stream every open page subscribes to.
 // SSE rather than a WebSocket because the traffic is one-way, EventSource
 // reconnects by itself when the server restarts, and the browser side needs
-// no library. The handler only hands RWeb a channel and returns; RWeb then
-// streams whatever arrives on it until the page disconnects.
+// no library.
+//
+// The hub's own Handler is what makes the channel, registers it and hands it
+// to RWeb, and it is used rather than a hand-rolled SetupSSE for one reason:
+// only a channel that came from Handler gets RWeb's on-close callback, which
+// unregisters it the instant the page's stream ends. A channel registered by
+// hand outlives its page until the keepalive has filled it and three
+// broadcasts have been refused — minutes of events fanned out to a socket
+// nobody is reading.
 func (d *devServer) serveEvents(ctx rweb.Context) error {
-	return ctx.Server().SetupSSE(ctx, d.subscribe())
+	var err error
+	d.subscribe(func() { err = d.hub.Handler(ctx.Server())(ctx) })
+	return err
 }
 
-// subscribe makes a page's channel and registers it with the hub. The
-// opening "hello" carries the current build identity and the standing
-// compile error, if any, so a page that connects (or reconnects) late is
-// brought up to date rather than told only about what happens next.
+// subscribe runs join — which must register the new page's channel with the
+// hub — and then greets it. The "hello" carries the current build identity
+// and the standing compile error, if any, so a page that connects (or
+// reconnects) late is brought up to date rather than told only about what
+// happens next.
 //
-// The hello goes into the channel before the hub knows about it, and under
-// mu, which every broadcast also holds. Between them those two make the
-// page's view consistent: either it registers before a build lands, and gets
-// hello(old) and then reload(new), or after, and gets hello(new). Without the
-// lock the order hello(old)-after-reload(new) is possible, and the client
-// would read it as a newer build to swap back to.
-func (d *devServer) subscribe() chan any {
-	ch := make(chan any, sseChannelSize)
+// Registering first and greeting second is the opposite of queueing the
+// hello into the channel before sharing it, and it is what lets the channel
+// come from the hub's Handler (see serveEvents). The consistency the old
+// order bought is instead bought by mu, which is held across both steps and
+// across every broadcast: a build cannot land between the registration and
+// the hello, so the page sees either hello(old) then reload(new), or
+// hello(new) alone. The order hello(old)-after-reload(new), which the client
+// would read as a newer build to swap *back* to, cannot occur.
+//
+// The price is that hello is a broadcast — the hub addresses channels, not
+// pages, and this one is not ours to name — so every already-open page is
+// greeted again whenever a new one connects. That is why the client only
+// reacts to a hello that tells it something (see devclient.js): a repeat of
+// what a page already has is dropped there rather than filtered here.
+func (d *devServer) subscribe(join func()) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	ch <- rawEvent(sseEvent{"hello", map[string]any{"build": d.buildID, "error": d.lastFail}})
-	d.hub.Register(ch)
-	return ch
+	join()
+	d.hub.BroadcastRaw(rawEvent(sseEvent{"hello", map[string]any{"build": d.buildID, "error": d.lastFail}}))
 }
 
 // broadcast fans an event out to every subscribed page. The hub never

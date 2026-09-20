@@ -9096,6 +9096,16 @@ const GrMob = (() => {
     // browser without the APIs — there are no segments and the report is the
     // viewport size alone, which is still what size classes need.
     //
+    // No "insets" key is sent, and core reads its absence as zero, which is
+    // the true answer for a page in a browser window: the viewport is the
+    // usable area and there are no system bars over it. The one case that
+    // differs is an installed PWA drawn behind a notch, where the numbers
+    // exist but only as the CSS env(safe-area-inset-*) values — there is no
+    // JS reading of them. Getting them would mean a probe element padded
+    // with the env() values and a getComputedStyle of it every report, which
+    // is a layout read per resize for a case this app does not have. Left
+    // undone on purpose, not overlooked.
+    //
     // It reports on resize (a fold or unfold resizes the viewport, and a
     // segment change fires resize too), on a posture change, and once when
     // Go comes up (see waitForWasm), because the size a page loaded at is
