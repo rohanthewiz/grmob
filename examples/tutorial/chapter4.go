@@ -1,6 +1,7 @@
 package tutorial
 
 import (
+	"cmp"
 	"fmt"
 	"maps"
 	"math"
@@ -66,6 +67,7 @@ func chapter4() Chapter {
 			lessonReadMoreAndHalfStars(),
 			lessonMessageThread(),
 			lessonChatFamily(),
+			lessonTreeAndWizard(),
 		},
 	}
 }
@@ -5689,6 +5691,226 @@ func lessonChatFamily() Lesson {
 					"ReactionBar and Poll hold no state: counts and votes are server data, so the caller toggles and records.",
 					"Reaction.Label names the emoji; a count of zero is not drawn; Trailing is the slot for an add chip.",
 					"Poll's shares always total 100 (largest remainder), and the reader's choice is PollOption.Mine.",
+				),
+			)
+		},
+	}
+}
+
+// tutorialFiles is lesson 4.35's tree: a small project, three levels deep,
+// with one empty folder so that TreeNode.Branch has something to show.
+//
+//	docs/
+//	  guide.md
+//	  api/
+//	    core.md
+//	    comps.md
+//	src/
+//	  main.go
+//	  app.go
+//	assets/          empty: a branch by its flag
+//	README.md
+//
+// IDs are paths, which are unique in the whole tree by construction. That is
+// the rule TreeView asks for, since its Expanded map has one key space.
+func tutorialFiles() []comps.TreeNode {
+	folder, file := core.Text("📁"), core.Text("📄")
+	return []comps.TreeNode{
+		{ID: "docs", Label: "docs", Leading: folder, Children: []comps.TreeNode{
+			{ID: "docs/guide.md", Label: "guide.md", Leading: file},
+			{ID: "docs/api", Label: "api", Leading: folder, Children: []comps.TreeNode{
+				{ID: "docs/api/core.md", Label: "core.md", Leading: file},
+				{ID: "docs/api/comps.md", Label: "comps.md", Leading: file},
+			}},
+		}},
+		{ID: "src", Label: "src", Leading: folder, Children: []comps.TreeNode{
+			{ID: "src/main.go", Label: "main.go", Leading: file},
+			{ID: "src/app.go", Label: "app.go", Leading: file},
+		}},
+		{ID: "assets", Label: "assets", Leading: folder, Branch: true},
+		{ID: "README.md", Label: "README.md", Leading: file},
+	}
+}
+
+// 4.35 — Phase 3 of the fourth low-hanging-fruit round: the two structure
+// widgets. They share a lesson because they share a rule, and it is the
+// converse of 4.34's: there the indicator owned hooks and so had to always
+// render; here both widgets render only part of what they were given (the
+// open branches, the current step), and so they and their content must own
+// none.
+//
+// Appended at the end of the chapter for the reason 4.25 was.
+func lessonTreeAndWizard() Lesson {
+	return Lesson{
+		Title:   "Trees and wizards",
+		Summary: "comps.TreeView and Wizard: structures that draw only part of their data, so the caller holds all the state.",
+		Body: func(ctx *core.Context) core.View {
+			// Every hook of the lesson, here, on every pass. The wizard's
+			// step bodies below read these and declare nothing: that is the
+			// lesson's second point, acted out.
+			open := core.NewState(ctx, map[string]bool{"docs": true})
+			chosen := core.NewState(ctx, "docs/guide.md")
+			step := core.NewState(ctx, 0)
+			name := core.NewState(ctx, "")
+			note := core.NewState(ctx, "")
+			placed := core.NewState(ctx, false)
+
+			// Copy, flip, Set: the map in the slot is never written to.
+			toggle := func(id string) {
+				next := maps.Clone(open.Get())
+				next[id] = !next[id]
+				open.Set(next)
+			}
+
+			status := "Nothing chosen"
+			if chosen.Get() != "" {
+				status = "Chosen: " + chosen.Get()
+			}
+
+			steps := []comps.WizardStep{
+				{
+					Title: "Your name",
+					Body: comps.FormField{
+						Label: "Name",
+						Hint:  "Next stays disabled until this has something in it.",
+						Input: core.Input(name.Get(), "Ada Lovelace", name.Set),
+					},
+					Blocked: strings.TrimSpace(name.Get()) == "",
+				},
+				{
+					Title: "Gift note",
+					Body: comps.FormField{
+						Label: "Note",
+						Hint:  "Optional: while it is empty the button reads Skip.",
+						Input: core.Input(note.Get(), "Happy birthday!", note.Set),
+					},
+					Optional: true,
+					Blocked:  strings.TrimSpace(note.Get()) == "",
+				},
+				{
+					Title: "Review",
+					Body: comps.KeyValueList{Rows: []comps.KeyValue{
+						{Key: "Name", Value: name.Get()},
+						{Key: "Note", Value: cmp.Or(strings.TrimSpace(note.Get()), "(none)")},
+					}},
+				},
+			}
+
+			return core.Column(
+				core.Gap(14),
+				prose("Two widgets for structure: a hierarchy that opens and shuts, and a flow that moves "+
+					"through steps. Both draw only a part of what they are given, the open branches "+
+					"or the current step, and that one fact decides where all of their state lives."),
+
+				codeBlock(`open := core.NewState(ctx, map[string]bool{"docs": true})
+
+comps.TreeView{
+    Label:    "Project files",
+    Nodes:    files,                 // []comps.TreeNode{ID, Label, Leading, Children}
+    Expanded: open.Get(),
+    OnToggle: func(id string) {      // copy, flip, Set
+        next := maps.Clone(open.Get())
+        next[id] = !next[id]
+        open.Set(next)
+    },
+    Selected: chosen.Get(),
+    OnSelect: chosen.Set,
+}`),
+				demoPanel("Tap a folder to open it and a file to choose it. assets is empty, and still a folder.",
+					comps.TreeView{
+						Label:    "Project files",
+						Nodes:    tutorialFiles(),
+						Expanded: open.Get(),
+						OnToggle: toggle,
+						Selected: chosen.Get(),
+						OnSelect: chosen.Set,
+					},
+					core.Text(status,
+						core.UseStyle(ctx.Theme().Typography.Caption),
+						core.TextColor(ctx.Theme().Colors.TextSecondary),
+						core.AccessibilityRole(core.RoleStatus),
+					),
+					core.Row(
+						core.Padding(0),
+						core.Gap(8),
+						comps.Button{Label: "Collapse all", Emphasis: comps.EmphasisGhost,
+							OnTap: func() { open.Set(map[string]bool{}) }},
+						comps.Button{Label: "Reveal core.md", Emphasis: comps.EmphasisGhost,
+							OnTap: func() {
+								open.Set(map[string]bool{"docs": true, "docs/api": true})
+								chosen.Set("docs/api/core.md")
+							}},
+					),
+				),
+				prose("The tree keeps nothing. Which folders are open is the map you pass, and a tap only "+
+					"reports an ID. That is why the two buttons under it are one line each: collapsing "+
+					"everything is an empty map, and revealing a file is a map of its ancestors. A widget "+
+					"that kept the map in a hook could offer neither."),
+				prose("A row has one meaning: a branch toggles and a leaf selects. IDs must be unique in "+
+					"the whole tree, since the map has one key space, so the lesson uses paths. A shut "+
+					"branch's children are not rendered at all, and a tree costs what its open part "+
+					"costs. A node with no Children is a leaf unless it sets Branch, which is how an "+
+					"empty or not-yet-loaded folder keeps its chevron."),
+				prose("To a screen reader it is nested lists: each item carries its depth, and each row "+
+					"inside it is a button. A branch says \"docs, expanded\" and the chosen file says it "+
+					"is current. ARIA's tree role promises arrow keys that no target supplies yet, so "+
+					"the widget does not claim it."),
+
+				codeBlock(`name := core.NewState(ctx, "")      // every step's state, above the wizard
+step := core.NewState(ctx, 0)
+
+comps.Wizard{
+    Label: "Order",
+    Steps: []comps.WizardStep{
+        {Title: "Your name", Body: nameField(name), Blocked: name.Get() == ""},
+        {Title: "Gift note", Body: noteField(note), Optional: true, Blocked: note.Get() == ""},
+        {Title: "Review",    Body: summary(name, note)},
+    },
+    Current:  step.Get(),
+    OnChange: step.Set,
+    OnFinish: placeOrder,
+}`),
+				demoPanel("Next is disabled until there is a name. The note is optional, so its Next reads Skip while it is empty.",
+					core.IfElse(placed.Get(),
+						core.Column(
+							core.Padding(0),
+							core.Gap(8),
+							comps.Banner{Text: "Order placed for " + name.Get() + ".", Variant: comps.VariantSuccess},
+							comps.Button{Label: "Start again", Emphasis: comps.EmphasisGhost, OnTap: func() {
+								placed.Set(false)
+								step.Set(0)
+								name.Set("")
+								note.Set("")
+							}},
+						),
+						comps.Wizard{
+							Label:    "Order",
+							Steps:    steps,
+							Current:  step.Get(),
+							OnChange: step.Set,
+							OnFinish: func() { placed.Set(true) },
+						},
+					),
+				),
+				prose("Only the current step's Body is rendered. So a Body must not own a hook: it would be "+
+					"called on some passes and not on others, and every hook after it would shift onto a "+
+					"neighbour's slot the moment the step changed. The three fields here are declared "+
+					"once, at the top of the lesson, and each Body is handed values. It is also what a "+
+					"wizard needs. Go Back from the note and the name is still there, because the name "+
+					"never belonged to the step that left."),
+				prose("The Wizard can sit inside a core.IfElse, as it does here, for the same reason: it "+
+					"holds no hook itself. Back is absent on the first step and not disabled, since "+
+					"there is nothing it could ever do. Done steps in the strip are tappable and later "+
+					"ones are not, so a Blocked step cannot be jumped past. The last step's button calls "+
+					"OnFinish and never OnChange."),
+				prose("The footer is drawn inline. For a long form, set DetachFooter and hand "+
+					"wizard.Footer() to comps.Screen's Footer, which pins it above the keyboard."),
+				keyPoints(
+					"TreeView and Wizard render part of their data, so neither they nor their content may own hooks.",
+					"TreeView's open state is your map[string]bool: copy, flip, Set. IDs are unique tree-wide.",
+					"A branch toggles, a leaf selects; TreeNode.Branch keeps an empty folder a folder.",
+					"Hold every Wizard step's state above the Wizard; Blocked disables Next, Optional turns it into Skip.",
+					"Wizard.Footer() with DetachFooter lifts the buttons into Screen.Footer.",
 				),
 			)
 		},

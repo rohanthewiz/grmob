@@ -4,12 +4,13 @@
 import "github.com/rohanthewiz/grmob/comps"
 ```
 
-Screen, app and bottom bars, the FAB, tabs, drawers, step indicators, two-pane and foldable layouts, cards, accordions, headings, breadcrumbs and separators, labelled or not.
+Screen, app and bottom bars, the FAB, tabs, drawers, step indicators, wizards, tree views, two-pane and foldable layouts, cards, accordions, headings, breadcrumbs and separators, labelled or not.
 
-One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/screen.go`, `comps/app_bar.go`, `comps/bottom_bar.go`, `comps/fab.go`, `comps/tabs.go`, `comps/drawer.go`, `comps/step_indicator.go`, `comps/two_pane.go`, `comps/card.go`, `comps/accordion.go`, `comps/disclosure.go`, `comps/heading.go`, `comps/breadcrumb.go`, `comps/separator.go`, `comps/labeled_separator.go`.
+One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/screen.go`, `comps/app_bar.go`, `comps/bottom_bar.go`, `comps/fab.go`, `comps/tabs.go`, `comps/drawer.go`, `comps/step_indicator.go`, `comps/wizard.go`, `comps/tree_view.go`, `comps/two_pane.go`, `comps/card.go`, `comps/accordion.go`, `comps/disclosure.go`, `comps/heading.go`, `comps/breadcrumb.go`, `comps/separator.go`, `comps/labeled_separator.go`.
 
 ## Index
 
+- [Constants](#constants) — `ConcernTreeViewDuplicateID`, `ConcernTreeViewInert`, `ConcernWizardInert`, `ConcernWizardNoSteps`
 - [`type Accordion`](#type-accordion)
     - [`func (Accordion) Render`](#func-accordion-render)
 - [`type AppBar`](#type-appbar)
@@ -37,9 +38,50 @@ One of 7 topic pages of [package comps](comps.md), which has the package overvie
     - [`func (StepIndicator) Render`](#func-stepindicator-render)
 - [`type Tabs`](#type-tabs)
     - [`func (Tabs) Render`](#func-tabs-render)
+- [`type TreeNode`](#type-treenode)
+- [`type TreeView`](#type-treeview)
+    - [`func (TreeView) Render`](#func-treeview-render)
 - [`type TwoPane`](#type-twopane)
     - [`func (TwoPane) Render`](#func-twopane-render)
 - [`type TwoPaneCompact`](#type-twopanecompact)
+- [`type Wizard`](#type-wizard)
+    - [`func (Wizard) Footer`](#func-wizard-footer)
+    - [`func (Wizard) Render`](#func-wizard-render)
+- [`type WizardStep`](#type-wizardstep)
+
+## Constants
+
+ConcernTreeViewDuplicateID is raised, in debug builds only, when two nodes of one TreeView share an ID, at any depth. Expanded, OnToggle, OnSelect and Selected all speak in IDs, so a shared one opens two branches with one tap and marks two rows as the chosen one.
+
+```go
+const ConcernTreeViewDuplicateID = "tree-view-duplicate-id"
+```
+
+<small>[comps/tree_view.go:14](https://github.com/rohanthewiz/grmob/blob/master/comps/tree_view.go#L14)</small>
+
+ConcernTreeViewInert is raised, in debug builds only, when a TreeView has a branch and no OnToggle. The chevron promises that the row opens, and with no handler nothing a user does can open it.
+
+```go
+const ConcernTreeViewInert = "tree-view-inert"
+```
+
+<small>[comps/tree_view.go:19](https://github.com/rohanthewiz/grmob/blob/master/comps/tree_view.go#L19)</small>
+
+ConcernWizardInert is raised, in debug builds only, when a Wizard with more than one step has no OnChange. Next and Back would report to nobody, so the flow could never leave its first step.
+
+```go
+const ConcernWizardInert = "wizard-inert"
+```
+
+<small>[comps/wizard.go:12](https://github.com/rohanthewiz/grmob/blob/master/comps/wizard.go#L12)</small>
+
+ConcernWizardNoSteps is raised, in debug builds only, when a Wizard has no Steps. It renders an empty column, which is never what a caller meant.
+
+```go
+const ConcernWizardNoSteps = "wizard-no-steps"
+```
+
+<small>[comps/wizard.go:16](https://github.com/rohanthewiz/grmob/blob/master/comps/wizard.go#L16)</small>
 
 ## Types
 
@@ -1169,6 +1211,145 @@ func (t Tabs) Render(ctx *core.Context) *core.Node
 
 <small>[comps/tabs.go:26](https://github.com/rohanthewiz/grmob/blob/master/comps/tabs.go#L26)</small>
 
+### type TreeNode
+
+```go
+type TreeNode struct {
+	// ID names the node to Expanded, OnToggle, OnSelect and Selected. It must
+	// be unique in the whole tree and not only among siblings: the caller's
+	// Expanded map has one key space.
+	ID string
+
+	// Label is the row's text and its spoken name.
+	Label string
+
+	// Leading is drawn between the chevron column and the label: a folder or
+	// file icon. It is decoration and is hidden from accessibility; say what
+	// it means in Label if it means something.
+	Leading core.View
+
+	// Children are the nodes under this one. A node with any is a branch.
+	Children []TreeNode
+
+	// Branch makes a node with no Children a branch all the same: an empty
+	// folder, or one whose children are fetched when it first opens. Without
+	// it such a node would draw as a leaf and could never be asked to open.
+	Branch bool
+}
+```
+
+TreeNode is one row of a TreeView, and everything under it.
+
+<small>[comps/tree_view.go:22](https://github.com/rohanthewiz/grmob/blob/master/comps/tree_view.go#L22)</small>
+
+### type TreeView
+
+```go
+type TreeView struct {
+	// Nodes are the top-level nodes, in order.
+	Nodes []TreeNode
+
+	// Expanded says which branches are open, by ID. A missing ID is shut, so
+	// a nil map is a fully collapsed tree.
+	Expanded map[string]bool
+
+	// OnToggle receives the ID of a tapped branch. The caller flips its entry
+	// in Expanded. Nil with any branch in Nodes reports ConcernTreeViewInert.
+	OnToggle func(id string)
+
+	// OnSelect receives the ID of a tapped leaf. Nil draws leaves as text,
+	// which is right for an outline that is only read.
+	OnSelect func(id string)
+
+	// Selected is the ID of the chosen leaf, or "" for none. A Selected that
+	// names a branch, or a leaf inside a shut branch, marks nothing.
+	Selected string
+
+	// Indent is how far each level sits to the right of its parent, in
+	// points. Zero takes the theme's Spacing.LG. An int because it is spent
+	// as a padding, and core's paddings are whole points.
+	Indent int
+
+	// Label names the outer list for a screen reader ("Project files").
+	Label string
+
+	// Style is applied to the outer column after the widget's own props.
+	Style []core.StyleProp
+}
+```
+
+TreeView is an indented, expandable hierarchy: a file browser, a document outline, a category picker.
+
+	comps.TreeView{
+	    Label:    "Project files",
+	    Nodes:    files,
+	    Expanded: open.Get(),                  // map[string]bool, the caller's
+	    OnToggle: func(id string) { … },       // flip open[id], Set a copy
+	    Selected: chosen.Get(),
+	    OnSelect: chosen.Set,
+	}
+
+	┌ Column  role=list  "Project files" ────────────────────────────────┐
+	│ ┌ Box  role=listitem  level=1 ───────────────────────────────────┐ │
+	│ │ Row  role=button  expanded   "docs"          ▾ 📁 docs         │ │
+	│ │ ┌ Column  role=list  (after an Indent-wide spacer) ──────────┐ │ │
+	│ │ │ Box  role=listitem  level=2                                │ │ │
+	│ │ │   Row  role=button  current   "guide.md"      📄 guide.md  │ │ │
+	│ │ └────────────────────────────────────────────────────────────┘ │ │
+	│ └────────────────────────────────────────────────────────────────┘ │
+	│ ┌ Box  role=listitem  level=1 ───────────────────────────────────┐ │
+	│ │ Row  role=button  collapsed  "src"           ▸ 📁 src          │ │
+	│ └────────────────────────────────────────────────────────────────┘ │
+	└────────────────────────────────────────────────────────────────────┘
+
+#### A branch toggles, a leaf selects
+
+One row is one target, so a tap has one meaning: a branch row calls OnToggle and a leaf row calls OnSelect. A branch that could also be chosen would need two targets in one row (the chevron and the words), which is two buttons with the same name for a screen reader and a 20pt chevron for a thumb. A picker whose categories can themselves be chosen can say so in data: give the branch a first child that stands for it ("All of Fiction").
+
+#### The caller owns what is open
+
+Expanded is the caller's map and OnToggle only reports an ID. Which folders are open is navigation state: an app wants to restore it, to open the path to a search hit, to collapse everything. A widget that kept the map in a hook could offer none of those, and would also have to hold a hook, which would forbid rendering a TreeView conditionally. It holds none.
+
+The map must be replaced and not mutated in place (copy, flip, Set), as any state value must.
+
+#### Shut branches are not rendered
+
+A shut branch's children are absent from the tree, not hidden in it, so a tree of ten thousand nodes costs what its open part costs. The price is that a node's own transient native state does not survive its parent closing; a TreeNode is a label, so it has none.
+
+#### The roles: nested lists now, a tree later
+
+ARIA's pattern for this widget is \`tree\` and \`treeitem\`, and core leaves the pair out on purpose (core/role.go, "The depth question"): it is a third collection pattern with its own keyboard contract (one tab stop, Up/Down to walk, Right/Left to open and shut), and that contract is the web runtime's to supply. Stamping the roles without it would announce a tree and then not behave like one.
+
+So the structure is the one HTML itself uses for an outline, a list whose items hold lists: RoleList, RoleListItem with core.AccessibilityNestingLevel and, inside each item, a button. The button is inside the item rather than being it, because a list's child must be a listitem and a listitem is not a control. A branch's button is comps' shared disclosure shape, so it states expanded or collapsed on every pass; a reader hears "docs, collapsed, button, level 1". Every branch and leaf is a tab stop, which is slower than a tree's arrows and is never wrong.
+
+The roles are not in the API. Swapping them for \`tree\` and \`treeitem\`, if core gains the pair, changes no caller.
+
+On the two phones the difference does not exist: VoiceOver and TalkBack walk by swipe. Neither has a nesting-depth property, so the level reaches the web only (see core.Style's AccessibilityNestingLevel), and the indent is what says depth on a phone.
+
+#### The chosen leaf
+
+Selected's row states core.CurrentTrue, which is aria-current on the web and the selected state on both natives. It is not aria-selected, which ARIA allows on an option, a row, a tab or a gridcell, and never on a button.
+
+#### Theme roles read
+
+	Label          Typography.Body, Colors.TextPrimary
+	Chosen leaf    bold, Colors.PrimaryOnLightColor(), on Colors.Surface
+	Chevron        Typography.Body, Colors.TextSecondary
+	Row padding    Spacing.XS by Spacing.SM; gap Spacing.SM
+	Indent         Spacing.LG per level, unless Indent is set
+
+<small>[comps/tree_view.go:139](https://github.com/rohanthewiz/grmob/blob/master/comps/tree_view.go#L139)</small>
+
+#### func (TreeView) Render
+
+```go
+func (tv TreeView) Render(ctx *core.Context) *core.Node
+```
+
+Render builds the nested lists. It takes no hook slot.
+
+<small>[comps/tree_view.go:184](https://github.com/rohanthewiz/grmob/blob/master/comps/tree_view.go#L184)</small>
+
 ### type TwoPane
 
 ```go
@@ -1288,4 +1469,181 @@ const (
 	TwoPaneSecond
 )
 ```
+
+### type Wizard
+
+```go
+type Wizard struct {
+	// Steps are the flow's steps, in order.
+	Steps []WizardStep
+
+	// Current is the zero-based index of the step shown. It is clamped into
+	// the Steps range.
+	Current int
+
+	// OnChange receives the index to move to: Current-1 from Back, Current+1
+	// from Next, a done step's index from the indicator. Nil with more than
+	// one step reports ConcernWizardInert.
+	OnChange func(step int)
+
+	// OnFinish is called by the last step's button. Nil leaves that button
+	// disabled: a Finish that does nothing reads as a hung app.
+	OnFinish func()
+
+	// NextLabel, BackLabel, FinishLabel and SkipLabel are the buttons' words.
+	// Empty gives "Next", "Back", "Finish" and "Skip".
+	NextLabel, BackLabel, FinishLabel, SkipLabel string
+
+	// PositionLabel builds the status line from the zero-based current index,
+	// the number of steps and whether the step is Optional. Nil gives "Step 2
+	// of 3", with ", optional" after an Optional step's. The seam
+	// StepIndicator.PositionLabel is: the widget knows the facts, the app
+	// knows the language.
+	PositionLabel func(current, total int, optional bool) string
+
+	// Label names the group, and prefixes the indicator's name ("Checkout,
+	// step 2 of 3: Gift note").
+	Label string
+
+	// DetachFooter leaves the footer out of the wizard's column, for a caller
+	// that places Footer() elsewhere. See "Where the footer goes".
+	DetachFooter bool
+
+	// Style is applied to the outer column after the widget's own props.
+	Style []core.StyleProp
+}
+```
+
+Wizard is a multi-step flow on one screen: a StepIndicator, the current step's title and body, and a Back / Next footer.
+
+	comps.Wizard{
+	    Label:   "Checkout",
+	    Steps:   []comps.WizardStep{
+	        {Title: "Address", Body: addressForm, Blocked: !addr.Valid()},
+	        {Title: "Gift note", Body: noteField, Optional: true, Blocked: note == ""},
+	        {Title: "Review", Body: summary},
+	    },
+	    Current:  step.Get(),
+	    OnChange: step.Set,
+	    OnFinish: placeOrder,
+	}
+
+	┌ Column  role=group  "Checkout" ───────────────────────────────┐
+	│ StepIndicator   (✓) Address ── (2) Gift note ── (3) Review    │
+	│ Text  role=status   "Step 2 of 3, optional"                   │
+	│ Text  role=heading  "Gift note"                               │
+	│ <Steps[Current].Body>                                         │
+	│ Footer():  [ Back ]                              [ Skip ]     │
+	└───────────────────────────────────────────────────────────────┘
+
+#### The caller holds Current
+
+As with Tabs and StepIndicator. The step a flow is on is the state an app most wants to own: to resume a half-finished checkout, to jump to the step a server-side error belongs to, to leave the flow from outside. OnChange receives the index to move to and the caller Sets it.
+
+#### Which moves are offered
+
+	Back             to Current-1. Absent on the first step and not merely
+	                 disabled: there is nothing it could ever do there, and a
+	                 dead button is a question ("why can't I?") with no answer.
+	Next             to Current+1. Disabled while the step is Blocked, unless
+	                 the step is Optional, when it reads SkipLabel instead.
+	Finish           the last step's Next. It calls OnFinish and not OnChange.
+	A done step      in the indicator, tappable (StepIndicator.OnTap). Later
+	                 steps are not: jumping ahead would pass a Blocked step
+	                 without the wizard having been asked.
+
+#### Bodies must not own hooks
+
+ONLY THE CURRENT STEP'S BODY IS RENDERED. A Body that calls a hook (core.NewState, forms.UseForm, a comps widget that holds one, such as Accordion or DatePicker) is therefore rendered on some passes and not on others, which is a conditional hook: every hook after it shifts onto a neighbour's slot on the pass the step changes. Debug mode reports it as cursor drift.
+
+Hold every step's state above the Wizard, and hand each Body the values:
+
+	addr := forms.UseForm(ctx, addrSpec)      // all steps' hooks, every pass
+	note := core.NewState(ctx, "")
+	comps.Wizard{Steps: []comps.WizardStep{
+	    {Title: "Address", Body: addressFields(addr)},   // views only
+	    {Title: "Gift note", Body: noteField(note)},
+	}}
+
+This is also what a wizard wants: a step's input must survive going Back and forward again, and state owned by a Body would be discarded with it. A Body that cannot avoid hooks can take a scope of its own, ctx.Scope(title), whose cursor does not disturb its siblings.
+
+The Wizard itself holds no hook.
+
+#### Where the footer goes
+
+By default at the end of the wizard's own column. A form long enough to scroll wants the buttons pinned instead, and the pin is comps.Screen's Footer, so the footer is an exported view and DetachFooter stops the wizard drawing it twice:
+
+	w := comps.Wizard{…, DetachFooter: true}
+	comps.Screen{Scroll: true, KeyboardAware: true,
+	    Children: []core.View{w}, Footer: w.Footer()}
+
+Inline is the default because it depends on nothing but a Column.
+
+#### Accessibility
+
+The column is a RoleGroup named by Label. The indicator states the position for a reader who goes looking ("Step 2 of 3: Gift note"). The line under it says the same in fewer words and is a RoleStatus, so that a step change is announced where live regions are: a Next that replaced the screen's content and said nothing would leave a reader on a button that is now about something else. The title is a heading, so the new content is one heading-jump away.
+
+What this does not do is move focus to the heading, which is what a page-style navigation does. core.Focus reaches fields and Buttons; no target focuses a Text. VoiceOver announces no live region (core/role.go), so on iOS a step change is silent until the reader moves.
+
+#### Theme roles read
+
+	Position line   Typography.Caption, Colors.TextSecondary
+	Title           Typography.Title
+	Buttons         comps.Button: Back outlined, Next filled
+	Gaps            Spacing.MD between parts, Spacing.SM in the footer
+
+<small>[comps/wizard.go:141](https://github.com/rohanthewiz/grmob/blob/master/comps/wizard.go#L141)</small>
+
+#### func (Wizard) Footer
+
+```go
+func (w Wizard) Footer() core.View
+```
+
+Footer is the Back / Next row, for a caller that places it outside the wizard (with DetachFooter set). It reads the same fields Render does, so it must be taken from the same Wizard value on the same pass.
+
+	first step     [            ]            [ Next ]
+	middle step    [ Back ]                  [ Next ]   or [ Skip ]
+	last step      [ Back ]                  [ Finish ]
+
+<small>[comps/wizard.go:291](https://github.com/rohanthewiz/grmob/blob/master/comps/wizard.go#L291)</small>
+
+#### func (Wizard) Render
+
+```go
+func (w Wizard) Render(ctx *core.Context) *core.Node
+```
+
+Render builds the column. It takes no hook slot.
+
+<small>[comps/wizard.go:200](https://github.com/rohanthewiz/grmob/blob/master/comps/wizard.go#L200)</small>
+
+### type WizardStep
+
+```go
+type WizardStep struct {
+	// Title names the step in the indicator and is drawn as the heading over
+	// its Body.
+	Title string
+
+	// Body is the step's content. It is rendered only while the step is the
+	// current one; see "Bodies must not own hooks" on Wizard.
+	Body core.View
+
+	// Blocked disables Next (or Finish) while the step's input is not yet
+	// acceptable. The caller computes it on every pass, usually from a form:
+	// Blocked: !form.Valid(). The zero value lets the step advance, so a step
+	// that is only read needs no field set.
+	Blocked bool
+
+	// Optional lets a Blocked step be passed all the same. Next stays enabled
+	// and reads SkipLabel while the step is Blocked, so the button says what
+	// pressing it will do: the step's input is not taken.
+	Optional bool
+}
+```
+
+WizardStep is one step of a Wizard.
+
+<small>[comps/wizard.go:19](https://github.com/rohanthewiz/grmob/blob/master/comps/wizard.go#L19)</small>
 

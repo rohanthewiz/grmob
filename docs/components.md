@@ -1515,6 +1515,129 @@ Other notes:
 - Done steps and the rules after them use the Success colour; the current step
   uses Primary. Both discs pick a contrasting ink.
 
+## Wizard
+
+A multi-step flow on one screen: a `StepIndicator`, the current step's title
+and body, and a Back / Next footer.
+
+```go
+name := core.NewState(ctx, "")   // every step's state, above the wizard
+step := core.NewState(ctx, 0)
+
+comps.Wizard{
+    Label: "Order",
+    Steps: []comps.WizardStep{
+        {Title: "Your name", Body: nameField(name), Blocked: name.Get() == ""},
+        {Title: "Gift note", Body: noteField(note), Optional: true, Blocked: note.Get() == ""},
+        {Title: "Review",    Body: summary(name, note)},
+    },
+    Current:  step.Get(),
+    OnChange: step.Set,
+    OnFinish: placeOrder,
+}
+```
+
+**A step's `Body` must not own hooks.** Only the current step's body is
+rendered, so a hook inside one is a conditional hook, and every hook after it
+shifts slots when the step changes. Hold each step's state above the wizard and
+hand the bodies values. That is also what keeps a step's input alive across
+Back and Next. A body that cannot avoid hooks can take a `ctx.Scope` of its
+own. The `Wizard` itself holds no hook, so it may be rendered conditionally.
+
+**The moves it offers:**
+
+| Button | Does | When |
+|---|---|---|
+| Back | `OnChange(Current-1)` | absent on the first step, not disabled |
+| Next | `OnChange(Current+1)` | disabled while the step is `Blocked` |
+| Skip | `OnChange(Current+1)` | replaces Next while an `Optional` step is `Blocked` |
+| Finish | `OnFinish()` | the last step; disabled when `OnFinish` is nil |
+| a done step | `OnChange(i)` | in the indicator; later steps are never tappable |
+
+`Blocked` is the field, not `CanAdvance`, so that the zero value advances: a
+step that is only read needs nothing set.
+
+**The footer can be lifted out.** It is drawn at the end of the wizard's own
+column. For a form long enough to scroll, set `DetachFooter` and place
+`Footer()` yourself:
+
+```go
+w := comps.Wizard{…, DetachFooter: true}
+comps.Screen{Scroll: true, KeyboardAware: true,
+    Children: []core.View{w}, Footer: w.Footer()}
+```
+
+Other notes:
+
+- The column is a `RoleGroup` named by `Label`. Under the indicator is a
+  `RoleStatus` line, "Step 2 of 3, optional", so a step change is announced
+  where live regions are. The title is a level-2 heading.
+- Focus does not move to the heading on a step change: `core.Focus` reaches
+  fields and Buttons, and no target focuses a Text. VoiceOver announces no live
+  region, so on iOS a step change is silent until the reader moves.
+- The body is keyed by step index, so a change of step replaces it and does not
+  morph one form into the next.
+- `NextLabel`, `BackLabel`, `FinishLabel`, `SkipLabel` and `PositionLabel` put
+  every word in the app's language.
+- Debug concerns: `ConcernWizardNoSteps`, and `ConcernWizardInert` for more
+  than one step with no `OnChange`.
+
+## TreeView
+
+An indented, expandable hierarchy: a file browser, an outline, a category
+picker.
+
+```go
+open := core.NewState(ctx, map[string]bool{"docs": true})
+
+comps.TreeView{
+    Label:    "Project files",
+    Nodes:    files, // []comps.TreeNode{ID, Label, Leading, Children, Branch}
+    Expanded: open.Get(),
+    OnToggle: func(id string) { // copy, flip, Set
+        next := maps.Clone(open.Get())
+        next[id] = !next[id]
+        open.Set(next)
+    },
+    Selected: chosen.Get(),
+    OnSelect: chosen.Set,
+}
+```
+
+**The caller owns what is open.** `Expanded` is your `map[string]bool` and
+`OnToggle` only reports an ID. Open state is navigation state: "collapse all"
+is an empty map, and revealing a search hit is a map of its ancestors. The
+widget holds no hook.
+
+**A branch toggles, a leaf selects.** One row is one target. A picker whose
+categories can themselves be chosen gives the branch a first child that stands
+for it ("All of Fiction"). A node with no `Children` is a leaf unless it sets
+`Branch`: an empty folder, or one whose children load when it first opens.
+
+**IDs are unique in the whole tree,** not only among siblings, because the map
+has one key space. Paths work. A duplicate reports
+`ConcernTreeViewDuplicateID`, even inside a shut branch.
+
+Other notes:
+
+- A shut branch's children are not rendered, so a large tree costs what its
+  open part costs.
+- The structure is nested lists: `RoleList`, `RoleListItem` with
+  `core.AccessibilityNestingLevel`, and a button inside each item. A branch's
+  button states expanded or collapsed; the chosen leaf states
+  `core.CurrentTrue`. ARIA's `tree` role promises arrow-key navigation that no
+  target supplies, so the widget does not claim it; every row is a Tab stop.
+  The roles are not in the API, so they can change later without one.
+- The nesting level reaches the web only. Neither native has a depth property,
+  so on a phone the indent is what says depth.
+- The indent is a spacer leading a Row, not a left padding, so it follows the
+  reading direction under RTL. `Indent` is in whole points and defaults to the
+  theme's `Spacing.LG`.
+- A leaf keeps the 20pt chevron column empty, so labels line up. `Leading` is
+  decoration and is hidden from accessibility.
+- With no `OnSelect`, leaves are plain text. Branches with no `OnToggle` report
+  `ConcernTreeViewInert`.
+
 ## Timeline
 
 A vertical list of events joined by a line down the leading edge, a dot per

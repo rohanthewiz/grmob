@@ -244,8 +244,8 @@ var Packages = []Pkg{
 		Topics: []Topic{{
 			Slug:  "structure",
 			Title: "Screens & structure",
-			Blurb: "Screen, app and bottom bars, the FAB, tabs, drawers, step indicators, two-pane and foldable layouts, cards, accordions, headings, breadcrumbs and separators, labelled or not.",
-			Files: []string{"screen.go", "app_bar.go", "bottom_bar.go", "fab.go", "tabs.go", "drawer.go", "step_indicator.go",
+			Blurb: "Screen, app and bottom bars, the FAB, tabs, drawers, step indicators, wizards, tree views, two-pane and foldable layouts, cards, accordions, headings, breadcrumbs and separators, labelled or not.",
+			Files: []string{"screen.go", "app_bar.go", "bottom_bar.go", "fab.go", "tabs.go", "drawer.go", "step_indicator.go", "wizard.go", "tree_view.go",
 				"two_pane.go", "card.go", "accordion.go", "disclosure.go", "heading.go", "breadcrumb.go", "separator.go",
 				"labeled_separator.go"},
 		}, {

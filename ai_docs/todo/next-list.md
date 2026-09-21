@@ -30,7 +30,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-068
+**Next ID:** N-070
 
 ## Open
 
@@ -297,6 +297,32 @@ with each item's `raised` traced back through all session docs.
   keyboard user reaches for and does nothing. Up/Down walk the swatches in
   reading order, measured in headless Chrome. The fix is in
   `handleCompositeKey`: for `radiogroup`, accept both pairs.
+- **N-068** · raised `2026-0921-1035-comps-round-four-phase-3-structure` · value medium
+  **Phase 3's structure widgets, unrun on a device.** Lesson 4.35 was looked
+  at in headless Chrome only (tree alignment, indents, the wizard's footer).
+  - `TreeView`: a branch heard as "docs, collapsed, button" and the chosen
+    leaf as selected on TalkBack and VoiceOver; that a `listitem` Box holding
+    a button and a nested list is walked in order by swipe; that the level,
+    inert on both natives by design, does no harm there. On the web, a
+    screen reader saying "level 2" (the DOM was not read for `aria-level`).
+  - `TreeView` under RTL: the indent is a Row's leading spacer, which should
+    mirror on all three live targets. Unseen.
+  - `Wizard`: the `RoleStatus` line heard on a step change on TalkBack and
+    in a browser's screen reader; where TalkBack's focus lands after Next
+    replaces the body (the keyed body is a replacement, and Compose clears
+    View focus when the focused node leaves: 2026-0919-1254 §2).
+  - `Wizard.Footer()` in `Screen.Footer` above the keyboard is N-002's
+    pinning check with a consumer now; no bundled screen does it yet.
+- **N-069** · raised `2026-0921-1035-comps-round-four-phase-3-structure` · value low (API decision)
+  **Nothing can move focus to a heading.** `Wizard` wanted the
+  focus-after-navigation rule for a step change and could not have it:
+  `core.FocusTarget` is read by fields and by a Compose Button, and no
+  target focuses a Text. The web half is `tabindex="-1"` plus `focus()` in
+  `applyFocusCommand`; the natives need an accessibility-focus request
+  (`requestFocus` on a semantics node, `AccessibilityFocusState`), which is
+  a different thing from input focus and may deserve its own prop. Until
+  then `Wizard` announces the step through a `RoleStatus` line, which iOS
+  does not speak.
 
 ## Non-goals
 

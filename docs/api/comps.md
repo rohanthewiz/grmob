@@ -34,7 +34,7 @@ Package comps's reference is split into 7 topic pages by source file. The index 
 
 | Topic | What it covers | Declares |
 | --- | --- | --- |
-| [Screens & structure](comps-structure.md) | Screen, app and bottom bars, the FAB, tabs, drawers, step indicators, two-pane and foldable layouts, cards, accordions, headings, breadcrumbs and separators, labelled or not. | 17 types, 13 functions and methods |
+| [Screens & structure](comps-structure.md) | Screen, app and bottom bars, the FAB, tabs, drawers, step indicators, wizards, tree views, two-pane and foldable layouts, cards, accordions, headings, breadcrumbs and separators, labelled or not. | 21 types, 16 functions and methods |
 | [Lists & tables](comps-lists.md) | List rows, the settings-row family (switch, checkbox, select and slider), input rows, key-value lists, bullet lists, grouped and paged lists, data tables and timelines. | 21 types, 16 functions and methods |
 | [Inputs & pickers](comps-inputs.md) | Form fields, password fields, one-time code fields, tag inputs, masked inputs, number pads, colour swatches, range sliders, search, searchable selects, radio groups, dates, date ranges, times and calendars, and the two editors. | 22 types, 20 functions and methods |
 | [Buttons & choices](comps-actions.md) | Buttons and their variants, copy buttons, links, chips, segmented controls, steppers, ratings and badges. | 12 types, 13 functions and methods |
@@ -45,6 +45,7 @@ Package comps's reference is split into 7 topic pages by source file. The index 
 ## Index
 
 - [Screens & structure](comps-structure.md)
+    - [Constants](comps-structure.md#constants) — `ConcernTreeViewDuplicateID`, `ConcernTreeViewInert`, `ConcernWizardInert`, `ConcernWizardNoSteps`
     - [`type Accordion`](comps-structure.md#type-accordion)
     - [`type AppBar`](comps-structure.md#type-appbar)
     - [`type BarItem`](comps-structure.md#type-baritem)
@@ -60,8 +61,12 @@ Package comps's reference is split into 7 topic pages by source file. The index 
     - [`type Separator`](comps-structure.md#type-separator)
     - [`type StepIndicator`](comps-structure.md#type-stepindicator)
     - [`type Tabs`](comps-structure.md#type-tabs)
+    - [`type TreeNode`](comps-structure.md#type-treenode)
+    - [`type TreeView`](comps-structure.md#type-treeview)
     - [`type TwoPane`](comps-structure.md#type-twopane)
     - [`type TwoPaneCompact`](comps-structure.md#type-twopanecompact)
+    - [`type Wizard`](comps-structure.md#type-wizard)
+    - [`type WizardStep`](comps-structure.md#type-wizardstep)
 - [Lists & tables](comps-lists.md)
     - [Constants](comps-lists.md#constants) — `ConcernPartialSort`, `ConcernSelectRowValueNotAnOption`
     - [`type BulletList`](comps-lists.md#type-bulletlist)

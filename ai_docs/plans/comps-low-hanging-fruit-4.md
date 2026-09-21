@@ -4,7 +4,9 @@
 `examples/chat`). **Phase 2 landed 2026-09-21** (K1–K4, lesson 5.9), and it
 broke this round's rule twice, on purpose: K4's spike found a caret bug in
 the Android field and the look found a hole in the web runtime, and both
-were fixed where they were (see K4). Phases 3 to 6 are not started.
+were fixed where they were (see K4). **Phase 3 landed 2026-09-21** (L1, L2,
+lesson 4.35) with the rule kept: nothing under a renderer changed. Phases 4
+to 6 are not started.
 
 Rounds one to three (`comps-low-hanging-fruit.md`, `-2.md`, `-3.md`, Tiers
 A–I) are complete. This round follows the same rule. Every item in Phases 1 to
@@ -457,6 +459,34 @@ SwiftUI, or is at least harmless there.
 **Concern:** `ConcernTreeViewDuplicateID`, as a toggled ID must be unique.
 `ConcernTreeViewInert` for branches with no `OnToggle`.
 
+**What the build changed from the sketch.** Six things.
+
+- **Decision (a), as leaned.** Nested `RoleList`s of `RoleListItem`s with
+  `core.AccessibilityNestingLevel`, and a button *inside* each item rather
+  than the item being one (a list's child must be a listitem, and a listitem
+  is not a control; `ListRow.NestingLevel`'s doc states the same rule). The
+  branch button is comps' shared `disclosure` with `Heading: false`. The
+  roles are not in the API, so (b) can replace them without one.
+- **The "check first" was answered from the source, not a device.**
+  `Style.AccessibilityNestingLevel`'s doc already records it: the web writes
+  `aria-level`, and neither native has a depth property, so the level is
+  inert there and the role alone goes out. Harmless by construction; what is
+  *heard* is N-068.
+- **A branch toggles and a leaf selects.** The sketch did not say what a tap
+  on a branch does when both callbacks are set. One row is one target: a
+  selectable branch would be two buttons with one name. The data can say it
+  instead (a first child that stands for the branch).
+- **`TreeNode.Branch bool` was added,** for an empty folder or one whose
+  children load on first open. Without it such a node is a leaf for ever.
+- **`Indent` is an `int`,** as core's paddings are, and it is spent as a
+  spacer leading a `Row` and not as `core.PaddingLeft`: a Row lays out from
+  the reading direction's start, so RTL indents from the right for free. A
+  leaf keeps an empty 20pt chevron column so labels line up.
+- **The chosen leaf states `core.CurrentTrue`,** not the selected state:
+  `aria-selected` is not allowed on a button. Stated only when `OnSelect`
+  makes the row a button. `ConcernTreeViewDuplicateID` walks shut branches
+  too.
+
 ### L2. `Wizard`
 
 A `StepIndicator`, the current step's body, and a Back / Next footer.
@@ -490,6 +520,31 @@ of the unverified path.
   focus-after-navigation rule from c1829c4.
 
 **Concern:** `ConcernWizardInert` (no `OnChange`), `ConcernWizardNoSteps`.
+
+**What the build changed from the sketch.** Five things.
+
+- **Focus does not move to the step's heading.** The sketch called it
+  settled by c1829c4, and that commit gave `core.Focus` to a Compose
+  *Button*. No target focuses a Text, so a heading cannot take it without
+  renderer work. Under this round's rule that part leaves (N-069). What
+  stands in: a visible `RoleStatus` line under the indicator, "Step 2 of 3,
+  optional", which announces a step change where live regions are, and the
+  title as a level-2 heading. VoiceOver has no live region, so iOS is silent
+  on a step change.
+- **`CanAdvance` became `Blocked`.** A `WizardStep{Title, Body}` with
+  `CanAdvance`'s zero value would be a wall by default; the same argument
+  that made `PollOption.Mine` a bool.
+- **`Optional` has a meaning now:** an Optional step that is Blocked keeps
+  Next enabled and reads `SkipLabel` ("Skip"). Never on the last step, where
+  the button submits.
+- **`DetachFooter bool` was added** beside the exported `Footer()`. Without
+  it a caller lifting the footer into `Screen.Footer` would draw it twice.
+  `Finish` with a nil `OnFinish` is drawn disabled.
+- **The body is `Keyed` by step index,** so a step change replaces the body
+  and does not morph one form into the next with a field's focus and text
+  carried across. `PositionLabel` was added for the status line's words.
+  The widget holds no hook, so it can itself sit in a `core.IfElse` (the
+  lesson does this).
 
 ---
 
@@ -807,6 +862,8 @@ New this round:
   position, horizontal sticky, a paste event; see Phase 5).
 - **`tree` / `treeitem` with arrow-key navigation** (role and keyboard
   contract; see L1).
+- **Focus on a heading after an in-place navigation** (a focus command on
+  a Text; see L2 and N-069).
 - **An emoji picker popover** (anchored popover; see J2).
 
 ## Suggested order
@@ -816,8 +873,8 @@ New this round:
 | 1 | ~~Phase 1 (J1–J3) + lesson~~ | smallest; `examples/chat` is waiting for J1 and J2. Landed as lesson 4.34; device checks are N-062 |
 | 2 | ~~K4's spike~~ | an hour, and it decides whether K4 stays in Phase 2. It stayed, after an Android caret fix |
 | 3 | ~~Phase 2 (K1–K3, and K4 if the spike allows) + lesson~~ | the form family's remaining gaps. Landed as lesson 5.9; device checks are N-065 and N-066 |
-| 4 | L1 `TreeView` | the only hierarchical widget; its role decision is worth settling early |
-| 5 | L2 `Wizard` + the Phase 3 lesson | builds on `StepIndicator`; lands last in its phase so N-002's footer checks have the most time |
+| 4 | ~~L1 `TreeView`~~ | the only hierarchical widget; its role decision is worth settling early. Settled as (a), nested lists |
+| 5 | ~~L2 `Wizard` + the Phase 3 lesson~~ | builds on `StepIndicator`; lands last in its phase so N-002's footer checks have the most time. Landed as lesson 4.35; device checks are N-068, the heading focus is N-069 |
 | 6 | Phase 4 (M1–M4) + lesson | independent of everything above; can be taken in any gap |
 | 7 | Phase 5's two "check first" items | an hour; they decide the grid's structure before N1 is written |
 | 8 | Phase 5 (N1, then N2, then N3) + lesson | the largest item; it goes last so the smaller phases are not held up behind it |

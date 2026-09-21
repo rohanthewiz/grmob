@@ -3047,3 +3047,118 @@ func TestChatFamilyLesson(t *testing.T) {
 	}
 	assertNoConcerns(t)
 }
+
+// 4.35. The tree opens from the caller's map and reports IDs; the two buttons
+// under it rewrite the map whole. The wizard blocks on an empty name, offers
+// Skip on the empty optional note, keeps the name across Back, and finishes
+// through OnFinish. The lesson renders its wizard inside an IfElse and its
+// step bodies come and go, so the empty concern list at the end is the
+// lesson's own claim (no hook in a body, none in the widgets) under test.
+func TestTreeAndWizardLesson(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Trees and wizards")
+
+	labelled := func(name string) *node {
+		return findNode(tree(t, mgr), func(n *node) bool {
+			return n.Style != nil && n.Style.AccessibilityLabel == name
+		})
+	}
+	button := func(label string) *node {
+		return findNode(tree(t, mgr), func(n *node) bool { return n.Type == "Button" && n.Props["label"] == label })
+	}
+	text := func(s string) *node {
+		return findNode(tree(t, mgr), func(n *node) bool { return n.Type == "Text" && n.Props["content"] == s })
+	}
+	field := func(placeholder string) *node {
+		return findNode(tree(t, mgr), func(n *node) bool { return n.Type == "Input" && n.Props["placeholder"] == placeholder })
+	}
+
+	// The tree opens with docs open and guide.md chosen; src is shut, so
+	// main.go is not in the tree at all.
+	if labelled("guide.md") == nil || labelled("main.go") != nil {
+		t.Fatal("docs should open expanded and src shut")
+	}
+	if g := labelled("guide.md"); g.Style.AccessibilityCurrent != "true" {
+		t.Errorf("guide.md should be the current item, got %q", g.Style.AccessibilityCurrent)
+	}
+	tapLabelled(t, mgr, "src")
+	if labelled("main.go") == nil {
+		t.Error("tapping src should open it")
+	}
+	tapLabelled(t, mgr, "main.go")
+	if text("Chosen: src/main.go") == nil {
+		t.Error("tapping main.go should choose it by its ID")
+	}
+	// The empty folder is a branch: it toggles, and draws no list.
+	if a := labelled("assets"); a == nil || a.Style.AccessibilityExpanded == "" {
+		t.Error("assets has no children and should still state its expansion")
+	}
+
+	tap(t, mgr, "Collapse all")
+	if labelled("guide.md") != nil || labelled("main.go") != nil {
+		t.Error("an empty map should shut every branch")
+	}
+	tap(t, mgr, "Reveal core.md")
+	if c := labelled("core.md"); c == nil || c.Style.AccessibilityCurrent != "true" {
+		t.Error("revealing should open both ancestors and choose the file")
+	}
+
+	// The wizard. Step one blocks on the empty name and has no Back.
+	if button("Back") != nil {
+		t.Error("the first step has no Back")
+	}
+	if next := button("Next"); next == nil || !next.Style.Disabled {
+		t.Fatal("Next should be disabled while the name is empty")
+	}
+	mgr.DispatchTextCallback(field("Ada Lovelace").Props["onChange"].(string), "Grace")
+	if next := button("Next"); next == nil || next.Style.Disabled {
+		t.Fatal("a name should enable Next")
+	}
+	tap(t, mgr, "Next")
+
+	// Step two is optional: Skip while empty, Next once written.
+	if text("Step 2 of 3, optional") == nil || button("Skip") == nil {
+		t.Fatal("the empty optional step should offer Skip")
+	}
+	mgr.DispatchTextCallback(field("Happy birthday!").Props["onChange"].(string), "Enjoy")
+	if button("Skip") != nil || button("Next") == nil {
+		t.Error("a written note should turn Skip back into Next")
+	}
+
+	// Back, and the name is still there: it never belonged to the step.
+	tap(t, mgr, "Back")
+	if f := field("Ada Lovelace"); f == nil || f.Props["value"] != "Grace" {
+		t.Error("the name should survive leaving and re-entering its step")
+	}
+	// A done step in the strip is a way forward only to where we have been:
+	// step 2 is not done from step 1, so it offers no tap.
+	if s := labelled("Step 2: Gift note"); s == nil || s.Props["onClick"] != nil {
+		t.Error("an upcoming step should not be tappable")
+	}
+	tap(t, mgr, "Next")
+	tap(t, mgr, "Next")
+	if text("Grace") == nil || text("Enjoy") == nil {
+		t.Error("the review should show both values")
+	}
+	tapLabelled(t, mgr, "Step 1: Your name, done")
+	if field("Ada Lovelace") == nil {
+		t.Error("a done step in the strip should go back to it")
+	}
+	tap(t, mgr, "Next")
+	tap(t, mgr, "Next")
+	tap(t, mgr, "Finish")
+	if findNode(tree(t, mgr), func(n *node) bool {
+		c, _ := n.Props["content"].(string)
+		return strings.Contains(c, "Order placed for Grace")
+	}) == nil {
+		t.Error("Finish should place the order")
+	}
+	if button("Finish") != nil {
+		t.Error("the wizard should be gone once the order is placed")
+	}
+	tap(t, mgr, "Start again")
+	if next := button("Next"); next == nil || !next.Style.Disabled {
+		t.Error("starting again should return to an empty, blocked first step")
+	}
+	assertNoConcerns(t)
+}
