@@ -7,7 +7,9 @@ the Android field and the look found a hole in the web runtime, and both
 were fixed where they were (see K4). **Phase 3 landed 2026-09-21** (L1, L2,
 lesson 4.35) with the rule kept: nothing under a renderer changed. **Phase 4
 landed 2026-09-21** (M1–M4, lesson 4.36, which is in chapter 4 and not 6),
-rule kept again. Phases 5 and 6 are not started.
+rule kept again. **Phase 5 landed 2026-09-21** (N1 to N3 in one session,
+lesson 4.37), rule kept: both "check first" items were answered from source
+and neither needed a renderer. Phase 6 is a decision, not started.
 
 Rounds one to three (`comps-low-hanging-fruit.md`, `-2.md`, `-3.md`, Tiers
 A–I) are complete. This round follows the same rule. Every item in Phases 1 to
@@ -25,7 +27,7 @@ keep the lettering (J, K, L, M), so a session doc can still say "K2".
 | 2 | Inputs | K1 `NumberPad`, K2 `ColorSwatchPicker`, K3 `RangeSlider`, K4 `MaskedInput` | one, chapter 5 |
 | 3 | Structure | L1 `TreeView`, L2 `Wizard` | one, chapter 4 |
 | 4 | Charts on Canvas | M1 `CandlestickChart`, M2 `FunnelChart`, M3 `RadarChart`, M4 `Waveform` | one, chapter 4 (the guess of 6 was wrong: 6 is navigation, and the chart lessons are 4.20 and 4.28) |
-| 5 | A spreadsheet-like grid | N1–N3 `EditableGrid` | one, chapter 4 |
+| 5 | A spreadsheet-like grid | N1–N3 `EditableGrid` | one, chapter 4 (4.37) |
 | 6 | Renderer-gated | `SignaturePad`, `QRScanner`, `Confetti` | none; each gets a plan of its own |
 
 The chapter for each lesson is a guess from where the round-three lessons
@@ -870,7 +872,82 @@ amount (`Number`, formatted as currency, validated as not negative), paid
 
 **Not verified until a device run:** the whole EDIT round trip under
 TalkBack and VoiceOver, and the soft keyboard covering the active cell near
-the bottom of the screen. Both go on the Next list when N1 lands.
+the bottom of the screen. Both are N-072.
+
+### What the build changed from the sketch
+
+**The two "check first" items, both answered from source, in well under the
+hour.**
+
+- *The member walk through a `List`.* `compositeMembers` descends through any
+  wrapper, so the cells are found. What the sketch missed is ownership: a
+  grid owns rows, and an unroled `List` between the two breaks that, exactly
+  as it did for `DataTable`. The `List` carries `RoleRowGroup`, which ARIA
+  allows under a grid. A `columnheader` row inside the grid is fine: core's
+  audit does not check ownership at all, and ARIA lets a row own
+  columnheaders. The header stayed inside.
+- *`core.Focus` on a non-input box.* The web honours it (`el.focus()`, and a
+  gridcell has a tabindex from the composite sync); Compose reads the stamp on
+  a Button only and SwiftUI on fields only. That is harmless: the focus
+  handed back after a commit exists to return the arrow keys to the grid, and
+  neither native has arrow keys to return. Proved in headless Chrome: Enter
+  opens the field focused, return lands on the cell below, and ArrowUp works
+  from there.
+
+**Seven changes.**
+
+- **The editing cell and the choice cell are `RoleCell`, not `RoleGridCell`.**
+  The runtime gives every gridcell a keydown listener that owns the arrows,
+  Enter and Space, and a key typed in a field inside one bubbles to it: the
+  caret's arrows would move the grid's focus and Space would never reach the
+  text. A row may own a plain cell, so the structure stays valid. The rule
+  became "a cell that *is* the control is a gridcell; a cell that *holds* a
+  native control, or nothing to press, is a cell". The price: the arrows step
+  over a choice cell, whose picker is a Tab stop. The editing cell is keyed
+  apart from the box it replaces, so the swap is a replacement and the old
+  element's listener and tab stop go with it.
+- **A blur commits after 150ms, not at once.** In a browser a press on the ✕
+  blurs the field before the click arrives, and an immediate commit removes
+  the ✕ from under the pointer: the discard would have committed. The blur
+  marks the editor (`hooks.UseTimeoutWhile`), and the ✕, another cell, the
+  return key or a refocus each settle it first. That one commit reaches
+  `OnChange` from a timer goroutine.
+- **Tapping another cell commits the open one and edits the new one** in one
+  dispatch, and a refused commit holds the reader where they were. The
+  sketch's diagram had no such edge. The bool toggle, the choice pick and the
+  row menu do the same, so an insert or delete never runs under a draft.
+- **The row menu is one `ActionSheet` beside the grid,** not a `Menu` per row
+  header: `Menu` renders its own trigger, and a row header has to be a
+  gridcell. The row is held by key, as the editor's is. `OnInsertRow` or
+  `OnDeleteRow` turn `RowHeaders` on.
+- **`MinWidth` took the place of "only when the columns overflow".** Go cannot
+  know that they do. Set, the grid sits in a `core.Horizontal()` box.
+- **Added:** `GridColumn.Keyboard` (iOS's decimal pad has no minus key), a
+  built-in "not a number" check on `GridNumber` ahead of `Validate`, a
+  stand-in option for a choice value outside `Options` (an inserted row's
+  empty cell would otherwise draw the first option), and a default `Weight`
+  of 1 for a column with no size, since a header and a body are separate rows
+  and a hugging column would differ between them.
+- **The supported size is about 5,000 cells, not 30 columns by any number of
+  rows.** Measured in Go rather than on the emulator, because Go is the
+  bound: `List` windows the natives, but every pass builds and diffs every
+  cell, and a keystroke in the editor is a pass. 30 × 1000 is 119ms a pass on
+  an M3 (`BenchmarkEditableGrid30x1000`), about 4µs a cell. The patch-count
+  test holds for a changed value (two patches, one cell). Entering or leaving
+  EDIT also re-binds every later cell's `onClick`, because callback IDs are
+  issued in render order and the editor registers more of them; the doc says
+  so.
+
+**The look found two defects, both fixed.** The picker drew its own frame and
+padding inside the cell, which made every row half again as tall and left
+room for one letter ("H", "F"); the cell is now the frame, as it is for the
+editor. And the lines were the grid's background showing through 1px gaps, so
+a body taller than its rows showed the leftover as a grey band; each row now
+carries its own lines. The lesson's four columns also did not fit a phone's
+demo panel ("$12…"), which is what `MinWidth` is for, so the lesson uses it.
+
+**The lesson is 4.37,** with the undo stack and the total in the caller, as
+sketched.
 
 ---
 
@@ -934,6 +1011,10 @@ New this round:
 - **Escape to cancel a cell edit, cell ranges, a fill handle, column
   resize, a frozen column and multi-cell paste** (key events, pointer
   position, horizontal sticky, a paste event; see Phase 5).
+- **Arrow keys onto a grid cell that holds a native control** (the
+  runtime's gridcell listener owns the keys a field needs; ARIA's answer is
+  Enter to go into the cell and Escape to come out, which is runtime work;
+  see Phase 5).
 - **`tree` / `treeitem` with arrow-key navigation** (role and keyboard
   contract; see L1).
 - **Focus on a heading after an in-place navigation** (a focus command on
@@ -952,8 +1033,8 @@ New this round:
 | 4 | ~~L1 `TreeView`~~ | the only hierarchical widget; its role decision is worth settling early. Settled as (a), nested lists |
 | 5 | ~~L2 `Wizard` + the Phase 3 lesson~~ | builds on `StepIndicator`; lands last in its phase so N-002's footer checks have the most time. Landed as lesson 4.35; device checks are N-068, the heading focus is N-069 |
 | 6 | ~~Phase 4 (M1–M4) + lesson~~ | independent of everything above; can be taken in any gap. Landed as lesson 4.36; device checks are N-070, RTL is N-071 |
-| 7 | Phase 5's two "check first" items | an hour; they decide the grid's structure before N1 is written |
-| 8 | Phase 5 (N1, then N2, then N3) + lesson | the largest item; it goes last so the smaller phases are not held up behind it |
+| 7 | ~~Phase 5's two "check first" items~~ | an hour; they decide the grid's structure before N1 is written. Answered from source: the `List` is a rowgroup, and the focus hand-back is the web's alone |
+| 8 | ~~Phase 5 (N1, then N2, then N3) + lesson~~ | the largest item; it goes last so the smaller phases are not held up behind it. Landed whole as lesson 4.37; device checks are N-072, callback IDs are N-073 |
 | 9 | Phase 6 | only a decision: which one, if any, gets a plan |
 
 Phases 1, 2, 4 and 5 do not depend on each other. Only the lesson numbering

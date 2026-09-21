@@ -30,7 +30,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-072
+**Next ID:** N-074
 
 ## Open
 
@@ -347,6 +347,43 @@ with each item's `raised` traced back through all session docs.
   renderer's (mirror the Canvas) or core's (a direction Go can read, so a
   widget can mirror its own geometry). First thing to do is look at lesson
   4.20 under an RTL locale and see which charts are actually wrong.
+- **N-072** · raised `2026-0921-1118-comps-round-four-phase-5-editable-grid` · value medium
+  **`EditableGrid`, unrun on a device.** Lesson 4.37 was looked at and driven
+  in headless Chrome only (the look found two defects, fixed; the keyboard
+  round trip was probed: arrows, Enter into a focused field, Space reaching
+  the text, return landing on the cell below with the arrows live).
+  - The EDIT round trip on Compose and SwiftUI: a tap opens the field with
+    the keyboard up (a `core.Focus` on an Input created in the same pass),
+    return commits and the row below is *not* focused (no native acts on a
+    focus command on a box), and whether the keyboard then stays up or drops.
+  - The ✕ on a touch screen: that a tap on it does not blur the field first
+    on either native, and that the 150ms grace is long enough in a real
+    browser with a mouse (headless Chrome dispatches callbacks, not pointer
+    events, so the race the grace exists for was reasoned, not seen).
+  - The soft keyboard covering the active cell near the bottom of the grid:
+    the cell is inside a `List` inside (with `MinWidth`) a horizontal scroll
+    box, and what each host scrolls to show a focused field there is unknown.
+  - A `List` inside a `core.Horizontal()` box on both natives: a lazy column
+    under an unbounded width. `MinWidth` is the only thing that builds it.
+  - A `core.Select` with its frame stripped (`BorderWidth(0)`, `Padding(0)`,
+    transparent fill) inside a cell on both natives: the web obeys; the
+    natives' pickers may keep their own chrome and make the row tall again.
+  - TalkBack and VoiceOver: a cell heard as "Amount, row 2, $310.50, button",
+    the editor's name, the `RoleAlert` message heard on a refused commit
+    (TalkBack; VoiceOver is expected to say nothing), and the row menu.
+  - The cost on a phone: the doc's "about 5,000 cells" is 4µs a cell measured
+    on an M3, times a guess. Type into a 10 × 500 sheet on the Fold6.
+- **N-073** · raised `2026-0921-1118-comps-round-four-phase-5-editable-grid` · value low (API decision)
+  **Callback IDs are positional, and `EditableGrid` is the widget that pays.**
+  IDs are issued in render order (core/event.go, `beginPass`), so entering or
+  leaving EDIT, where the editor registers three void callbacks against the
+  box's one, re-binds the `onClick` of every cell after it: a patch per later
+  cell per transition. It is also the documented stale-event hazard made
+  likelier: an event dispatched against the tree before the transition can
+  hit a shifted ID. The fix is the one `beginPass`'s comment already names,
+  identity-keyed IDs (a keyed node's callbacks named by its key path). Until
+  then the grid could pad each cell to a fixed number of registrations, which
+  was judged too ugly to do on the way past.
 
 ## Non-goals
 

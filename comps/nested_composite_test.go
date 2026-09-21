@@ -63,6 +63,12 @@ import (
 //	             sibling rather than inside it. viewsOutsideTheComposite
 //	             excuses exactly that field, and calendar_test.go's
 //	             TestCalendarIsAGridOfRowsOfCells holds the placement.
+//	EditableGrid grid (round four, Phase 5). Its cells are built from
+//	             [][]string and GridColumn data, and no struct it declares
+//	             holds a core.View. What it puts inside the grid beside its
+//	             own gridcells is a text field and a core.Select, each in a
+//	             plain RoleCell, and neither is a composite. The alert line
+//	             and the row menu's sheet are the grid's siblings.
 //
 // Both are CLOSED: every member is built by the widget from data (BarItem,
 // RadioOption), and no struct the widget declares holds a core.View. A closed
@@ -107,6 +113,7 @@ func TestOnlyClosedWidgetsDeclareACompositeContainerRole(t *testing.T) {
 		"bottom_bar.go":          "toolbar when Selected < 0; cells are built from BarItem data",
 		"calendar.go":            "grid; cells are built from the month, and Header renders beside the grid",
 		"code_editor.go":         "toolbar; its three buttons are built by the widget",
+		"editable_grid.go":       "grid; cells are built from [][]string and GridColumn data, and the alert and the row menu render beside the grid",
 		"color_swatch_picker.go": "radiogroup; swatches are built from Swatch data, and the hex field renders beside the group",
 		"radio_group.go":         "radiogroup; rows are built from RadioOption data",
 		"rich_text_editor.go":    "toolbar; buttons are built from RichToolItem data",

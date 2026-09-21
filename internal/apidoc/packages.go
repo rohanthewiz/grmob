@@ -253,7 +253,7 @@ var Packages = []Pkg{
 			Title: "Lists & tables",
 			Blurb: "List rows, the settings-row family (switch, checkbox, select and slider), input rows, key-value lists, bullet lists, grouped and paged lists, data tables and timelines.",
 			Files: []string{"list_row.go", "settings_row.go", "select_row.go", "slider_row.go", "input_row.go",
-				"key_value_list.go", "bullet_list.go", "grouped_list.go", "grouping.go", "paging.go", "data_table.go", "timeline.go"},
+				"key_value_list.go", "bullet_list.go", "grouped_list.go", "grouping.go", "paging.go", "data_table.go", "editable_grid.go", "timeline.go"},
 		}, {
 			Slug:  "inputs",
 			Title: "Inputs & pickers",

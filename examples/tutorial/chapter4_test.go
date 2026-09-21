@@ -3257,3 +3257,107 @@ func TestFourMoreChartsLesson(t *testing.T) {
 	}
 	assertNoConcerns(t)
 }
+
+// 4.37. The budget sheet end to end, through the app: a commit reaches the
+// total, a refused one does not, a bool cell toggles the unpaid share, the row
+// menu deletes through the caller, and Undo walks back through all of it.
+// Keystrokes on their own must leave the total alone, which is the lesson's
+// first claim.
+func TestEditableGridLesson(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "A grid you can type into")
+
+	total := func() string {
+		t.Helper()
+		n := findNode(tree(t, mgr), func(n *node) bool {
+			s, _ := n.Props["content"].(string)
+			return n.Type == "Text" && strings.HasPrefix(s, "Total ")
+		})
+		if n == nil {
+			t.Fatal("no total line")
+		}
+		return n.Props["content"].(string)
+	}
+	submit := func() {
+		t.Helper()
+		n := findNode(tree(t, mgr), func(n *node) bool { return n.Type == "Input" })
+		if n == nil {
+			t.Fatal("no editor open")
+		}
+		mgr.DispatchCallback(n.Props["onSubmit"].(string))
+	}
+	editing := func() bool {
+		return findNode(tree(t, mgr), func(n *node) bool { return n.Type == "Input" }) != nil
+	}
+
+	if got := total(); got != "Total $1622.50, of which $358.50 is unpaid." {
+		t.Fatalf("opening total = %q", got)
+	}
+
+	// Format is display only: the cell reads $48.00 and the editor opens on 48.
+	tapLabelled(t, mgr, "Amount, row 4, $48.00")
+	if n := findNode(tree(t, mgr), func(n *node) bool { return n.Type == "Input" }); n == nil || n.Props["value"] != "48" {
+		t.Fatalf("the editor should open on the stored value, got %+v", n)
+	}
+	typeInto(t, mgr, "58")
+	if got := total(); got != "Total $1622.50, of which $358.50 is unpaid." {
+		t.Errorf("a keystroke moved the total: %q", got)
+	}
+	submit()
+	if got := total(); got != "Total $1632.50, of which $368.50 is unpaid." {
+		t.Errorf("after the commit, total = %q", got)
+	}
+
+	// A refused commit: the editor stays, the message shows, the total holds.
+	tapLabelled(t, mgr, "Amount, row 1, $1200.00")
+	typeInto(t, mgr, "-5")
+	submit()
+	if !editing() || !hasText(tree(t, mgr), "An amount cannot be negative.") {
+		t.Error("a negative amount should be refused in place, with its message")
+	}
+	if got := total(); got != "Total $1632.50, of which $368.50 is unpaid." {
+		t.Errorf("a refused commit moved the total: %q", got)
+	}
+	tapLabelled(t, mgr, "Discard edit")
+	if editing() {
+		t.Error("✕ should close the editor")
+	}
+
+	// One tap on a bool cell, and the unpaid share follows.
+	tapLabelled(t, mgr, "Paid, row 2, not checked")
+	if got := total(); got != "Total $1632.50, of which $58.00 is unpaid." {
+		t.Errorf("after paying the groceries, total = %q", got)
+	}
+
+	// The row menu deletes through the caller.
+	tapLabelled(t, mgr, "Row 3")
+	tap(t, mgr, "Delete")
+	if got := total(); got != "Total $1568.50, of which $58.00 is unpaid." {
+		t.Errorf("after deleting the bus pass, total = %q", got)
+	}
+	tapLabelled(t, mgr, "Row 1")
+	tap(t, mgr, "Insert below")
+	if findNode(tree(t, mgr), func(n *node) bool {
+		return n.Style != nil && n.Style.AccessibilityLabel == "Item, row 2, empty"
+	}) == nil {
+		t.Error("Insert below should put an empty row second")
+	}
+
+	// Four changes reached the caller, so Undo has four to give back.
+	for _, want := range []string{
+		"Total $1568.50, of which $58.00 is unpaid.",
+		"Total $1632.50, of which $58.00 is unpaid.",
+		"Total $1632.50, of which $368.50 is unpaid.",
+		"Total $1622.50, of which $358.50 is unpaid.",
+	} {
+		n := findNode(tree(t, mgr), func(n *node) bool {
+			l, _ := n.Props["label"].(string)
+			return n.Type == "Button" && strings.HasPrefix(l, "Undo")
+		})
+		mgr.DispatchCallback(n.Props["onClick"].(string))
+		if got := total(); got != want {
+			t.Errorf("after an undo, total = %q, want %q", got, want)
+		}
+	}
+	assertNoConcerns(t)
+}

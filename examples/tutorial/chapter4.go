@@ -69,6 +69,7 @@ func chapter4() Chapter {
 			lessonChatFamily(),
 			lessonTreeAndWizard(),
 			lessonFourMoreCharts(),
+			lessonEditableGrid(),
 		},
 	}
 }
@@ -6114,6 +6115,216 @@ w.Bars = w.BarsFor(stripWidth)   // how many 3px bars fit; you know your insets,
 					"RadarChart: rim labels are centred ZStack layers moved by core.Translate in px, exact because Size is.",
 					"Waveform: bars are round-capped strokes, which never stretch; BarsFor sizes it; buckets keep their maximum.",
 					"AudioPlayer.Waveform draws the strip above the seek bar. It shows progress and does not seek.",
+				),
+			)
+		},
+	}
+}
+
+// budgetSheet is lesson 4.37's state: the rows, and an id per row. The two
+// slices move together, which is why they are one value in one state slot: an
+// insert that set them in two Sets could be seen, for one pass, with a row the
+// ids do not cover.
+type budgetSheet struct {
+	Rows [][]string
+	IDs  []string
+	Next int // the next id to mint; never reused, so a deleted row's id stays dead
+}
+
+// with returns the sheet with one cell replaced. Copied, not mutated: the
+// slot would otherwise hold the same slices and the undo stack would hold
+// them too, all of them showing the newest value.
+func (b budgetSheet) with(r, c int, v string) budgetSheet {
+	rows := make([][]string, len(b.Rows))
+	for i := range b.Rows {
+		rows[i] = slices.Clone(b.Rows[i])
+	}
+	rows[r][c] = v
+	b.Rows = rows
+	return b
+}
+
+// insert adds an empty row below row after; remove takes row r out.
+func (b budgetSheet) insert(after int) budgetSheet {
+	b.Rows = slices.Insert(slices.Clone(b.Rows), after+1, []string{"", "", "", "false"})
+	b.IDs = slices.Insert(slices.Clone(b.IDs), after+1, "row"+strconv.Itoa(b.Next))
+	b.Next++
+	return b
+}
+
+func (b budgetSheet) remove(r int) budgetSheet {
+	b.Rows = slices.Delete(slices.Clone(b.Rows), r, r+1)
+	b.IDs = slices.Delete(slices.Clone(b.IDs), r, r+1)
+	return b
+}
+
+// totals sums the Amount column, all of it and the unpaid part. A cell the
+// grid let through is "" or a number, so the parse cannot fail on anything
+// but an empty cell, which counts as nothing.
+func (b budgetSheet) totals() (all, unpaid float64) {
+	for _, row := range b.Rows {
+		amount, _ := strconv.ParseFloat(row[2], 64)
+		all += amount
+		if paid, _ := strconv.ParseBool(row[3]); !paid {
+			unpaid += amount
+		}
+	}
+	return all, unpaid
+}
+
+// tutorialBudget is the sheet 4.37 opens on.
+func tutorialBudget() budgetSheet {
+	return budgetSheet{
+		Rows: [][]string{
+			{"Rent", "Home", "1200", "true"},
+			{"Groceries", "Food", "310.5", "false"},
+			{"Bus pass", "Travel", "64", "true"},
+			{"Dinner out", "Food", "48", "false"},
+		},
+		IDs:  []string{"row0", "row1", "row2", "row3"},
+		Next: 4,
+	}
+}
+
+// dollars is the Amount column's Format: display only, so the editor opens on
+// "310.5" and the cell reads "$310.50".
+func dollars(v string) string {
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil {
+		return v
+	}
+	return "$" + strconv.FormatFloat(f, 'f', 2, 64)
+}
+
+// 4.37 — Phase 5 of the fourth low-hanging-fruit round: EditableGrid. The
+// lesson is a budget, because a budget uses every kind of cell once and has a
+// derived value (the total) that shows where formulas went: into the caller.
+//
+// Appended at the end of the chapter for the reason 4.25 was.
+func lessonEditableGrid() Lesson {
+	return Lesson{
+		Title:   "A grid you can type into",
+		Summary: "comps.EditableGrid: one editor at a time, a commit per cell, and the rows stay yours.",
+		Body: func(ctx *core.Context) core.View {
+			sheet := core.NewState(ctx, tutorialBudget())
+			// The undo stack the widget does not have: every commit arrives
+			// here, so the history is one slice of the values it replaced.
+			undo := core.NewState(ctx, []budgetSheet(nil))
+
+			apply := func(next budgetSheet) {
+				undo.Set(append(slices.Clone(undo.Get()), sheet.Get()))
+				sheet.Set(next)
+			}
+			b := sheet.Get()
+			all, unpaid := b.totals()
+
+			return core.Column(
+				core.Gap(14),
+				prose("DataTable shows rows. This edits cells. It looks like a table of text fields and "+
+					"is not one: every cell is a box of text, and only the cell you tap becomes a "+
+					"field. A sheet of real fields would be hundreds of native inputs, each a tab "+
+					"stop, each with the arrow keys its caret wants and the grid wants too."),
+
+				codeBlock(`comps.EditableGrid{
+    Label: "Budget",
+    Columns: []comps.GridColumn{
+        {Title: "Item", Weight: 2},
+        {Title: "Category", Kind: comps.GridChoice, Options: []string{"Home", "Food", "Travel"}},
+        {Title: "Amount", Kind: comps.GridNumber, Format: dollars, Validate: notNegative},
+        {Title: "Paid", Kind: comps.GridBool, Width: 56},
+    },
+    Rows:     sheet.Get().Rows,                       // [][]string: the caller parses
+    Key:      func(r int) string { return ids[r] },   // identity across insert and delete
+    OnChange: func(r, c int, v string) { apply(sheet.Get().with(r, c, v)) },
+    OnInsertRow: func(after int) { apply(sheet.Get().insert(after)) },
+    OnDeleteRow: func(r int)     { apply(sheet.Get().remove(r)) },
+    MinWidth: 460,                                    // narrower than this, scroll sideways
+    Style: []core.StyleProp{core.Height("232px")},    // a List with no height is not lazy
+}`),
+				demoPanel("Tap a cell, type, press return. Try -5 in Amount. A row number opens that row's menu.",
+					comps.EditableGrid{
+						Label: "Budget",
+						Columns: []comps.GridColumn{
+							{Title: "Item", Weight: 2},
+							{Title: "Category", Kind: comps.GridChoice, Weight: 1.6,
+								Options: []string{"Home", "Food", "Travel"}},
+							{Title: "Amount", Kind: comps.GridNumber, Weight: 1.4, Format: dollars,
+								Validate: func(v string) string {
+									if strings.HasPrefix(v, "-") {
+										return "An amount cannot be negative."
+									}
+									return ""
+								}},
+							{Title: "Paid", Kind: comps.GridBool, Width: 44},
+						},
+						Rows:        b.Rows,
+						Key:         func(r int) string { return b.IDs[r] },
+						OnChange:    func(r, c int, v string) { apply(sheet.Get().with(r, c, v)) },
+						OnInsertRow: func(after int) { apply(sheet.Get().insert(after)) },
+						OnDeleteRow: func(r int) { apply(sheet.Get().remove(r)) },
+						// Four columns and the row numbers want more than a
+						// phone's demo panel has, so the sheet scrolls sideways
+						// rather than drawing "$12…".
+						MinWidth: 460,
+						Compact:  true,
+						Style:    []core.StyleProp{core.Height("232px")},
+					},
+					core.Text(fmt.Sprintf("Total %s, of which %s is unpaid.",
+						dollars(strconv.FormatFloat(all, 'f', -1, 64)),
+						dollars(strconv.FormatFloat(unpaid, 'f', -1, 64))),
+						core.FontWeight(core.Bold),
+						core.AccessibilityRole(core.RoleStatus),
+					),
+					core.Row(
+						core.Padding(0),
+						core.Gap(8),
+						comps.Button{Label: fmt.Sprintf("Undo (%d)", len(undo.Get())),
+							Emphasis: comps.EmphasisOutlined, Disabled: len(undo.Get()) == 0,
+							OnTap: func() {
+								stack := undo.Get()
+								sheet.Set(stack[len(stack)-1])
+								undo.Set(slices.Clone(stack[:len(stack)-1]))
+							}},
+						comps.Button{Label: "Reset", Emphasis: comps.EmphasisGhost, OnTap: func() {
+							sheet.Set(tutorialBudget())
+							undo.Set(nil)
+						}},
+					),
+				),
+				prose("The draft is the grid's and the data is yours. While you type, nothing reaches "+
+					"OnChange: no application wants a half-typed cell. The return key commits and "+
+					"moves down a row, as a spreadsheet does; tapping elsewhere commits and stays; "+
+					"the ✕ at the end of the cell throws the draft away. There is no Escape, because "+
+					"key events do not reach Go, and the ✕ is what that costs."),
+				prose("A commit that Validate refuses never reaches you. The cell stays open with a red "+
+					"border and the message appears under the grid, in an alert a screen reader "+
+					"announces. A Number column refuses what is not a number before your Validate is "+
+					"asked. Format is display only: the Amount cell reads $310.50 and its editor opens "+
+					"on 310.5, which is also what OnChange reports."),
+				prose("Cells are strings and the grid is not generic. A typed grid needs a getter and a "+
+					"setter per column, which is a heavy API for what a text field produces anyway. "+
+					"Kind picks the editor: Text and Number open the field, Bool toggles on one tap, "+
+					"and Choice is the platform's own picker, always there, so choosing is one tap "+
+					"and not two."),
+				prose("The total and the Undo button are the lesson's, not the widget's. There are no "+
+					"formulas: a formula engine is a parser and a dependency graph, which is an "+
+					"application. But every commit passes through your OnChange, so a derived value is "+
+					"a loop over your rows, and undo is a slice of the sheets you replaced. Key is what "+
+					"makes the row menu safe. Without it rows are keyed by index, and deleting row 1 "+
+					"hands row 2's node to row 3's data."),
+				prose("It costs what it draws. core.List windows the rows on a phone, but Go still "+
+					"builds every cell each pass, and each keystroke in the editor is a pass. About "+
+					"five thousand cells is comfortable; past that, page the rows. Columns are never "+
+					"windowed and the row numbers scroll away with the rest, so on a phone the honest "+
+					"advice is few columns. MinWidth lets a wide sheet scroll sideways instead of "+
+					"squeezing."),
+				keyPoints(
+					"One editor at a time: cells are text until tapped. Return commits and moves down, a tap elsewhere commits, ✕ discards.",
+					"OnChange fires once per commit, only for a changed value, and never with a value Validate refused.",
+					"Rows is [][]string. Kind chooses the editor; Format is display only; the caller parses.",
+					"Key gives rows an identity, so an insert or delete cannot re-pair rows or move an open editor.",
+					"No formulas and no undo inside: every commit passes through the caller, so both are a few lines there.",
+					"EditableGrid holds hooks: render it in a stable position, never inside core.If.",
 				),
 			)
 		},

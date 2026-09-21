@@ -6,11 +6,11 @@ import "github.com/rohanthewiz/grmob/comps"
 
 List rows, the settings-row family (switch, checkbox, select and slider), input rows, key-value lists, bullet lists, grouped and paged lists, data tables and timelines.
 
-One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/list_row.go`, `comps/settings_row.go`, `comps/select_row.go`, `comps/slider_row.go`, `comps/input_row.go`, `comps/key_value_list.go`, `comps/bullet_list.go`, `comps/grouped_list.go`, `comps/grouping.go`, `comps/paging.go`, `comps/data_table.go`, `comps/timeline.go`.
+One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/list_row.go`, `comps/settings_row.go`, `comps/select_row.go`, `comps/slider_row.go`, `comps/input_row.go`, `comps/key_value_list.go`, `comps/bullet_list.go`, `comps/grouped_list.go`, `comps/grouping.go`, `comps/paging.go`, `comps/data_table.go`, `comps/editable_grid.go`, `comps/timeline.go`.
 
 ## Index
 
-- [Constants](#constants) — `ConcernPartialSort`, `ConcernSelectRowValueNotAnOption`
+- [Constants](#constants) — `ConcernEditableGridChoiceNoOptions`, `ConcernEditableGridInert`, `ConcernEditableGridNoKey`, `ConcernEditableGridRagged`, `ConcernPartialSort`, `ConcernSelectRowValueNotAnOption`
 - [`type BulletList`](#type-bulletlist)
     - [`func (BulletList) Render`](#func-bulletlist-render)
 - [`type CheckboxRow`](#type-checkboxrow)
@@ -21,6 +21,10 @@ One of 7 topic pages of [package comps](comps.md), which has the package overvie
 - [`type Column`](#type-column)
 - [`type DataTable`](#type-datatable)
     - [`func (DataTable) Render`](#func-datatable-render)
+- [`type EditableGrid`](#type-editablegrid)
+    - [`func (EditableGrid) Render`](#func-editablegrid-render)
+- [`type GridCellKind`](#type-gridcellkind)
+- [`type GridColumn`](#type-gridcolumn)
 - [`type Group`](#type-group)
 - [`type GroupHeader`](#type-groupheader)
     - [`func (GroupHeader) Render`](#func-groupheader-render)
@@ -50,6 +54,38 @@ One of 7 topic pages of [package comps](comps.md), which has the package overvie
 - [`type TimelineEvent`](#type-timelineevent)
 
 ## Constants
+
+ConcernEditableGridChoiceNoOptions is raised, in debug builds only, for a GridChoice column with no Options: a picker with nothing to pick.
+
+```go
+const ConcernEditableGridChoiceNoOptions = "editable-grid-choice-no-options"
+```
+
+<small>[comps/editable_grid.go:34](https://github.com/rohanthewiz/grmob/blob/master/comps/editable_grid.go#L34)</small>
+
+ConcernEditableGridInert is raised, in debug builds only, when a grid has no OnChange and at least one cell that is not read only. Such a cell opens an editor, takes a draft, and throws it away at the commit: the grid looks editable and is not. A grid that is meant to be looked at sets ReadOnly (or every column's ReadOnly) and says so.
+
+```go
+const ConcernEditableGridInert = "editable-grid-inert"
+```
+
+<small>[comps/editable_grid.go:18](https://github.com/rohanthewiz/grmob/blob/master/comps/editable_grid.go#L18)</small>
+
+ConcernEditableGridNoKey is raised, in debug builds only, when OnInsertRow or OnDeleteRow is set without Key. Rows are then keyed by index, so a delete re-pairs every row below it with its neighbour's node, and an open editor stays at its index, which is now a different row. See "Rows" on the type.
+
+```go
+const ConcernEditableGridNoKey = "editable-grid-no-key"
+```
+
+<small>[comps/editable_grid.go:30](https://github.com/rohanthewiz/grmob/blob/master/comps/editable_grid.go#L30)</small>
+
+ConcernEditableGridRagged is raised, in debug builds only, for a row whose length differs from Columns. A short row is drawn with empty cells and a long one loses its tail, so nothing crashes; but an edit to a cell past a short row's end reports a column the caller's row does not have.
+
+```go
+const ConcernEditableGridRagged = "editable-grid-ragged"
+```
+
+<small>[comps/editable_grid.go:24](https://github.com/rohanthewiz/grmob/blob/master/comps/editable_grid.go#L24)</small>
 
 ConcernPartialSort: a DataTable sorted client-side (the active Sort names a column with a Less) while its Pagination declares a PageCount — which is the caller saying the server chooses which rows arrive. The table can only order the window it was handed, so the header claims an ordering over the whole table and delivers one over one page of it. The fix is to drop the column's Less and keep Sortable, letting OnSort go into the query.
 
@@ -548,6 +584,255 @@ func (d DataTable[T]) Render(ctx *core.Context) *core.Node
 ```
 
 <small>[comps/data_table.go:231](https://github.com/rohanthewiz/grmob/blob/master/comps/data_table.go#L231)</small>
+
+### type EditableGrid
+
+```go
+type EditableGrid struct {
+	Columns []GridColumn
+
+	// Rows is the caller's data, as text: Rows[r][c]. The grid is controlled
+	// and never writes to it.
+	Rows [][]string
+
+	// Key is row r's identity across insert and delete. Nil keys rows by
+	// index, which is right for a sheet whose rows never move.
+	Key func(row int) string
+
+	// OnChange receives one committed cell. It is not called for a commit
+	// that leaves the value as it was.
+	OnChange func(row, col int, value string)
+
+	// ReadOnly makes single cells read only, over and above a column's flag.
+	ReadOnly func(row, col int) bool
+
+	// RowHeaders draws 1, 2, 3 … down the leading side.
+	RowHeaders bool
+
+	// OnInsertRow and OnDeleteRow, when either is set, put a menu behind each
+	// row header (and turn RowHeaders on, since the header is the trigger).
+	// after is the row to insert below.
+	OnInsertRow func(after int)
+	OnDeleteRow func(row int)
+
+	// Label is the grid's spoken name. Empty means "Grid".
+	Label string
+
+	// MinWidth, in px, is the least the grid is drawn at. When set, the grid
+	// sits in a horizontal scroll box and a narrow screen scrolls it sideways
+	// instead of squeezing its columns. Zero fits the grid to its parent.
+	MinWidth float64
+
+	// Compact tightens the cells' padding for a dense sheet.
+	Compact bool
+
+	// Style is applied to the outer Column, HeaderStyle to the header row and
+	// CellStyle to every body cell, each after its defaults.
+	Style       []core.StyleProp
+	HeaderStyle []core.StyleProp
+	CellStyle   []core.StyleProp
+}
+```
+
+EditableGrid is a spreadsheet-like table: a header over a windowed body of cells, where the unit is the cell and the point is editing it.
+
+	comps.EditableGrid{
+	    Label:   "Budget",
+	    Columns: []comps.GridColumn{
+	        {Title: "Item", Weight: 2},
+	        {Title: "Amount", Kind: comps.GridNumber, Format: dollars},
+	        {Title: "Paid", Kind: comps.GridBool, Width: 56},
+	    },
+	    Rows:     rows.Get(),
+	    Key:      func(i int) string { return ids.Get()[i] },
+	    OnChange: func(r, c int, v string) { rows.Set(with(rows.Get(), r, c, v)) },
+	}
+
+#### Against DataTable
+
+DataTable\[T] is a read-only view of typed rows: it sorts, groups and pages, and a row is the tap target. Cell editing bolted onto it would be one widget with two selection models (row and cell) and two role sets (table and grid). This borrows its column sizing and its keyed, windowed body and nothing else.
+
+#### Cells are strings
+
+DataTable is generic because it reads rows through accessors. An editable cell needs a setter per column too, and a pair of closures per column is a heavy API for what a text field produces anyway. So Rows is \[]\[]string, Kind chooses the editor, and the caller parses. A typed adapter can be layered over this without changing it.
+
+#### One editor at a time
+
+Every cell is a box showing text, and only the cell being edited becomes a text field. A 50×10 sheet of real fields would be 500 native inputs, each with its own text-edit ledger and its own tab stop, and the grid's arrow keys would fight the caret's in every one.
+
+	          tap / Enter / Space (the cell's onClick)
+	┌──────────┐ ─────────────────────────────▶ ┌──────────┐
+	│ NAVIGATE │                                │   EDIT   │
+	│ cell is  │ ◀───────────────────────────── │ cell is  │
+	│ a button │   return key  → commit, move ↓ │ an Input │
+	└──────────┘   blur        → commit, stay   └──────────┘
+	               ✕           → discard draft
+	               another cell tapped → commit, edit that one
+
+The draft is the widget's: no application wants a half-typed cell, so OnChange fires once per commit and not per key, and only when the value changed. A commit Validate refuses keeps the cell in EDIT, tints its border with Error and puts the message under the grid in a core.RoleAlert line; the caller never receives a refused value.
+
+Cancel has no key. Key events do not reach Go (the PINInput finding), so Escape cannot discard a draft; the editing cell ends in a ✕ that does.
+
+#### Why a blur waits
+
+A blur commits after gridBlurGrace, not at once. In a browser a press on the ✕ blurs the field before the click is delivered, and a commit in between would remove the ✕ from under the pointer: the click would never arrive and the discard would have committed. So the blur only marks the editor, and the ✕, a tap on another cell, the return key or the field taking focus again each settle it first. If none does, the timer commits. That one commit reaches OnChange from a timer goroutine and not from an event handler; State.Set is safe from either.
+
+#### Focus
+
+Entering EDIT focuses the field (core.Focus). Ending it focuses a cell: the one below after the return key, the same one after ✕. Only the web acts on the second, where it is what hands the arrow keys back to the grid; both natives ignore a focus command on a box, and neither has arrow keys to give back.
+
+#### The structure
+
+	Column  (Style)
+	├─ Box core.Horizontal()        only when MinWidth is set
+	│  └─ Column RoleGrid, Label
+	│     ├─ Row RoleRow            header: RoleColumnHeader cells
+	│     └─ List RoleRowGroup      windowed body, keyed by Key(row)
+	│        └─ Row RoleRow
+	│           ├─ Row  row header "7"   (RowHeaders)
+	│           └─ Row  cell × n
+	├─ Text RoleAlert               the refused commit's message
+	└─ ActionSheet                  a row's menu (OnInsertRow, OnDeleteRow)
+
+A grid owns rows and rows own cells (core.RoleGrid), so the message and the sheet are outside the grid container, and the List between the grid and its rows is a rowgroup, which is the one container ARIA lets stand there.
+
+A cell's role says what kind of thing it is:
+
+	RoleGridCell   the cell is itself the control: a text or number cell
+	               (press to edit), a bool cell (press to toggle), a row
+	               header with a menu. One of the grid's arrow-key members.
+	RoleCell       the cell holds a native control, or nothing to press: the
+	               cell being edited, a choice cell, a read-only cell, a row
+	               header with no menu. Not a member.
+
+The second is not squeamishness. The web runtime gives every gridcell a keydown listener that owns the arrows, Enter and Space, and a key typed in a field inside a gridcell bubbles to it: the caret's arrows would move the grid's focus and Space would never reach the text. A row may own a plain cell, so the structure stays valid.
+
+A cell's spoken name is "\<column>, row \<n>, \<value>", with "read only" appended where it applies. Neither native has a grid vocabulary and both announce a gridcell as a button, so the name has to carry the position.
+
+#### Rows
+
+OnInsertRow and OnDeleteRow put a menu behind each row header ("Insert below", "Delete"). The caller performs the change, since the rows are the caller's. This is where Key earns its place: rows keyed by index re-pair with their neighbours' nodes after a delete, and an open editor stays at an index that is now another row.
+
+#### What it is not
+
+  - No formulas. A formula engine is a parser, a dependency graph and cycle detection: an application. Format, plus a caller that recomputes derived values in OnChange, covers totals.
+  - No cell ranges, fill handle or column resize by drag: all need pointer-drag positions, which no target reports.
+  - No frozen first column. RowHeaders scroll away with the rest. On a phone the honest advice is few columns.
+  - No multi-cell paste and no undo. The caller holds the data and receives every commit, so an undo stack is one slice in the caller.
+
+#### Cost
+
+Each visible cell is a node. core.List windows the rows on both natives, so the native cost is visible rows × columns; columns are not windowed. Go's cost is not windowed at all: every pass builds every row's nodes and diffs them, and every keystroke in the editor is a pass, because the draft is state. Measured at about 4µs a cell on a laptop (BenchmarkEditableGrid30x1000: 30,000 cells, 119ms a pass, which is far too slow to type into). So the supported size is about 5,000 cells, 10 columns by 500 rows, where a pass is some 20ms on a laptop and a phone is a few times that. Past it, page the rows: hand the grid a window of them and keep OnChange's row index in step.
+
+A List with no height is not lazy, so give the grid one (Style: core.Height or core.FlexGrow).
+
+A changed value patches that cell alone. Entering or leaving EDIT does more: callback IDs are issued in render order, the editor registers more of them than the box it replaces, and every later cell's onClick is re-bound.
+
+#### It holds hooks
+
+Two FocusRefs, the editor, the landing cell, the open menu and the blur timer. So it has Accordion's rule: render it in a stable position every pass rather than inside a core.If.
+
+#### Theme roles read
+
+	Lines      Colors.BorderColor: each row is filled with it and shows 1px
+	           between and under its cells, since no target has per-side borders
+	Header     Colors.Surface, Typography.Caption in TextSecondary
+	Cells      Colors.Background, Typography.Body
+	Editing    Colors.Primary border; Colors.Error after a refused commit
+	Read only  Colors.Surface fill, TextSecondary ink
+
+<small>[comps/editable_grid.go:303](https://github.com/rohanthewiz/grmob/blob/master/comps/editable_grid.go#L303)</small>
+
+#### func (EditableGrid) Render
+
+```go
+func (g EditableGrid) Render(ctx *core.Context) *core.Node
+```
+
+Render builds the grid as drawn in the type doc.
+
+<small>[comps/editable_grid.go:349](https://github.com/rohanthewiz/grmob/blob/master/comps/editable_grid.go#L349)</small>
+
+### type GridCellKind
+
+```go
+type GridCellKind int
+```
+
+GridCellKind chooses a column's editor, its soft keyboard and its default alignment. The value is a string whatever the kind: see "Cells are strings" on EditableGrid.
+
+<small>[comps/editable_grid.go:39](https://github.com/rohanthewiz/grmob/blob/master/comps/editable_grid.go#L39)</small>
+
+```go
+const (
+	// GridText is a free text cell, edited in a text field.
+	GridText GridCellKind = iota
+
+	// GridNumber is edited in a text field with the decimal keyboard, is
+	// right-aligned unless Align says otherwise, and refuses a draft that
+	// strconv.ParseFloat refuses ("" is allowed: an empty cell is not a bad
+	// number). The decimal pad has no minus key on iOS, so a signed column
+	// sets GridColumn.Keyboard to core.KeyboardText.
+	GridNumber
+
+	// GridBool is a checkbox glyph that toggles on tap and never opens an
+	// editor. Its value is "true" or "false"; anything strconv.ParseBool
+	// refuses is drawn unchecked.
+	GridBool
+
+	// GridChoice is a core.Select over Options: the platform's own picker,
+	// always present in the cell, so choosing is one tap and not two.
+	GridChoice
+)
+```
+
+### type GridColumn
+
+```go
+type GridColumn struct {
+	// Title is the header cell's text and the stem of every cell's spoken
+	// name in the column.
+	Title string
+
+	// Kind chooses the editor. The zero value is GridText.
+	Kind GridCellKind
+
+	// Options are a GridChoice column's values, in order.
+	Options []string
+
+	// Width fixes the column in px; Weight shares the row's slack. A column
+	// with neither gets Weight 1, because a grid's header and body are
+	// separate rows and a column that hugged its content would be a different
+	// width on each of them. With both set, Width is the least the column
+	// takes.
+	Width, Weight float64
+
+	// Align positions the cell's content on the row axis. The zero value is
+	// the leading edge, except for GridNumber (the trailing edge) and
+	// GridBool (the centre).
+	Align core.JustifyContent
+
+	// Format turns the stored value into the drawn one: "1234.5" to
+	// "$1,234.50". Display only. The editor opens on the stored value, and
+	// OnChange reports what was typed.
+	Format func(string) string
+
+	// Validate returns "" for a draft that may be committed, or the message
+	// to show. It runs at the commit, not per key: a half-typed value is
+	// allowed to be wrong.
+	Validate func(string) string
+
+	// Keyboard overrides the soft keyboard the Kind asks for.
+	Keyboard core.KeyboardKind
+
+	// ReadOnly makes every cell of the column a value and not a control.
+	ReadOnly bool
+}
+```
+
+GridColumn describes one column of an EditableGrid.
+
+<small>[comps/editable_grid.go:63](https://github.com/rohanthewiz/grmob/blob/master/comps/editable_grid.go#L63)</small>
 
 ### type Group
 

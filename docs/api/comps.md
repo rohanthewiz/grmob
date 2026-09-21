@@ -35,7 +35,7 @@ Package comps's reference is split into 7 topic pages by source file. The index 
 | Topic | What it covers | Declares |
 | --- | --- | --- |
 | [Screens & structure](comps-structure.md) | Screen, app and bottom bars, the FAB, tabs, drawers, step indicators, wizards, tree views, two-pane and foldable layouts, cards, accordions, headings, breadcrumbs and separators, labelled or not. | 21 types, 16 functions and methods |
-| [Lists & tables](comps-lists.md) | List rows, the settings-row family (switch, checkbox, select and slider), input rows, key-value lists, bullet lists, grouped and paged lists, data tables and timelines. | 21 types, 16 functions and methods |
+| [Lists & tables](comps-lists.md) | List rows, the settings-row family (switch, checkbox, select and slider), input rows, key-value lists, bullet lists, grouped and paged lists, data tables and timelines. | 24 types, 17 functions and methods |
 | [Inputs & pickers](comps-inputs.md) | Form fields, password fields, one-time code fields, tag inputs, masked inputs, number pads, colour swatches, range sliders, search, searchable selects, radio groups, dates, date ranges, times and calendars, and the two editors. | 22 types, 20 functions and methods |
 | [Buttons & choices](comps-actions.md) | Buttons and their variants, copy buttons, links, chips, segmented controls, steppers, ratings and badges. | 12 types, 13 functions and methods |
 | [Overlays & feedback](comps-overlays.md) | Dialogs, lightboxes, action sheets, menus, snackbars, banners, progress, spinners, skeletons and empty states. | 13 types, 10 functions and methods |
@@ -68,13 +68,16 @@ Package comps's reference is split into 7 topic pages by source file. The index 
     - [`type Wizard`](comps-structure.md#type-wizard)
     - [`type WizardStep`](comps-structure.md#type-wizardstep)
 - [Lists & tables](comps-lists.md)
-    - [Constants](comps-lists.md#constants) — `ConcernPartialSort`, `ConcernSelectRowValueNotAnOption`
+    - [Constants](comps-lists.md#constants) — `ConcernEditableGridChoiceNoOptions`, `ConcernEditableGridInert`, `ConcernEditableGridNoKey`, `ConcernEditableGridRagged`, `ConcernPartialSort`, `ConcernSelectRowValueNotAnOption`
     - [`type BulletList`](comps-lists.md#type-bulletlist)
     - [`type CheckboxRow`](comps-lists.md#type-checkboxrow)
     - [`type Collapse`](comps-lists.md#type-collapse)
     - [`type CollapseBand`](comps-lists.md#type-collapseband)
     - [`type Column`](comps-lists.md#type-column)
     - [`type DataTable`](comps-lists.md#type-datatable)
+    - [`type EditableGrid`](comps-lists.md#type-editablegrid)
+    - [`type GridCellKind`](comps-lists.md#type-gridcellkind)
+    - [`type GridColumn`](comps-lists.md#type-gridcolumn)
     - [`type Group`](comps-lists.md#type-group)
     - [`type GroupHeader`](comps-lists.md#type-groupheader)
     - [`type GroupedList`](comps-lists.md#type-groupedlist)

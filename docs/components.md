@@ -2633,6 +2633,110 @@ button, which is the half it does.
 See lessons 4.6 and 4.8 of the [interactive tutorial](tutorial-interactive.md)
 and the godoc for the full field list.
 
+## EditableGrid
+
+A spreadsheet-like table: a header over a windowed body of cells, where the
+unit is the cell and the point is editing it. `DataTable` shows typed rows and
+a row is its tap target; this edits strings and a cell is.
+
+```go
+comps.EditableGrid{
+    Label: "Budget",
+    Columns: []comps.GridColumn{
+        {Title: "Item", Weight: 2},
+        {Title: "Category", Kind: comps.GridChoice, Options: []string{"Home", "Food"}},
+        {Title: "Amount", Kind: comps.GridNumber, Format: dollars, Validate: notNegative},
+        {Title: "Paid", Kind: comps.GridBool, Width: 56},
+    },
+    Rows:     sheet.Rows,                              // [][]string
+    Key:      func(r int) string { return sheet.IDs[r] },
+    OnChange: func(r, c int, v string) { … },          // one committed cell
+    Style:    []core.StyleProp{core.Height("240px")},  // a List with no height is not lazy
+}
+```
+
+**One editor at a time.** Every cell is a box of text, and only the cell being
+edited becomes a text field. A sheet of real fields would be hundreds of native
+inputs, each a tab stop, each wanting the arrow keys the grid wants too.
+
+| The reader | The grid |
+|---|---|
+| taps a cell, or presses Enter or Space on it | opens the field on the stored value and focuses it |
+| types | keeps the draft; `OnChange` hears nothing |
+| presses return | commits, and focuses the cell one row down |
+| taps another cell | commits, and edits that one |
+| taps elsewhere (a blur) | commits after 150ms, and stays |
+| taps the ✕ at the end of the cell | discards the draft |
+
+`OnChange` fires once per commit, only when the value changed, and never with a
+value `Validate` refused. A refused commit keeps the cell open with an `Error`
+border and puts the message under the grid in a `RoleAlert` line. A
+`GridNumber` column refuses what `strconv.ParseFloat` refuses before `Validate`
+is asked; an empty cell is allowed.
+
+There is no Escape, because key events do not reach Go; the ✕ is what that
+costs. The blur waits because, in a browser, a press on the ✕ blurs the field
+before the click arrives, and a commit in between would remove the ✕ from under
+the pointer. That one commit reaches `OnChange` from a timer goroutine.
+
+**Kinds.**
+
+| Kind | Cell | Value |
+|---|---|---|
+| `GridText` | opens the field | any string |
+| `GridNumber` | opens the field with the decimal pad; right-aligned | `""` or a number. iOS's decimal pad has no minus: a signed column sets `Keyboard: core.KeyboardText` |
+| `GridBool` | toggles on one tap, never opens a field | `"true"` / `"false"` |
+| `GridChoice` | a `core.Select` over `Options`, always there | one of `Options`; a stored value outside them is offered as itself |
+
+`Format` is display only: the cell reads `$310.50`, the editor opens on `310.5`,
+and `OnChange` reports what was typed. Cells are strings and the grid is not
+generic; the caller parses.
+
+**Rows.** `OnInsertRow` and `OnDeleteRow` put a menu behind each row number
+("Insert below", "Delete"); the caller performs the change. Set `Key` with
+them. Without it rows are keyed by index, a delete re-pairs every row below it
+with its neighbour's node, and an open editor stays at an index that is now
+another row.
+
+**Sizing.** A column is `Width` px or a `Weight` share; with neither it gets
+`Weight` 1, since a header and a body are separate rows and a column that
+hugged its content would differ between them. `MinWidth` puts the grid in a
+horizontal scroll box, so a narrow screen scrolls it sideways and does not
+squeeze the columns.
+
+**Cost.** `core.List` windows the rows on both natives, but Go builds and diffs
+every cell on every pass, and each keystroke in the editor is a pass: about 4µs
+a cell on a laptop. About 5,000 cells (10 × 500) is the supported size. Past
+it, hand the grid a window of the rows. A changed value patches that one cell;
+entering or leaving the editor also re-binds the `onClick` of every cell after
+it, since callback IDs are issued in render order.
+
+Other notes:
+
+- The structure is ARIA's: `grid` › `row` (the header, of `columnheader`s) and
+  `rowgroup` (the `List`) › `row` › cells. The alert and the row menu's sheet
+  are the grid's siblings.
+- A cell that *is* the control (text, number, bool, a row number with a menu)
+  is a `RoleGridCell`, and one of the web runtime's arrow-key members. A cell
+  that *holds* a native control or nothing to press (the cell being edited, a
+  choice, a read-only cell) is a `RoleCell`. The runtime's gridcell listener
+  owns the arrows, Enter and Space, so a field inside a gridcell would lose all
+  three. The arrows therefore step over a choice cell; its picker is a Tab stop.
+- A cell is named "Amount, row 2, $310.50", with "read only" appended where it
+  applies: the natives have no grid vocabulary and announce a gridcell as a
+  button, so the name carries the position.
+- The focus handed back to a cell after a commit is acted on by the web only,
+  where it is what returns the arrow keys to the grid. Both natives ignore a
+  focus command on a box.
+- No formulas, cell ranges, fill handle, column drag, frozen column, paste or
+  undo. Every commit passes through the caller, so a derived total is a loop
+  over the rows and undo is a slice of the sheets replaced (lesson 4.37 shows
+  both).
+- It holds hooks (the editor, the landing cell, the menu, the blur timer):
+  render it in a stable position, never inside a `core.If`.
+- Debug concerns: `ConcernEditableGridInert`, `ConcernEditableGridRagged`,
+  `ConcernEditableGridNoKey`, `ConcernEditableGridChoiceNoOptions`.
+
 ## AppBar
 
 The title strip at the top of a screen: an optional back affordance, the
