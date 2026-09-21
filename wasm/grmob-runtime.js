@@ -267,12 +267,13 @@ const GrMob = (() => {
                             const latestCbId = el.dataset[`listener_${key}`];
                             if (latestCbId && eventQualifies(key, e, el)) {
                                 const payload = extractEventPayload(e, node.Type);
-                                window.GoInvokeCallback(latestCbId, payload);
+                                dispatchFromElement(el, key, latestCbId, payload);
                             }
                         });
                     }
                 } else if (key === "value") {
                     el.value = value;
+                    noteGoValue(el, value);
                 } else if (key === "min" || key === "max" || key === "step") {
                     applySliderBound(el, key, value, node.Props.value);
                 } else if (key === "placeholder") {
@@ -4708,6 +4709,55 @@ const GrMob = (() => {
         buffer.selectionEnd = end;
     }
 
+    // The text fields whose value is controlled text: what Go renders is what
+    // the field shows. NumericInput is left out on purpose. It is a
+    // type="number" input, whose .value reads "" for text the browser has not
+    // finished parsing ("-", "1e"), so comparing it with Go's number would
+    // undo a keystroke the reader is in the middle of.
+    const CONTROLLED_TEXT_TYPES = new Set(["Input", "InputPassword", "TextArea"]);
+
+    // noteGoValue records the text Go last rendered for a field, on the create
+    // path and on every value patch (the echoes too). It is the only record
+    // the page has of Go's side: a patch says what changed, and a render that
+    // changed nothing says nothing at all.
+    function noteGoValue(el, v) {
+        if (CONTROLLED_TEXT_TYPES.has(el.dataset.nodeType)) el.__grmobValue = String(v ?? "");
+    }
+
+    // dispatchFromElement hands one DOM event to Go and, for a text field's
+    // onChange, takes back a keystroke Go refused.
+    //
+    // # The refusal that left no trace
+    //
+    // A controlled field shows what Go renders. When onChange declines an edit
+    // (comps.MaskedInput meeting a letter in a digit slot, a PINInput with no
+    // OnChange, any validator that ignores a character) Go's state does not
+    // change, the next render is identical to the last, the diff is empty and
+    // no patch arrives. The key the browser had already drawn stayed drawn:
+    //
+    //	field "(555) 123-4567"   key "x"   browser draws "(555) 123-4567x"
+    //	Go: unmask → same raw value → no state change → no patch
+    //	field still "(555) 123-4567x"      measured in headless Chrome
+    //
+    // The natives do not have the hole. Their ledger (core/text_edit.go)
+    // records the text the host sent, sees the next render differ from it,
+    // and sends the render as a rewrite. The page has no ledger because it
+    // needs none for the race the ledger exists for, so it closes this hole
+    // directly: once the call has returned, a field whose text is not the
+    // text Go last rendered is given Go's text.
+    //
+    // That is safe to decide here because the call is synchronous. The
+    // event reaches Go and the patches of the pass it caused are applied
+    // before GoInvokeCallback returns (writeFieldValue relies on the same
+    // fact), so an accepted keystroke has already moved __grmobValue to the
+    // new text by the time it is compared.
+    function dispatchFromElement(el, key, cbId, payload) {
+        window.GoInvokeCallback(cbId, payload);
+        if (key !== "onChange" || typeof el.__grmobValue !== "string") return;
+        if (!CONTROLLED_TEXT_TYPES.has(el.dataset.nodeType)) return;
+        if (el.value !== el.__grmobValue) writeFieldValue(el, el.__grmobValue);
+    }
+
     // writeFieldValue puts Go's value into a field, keeping the caret with the
     // text around it when the field is the one being typed in.
     //
@@ -7991,6 +8041,9 @@ const GrMob = (() => {
                             // value reads back as a string ("12.5") while Go
                             // sends a number, and a strict compare would
                             // re-assign on every status tick.
+                            // Before the echo guard: an echo is still Go
+                            // saying what the field holds (noteGoValue).
+                            noteGoValue(el, v);
                             if (el.value == v) continue;
                             writeFieldValue(el, v);
                         } else if (k === "min" || k === "max" || k === "step") {
@@ -8123,7 +8176,7 @@ const GrMob = (() => {
                                         // recorded on the element at creation
                                         // because the tag cannot recover it.
                                         const payload = extractEventPayload(e, el.dataset.nodeType);
-                                        window.GoInvokeCallback(latestCbId, payload);
+                                        dispatchFromElement(el, k, latestCbId, payload);
                                     }
                                 });
                             }

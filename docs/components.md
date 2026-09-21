@@ -1766,6 +1766,153 @@ comps.FormField{
   inside each stays reachable on targets that merge a labelled container.
   `ConcernTagInputInert` for a missing `OnChange`.
 
+## NumberPad
+
+An on-screen keypad: ten digits, a backspace, and one corner key you choose.
+
+```go
+comps.NumberPad{
+    OnKey:       func(k string) { pin.Set(pin.Get() + k) },
+    OnBackspace: func() { pin.Set(dropLast(pin.Get())) },
+    Extra:       ".", ExtraLabel: "Decimal point",
+}
+```
+
+- **Use the system pad when there is a field.**
+  `core.Keyboard(core.KeyboardDigits)` is the keyboard the reader knows, and on
+  iOS it is what SMS autofill fills. `NumberPad` is for where that pad cannot
+  go: a lock or payment screen with no field to focus, a kiosk where the system
+  keyboard must never appear, and a static export or desktop page where an
+  `inputmode` hint does nothing.
+- **It holds no value.** It reports keys and the caller builds the string, so
+  one widget serves a PIN, an amount and a dialler; the rule for what a key
+  does is a line of Go in `OnKey`. It takes no hooks and may be rendered
+  conditionally.
+- `Extra` is the bottom-left key, reported through `OnKey` like a digit. Empty
+  leaves the cell blank (an unpainted, disabled, hidden key, so the zero stays
+  exactly under the eight).
+- Backspace reports through `OnBackspace`, never through `OnKey`. With no
+  `OnBackspace` that key alone is disabled.
+- Every reporting key gives `core.HapticLight`. A `Disabled` pad is silent,
+  and also drops a tap that races the disabling patch.
+- Keys are equal shares at least 56 points tall, in the telephone layout. Cap
+  the width on a tablet with `core.MaxWidth` in `Style`.
+- The pad is a `RoleGroup` named `Label` ("Number pad"); backspace is named
+  `BackspaceLabel` ("Delete").
+- No `OnKey` and not `Disabled` raises `ConcernNumberPadInert` in debug builds.
+
+## ColorSwatchPicker
+
+One colour from a set, as a radiogroup of swatches.
+
+```go
+comps.ColorSwatchPicker{
+    Label: "Label colour",
+    Colors: []comps.Swatch{
+        {Hex: "#2A78D6", Name: "Brand blue"},
+        {Hex: "#FFDD00", Name: "Sunshine"},
+    },
+    Value:       colour.Get(),
+    OnChange:    colour.Set, // receives "#RRGGBB"
+    AllowCustom: true,
+}
+```
+
+- **No `Colors` means the theme's chart colours**, which are already chosen to
+  be told apart and validated against the theme's surface. They are named from
+  their hues ("blue", "orange").
+- **Selected is a ring and a check**, never the colour alone. The check's ink
+  is black or white by contrast with its swatch. Every swatch carries the
+  ring's border (transparent when unselected), so selecting moves nothing.
+- `Value` is compared without regard to case or the short form: `"#fd0"`
+  selects a `#FFDD00` swatch. A colour listed twice is offered once.
+- `Swatch.Name` is what a screen reader says. An unnamed swatch is spoken by a
+  name guessed from its hue and raises `ConcernColorSwatchUnnamed`; a `Hex`
+  that is not `#rgb` or `#rrggbb` is not drawn and raises
+  `ConcernColorSwatchBadHex`.
+- `AllowCustom` adds a hex field under the grid. Six digits commit as they are
+  typed; the short form commits on return only, because every six-digit colour
+  passes through a valid three-digit one on its way. A custom `Value` shows in
+  the preview beside the field.
+- **It holds a hook** (the half-typed hex, which no application wants), so
+  render it unconditionally, in a stable position. The hook is taken whether
+  or not `AllowCustom` is set.
+- On the web the group's arrow keys are Up and Down, in reading order through
+  the rows: the runtime gives a composite one axis, and this one is a column
+  of rows.
+- It is not a hue and saturation square. That needs a touch position on a
+  Canvas, which no event carries.
+
+## RangeSlider
+
+A minimum and a maximum that cannot cross.
+
+```go
+comps.RangeSlider{
+    Title: "Price", Min: 0, Max: 200, Step: 5,
+    Low: low.Get(), High: high.Get(),
+    OnChange: func(l, h float64) { low.Set(l); high.Set(h) },
+    Format:   func(v float64) string { return fmt.Sprintf("$%.0f", v) },
+}
+```
+
+- **It is two `SliderRow`s, on purpose.** One track with two thumbs is a node
+  type no target has. Two labelled sliders are also the form the control takes
+  for VoiceOver and TalkBack on every platform, which adjust one value per
+  stop. What the eye loses, the title line gives back: it states the range in
+  words ("$20 – $80").
+- **The thumbs push each other.** Dragging `Low` past `High` carries `High`
+  along, and the reverse, so `OnChange` always reports an ordered pair and a
+  range can be moved as a whole from either end. A minimum width is the
+  caller's rule, applied in `OnChange`.
+- `OnChange` fires once when a drag ends, as `SliderRow`'s does. The caller
+  holds both values; the widget takes no hooks.
+- `Labels` replaces "Minimum" and "Maximum". `Format` writes every number
+  drawn.
+- An inverted pair is drawn the right way round and raises
+  `ConcernRangeSliderInverted`; no `OnChange` and not `Disabled` raises
+  `ConcernRangeSliderInert`.
+
+## MaskedInput
+
+A text field that formats as the reader types.
+
+```go
+comps.MaskedInput{
+    Mask:     "(###) ###-####",
+    Value:    phone.Get(), // "5551234567"
+    OnChange: func(raw, formatted string) { phone.Set(raw) },
+    Keyboard: core.KeyboardDigits,
+    Label:    "Phone",
+}
+```
+
+- **The mask:** `#` a digit, `A` a letter, `*` either; anything else is a
+  literal. A key the next slot refuses is dropped, and so is anything past the
+  last slot.
+- **`Value` is the raw value**, slot characters only, which is the form an
+  application stores and sends. `OnChange` hands over the drawn text as well.
+  `OnComplete` fires on every edit that fills the last slot.
+- **Literals are written late:** `555` draws `(555`, and the `) ` arrives with
+  the fourth digit. The text never ends in a literal, so backspace always
+  removes something the reader typed. (Written eagerly, `(555) ` minus one
+  character formats straight back to `(555) `.)
+- A pasted `555.123.4567` reads as the same ten digits. The text is walked
+  against the mask, so a mask with a literal its own slots could hold
+  (`+1 (###) ###-####`) reads that literal as the literal; the price is that a
+  raw value under such a mask cannot begin with that character.
+- `Placeholder` defaults to the mask's shape, `(___) ___-____`.
+- It takes no hooks and may be rendered conditionally.
+- **Every formatted keystroke is a rewrite** under the text-edit protocol.
+  Typing at machine speed loses nothing (measured on the Android emulator).
+  The caret travels with its text on all three live hosts. One limit: a key
+  typed mid-text at the very end of a group leaves the caret after the
+  reflowed digits, since no host reports its caret to Go.
+- A mask with no slot raises `ConcernMaskedInputNoSlots` (usually a mask in
+  another library's alphabet, `999-999`); no `OnChange` and not `Disabled`
+  raises `ConcernMaskedInputInert`.
+
+
 ## DateRangePicker
 
 A two-date field: a tappable summary of the chosen span that opens a

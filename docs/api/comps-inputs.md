@@ -4,24 +4,30 @@
 import "github.com/rohanthewiz/grmob/comps"
 ```
 
-Form fields, password fields, one-time code fields, tag inputs, search, searchable selects, radio groups, dates, date ranges, times and calendars, and the two editors.
+Form fields, password fields, one-time code fields, tag inputs, masked inputs, number pads, colour swatches, range sliders, search, searchable selects, radio groups, dates, date ranges, times and calendars, and the two editors.
 
-One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/form_field.go`, `comps/password_field.go`, `comps/pin_input.go`, `comps/tag_input.go`, `comps/search_field.go`, `comps/searchable_select.go`, `comps/radio_group.go`, `comps/date_picker.go`, `comps/date_range_picker.go`, `comps/time_picker.go`, `comps/calendar.go`, `comps/code_editor.go`, `comps/rich_text_editor.go`, `comps/rich_text_view.go`.
+One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/form_field.go`, `comps/password_field.go`, `comps/pin_input.go`, `comps/tag_input.go`, `comps/masked_input.go`, `comps/mask.go`, `comps/number_pad.go`, `comps/color_swatch_picker.go`, `comps/range_slider.go`, `comps/search_field.go`, `comps/searchable_select.go`, `comps/radio_group.go`, `comps/date_picker.go`, `comps/date_range_picker.go`, `comps/time_picker.go`, `comps/calendar.go`, `comps/code_editor.go`, `comps/rich_text_editor.go`, `comps/rich_text_view.go`.
 
 ## Index
 
-- [Constants](#constants) — `ConcernCalendarRangeReversed`, `ConcernDateRangePickerInert`, `ConcernPINInputInert`, `ConcernPINValueTooLong`, `ConcernPasswordFieldInert`, `ConcernTagInputInert`, `ConcernTimePickerInert`, `RichToolLink`
+- [Constants](#constants) — `ConcernCalendarRangeReversed`, `ConcernColorSwatchBadHex`, `ConcernColorSwatchInert`, `ConcernColorSwatchUnnamed`, `ConcernDateRangePickerInert`, `ConcernMaskedInputInert`, `ConcernMaskedInputNoSlots`, `ConcernNumberPadInert`, `ConcernPINInputInert`, `ConcernPINValueTooLong`, `ConcernPasswordFieldInert`, `ConcernRangeSliderInert`, and 4 more
 - [Variables](#variables) — `RichToolbarDefault`
 - [`type Calendar`](#type-calendar)
     - [`func (Calendar) Render`](#func-calendar-render)
 - [`type CodeEditor`](#type-codeeditor)
     - [`func (CodeEditor) Render`](#func-codeeditor-render)
+- [`type ColorSwatchPicker`](#type-colorswatchpicker)
+    - [`func (ColorSwatchPicker) Render`](#func-colorswatchpicker-render)
 - [`type DatePicker`](#type-datepicker)
     - [`func (DatePicker) Render`](#func-datepicker-render)
 - [`type DateRangePicker`](#type-daterangepicker)
     - [`func (DateRangePicker) Render`](#func-daterangepicker-render)
 - [`type FormField`](#type-formfield)
     - [`func (FormField) Render`](#func-formfield-render)
+- [`type MaskedInput`](#type-maskedinput)
+    - [`func (MaskedInput) Render`](#func-maskedinput-render)
+- [`type NumberPad`](#type-numberpad)
+    - [`func (NumberPad) Render`](#func-numberpad-render)
 - [`type PINInput`](#type-pininput)
     - [`func (PINInput) Render`](#func-pininput-render)
 - [`type PasswordField`](#type-passwordfield)
@@ -29,6 +35,8 @@ One of 7 topic pages of [package comps](comps.md), which has the package overvie
 - [`type RadioGroup`](#type-radiogroup)
     - [`func (RadioGroup) Render`](#func-radiogroup-render)
 - [`type RadioOption`](#type-radiooption)
+- [`type RangeSlider`](#type-rangeslider)
+    - [`func (RangeSlider) Render`](#func-rangeslider-render)
 - [`type RichTextEditor`](#type-richtexteditor)
     - [`func (RichTextEditor) Render`](#func-richtexteditor-render)
 - [`type RichTextView`](#type-richtextview)
@@ -41,6 +49,7 @@ One of 7 topic pages of [package comps](comps.md), which has the package overvie
     - [`func (SearchField) Render`](#func-searchfield-render)
 - [`type SearchableSelect`](#type-searchableselect)
     - [`func (SearchableSelect) Render`](#func-searchableselect-render)
+- [`type Swatch`](#type-swatch)
 - [`type TagInput`](#type-taginput)
     - [`func (TagInput) Render`](#func-taginput-render)
 - [`type TimePicker`](#type-timepicker)
@@ -56,6 +65,30 @@ const ConcernCalendarRangeReversed = "calendar-range-reversed"
 
 <small>[comps/calendar.go:17](https://github.com/rohanthewiz/grmob/blob/master/comps/calendar.go#L17)</small>
 
+ConcernColorSwatchBadHex is raised, in debug builds only, when a swatch's Hex is not "#rgb" or "#rrggbb". Such a swatch is not drawn: a fill no target can parse paints nothing, and an invisible target that still selects is worse than a missing one.
+
+```go
+const ConcernColorSwatchBadHex = "color-swatch-bad-hex"
+```
+
+<small>[comps/color_swatch_picker.go:26](https://github.com/rohanthewiz/grmob/blob/master/comps/color_swatch_picker.go#L26)</small>
+
+ConcernColorSwatchInert is raised, in debug builds only, when a ColorSwatchPicker has no OnChange and is not Disabled: a grid of targets that select nothing.
+
+```go
+const ConcernColorSwatchInert = "color-swatch-inert"
+```
+
+<small>[comps/color_swatch_picker.go:14](https://github.com/rohanthewiz/grmob/blob/master/comps/color_swatch_picker.go#L14)</small>
+
+ConcernColorSwatchUnnamed is raised, in debug builds only, when a swatch the caller supplied has no Name. It is then spoken by a name guessed from its hue ("blue"), which cannot tell "Brand blue" from "Link blue" and knows nothing of what the colour means in the application. The caller does.
+
+```go
+const ConcernColorSwatchUnnamed = "color-swatch-unnamed"
+```
+
+<small>[comps/color_swatch_picker.go:20](https://github.com/rohanthewiz/grmob/blob/master/comps/color_swatch_picker.go#L20)</small>
+
 ConcernDateRangePickerInert is raised, in debug builds only, when a DateRangePicker has no OnChange. The sheet still opens and the days still take taps, and the range they complete is handed to nobody — so the grid reopens on the old range every time and the field never changes. On screen that is indistinguishable from a picker nobody has finished using, which is the bar PINInput's own inert case is reported against.
 
 ```go
@@ -63,6 +96,30 @@ const ConcernDateRangePickerInert = "date-range-picker-inert"
 ```
 
 <small>[comps/date_range_picker.go:15](https://github.com/rohanthewiz/grmob/blob/master/comps/date_range_picker.go#L15)</small>
+
+ConcernMaskedInputInert is raised, in debug builds only, when a MaskedInput has no OnChange and is not Disabled. Every keystroke is then unmasked, discarded, and painted over by the next pass: PINInput's inert case.
+
+```go
+const ConcernMaskedInputInert = "masked-input-inert"
+```
+
+<small>[comps/masked_input.go:12](https://github.com/rohanthewiz/grmob/blob/master/comps/masked_input.go#L12)</small>
+
+ConcernMaskedInputNoSlots is raised, in debug builds only, when Mask holds no slot character (#, A or \*). Such a field can hold nothing: every key is refused, and it looks exactly like a field nobody has typed into yet. The usual cause is a mask written in another library's alphabet ("999-999", "000 000").
+
+```go
+const ConcernMaskedInputNoSlots = "masked-input-no-slots"
+```
+
+<small>[comps/masked_input.go:19](https://github.com/rohanthewiz/grmob/blob/master/comps/masked_input.go#L19)</small>
+
+ConcernNumberPadInert is raised, in debug builds only, when a NumberPad has no OnKey and is not Disabled. Every digit then does nothing, on a widget that is twelve buttons and nothing else: there is no value on screen to show that the taps are going nowhere, so the report is the only sign.
+
+```go
+const ConcernNumberPadInert = "number-pad-inert"
+```
+
+<small>[comps/number_pad.go:13](https://github.com/rohanthewiz/grmob/blob/master/comps/number_pad.go#L13)</small>
 
 ConcernPINInputInert is raised, in debug builds only, when a PINInput has no OnChange. The field is then read-only in practice — every keystroke reaches the handler, is discarded, and the next pass paints Value back over it — and on screen an inert PINInput is indistinguishable from one nobody has typed into yet. Disclosure's inert case is reported for the same reason: a widget that cannot do the one thing it exists for should say so somewhere other than in a bug report.
 
@@ -87,6 +144,22 @@ const ConcernPasswordFieldInert = "password-field-inert"
 ```
 
 <small>[comps/password_field.go:12](https://github.com/rohanthewiz/grmob/blob/master/comps/password_field.go#L12)</small>
+
+ConcernRangeSliderInert is raised, in debug builds only, when a RangeSlider has no OnChange and is not Disabled: two tracks that can be dragged and always spring back, which SliderRow's doc calls a meter drawn as a control.
+
+```go
+const ConcernRangeSliderInert = "range-slider-inert"
+```
+
+<small>[comps/range_slider.go:10](https://github.com/rohanthewiz/grmob/blob/master/comps/range_slider.go#L10)</small>
+
+ConcernRangeSliderInverted is raised, in debug builds only, when Low is above High. The widget draws the two the right way round, so the screen is correct and the caller's state is not: the first drag would report a pair the caller never held. It is reported so the state gets fixed at its source.
+
+```go
+const ConcernRangeSliderInverted = "range-slider-inverted"
+```
+
+<small>[comps/range_slider.go:16](https://github.com/rohanthewiz/grmob/blob/master/comps/range_slider.go#L16)</small>
 
 ConcernTagInputInert is raised, in debug builds only, when a TagInput has no OnChange. Typing a tag and pressing return clears the draft and adds nothing, and a ✕ removes nothing — a field that swallows what it is given and looks exactly like one that is working until the form is submitted without the tags. The bar PasswordField's inert case is reported against.
 
@@ -482,6 +555,106 @@ func (c CodeEditor) Render(ctx *core.Context) *core.Node
 
 <small>[comps/code_editor.go:133](https://github.com/rohanthewiz/grmob/blob/master/comps/code_editor.go#L133)</small>
 
+### type ColorSwatchPicker
+
+```go
+type ColorSwatchPicker struct {
+	// Colors are the swatches on offer. Empty means the theme's chart
+	// colours; see "The default palette".
+	Colors []Swatch
+
+	// Value is the chosen colour. It is compared without regard to case or
+	// to the short form, so "#2a7" selects a "#22AA77" swatch.
+	Value string
+
+	// OnChange receives the chosen colour as "#RRGGBB". Nil reports
+	// ConcernColorSwatchInert unless Disabled.
+	OnChange func(hex string)
+
+	// Columns is the number of swatches across. Zero means six.
+	Columns int
+
+	// Label is the group's accessible name. Empty means "Colour".
+	Label string
+
+	// AllowCustom adds the hex field under the grid.
+	AllowCustom bool
+
+	// CustomLabel is the hex field's accessible name. Empty means
+	// "Custom colour, hex".
+	CustomLabel string
+
+	// Disabled greys the swatches and the field and drops their reports.
+	Disabled bool
+
+	// Style is applied to the outer column after its defaults.
+	Style []core.StyleProp
+}
+```
+
+ColorSwatchPicker chooses one colour from a set: a label's colour, a calendar's, an avatar's background.
+
+	comps.ColorSwatchPicker{
+	    Label:    "Label colour",
+	    Value:    colour.Get(),
+	    OnChange: colour.Set,
+	}
+
+	┌ Column ───────────────────────────────────────┐
+	│ ┌ Column  role=radiogroup ──────────────────┐ │
+	│ │ ┌ Row ──────────────────────────────────┐ │ │
+	│ │ │ ▇▇  ▇▇  ┏▇✓┓  ▇▇  ▇▇  ▇▇              │ │ │  each a role=radio;
+	│ │ └───────────────────────────────────────┘ │ │  the chosen one ringed
+	│ │ ┌ Row ──────────────────────────────────┐ │ │  and checked
+	│ │ │ ▇▇  ▇▇  ··  ··  ··  ··                │ │ │  blanks keep the columns
+	│ │ └───────────────────────────────────────┘ │ │
+	│ └───────────────────────────────────────────┘ │
+	│ ┌ Row ─ only with AllowCustom ──────────────┐ │
+	│ │ ▇▇  [ #RRGGBB                           ] │ │
+	│ └───────────────────────────────────────────┘ │
+	└───────────────────────────────────────────────┘
+
+#### The default palette
+
+With no Colors the picker offers the theme's chart colours (ColorPalette.ChartColors). They are already chosen to be told apart from one another and validated against the theme's surface, which is exactly what a set of label colours needs, and a second hard-coded palette here would be a second list to keep in step with every theme. They are named from their hues, which for eight deliberately distinct colours is enough.
+
+#### What selected looks like
+
+A ring in PrimaryOnLight round the swatch, and a check on it. The check's ink is whichever of black and white has the better contrast against that swatch (contrastInk), so it reads on yellow and on navy alike. Colour alone never carries the state: the ring has a shape and the check is a glyph. Every swatch carries the ring's border, transparent when unselected, so a selection never shifts its neighbours.
+
+#### Custom colours
+
+AllowCustom adds a hex field under the grid. It commits the moment its text is a whole six-digit colour ("#2A78D6", with or without the #) and ignores everything else, so a half-typed value never reaches the caller. The short form ("#2a7") commits on the keyboard's return action only: every six-digit colour passes through a valid three-digit one on its way, and committing that would hand the caller a colour nobody chose, mid-word. The half-typed text is the widget's own (TagInput's reasoning: nobody wants "#2A7" in their state as a colour), which makes this a hook-owning widget: render it unconditionally, in a stable position. The hook is taken whether or not AllowCustom is set, so flipping the field cannot shift a slot.
+
+A Value that is none of the swatches is shown in the preview beside the field, selected, so a custom colour chosen earlier is still visibly the choice.
+
+#### What it is not
+
+A hue and saturation square. That needs the position of a touch on a Canvas, and no event carries one (the round-four plan's Phase 6).
+
+#### Accessibility
+
+The grid is a core.RoleRadioGroup named by Label and each swatch a core.RoleRadio with AccessibilitySelected, RadioGroup's pair. The rows between them are layout only. The hex field is outside the group (a radiogroup's members are radios) and named CustomLabel.
+
+#### Theme roles read
+
+	Ring          Colors.PrimaryOnLight
+	Swatch edge   ColorPalette.BorderColor hairline, so white shows on white
+	Check         black or white, by contrast with the swatch
+	Gaps          Spacing.XS between swatches, Spacing.SM above the field
+
+<small>[comps/color_swatch_picker.go:134](https://github.com/rohanthewiz/grmob/blob/master/comps/color_swatch_picker.go#L134)</small>
+
+#### func (ColorSwatchPicker) Render
+
+```go
+func (p ColorSwatchPicker) Render(ctx *core.Context) *core.Node
+```
+
+Render draws the grid, and the hex field when AllowCustom.
+
+<small>[comps/color_swatch_picker.go:168](https://github.com/rohanthewiz/grmob/blob/master/comps/color_swatch_picker.go#L168)</small>
+
 ### type DatePicker
 
 ```go
@@ -800,6 +973,207 @@ func (f FormField) Render(ctx *core.Context) *core.Node
 
 <small>[comps/form_field.go:64](https://github.com/rohanthewiz/grmob/blob/master/comps/form_field.go#L64)</small>
 
+### type MaskedInput
+
+```go
+type MaskedInput struct {
+	// Mask is the format: # a digit, A a letter, * either, anything else a
+	// literal. A mask with no slot reports ConcernMaskedInputNoSlots.
+	Mask string
+
+	// Value is the raw value: slot characters only, with no literals. See
+	// "Value is the raw value". Characters the mask refuses, or past its last
+	// slot, are not drawn.
+	Value string
+
+	// OnChange receives the raw value and the text as drawn, on every edit
+	// that changes the raw value. A refused key changes nothing and reports
+	// nothing. Nil reports ConcernMaskedInputInert unless Disabled.
+	OnChange func(raw, formatted string)
+
+	// OnComplete receives the raw value on every edit that fills the mask's
+	// last slot, as PINInput's does: including a correction to a value that
+	// was already complete, and never for a Value that merely arrived full.
+	OnComplete func(raw string)
+
+	// Placeholder is drawn in the empty field. Empty means the mask with each
+	// slot drawn as "_", "(___) ___-____", which shows the reader the shape
+	// of what is wanted without putting example data in front of them.
+	Placeholder string
+
+	// Keyboard asks for a soft keyboard. The zero value is the default
+	// keyboard; a mask of digits wants core.KeyboardDigits.
+	Keyboard core.KeyboardKind
+
+	// Label is the field's accessible name. It draws nothing: wrap the widget
+	// in a FormField for a visible caption.
+	Label string
+
+	// Hint is the field's accessibility hint.
+	Hint string
+
+	// Disabled greys the field and drops its reports.
+	Disabled bool
+
+	// Style is applied to the input after its defaults.
+	Style []core.StyleProp
+}
+```
+
+MaskedInput is a text field that formats as the reader types: a phone number that gains its brackets, a card number that groups in fours, an expiry date that gets its slash.
+
+	comps.MaskedInput{
+	    Mask:     "(###) ###-####",
+	    Value:    phone.Get(),                          // "5551234567"
+	    OnChange: func(raw, _ string) { phone.Set(raw) },
+	    Keyboard: core.KeyboardDigits,
+	    Label:    "Phone",
+	}
+
+	the reader types      the field shows       Value (raw)
+	5                     (5                    5
+	555                   (555                  555
+	5556                  (555) 6               5556
+	5551234567            (555) 123-4567        5551234567
+
+#### The mask
+
+	#   a digit          A   a letter          *   either
+
+Every other character is a literal, drawn as written. A literal is written only once a character follows it, so the text never ends in one and a backspace always removes something the reader typed (comps/mask.go says what the eager form costs). A key the next slot refuses is dropped, and so is anything past the last slot.
+
+#### Value is the raw value
+
+The caller holds the characters the reader meant, "5551234567", and not the drawn text. That is the form an application stores, validates and sends, so holding the other one would mean unmasking it at every use. OnChange hands over both, for the caller who does want the drawn text (to show it again elsewhere, or to submit it as typed).
+
+One consequence, stated rather than hidden: a mask with a literal that one of its own slots could hold, as the "1" in "+1 (###) ###-####", reads a typed character equal to that literal as the literal. A raw value under that mask cannot begin with 1. For a North American number that is the right answer (no area code begins with 1, and a reader who types the 1 means the country code), and it is the price of reading the text back without mistaking the literal for data on every keystroke.
+
+#### Every formatted keystroke is a rewrite
+
+The reader types "5" after "(555" and the host shows "(5555"; Go answers "(555) 5", which is not what the host sent. Under the text-edit protocol (core/text\_edit.go) that is a rewrite, not an echo, and this widget makes one for most keys, where TagInput makes one per tag. Two things were measured before it was built, on the Android emulator with \`adb shell input text\` and keys a second apart:
+
+  - Typing at machine speed loses nothing. The hosts replay in-flight keys onto each rewrite (internal/rebasefixture), and ten digits and sixteen digits arrived whole, in order, on every run.
+  - The caret has to travel with its text. A mask inserts literals before the caret, and a host that kept the caret's raw offset put every later key in front of the first: 1 2 3 4 5 6 read back "(234) 651". All three live hosts now carry the caret across Go's change by one rule (rebasefixture.Carry); the Android field was the one that did not.
+
+The limit that remains: a key typed mid-text at the end of a group, as a digit after "(555" in "(555) 123", reflows everything after it, and the one differing span the hosts can see then includes the caret. It lands after the reflowed text instead of after the key. Nothing is lost and the next key still goes in; the caret is in the wrong place for it. Typing anywhere else mid-text keeps its place. Fixing it needs a caret position in the protocol, which no host sends.
+
+#### It takes no hooks
+
+The draft is the value, and the value is the caller's. So a MaskedInput may be rendered conditionally, unlike TagInput and PINInput.
+
+#### Accessibility
+
+A plain text field, named by Label. The mask is not announced: a screen reader reads the field's text, literals included, which is the formatted value a sighted reader sees. Hint carries anything more ("Ten digits").
+
+#### Theme roles read
+
+Those of core.Input (Components.Input), and nothing else.
+
+<small>[comps/masked_input.go:105](https://github.com/rohanthewiz/grmob/blob/master/comps/masked_input.go#L105)</small>
+
+#### func (MaskedInput) Render
+
+```go
+func (in MaskedInput) Render(ctx *core.Context) *core.Node
+```
+
+Render draws the field.
+
+<small>[comps/masked_input.go:149](https://github.com/rohanthewiz/grmob/blob/master/comps/masked_input.go#L149)</small>
+
+### type NumberPad
+
+```go
+type NumberPad struct {
+	// OnKey receives the key's text: "0" to "9", or Extra. Nil reports
+	// ConcernNumberPadInert unless the pad is Disabled.
+	OnKey func(string)
+
+	// OnBackspace is called for the ⌫ key. Nil disables that key alone: a pad
+	// that only ever appends (a dialler that clears with its own button) is
+	// legitimate, and a dead key drawn as live is not.
+	OnBackspace func()
+
+	// Extra is the bottom-left key's text, reported through OnKey like a
+	// digit: ".", "00", "+". Empty leaves the cell blank.
+	Extra string
+
+	// ExtraLabel is Extra's accessible name, for a glyph that does not read
+	// well aloud. Empty means Extra itself.
+	ExtraLabel string
+
+	// BackspaceLabel is the ⌫ key's accessible name. Empty means "Delete".
+	BackspaceLabel string
+
+	// Label is the group's accessible name. Empty means "Number pad".
+	Label string
+
+	// Disabled greys every key and drops every report.
+	Disabled bool
+
+	// Style is applied to the outer column after its defaults.
+	Style []core.StyleProp
+}
+```
+
+NumberPad is an on-screen keypad: the ten digits, a backspace, and one corner key the caller chooses.
+
+	comps.NumberPad{
+	    OnKey:       func(k string) { pin.Set(pin.Get() + k) },
+	    OnBackspace: func() { pin.Set(dropLast(pin.Get())) },
+	}
+
+	┌───────┬───────┬───────┐
+	│   1   │   2   │   3   │
+	├───────┼───────┼───────┤
+	│   4   │   5   │   6   │
+	├───────┼───────┼───────┤
+	│   7   │   8   │   9   │
+	├───────┼───────┼───────┤
+	│ Extra │   0   │   ⌫   │   Extra: ".", "00", "+", or a blank cell
+	└───────┴───────┴───────┘
+
+#### When to use it, and when not to
+
+core.Keyboard(core.KeyboardDigits) already asks the platform for its own number pad, and a field that wants digits should use that: it is the keyboard the reader knows, and on iOS it is what SMS autofill fills (PINInput uses it for that reason). This widget is for the three places the system pad does not reach:
+
+  - a lock or payment screen, where the pad is the screen and no field has focus;
+  - a kiosk or a calculator, where the system keyboard must never appear;
+  - a static HTML export and the desktop web, where an inputmode hint does nothing.
+
+#### It holds no value
+
+The pad reports keys and the caller builds the string. That is what lets one widget serve a PIN (append, cap at four), an amount (one "." at most, two decimals) and a dialler ("+" only first) without a mode for each: the rule for what a key does to the value is the application's, and it is a line or two of Go in OnKey. It also means the pad takes no hooks, so it may be rendered conditionally.
+
+#### Haptics
+
+Every key that reports gives the light tick CopyButton gives (core.Haptic with HapticLight). An on-screen key has no travel, and on a phone the tick is what says the tap landed; a keypad without it reads as unresponsive. A Disabled pad, and a key with no handler, stay silent: a tick would claim something happened.
+
+#### Layout
+
+Four Rows of three equal shares (FlexGrow 1 over a zero basis, PINInput's rule for boxes that must not shuffle), each key at least 56 points tall. The pad takes the width it is given, so on a tablet a caller caps it with core.MaxWidth in Style. Keys are not forced square: core has no aspect ratio, and a key wider than it is tall is what the system pads draw.
+
+#### Accessibility
+
+The pad is a core.RoleGroup named by Label ("Number pad"). Each key is a real Button whose label is its digit. Backspace is drawn as "⌫" and named BackspaceLabel ("Delete"), and Extra is named ExtraLabel when its glyph does not read well aloud ("." as "Decimal point"). The blank corner cell is disabled and hidden from accessibility, being there only to keep the zero in the middle.
+
+#### Theme roles read
+
+	Keys   outlined Buttons: Components.Button's shape, PrimaryOnLight ink
+	Gap    Spacing.SM between keys and between rows
+
+<small>[comps/number_pad.go:91](https://github.com/rohanthewiz/grmob/blob/master/comps/number_pad.go#L91)</small>
+
+#### func (NumberPad) Render
+
+```go
+func (p NumberPad) Render(ctx *core.Context) *core.Node
+```
+
+Render draws the four rows.
+
+<small>[comps/number_pad.go:133](https://github.com/rohanthewiz/grmob/blob/master/comps/number_pad.go#L133)</small>
+
 ### type PINInput
 
 ```go
@@ -1096,6 +1470,99 @@ type RadioOption struct {
 RadioOption is one choice in a RadioGroup.
 
 <small>[comps/radio_group.go:103](https://github.com/rohanthewiz/grmob/blob/master/comps/radio_group.go#L103)</small>
+
+### type RangeSlider
+
+```go
+type RangeSlider struct {
+	// Title names the range. It is drawn on the first line, beside the range
+	// in words, and is the group's accessible name. Empty draws no title line.
+	Title string
+
+	// Min and Max bound both tracks. Both zero gives 0..1, as SliderRow.
+	Min float64
+	Max float64
+
+	// Step snaps both thumbs to multiples of it from Min. Zero is continuous.
+	Step float64
+
+	// Low and High are the caller's pair, each clamped into [Min, Max].
+	Low  float64
+	High float64
+
+	// OnChange receives the whole pair, once, when either drag ends. It is
+	// always ordered (low <= high): see "The thumbs push each other".
+	OnChange func(low, high float64)
+
+	// Format writes every number drawn: both readouts and the two ends of the
+	// range on the title line. Nil gives SliderRow's default precision.
+	Format func(float64) string
+
+	// Labels are the two sliders' titles. An empty entry means "Minimum" or
+	// "Maximum".
+	Labels [2]string
+
+	// Disabled greys both sliders and drops their reports.
+	Disabled bool
+
+	// Style is applied to the outer column after its defaults.
+	Style []core.StyleProp
+}
+```
+
+RangeSlider chooses a minimum and a maximum that cannot cross: a price filter, an age bracket, the hours a shop is open.
+
+	comps.RangeSlider{
+	    Title: "Price", Min: 0, Max: 200, Step: 5,
+	    Low: low.Get(), High: high.Get(),
+	    OnChange: func(l, h float64) { low.Set(l); high.Set(h) },
+	    Format:   func(v float64) string { return fmt.Sprintf("$%.0f", v) },
+	}
+
+	┌────────────────────────────────────────────┐
+	│ Price                           $20 – $80  │  the range, on the title line
+	│ Minimum                               $20  │
+	│ ▬▬▬●────────────────────────               │
+	│ Maximum                               $80  │
+	│ ▬▬▬▬▬▬▬▬▬▬▬●────────────────               │
+	└────────────────────────────────────────────┘
+
+#### It is two sliders, on purpose
+
+One track with two thumbs is a node type no target here has, so it is not something a widget can compose (it is on the round-four blocked list). This is two SliderRows, and for a screen-reader user that is not a stopgap: it is the form the control takes on every platform. VoiceOver and TalkBack adjust one value per stop, and a native two-thumb slider is presented to them as two adjustable elements, which is exactly this. What the composition gives up is for the eye alone: the two values are not drawn on one line, so the title line states the range in words to make up for it.
+
+#### The thumbs push each other
+
+Dragging Low past High carries High along with it, and the reverse:
+
+	Low 20  High 80     drag Low to 90   →   OnChange(90, 90)
+	Low 20  High 80     drag High to 10  →   OnChange(10, 10)
+
+The alternative, stopping a thumb at the other one, makes a range impossible to move as a whole: to shift 20–30 up to 60–70 the reader would have to know to move the maximum first. Pushing lets either order work. A caller who needs a minimum width (at least 10 apart) widens the pair in OnChange, where the rule belongs.
+
+#### Whose values
+
+The caller's, both of them, as with SliderRow: the widget takes no hooks and may be rendered conditionally. It also inherits SliderRow's reporting: OnChange fires once when a drag ends, not under the finger, for the reasons that doc gives. The range on the title line therefore follows the last commit, while each thumb follows the finger.
+
+#### Accessibility
+
+The whole is a core.RoleGroup named by Title. Each slider is named by its own label ("Minimum", "Maximum"; Labels replaces them), so a reader moving through hears "Price, group; Minimum, slider, 20".
+
+#### Theme roles read
+
+Everything SliderRow reads, for each of the two rows and the title line.
+
+<small>[comps/range_slider.go:77](https://github.com/rohanthewiz/grmob/blob/master/comps/range_slider.go#L77)</small>
+
+#### func (RangeSlider) Render
+
+```go
+func (r RangeSlider) Render(ctx *core.Context) *core.Node
+```
+
+Render draws the title line and the two rows.
+
+<small>[comps/range_slider.go:113](https://github.com/rohanthewiz/grmob/blob/master/comps/range_slider.go#L113)</small>
 
 ### type RichTextEditor
 
@@ -1560,6 +2027,24 @@ func (s SearchableSelect) Render(ctx *core.Context) *core.Node
 Render builds Column(SearchField, listbox?, status) as drawn in the type doc.
 
 <small>[comps/searchable_select.go:200](https://github.com/rohanthewiz/grmob/blob/master/comps/searchable_select.go#L200)</small>
+
+### type Swatch
+
+```go
+type Swatch struct {
+	// Hex is the colour, "#rgb" or "#rrggbb", and the value reported.
+	Hex string
+
+	// Name is what a screen reader says: "Brand blue", "Sunset". Empty falls
+	// back to a name guessed from the hue and reports
+	// ConcernColorSwatchUnnamed.
+	Name string
+}
+```
+
+Swatch is one colour on offer.
+
+<small>[comps/color_swatch_picker.go:48](https://github.com/rohanthewiz/grmob/blob/master/comps/color_swatch_picker.go#L48)</small>
 
 ### type TagInput
 

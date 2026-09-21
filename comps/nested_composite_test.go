@@ -38,7 +38,7 @@ import (
 //
 // # What changed, and the answer now
 //
-// Three widgets declare a container role for themselves:
+// These widgets declare a container role for themselves:
 //
 //	BottomBar    toolbar, when Selected < 0 (Tier A). It chose the role through
 //	             a variable, which the first version of this test did not see:
@@ -53,6 +53,11 @@ import (
 //	             toolbar, on its formatting strip. It carried no role while
 //	             the rule was "no widget declares one"; the strip's buttons are
 //	             built from RichToolItem data, so it met the closed rule.
+//	ColorSwatchPicker
+//	             radiogroup (round four, K2). Its radios are built from Swatch
+//	             data and no struct it declares holds a core.View. The rows
+//	             between the group and its radios are layout only, and the hex
+//	             field is the group's sibling, as Calendar's Header is.
 //	Calendar     grid. Its cells are built from the month, so the grid is
 //	             closed; its one caller view, Header, renders as the grid's
 //	             sibling rather than inside it. viewsOutsideTheComposite
@@ -99,12 +104,13 @@ func TestOnlyClosedWidgetsDeclareACompositeContainerRole(t *testing.T) {
 
 	// The closed widgets allowed to declare a container role, by file.
 	closedComposites := map[string]string{
-		"bottom_bar.go":        "toolbar when Selected < 0; cells are built from BarItem data",
-		"calendar.go":          "grid; cells are built from the month, and Header renders beside the grid",
-		"code_editor.go":       "toolbar; its three buttons are built by the widget",
-		"radio_group.go":       "radiogroup; rows are built from RadioOption data",
-		"rich_text_editor.go":  "toolbar; buttons are built from RichToolItem data",
-		"searchable_select.go": "listbox; rows are built from core.SelectOption data",
+		"bottom_bar.go":          "toolbar when Selected < 0; cells are built from BarItem data",
+		"calendar.go":            "grid; cells are built from the month, and Header renders beside the grid",
+		"code_editor.go":         "toolbar; its three buttons are built by the widget",
+		"color_swatch_picker.go": "radiogroup; swatches are built from Swatch data, and the hex field renders beside the group",
+		"radio_group.go":         "radiogroup; rows are built from RadioOption data",
+		"rich_text_editor.go":    "toolbar; buttons are built from RichToolItem data",
+		"searchable_select.go":   "listbox; rows are built from core.SelectOption data",
 	}
 
 	files, err := filepath.Glob("*.go")

@@ -674,3 +674,73 @@ func TestTagInputLessonCommitsPastesAndRemoves(t *testing.T) {
 	wantCaption(`Tags = ["design" "q3" "a" "b"]`)
 	assertNoConcerns(t)
 }
+
+// --- 5.9 Keypads, swatches, ranges and masks ---------------------------------
+
+// The lesson's four demos, each driven the way a reader would: every widget's
+// value is lesson state, so each step is read back off a caption.
+func TestInputFamilyLessonDrivesAllFourWidgets(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Keypads, swatches, ranges and masks")
+
+	wantCaption := func(want string) {
+		t.Helper()
+		if !hasText(tree(t, mgr), want) {
+			t.Errorf("a caption should read %s", want)
+		}
+	}
+	labelled := func(typ, name string) *node {
+		t.Helper()
+		n := findNode(tree(t, mgr), func(n *node) bool {
+			return n.Type == typ && n.Style != nil && n.Style.AccessibilityLabel == name
+		})
+		if n == nil {
+			t.Fatalf("no %s labelled %q", typ, name)
+		}
+		return n
+	}
+
+	// NumberPad: the lesson caps the passcode at four, and then disables the
+	// pad, so a fifth key is both refused by OnKey and undeliverable.
+	for _, k := range []string{"1", "2", "3"} {
+		tap(t, mgr, k)
+	}
+	wantCaption(`Passcode = "123"`)
+	tapLabelled(t, mgr, "Delete")
+	wantCaption(`Passcode = "12"`)
+	tap(t, mgr, "0")
+	tap(t, mgr, "9")
+	wantCaption("✓ Four digits entered; the pad is Disabled.")
+	if !labelled("Button", "Delete").Style.Disabled {
+		t.Error("the pad should be disabled once the passcode is full")
+	}
+	tap(t, mgr, "Clear")
+	wantCaption(`Passcode = ""`)
+
+	// ColorSwatchPicker: a swatch by its spoken name, then a typed hex.
+	wantCaption("Value = #2A78D6")
+	tapLabelled(t, mgr, "orange")
+	wantCaption("Value = #EB6834")
+	mgr.DispatchTextCallback(labelled("Input", "Custom colour, hex").Props["onChange"].(string), "#7b2ff0")
+	wantCaption("Value = #7B2FF0")
+
+	// RangeSlider: the minimum dragged past the maximum carries it along.
+	wantCaption("Low = 20   ·   High = 80")
+	mgr.DispatchTextCallback(labelled("Slider", "Minimum").Props["onChangeEnd"].(string), "120")
+	wantCaption("Low = 120   ·   High = 120")
+	if !hasText(tree(t, mgr), "$120 – $120") {
+		t.Error("the title line should state the new range in words")
+	}
+
+	// MaskedInput: the host sends the text as the reader left it, Go holds
+	// the raw value and draws the formatted one.
+	mgr.DispatchTextCallback(labelled("Input", "Phone").Props["onChange"].(string), "5551234567")
+	wantCaption(`phone = "5551234567"   ·   card = ""`)
+	if v := labelled("Input", "Phone").Props["value"]; v != "(555) 123-4567" {
+		t.Errorf("the phone field draws %v, want (555) 123-4567", v)
+	}
+	mgr.DispatchTextCallback(labelled("Input", "Phone").Props["onChange"].(string), "(555) 123-456x")
+	wantCaption(`phone = "555123456"   ·   card = ""`)
+
+	assertNoConcerns(t)
+}

@@ -159,7 +159,7 @@ internal fun rebaseEdit(basis: String, local: String, rewrite: String): String =
 
 /**
  * Where the caret goes after [rebaseEdit], for a host that owns its selection
- * (the code editor; a plain field keeps its caret offset, clamped).
+ * (the code editor; a plain field places its caret from two texts, [carryCaret]).
  * [caret] is the caret in [local].
  *
  * It follows the typing, since that is where the user was:
@@ -183,6 +183,40 @@ internal fun rebaseCaret(basis: String, local: String, rewrite: String, caret: I
         }
     }
     return if (at < 0 || at > m.text.length || splitsPair(m.text, at)) m.text.length else at
+}
+
+/**
+ * Where a focused plain field's caret goes when new text is written into it:
+ * [before] is what the field showed, [after] what it shows now, [caret] the
+ * caret in [before]. internal/rebasefixture's `Carry` is the statement of the
+ * rule and android/verify runs this copy against its case table.
+ *
+ * [rebaseCaret] is not the answer for a plain field. It follows typing that
+ * was in flight, and with none (the ordinary case at human speed) it sends
+ * the caret to the end, which breaks typing mid-text under an UPPERCASE
+ * onChange. So the field places its caret from the two texts alone: the
+ * change is read as one differing span and the caret is carried across it by
+ * [mapOffset], as the ends of a replayed span are.
+ *
+ *   "1"     → "(1"       caret 1 → 2   Go put a literal before the caret
+ *   "(5556" → "(555) 6"  caret 5 → 7
+ *   "HELLOa WORLD" → "HELLOA WORLD"    caret 6 → 6   length kept
+ *   "beta," → ""         caret 5 → 0
+ *
+ * The field used to keep the caret's raw offset, clamped. That is the same
+ * answer whenever Go's change is at or after the caret or keeps the length,
+ * which is every rewrite there was until comps.MaskedInput: a formatting
+ * onChange inserts before the caret, and on the emulator the keys 1 2 3 4 5 6
+ * typed a second apart read back "(234) 651". The browser's writeFieldValue
+ * and the iOS field's write already carried the caret this way.
+ */
+internal fun carryCaret(before: String, after: String, caret: Int): Int {
+    val (prefix, suffix) = commonSpan(before, after)
+    var at = mapOffset(caret, before.length, prefix, before.length - suffix, after.length)
+    // Inside a span that changed length: the end of the new span, the nearest
+    // place still after the text the caret was after.
+    if (at < 0) at = after.length - suffix
+    return if (at > after.length || splitsPair(after, at)) after.length else at
 }
 
 /** One successful merge and the offsets [rebaseCaret] needs from it. The

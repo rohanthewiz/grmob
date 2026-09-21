@@ -141,6 +141,17 @@ val rebaseCases: List<RebaseCase> = listOf(
 			kstr(c.Want), c.WantCaret)
 	}
 	b.WriteString(")\n")
+
+	// The caret of a plain field, which is placed from two texts and not
+	// three (rebasefixture.Carry says why).
+	b.WriteString(`
+val carryCases: List<CarryCase> = listOf(
+`)
+	for _, c := range rebasefixture.CarryCases() {
+		fmt.Fprintf(b, "    CarryCase(%s, %s, %s, %d, %d),\n",
+			kstr(c.Name), kstr(c.Before), kstr(c.After), c.Caret, c.Want)
+	}
+	b.WriteString(")\n")
 }
 
 // writeProgressCases emits the accessibility-value table.

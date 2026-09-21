@@ -31,6 +31,7 @@ func chapter5() Chapter {
 			lessonPicker(),
 			lessonPINInput(),
 			lessonTagInput(),
+			lessonInputFamily(),
 		},
 	}
 }
@@ -893,6 +894,215 @@ func lessonTagInput() Lesson {
 					"The set is the caller's; the draft is the widget's, so it holds a hook.",
 					"Each tag is inert text plus a ✕ named \"Remove …\" — never a button inside a button.",
 					"Pastes split on the separators; trimmed, no empties, no duplicates, no more than Max.",
+				),
+			)
+		},
+	}
+}
+
+// --- 5.9 -----------------------------------------------------------------
+
+// 5.9 — Phase 2 of the fourth low-hanging-fruit round (K1 to K4). Four inputs
+// in one lesson, held together by the question every widget in this chapter
+// answers: who holds the value. Three of the four hold nothing; the one that
+// does (the swatch picker's half-typed hex) holds it for TagInput's reason.
+func lessonInputFamily() Lesson {
+	return Lesson{
+		Title:   "Keypads, swatches, ranges and masks",
+		Summary: "comps.NumberPad, ColorSwatchPicker, RangeSlider and MaskedInput: four inputs the system keyboard and a plain field do not cover.",
+		Body: func(ctx *core.Context) core.View {
+			t := ctx.Theme()
+
+			// Every value below is lesson state. NumberPad, RangeSlider and
+			// MaskedInput take no hooks at all; ColorSwatchPicker takes one,
+			// for the hex it has not finished reading.
+			pin := core.NewState(ctx, "")
+			colour := core.NewState(ctx, "#2A78D6")
+			low := core.NewState(ctx, 20.0)
+			high := core.NewState(ctx, 80.0)
+			phone := core.NewState(ctx, "")
+			card := core.NewState(ctx, "")
+
+			const pinLength = 4
+			unlocked := len(pin.Get()) == pinLength
+
+			// The lock screen's dots: display only. They are PINInput's boxes
+			// without the field, because here no field exists; the pad is the
+			// whole input.
+			dots := []core.PropsAndChildren{
+				core.Padding(0), core.Gap(12),
+				core.Justify(core.JustifyCenter),
+				core.AccessibilityRole(core.RoleStatus),
+				core.AccessibilityLabel(fmt.Sprintf("Passcode, %d of %d entered", len(pin.Get()), pinLength)),
+			}
+			for i := 0; i < pinLength; i++ {
+				fill := comps.ColorTransparent
+				if i < len(pin.Get()) {
+					fill = t.Colors.TextPrimary
+				}
+				dots = append(dots, core.Box(
+					core.Width("14px"), core.Height("14px"), core.Padding(0),
+					core.BorderRadius(7), core.BorderWidth(2),
+					core.BorderColor(t.Colors.TextPrimary),
+					core.BackgroundColor(fill),
+					core.AccessibilityHidden(),
+				))
+			}
+
+			return core.Column(
+				core.Gap(14),
+				prose("Four inputs a form reaches for after the text field, the picker and the "+
+					"switch. They share this chapter's rule: the value is yours. Three of them "+
+					"hold nothing at all, so they take no hooks and may be rendered inside a "+
+					"core.If; the fourth holds only what no application wants."),
+
+				prose("comps.NumberPad is twelve keys and no value. It reports a key, and what a "+
+					"key does to the value is a line of your Go: append and cap at four for a "+
+					"passcode, allow one \".\" for an amount. A field that wants digits should ask "+
+					"the platform for its own pad with core.Keyboard(core.KeyboardDigits), as "+
+					"5.7 does. This is for where that pad cannot go: a lock screen with no field "+
+					"to focus, a kiosk where the system keyboard must never rise, a static "+
+					"export where an inputmode hint does nothing."),
+				codeBlock(`comps.NumberPad{
+    OnKey: func(k string) {
+        if len(pin.Get()) < 4 {
+            pin.Set(pin.Get() + k)
+        }
+    },
+    OnBackspace: func() { pin.Set(dropLast(pin.Get())) },
+}`),
+				demoPanel("A lock screen: dots over a pad, and no text field anywhere. Each key gives a light haptic on a phone.",
+					core.Column(
+						core.Padding(0), core.Gap(16),
+						core.AlignItemsProp(core.AlignItemsCenter),
+						core.Row(dots...),
+						comps.NumberPad{
+							Disabled: unlocked,
+							OnKey: func(k string) {
+								if len(pin.Get()) < pinLength {
+									pin.Set(pin.Get() + k)
+								}
+							},
+							OnBackspace: func() {
+								if r := []rune(pin.Get()); len(r) > 0 {
+									pin.Set(string(r[:len(r)-1]))
+								}
+							},
+							Style: []core.StyleProp{core.MaxWidth("300px")},
+						},
+					),
+					core.IfElse(unlocked,
+						caption("✓ Four digits entered; the pad is Disabled."),
+						caption(fmt.Sprintf("Passcode = %q", pin.Get())),
+					),
+					comps.Button{
+						Label:    "Clear",
+						Emphasis: comps.EmphasisGhost,
+						OnTap:    func() { pin.Set("") },
+					},
+				),
+
+				prose("comps.ColorSwatchPicker is a radiogroup of colours. With no Colors it "+
+					"offers the theme's chart colours, which are already chosen to be told "+
+					"apart. The choice is a ring and a check, never the colour alone, and the "+
+					"check's ink is black or white by contrast with its swatch. Give your own "+
+					"swatches a Name: it is what a screen reader says, and \"Brand blue\" means "+
+					"more than a hue guessed from the hex."),
+				codeBlock(`comps.ColorSwatchPicker{
+    Label:       "Label colour",
+    Value:       colour.Get(),
+    OnChange:    colour.Set,
+    AllowCustom: true,
+}`),
+				demoPanel("Pick a swatch. Then type a hex such as #7B2FF0 into the field: it commits when it is a whole colour.",
+					comps.ColorSwatchPicker{
+						Label:       "Label colour",
+						Value:       colour.Get(),
+						OnChange:    colour.Set,
+						AllowCustom: true,
+					},
+					caption("Value = "+colour.Get()),
+				),
+
+				prose("comps.RangeSlider is a minimum and a maximum that cannot cross. It is two "+
+					"sliders and says so: one track with two thumbs is a control no target here "+
+					"has, and two labelled sliders are what VoiceOver and TalkBack are given for "+
+					"a range in any case. Drag the minimum past the maximum and it carries the "+
+					"maximum along, so a range can be moved as a whole from either end."),
+				codeBlock(`comps.RangeSlider{
+    Title: "Price",
+    Min:   0, Max: 200, Step: 5,
+    Low:   low.Get(),
+    High:  high.Get(),
+    OnChange: func(l, h float64) {
+        low.Set(l)
+        high.Set(h)
+    },
+    Format: dollars,
+}`),
+				demoPanel("Drag Minimum past Maximum and let go: both report, and the pair stays ordered.",
+					comps.RangeSlider{
+						Title: "Price", Min: 0, Max: 200, Step: 5,
+						Low: low.Get(), High: high.Get(),
+						OnChange: func(l, h float64) { low.Set(l); high.Set(h) },
+						Format:   func(v float64) string { return fmt.Sprintf("$%.0f", v) },
+					},
+					caption(fmt.Sprintf("Low = %.0f   ·   High = %.0f", low.Get(), high.Get())),
+				),
+
+				prose("comps.MaskedInput formats as you type. The mask is written in three slot "+
+					"characters (# a digit, A a letter, * either) and everything else is a "+
+					"literal. Value is the raw value, 5551234567, which is the form you store "+
+					"and send; OnChange hands over the drawn text as well. A literal is written "+
+					"only once a character follows it, so the text never ends in one and "+
+					"backspace always removes something you typed."),
+				codeBlock(`comps.MaskedInput{
+    Mask:     "(###) ###-####",
+    Value:    phone.Get(),
+    OnChange: func(raw, _ string) {
+        phone.Set(raw)
+    },
+    Keyboard: core.KeyboardDigits,
+    Label:    "Phone",
+}`),
+				demoPanel("Type ten digits, fast. Backspace through the brackets. Try a letter: the mask refuses it.",
+					comps.FormField{
+						Label: "Phone",
+						Input: comps.MaskedInput{
+							Mask:     "(###) ###-####",
+							Value:    phone.Get(),
+							OnChange: func(raw, _ string) { phone.Set(raw) },
+							Keyboard: core.KeyboardDigits,
+							Label:    "Phone",
+						},
+					},
+					comps.FormField{
+						Label: "Card number",
+						Input: comps.MaskedInput{
+							Mask:     "#### #### #### ####",
+							Value:    card.Get(),
+							OnChange: func(raw, _ string) { card.Set(raw) },
+							Keyboard: core.KeyboardDigits,
+							Label:    "Card number",
+						},
+					},
+					caption(fmt.Sprintf("phone = %q   ·   card = %q", phone.Get(), card.Get())),
+				),
+				prose("Every formatted keystroke is Go answering with text the host did not send, "+
+					"which the text-edit protocol calls a rewrite; TagInput makes one per tag "+
+					"and this makes one per key. Typed at machine speed on the Android emulator "+
+					"it loses nothing, because each host replays the keys in flight onto the "+
+					"rewrite. What it needed was the caret to travel with its text: a mask puts "+
+					"a bracket before the caret, and a host that kept the caret's raw offset "+
+					"typed 1 2 3 4 5 6 as (234) 651. One limit remains. A key typed mid-text at "+
+					"the very end of a group lands correctly and leaves the caret after the "+
+					"reflowed digits, since no host tells Go where its caret is."),
+				keyPoints(
+					"NumberPad reports keys and holds no value: the rule for a key is a line of Go in OnKey. Use the system pad (core.Keyboard) when there is a field.",
+					"ColorSwatchPicker is a radiogroup; selected is a ring and a check, and a swatch's Name is what is spoken.",
+					"RangeSlider is two labelled sliders whose thumbs push each other, so OnChange always reports an ordered pair.",
+					"MaskedInput's Value is the raw value; # A * are slots, anything else is a literal written only once a character follows it.",
+					"Only ColorSwatchPicker holds a hook (the half-typed hex), so it alone must render unconditionally.",
 				),
 			)
 		},

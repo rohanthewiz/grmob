@@ -64,3 +64,64 @@ test("a field that is not focused gets the value and no caret move", () => {
     assert.equal(el.value, "xxabc");
     assert.equal(el.selectionStart, 3);
 });
+
+// --- A keystroke Go refuses ---------------------------------------------
+//
+// dispatchFromElement in grmob-runtime.js. A controlled field shows what Go
+// renders, and a handler that declines an edit changes no state, so the next
+// render equals the last and no patch arrives. Without a rule of the page's
+// own the refused key stayed drawn; headless Chrome showed comps.MaskedInput
+// holding "(555) 123-4567x". The natives' edit ledger catches the same case
+// as a rewrite, which is why only this host needed the rule.
+//
+// `go` stands in for Go: it is called inside GoInvokeCallback, as the real
+// bridge applies a pass's patches before the call returns.
+function typedField(nodeType, value, go) {
+    const rt = loadRuntime();
+    rt.GrMob.mount(JSON.stringify({
+        Type: "Column",
+        Children: [{ Type: nodeType, Props: { value, onChange: "txt_1" } }],
+    }));
+    const el = nodeAt(rt.document, "root/0");
+    const patch = (v) => rt.GrMob.patch(JSON.stringify(
+        [{ Type: "update-props", TargetID: "root/0", Changes: { value: v, onChange: "txt_1" } }]));
+    rt.window.GoInvokeCallback = (id, payload) => go(payload.value, patch);
+    const type = (text) => {
+        el.value = text;
+        el.dispatch("input", {});
+    };
+    return { el, type };
+}
+
+test("a key Go refuses is taken back out of the field", () => {
+    // Go renders nothing new: the handler ignored the edit.
+    const { el, type } = typedField("Input", "(555", () => {});
+    type("(555x");
+    assert.equal(el.value, "(555");
+});
+
+test("a key Go accepts stays, whether Go echoes it or rewrites it", () => {
+    const echo = typedField("Input", "ab", (v, patch) => patch(v));
+    echo.type("abc");
+    assert.equal(echo.el.value, "abc");
+
+    // A mask: "(5556" comes back as "(555) 6".
+    const mask = typedField("Input", "(555", (v, patch) => patch("(555) 6"));
+    mask.type("(5556");
+    assert.equal(mask.el.value, "(555) 6");
+});
+
+test("a refusal after an accepted key goes back to the accepted text, not the mounted one", () => {
+    let accept = true;
+    const { el, type } = typedField("Input", "", (v, patch) => { if (accept) patch(v); });
+    type("12");
+    accept = false;
+    type("12x");
+    assert.equal(el.value, "12");
+});
+
+test("a number field is left alone: its value reads empty for text it has not parsed", () => {
+    const { el, type } = typedField("NumericInput", 4, () => {});
+    type("-");
+    assert.equal(el.value, "-");
+});

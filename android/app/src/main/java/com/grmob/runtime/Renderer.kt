@@ -1786,18 +1786,24 @@ private fun GrMobTextField(
         }
         if (!fresh) return@LaunchedEffect
         ledger.upstream(upstream, editSeq, editEpoch, field.text.toString(), stamped)?.let { next ->
-            // The caret keeps its offset, clamped to the new text, which is
-            // what the value-and-callback field did with a new value. It is
-            // what makes a transform typeable mid-text: an uppercasing
-            // onChange rewrites every keystroke, and a caret sent to the end
-            // each time would put the second letter typed in the middle at
-            // the end. A rewrite that shortens the text (a committed tag)
-            // clamps it to the end, where the replayed typing is.
+            // The caret is carried across the change from the field's text to
+            // the new one ([carryCaret]), so it stays with the text it was
+            // after. That is what makes a transform typeable mid-text: an
+            // uppercasing onChange rewrites every keystroke, and a caret sent
+            // to the end each time would put the second letter typed in the
+            // middle at the end. A rewrite that shortens the text (a committed
+            // tag) brings it to the end, where the replayed typing is.
+            //
+            // It used to keep its raw offset, clamped, which is the same
+            // answer for both of those and the wrong one when Go inserts
+            // before the caret: a mask's "(" arrived and the caret stayed at
+            // 1, in front of the digit just typed (comps.MaskedInput).
             last.text = next
             val keep = field.selection
+            val was = field.text.toString()
             field.edit {
                 replace(0, length, next)
-                selection = TextRange(keep.start.coerceAtMost(next.length), keep.end.coerceAtMost(next.length))
+                selection = TextRange(carryCaret(was, next, keep.start), carryCaret(was, next, keep.end))
             }
             // Typing Go has not seen yet, replayed onto its rewrite.
             if (next != upstream) send(next)

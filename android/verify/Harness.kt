@@ -251,6 +251,22 @@ fun main() {
         kotlin.system.exitProcess(1)
     }
     println("OK: ${rebaseCases.size} rewrites replay the typing and place the caret as Go's reference does")
+
+    // And for the caret a plain field keeps across a write.
+    if (carryCases.size < 8) {
+        System.err.println("FAIL: only ${carryCases.size} caret-carry cases were generated")
+        kotlin.system.exitProcess(1)
+    }
+    val carryProblems = carryCases.mapNotNull { c ->
+        val got = carryCaret(c.before, c.after, c.caret)
+        if (got == c.want) null else "${c.name}: carryCaret gave $got, Go ${c.want}"
+    }
+    if (carryProblems.isNotEmpty()) {
+        System.err.println("FAIL: the Kotlin caret carry disagrees with Go:")
+        carryProblems.forEach { System.err.println("  $it") }
+        kotlin.system.exitProcess(1)
+    }
+    println("OK: ${carryCases.size} writes into a focused field carry the caret as Go's reference does")
 }
 
 /**
@@ -267,6 +283,15 @@ data class RebaseCase(
     val caret: Int,
     val want: String,
     val wantCaret: Int,
+)
+
+/** One case from rebasefixture.CarryCases: a write into a focused plain field. */
+data class CarryCase(
+    val name: String,
+    val before: String,
+    val after: String,
+    val caret: Int,
+    val want: Int,
 )
 
 /** Runs each case through [rebaseEdit] and [rebaseCaret]. */

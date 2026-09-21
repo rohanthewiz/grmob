@@ -1,7 +1,10 @@
 # Low-hanging fruit for `comps`, round four
 
 **Status:** drafted 2026-09-21. **Phase 1 landed 2026-09-21** (J1–J3, lesson 4.34,
-`examples/chat`). Phases 2 to 6 are not started.
+`examples/chat`). **Phase 2 landed 2026-09-21** (K1–K4, lesson 5.9), and it
+broke this round's rule twice, on purpose: K4's spike found a caret bug in
+the Android field and the look found a hole in the web runtime, and both
+were fixed where they were (see K4). Phases 3 to 6 are not started.
 
 Rounds one to three (`comps-low-hanging-fruit.md`, `-2.md`, `-3.md`, Tiers
 A–I) are complete. This round follows the same rule. Every item in Phases 1 to
@@ -232,6 +235,21 @@ tap. A keypad without one feels dead on a phone. It stays off when
 
 **Concern:** `ConcernNumberPadInert` for no `OnKey`.
 
+**What the build changed from the sketch.** Four things.
+
+- **Keys are not 1:1.** core has no aspect ratio. Keys are equal shares at
+  least 56pt tall, which is also what the system pads draw.
+- **The blank corner is a key that is not painted** (`Disabled`, hidden,
+  `core.Opacity(0)`), not an empty `Box`. The headless render found it: on
+  the web a flex share is the zero basis plus the cell's own padding and
+  border, so an empty box was narrower than a key and the zero sat off-centre
+  under the eight. It is `core.Opacity`'s second consumer, and the first one
+  seen on a device (the Android emulator).
+- **`OnBackspace` nil disables that key alone**, and raises nothing: an
+  append-only pad is legitimate.
+- **`BackspaceLabel` and `Label` were added**, and the handler guards
+  `Disabled` itself, for the tap that races the disabling patch.
+
 ### K2. `ColorSwatchPicker`
 
 A grid of tappable colour swatches.
@@ -256,6 +274,29 @@ hit-testing on Canvas, which is N-007.
 
 **Concern:** `ConcernColorSwatchUnnamed`, `ConcernColorSwatchInert`.
 
+**What the build changed from the sketch.** Five things.
+
+- **The default palette is `ChartColors()` and not `chartPalette`**, whose
+  second half is 60% tints of the first. A tint of a colour already on offer
+  is not a second choice.
+- **Default swatches are named from their hues** (`colorName`: eight hue
+  bands, plus light/dark, grey, black and white), since the unnamed concern
+  would otherwise fire on the widget's own defaults. The eight default chart
+  colours come out as eight different names, pinned by a test.
+- **The ring is a border every swatch carries**, transparent when
+  unselected, so a selection moves nothing. The grid's padding cells carry
+  the same padding and border, for K1's reason.
+- **The short hex form commits on return only.** Every six-digit colour
+  passes through a valid three-digit one on its way (`#7B2` on the way to
+  `#7B2FF0`), and committing it handed the caller a colour nobody chose.
+- **It holds a hook** (the half-typed hex), taken whether or not
+  `AllowCustom` is set. `ConcernColorSwatchBadHex`, `CustomLabel` and
+  `Disabled` were added, a colour listed twice is offered once, and the file
+  joined `closedComposites` (it declares a radiogroup).
+
+Noticed, not touched: on the web the group's arrows are Up/Down only, because
+the runtime gives a composite one axis. N-067.
+
 ### K3. `RangeSlider`
 
 A minimum and a maximum that clamp each other.
@@ -279,6 +320,17 @@ a stopgap for screen-reader users, only for the eye.
 as with `SliderRow` (D-tier). The values are the caller's.
 
 **Concern:** `ConcernRangeSliderInert`. Debug builds also flag `Low > High`.
+
+**What the build changed from the sketch.** Two things.
+
+- **An inverted pair is drawn the right way round**, and
+  `ConcernRangeSliderInverted` reports it, so the screen is right while the
+  caller's state gets fixed.
+- **The range in words is hidden from accessibility.** The two sliders state
+  the same two numbers as their values, and a third telling is noise.
+
+As sketched otherwise. There is no drag draft to hold: `SliderRow` commits on
+the drag's end, so `OnChange` fires once per drag.
 
 ### K4. `MaskedInput` — a catch to settle first
 
@@ -316,6 +368,47 @@ epoch. Two things follow, and neither is known yet:
 **A fallback that is always safe:** format on blur only. It needs no
 rewrite while focused. It is less pleasant, and it is a real option if the
 spike fails.
+
+**What the spike found, and what the build changed.** The spike's two
+questions had the wrong premise, in a useful way.
+
+- **The ledger had moved on.** The hosts no longer replay only an insertion
+  at either end; they do a three-way merge (`internal/rebasefixture`). Speed
+  was never the problem: ten and sixteen digits by `adb shell input text`
+  arrived whole, three runs of three.
+- **The caret was the problem, and only on Android.** Keys 1 2 3 4 5 6 typed
+  *a second apart* read back `(234) 651`. The Android field kept the caret's
+  raw offset across a rewrite, so after `1` → `(1` the caret sat between the
+  bracket and the digit. The web (`writeFieldValue`) and iOS (`write`)
+  already carried the caret across Go's change. This was a host-parity bug
+  that no earlier rewrite could show, because every earlier rewrite changed
+  text at or after the caret or kept the length.
+- **So this phase touched a renderer**, against the round's rule, and the
+  reasoning is: the alternative was to drop K4 over a twenty-line bug whose
+  fix is the rule two hosts already follow. `rebasefixture.Carry` states the
+  rule in Go, `carryCaret` is the Kotlin copy, and `android/verify` runs it
+  against `CarryCases`. Lesson 2.3's UPPERCASE field was re-run mid-text on
+  the emulator afterwards (`HELLOABCWORLD`).
+- **The web had a hole of its own**, found by typing through real `input`
+  events in headless Chrome: a key the handler refuses changes no state, so
+  no patch arrives and the key stayed drawn (`(555) 123-4567x`). The natives
+  catch this through the ledger. `dispatchFromElement` in the runtime now
+  gives a text field Go's text back after an `onChange` that left it
+  different; `wasm/verify/fieldvalue_test.mjs` pins it. `NumericInput` is
+  left out (a `type="number"` value reads empty mid-parse).
+- **Outcome: the second of the three**, in a narrower form than feared. The
+  caret is wrong only for a key typed mid-text *at the very end of a group*,
+  where the reflow's differing span includes the caret. Documented on the
+  widget.
+- **Literals are written late** (`555` draws `(555`), which the sketch did
+  not consider. Written eagerly, backspace on `(555) ` formats straight
+  back to itself.
+- **`unmask` walks the text against the mask** instead of stripping
+  non-slot characters, so `+1 (###) …` does not read its own literal `1` as
+  data. `Value` is the raw value. `OnComplete`, `Hint`, `Disabled` and a
+  mask-shaped default `Placeholder` were added;
+  `ConcernMaskedInputNoSlots` and `ConcernMaskedInputInert` are the concerns.
+- The pure functions are in `comps/mask.go`.
 
 ---
 
@@ -721,8 +814,8 @@ New this round:
 | Order | Item | Why |
 |---|---|---|
 | 1 | ~~Phase 1 (J1–J3) + lesson~~ | smallest; `examples/chat` is waiting for J1 and J2. Landed as lesson 4.34; device checks are N-062 |
-| 2 | K4's spike | an hour, and it decides whether K4 stays in Phase 2 |
-| 3 | Phase 2 (K1–K3, and K4 if the spike allows) + lesson | the form family's remaining gaps |
+| 2 | ~~K4's spike~~ | an hour, and it decides whether K4 stays in Phase 2. It stayed, after an Android caret fix |
+| 3 | ~~Phase 2 (K1–K3, and K4 if the spike allows) + lesson~~ | the form family's remaining gaps. Landed as lesson 5.9; device checks are N-065 and N-066 |
 | 4 | L1 `TreeView` | the only hierarchical widget; its role decision is worth settling early |
 | 5 | L2 `Wizard` + the Phase 3 lesson | builds on `StepIndicator`; lands last in its phase so N-002's footer checks have the most time |
 | 6 | Phase 4 (M1–M4) + lesson | independent of everything above; can be taken in any gap |

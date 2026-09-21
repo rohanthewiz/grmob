@@ -30,7 +30,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-065
+**Next ID:** N-068
 
 ## Open
 
@@ -251,9 +251,52 @@ with each item's `raised` traced back through all session docs.
   - Noticed beside it, untouched: Compose's `DisplayHidden` alpha sits at the
     foot of `boxModifier`, inside the background and border, so a hidden node
     with a fill may still draw the fill. iOS and the web hide the whole box.
-  - Its one consumer is `TypingIndicator`'s dots (looked at in headless
+  - Seen once on Compose (2026-09-21, the emulator): `NumberPad`'s unpainted
+    corner key is `Opacity(0)` and draws nothing, so the sentinel reaches
+    `Modifier.alpha` as 0. A static zero only; no fade has been watched.
+  - Its first consumer is `TypingIndicator`'s dots (looked at in headless
     Chrome only), so N-062's device checks are this field's too. No lesson
     teaches the prop itself.
+
+- **N-065** · raised `2026-0921-1019-comps-round-four-phase-2-inputs` · value medium
+  **The caret carry and the mask, unrun on iOS and on hardware.**
+  - Android: `carryCaret` replaced "keep the raw offset" in `GrMobTextField`.
+    Run on the emulator only (the mask at 1s and machine speed, backspace,
+    mid-text, and lesson 2.3's UPPERCASE mid-text). Not on the Fold6, and not
+    with an IME that composes (Gboard's suggestions, Samsung's keyboard):
+    `adb shell input text` commits whole keys.
+  - iOS: `MaskedInput` has not been typed into at all. The iOS field's
+    `write` is believed to follow `rebasefixture.Carry`'s rule (read, not
+    run), and `ios/verify` does not run the Swift side against `CarryCases`,
+    because the rule lives inside `write` and not in a function of its own.
+    Extracting it is the way to hold iOS to the table.
+  - The known limit (a key typed mid-text at the end of a group leaves the
+    caret after the reflow) is the same on all three hosts by construction;
+    seen on Android only.
+- **N-066** · raised `2026-0921-1019-comps-round-four-phase-2-inputs` · value medium
+  **Phase 2's inputs, unrun on a device beyond a look.** Lesson 5.9 was
+  looked at in headless Chrome and on the Android emulator (pad and
+  swatches drawn right; two pad keys tapped).
+  - `NumberPad`: the haptic per key felt on a phone; the unpainted corner
+    (`Opacity(0)`, `Disabled`, hidden) skipped by TalkBack and VoiceOver, and
+    not a Tab stop with a hardware keyboard.
+  - `ColorSwatchPicker`: each radio heard with its name and "selected"; the
+    ring and check on SwiftUI; the hex field's return committing the short
+    form on both natives.
+  - `RangeSlider`: a drag past the other thumb on a touch screen, and that
+    the pushed thumb's native position follows Go's value when it was not
+    the one dragged.
+  - The lock-screen dots' `RoleStatus` line ("Passcode, 2 of 4 entered"):
+    heard on TalkBack per key? VoiceOver is expected to say nothing (the
+    known live-region gap, core/role.go).
+- **N-067** · raised `2026-0921-1019-comps-round-four-phase-2-inputs` · value low (API decision)
+  **A radiogroup's arrows follow one axis on the web.** The runtime picks
+  Up/Down or Left/Right from the container's direction
+  (`compositeIsVertical`). ARIA gives a radiogroup both pairs, and
+  `ColorSwatchPicker` is a column of rows, where Right is the key a sighted
+  keyboard user reaches for and does nothing. Up/Down walk the swatches in
+  reading order, measured in headless Chrome. The fix is in
+  `handleCompositeKey`: for `radiogroup`, accept both pairs.
 
 ## Non-goals
 

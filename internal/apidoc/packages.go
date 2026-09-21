@@ -257,8 +257,8 @@ var Packages = []Pkg{
 		}, {
 			Slug:  "inputs",
 			Title: "Inputs & pickers",
-			Blurb: "Form fields, password fields, one-time code fields, tag inputs, search, searchable selects, radio groups, dates, date ranges, times and calendars, and the two editors.",
-			Files: []string{"form_field.go", "password_field.go", "pin_input.go", "tag_input.go", "search_field.go", "searchable_select.go", "radio_group.go",
+			Blurb: "Form fields, password fields, one-time code fields, tag inputs, masked inputs, number pads, colour swatches, range sliders, search, searchable selects, radio groups, dates, date ranges, times and calendars, and the two editors.",
+			Files: []string{"form_field.go", "password_field.go", "pin_input.go", "tag_input.go", "masked_input.go", "mask.go", "number_pad.go", "color_swatch_picker.go", "range_slider.go", "search_field.go", "searchable_select.go", "radio_group.go",
 				"date_picker.go", "date_range_picker.go", "time_picker.go", "calendar.go", "code_editor.go", "rich_text_editor.go", "rich_text_view.go"},
 		}, {
 			Slug:  "actions",
