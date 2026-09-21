@@ -30,7 +30,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-074
+**Next ID:** N-076
 
 ## Open
 
@@ -95,7 +95,10 @@ with each item's `raised` traced back through all session docs.
   for deletion. (was #20)
 - **N-018** · raised `2026-0916-1410-chart-palette-and-canvas-gradients` · value low
   **`DefaultDarkChartColors` has no bundled consumer.** A real dark theme
-  (N-050) would be it. (was #22; lapsed@0917-1659)
+  (N-050) would be it. The tutorial's own `darkTheme`
+  (examples/tutorial/theme.go, 2026-0921-1419) now spends it and
+  `DefaultDarkSequentialColors`, but no core theme does (see N-074).
+  (was #22; lapsed@0917-1659)
 - **N-019** · raised `2026-0916-1410-chart-palette-and-canvas-gradients` · value low (delete?)
   **`TutorialChartsUITests` failed once, reason not captured.** Proposed for
   deletion. (was #23)
@@ -174,7 +177,10 @@ with each item's `raised` traced back through all session docs.
   (2026-0919-1254 §1) may drive it. (was #65)
 - **N-050** · raised `2026-0918-2310-mi-max-3-android-10-force-dark-theme-sweep` · value low (API decision)
   **The Android app never follows the system's dark mode.** Needs the host to
-  send `uiMode` night and core to pick a theme. iOS and the web are unchecked.
+  send `uiMode` night and core to pick a theme. iOS is unchecked. The web
+  tutorial does follow it now: the page resolves System/Light/Dark and sends
+  a `theme` host event, and the app swaps to a tutorial-local `darkTheme`
+  (2026-0921-1419). The same event is the shape a native host could send.
   (was #67)
 - **N-051** · raised `2026-0918-2310-mi-max-3-android-10-force-dark-theme-sweep` · value low
   **Why the decor-view force-dark flag stopped holding after an AndroidView
@@ -384,6 +390,18 @@ with each item's `raised` traced back through all session docs.
   identity-keyed IDs (a keyed node's callbacks named by its key path). Until
   then the grid could pad each cell to a fixed number of registrations, which
   was judged too ugly to do on the way past.
+- **N-074** · raised `2026-0921-1419-tutorial-light-dark-theme` · value low (API decision)
+  **No bundled `core.DarkTheme`.** The tutorial's `darkTheme` lives in
+  examples/tutorial because core's palette censuses (the `*OnLight` tones,
+  the control-boundary pairs) assume a light page; in that theme the
+  `*OnLight` fields hold light inks. Promoting it means renaming or
+  re-arguing those roles and adding it to `BundledThemes`. Its contrast
+  figures were computed by hand, not by a census.
+- **N-075** · raised `2026-0921-1419-tutorial-light-dark-theme` · value low
+  **No browser check pins the theme switch.** It is covered by Go tests
+  (theme_test.go) and one manual Chrome pass; nothing in wasm/verify checks
+  that the pane tokens and the app's palette switch together, or the
+  no-flash head script.
 
 ## Non-goals
 

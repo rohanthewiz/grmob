@@ -90,6 +90,10 @@ type tutorial struct {
 	// show while a screen a demo pushed covers it (split.go,
 	// pushedScreenGuide).
 	lastLesson core.State[*coveredLesson]
+	// dark is whether the host page asked for the dark colour scheme (see
+	// theme.go). False until a "theme" host event says otherwise, so every
+	// host that never sends one keeps DefaultTheme.
+	dark core.State[bool]
 }
 
 // App is the root view: a Navigator whose initial route is the table of
@@ -115,14 +119,21 @@ func App(ctx *core.Context) core.View {
 		// bootLayout).
 		split:      core.NewState(sctx, bootSplit()),
 		lastLesson: core.NewState(sctx, &coveredLesson{}),
+		// Seeded from a scheme the page sent before this first render, for
+		// the split's reason: a dark boot draws dark from its first frame
+		// (theme.go, bootTheme).
+		dark: core.NewState(sctx, bootDark()),
 	}
 	// Same scope, for the same reason: the route handler moves frames, so
 	// it must outlive them. The layout mode likewise outlives every frame.
 	t.useDeepLinks(sctx)
 	t.useLayoutMode(sctx)
+	t.useColorScheme(sctx)
 	// withLayout is transparent in the phone layout; in the split layout it
 	// rearranges the Navigator's rendered tree into two panes (split.go).
-	return t.withLayout(core.Navigator(t.Home))
+	// withScheme is outermost so both panes, and every frame, render under
+	// the same palette; it too is transparent in the light scheme (theme.go).
+	return t.withScheme(t.withLayout(core.Navigator(t.Home)))
 }
 
 // markVisited records that a lesson has been opened. It copies the map before

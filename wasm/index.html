@@ -6,25 +6,70 @@
 <title>GrMob · Interactive Tutorial</title>
 <meta name="description" content="Learn GrMob — native mobile apps in pure Go — by tapping it: 51 live lessons running in your browser via WebAssembly.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%232b6cb0'/%3E%3Ctext x='16' y='22' font-family='monospace' font-size='15' font-weight='bold' text-anchor='middle' fill='%23ffffff'%3Egm%3C/text%3E%3C/svg%3E">
+<script>
+  // The reader's colour scheme, applied before first paint. The full logic —
+  // the header switch, following the OS, telling the app — is at the bottom
+  // of the page (see "Theme"); this only sets the attribute the stylesheet
+  // keys on, so a reader who chose Light on a dark OS (or the reverse) never
+  // sees a frame of the other palette while main.wasm downloads. "system",
+  // an unset key, or storage that throws all leave the attribute off, and the
+  // prefers-color-scheme rules decide.
+  try {
+    const c = localStorage.getItem("grmob-tutorial-theme");
+    if (c === "light" || c === "dark") document.documentElement.dataset.theme = c;
+  } catch { /* storage blocked: follow the system */ }
+</script>
 <style>
   /* The page is a frame around the app, not part of it: the app paints its
      own surface (core.DefaultTheme) inside #app, so everything here is the
      chrome a visitor sees around a phone-sized screen — header, the bezel,
      the loading state. Same token names and palette as go-learn so the two
      sites read as siblings. */
+  /* Three sources, in this order of authority:
+
+       data-theme="light" | "dark" on <html>   the reader's pick (header switch)
+       prefers-color-scheme                     the OS, when the pick is System
+       :root                                    dark, when neither says anything
+
+     The media query is guarded by :not([data-theme="dark"]) so a reader who
+     picked Dark on a light OS is not overridden by it; the light block is
+     then restated for [data-theme="light"] on a dark OS. The two light
+     blocks must stay identical.
+
+     --screen-bg / --screen-fg are the app's surface: the guide pane and the
+     phone glass, which the app's screens paint no background over. They are
+     the app theme's Background and TextPrimary — DefaultTheme's white and
+     black, or examples/tutorial/theme.go's darkTheme — and the page tells the
+     app which of the two it is showing (the "theme" host event, below), so
+     the surface and everything drawn on it switch together. */
   :root {
+    color-scheme: dark;
     --bg: #14161a; --panel: #1c1f26; --edge: #2c313c;
     --fg: #d8dde6; --dim: #8b93a3; --accent: #63b3ed;
     --err-bg: #3b1f24; --err-edge: #a33c4b; --err-fg: #ffb4bd;
     --ok: #7ec699; --bezel: #0b0c0f;
+    --screen-bg: #1c1c1e; --screen-fg: #ffffff;
+    --boot-fg: #aeaeb2; --boot-track: #38383a; --boot-spin: #409cff;
   }
   @media (prefers-color-scheme: light) {
-    :root {
+    :root:not([data-theme="dark"]) {
+      color-scheme: light;
       --bg: #f5f6f8; --panel: #ffffff; --edge: #d7dbe2;
       --fg: #22262e; --dim: #667085; --accent: #2b6cb0;
       --err-bg: #fdeef0; --err-edge: #d3546a; --err-fg: #9b1c32;
       --ok: #2f855a; --bezel: #1c1f26;
+      --screen-bg: #ffffff; --screen-fg: #000000;
+      --boot-fg: #667085; --boot-track: #d7dbe2; --boot-spin: #2b6cb0;
     }
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg: #f5f6f8; --panel: #ffffff; --edge: #d7dbe2;
+    --fg: #22262e; --dim: #667085; --accent: #2b6cb0;
+    --err-bg: #fdeef0; --err-edge: #d3546a; --err-fg: #9b1c32;
+    --ok: #2f855a; --bezel: #1c1f26;
+    --screen-bg: #ffffff; --screen-fg: #000000;
+    --boot-fg: #667085; --boot-track: #d7dbe2; --boot-spin: #2b6cb0;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
@@ -53,20 +98,20 @@
   header .copylink:hover { border-color: var(--accent); }
   header .copylink.done { color: var(--ok); border-color: var(--ok); }
 
-  /* The layout switch: two buttons in one pill, the pressed one filled.
-     aria-pressed is both the state a screen reader hears and the hook the
-     look is keyed on, so the two cannot disagree. */
-  header .layout-toggle {
+  /* The layout and theme switches: buttons in one pill, the pressed one
+     filled. aria-pressed is both the state a screen reader hears and the hook
+     the look is keyed on, so the two cannot disagree. */
+  header .pill-toggle {
     display: inline-flex; border: 1px solid var(--edge); border-radius: 6px; overflow: hidden;
   }
-  header .layout-toggle[hidden] { display: none; }
-  header .layout-toggle button {
+  header .pill-toggle[hidden] { display: none; }
+  header .pill-toggle button {
     font: inherit; font-size: .8rem; cursor: pointer; color: var(--dim);
     background: var(--bg); border: 0; padding: .2rem .6rem;
   }
-  header .layout-toggle button + button { border-left: 1px solid var(--edge); }
-  header .layout-toggle button:hover { color: var(--fg); }
-  header .layout-toggle button[aria-pressed="true"] { color: var(--panel); background: var(--accent); }
+  header .pill-toggle button + button { border-left: 1px solid var(--edge); }
+  header .pill-toggle button:hover { color: var(--fg); }
+  header .pill-toggle button[aria-pressed="true"] { color: var(--panel); background: var(--accent); }
 
   /* --- stage: the app centred in a phone bezel ------------------------------
      A phone-width, phone-height viewport is what the tutorial was designed
@@ -86,7 +131,7 @@
   }
   .screen {
     flex: 1; min-height: 0; position: relative;
-    background: #ffffff; border-radius: 24px; overflow: hidden;
+    background: var(--screen-bg); border-radius: 24px; overflow: hidden;
     /* The app's surface, so it states the app's ink as well as its paper.
        body sets `color: var(--fg)`, which in the dark palette is a near-white
        — and a core.Text that names no color of its own inherits whatever the
@@ -95,8 +140,12 @@
        at about 1.3:1 against their background: invisible, for a reader whose
        OS is in dark mode and nobody else. Pinning the ink here matches
        core.DefaultTheme's TextPrimary and makes the phone independent of the
-       page's palette, which is what a device screen actually is. */
-    color: #000000;
+       page's palette, which is what a device screen actually is.
+
+       Both are tokens now, and still independent of the page's palette: they
+       follow the *app's* theme (see :root), which the page switches in step
+       with its own. */
+    color: var(--screen-fg);
     /* Makes the screen the containing block for `position: fixed`
        descendants, which is what core.Modal's overlay chassis is. Without it
        a modal escaped the bezel and dimmed the whole site — header, page
@@ -197,7 +246,7 @@
      lesson) or the List's (the contents) direct children. */
   #tutorial-guide {
     flex: 1 1 0; min-width: 0; display: flex; flex-direction: column;
-    background: #ffffff; color: #000000; border-radius: 14px; overflow: hidden;
+    background: var(--screen-bg); color: var(--screen-fg); border-radius: 14px; overflow: hidden;
     box-shadow: 0 10px 30px rgba(0,0,0,.18), 0 0 0 1px var(--edge);
   }
   #tutorial-guide > * { flex: 1; min-height: 0; }
@@ -227,7 +276,7 @@
      a dialog from a demo dims the phone, not the guide beside it. */
   #tutorial-phone-screen {
     flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column;
-    background: #ffffff; color: #000000; border-radius: 24px; overflow: hidden;
+    background: var(--screen-bg); color: var(--screen-fg); border-radius: 24px; overflow: hidden;
     transform: translateZ(0);
   }
   #tutorial-phone-screen > * { flex: none; }
@@ -260,11 +309,11 @@
   .boot {
     position: absolute; inset: 0; display: flex; flex-direction: column;
     align-items: center; justify-content: center; gap: .8rem;
-    color: #667085; background: #ffffff; font-size: .9rem; padding: 1.5rem; text-align: center;
+    color: var(--boot-fg); background: var(--screen-bg); font-size: .9rem; padding: 1.5rem; text-align: center;
   }
   .boot .spin {
     width: 28px; height: 28px; border-radius: 50%;
-    border: 3px solid #d7dbe2; border-top-color: #2b6cb0;
+    border: 3px solid var(--boot-track); border-top-color: var(--boot-spin);
     animation: spin .9s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
@@ -282,7 +331,12 @@
   <h1><span>GrMob</span> · Interactive Tutorial</h1>
   <span class="meta">80 lessons · 8 chapters · every demo is live Go, running in your browser</span>
   <span class="spacer"></span>
-  <div id="layout-toggle" class="layout-toggle" role="group" aria-label="Layout" hidden>
+  <div id="theme-toggle" class="pill-toggle" role="group" aria-label="Colour scheme">
+    <button type="button" data-theme="system" aria-pressed="false" title="Follow your system's light or dark setting">System</button>
+    <button type="button" data-theme="light" aria-pressed="false" title="Light">Light</button>
+    <button type="button" data-theme="dark" aria-pressed="false" title="Dark">Dark</button>
+  </div>
+  <div id="layout-toggle" class="pill-toggle" role="group" aria-label="Layout" hidden>
     <button type="button" data-mode="split" aria-pressed="false" title="Read the guide beside a live phone">Guide + phone</button>
     <button type="button" data-mode="phone" aria-pressed="false" title="The tutorial as it runs on a phone">Phone only</button>
   </div>
@@ -452,6 +506,57 @@
     // is still downloading, and the app is told once it exists (boot).
     sendLayout();
 
+    // --- Theme --------------------------------------------------------------
+    // Three choices — System (the default), Light, Dark — remembered in
+    // localStorage like the layout. The page resolves System against the OS
+    // itself and follows it live, so the app only ever hears the answer:
+    // a "theme" host event whose scheme is "light" or "dark"
+    // (examples/tutorial/theme.go). The page's own chrome follows the same
+    // answer through data-theme on <html> (see :root in the stylesheet; the
+    // head script set it already, before first paint).
+    //
+    // The attribute is only set for an explicit pick. Under System it is
+    // removed and the stylesheet's prefers-color-scheme rule decides, so the
+    // CSS and the event are resolved from the same media query and cannot
+    // disagree.
+    const THEME_KEY = "grmob-tutorial-theme";
+    const osDark = window.matchMedia("(prefers-color-scheme: dark)");
+    const themeToggle = document.getElementById("theme-toggle");
+    const readTheme = () => {
+        try {
+            const c = localStorage.getItem(THEME_KEY);
+            return c === "light" || c === "dark" ? c : "system";
+        } catch { return "system"; }
+    };
+    const saveTheme = (c) => {
+        try { localStorage.setItem(THEME_KEY, c); } catch { /* not remembered */ }
+    };
+    let themeChoice = readTheme();
+    const resolvedScheme = () =>
+        themeChoice === "system" ? (osDark.matches ? "dark" : "light") : themeChoice;
+    const sendTheme = () => {
+        const root = document.documentElement;
+        if (themeChoice === "system") delete root.dataset.theme;
+        else root.dataset.theme = themeChoice;
+        for (const b of themeToggle.querySelectorAll("button")) {
+            b.setAttribute("aria-pressed", String(b.dataset.theme === themeChoice));
+        }
+        const host = window.GrMobWASM;
+        if (!host || typeof host.HostEvent !== "function") return; // before boot: boot sends it
+        host.HostEvent("theme", JSON.stringify({ scheme: resolvedScheme() }));
+    };
+    themeToggle.addEventListener("click", (ev) => {
+        const b = ev.target.closest("button[data-theme]");
+        if (!b || b.dataset.theme === themeChoice) return;
+        themeChoice = b.dataset.theme;
+        saveTheme(themeChoice);
+        sendTheme();
+    });
+    // Only matters under System, and harmless otherwise: the app ignores a
+    // scheme it already has.
+    osDark.addEventListener("change", sendTheme);
+    sendTheme();
+
     // The app's window, for hooks.UseWindow (the runtime's windowMetrics asks
     // this on every report and after every patch). Not the browser's: the
     // demos run on a phone. In the split that is the phone's content area
@@ -496,6 +601,9 @@
         // away on every wide boot). wasm/verify's browser check 17 holds this
         // order.
         sendLayout();
+        // The scheme likewise, so a dark boot's first tree is already dark
+        // (examples/tutorial/theme.go, bootTheme).
+        sendTheme();
         const patch = window.GrMobWASM.RenderInitial();
         GrMob.mount(patch);
         // The app has just mounted on the contents; a hash present at boot
