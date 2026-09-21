@@ -3512,6 +3512,121 @@ comps.CalendarHeatmap{Subject: "Workouts", Days: workouts, End: today}
   is stable (the same data always names the same date), and the sentence
   does not say that other days tied.
 
+## CandlestickChart
+
+A price per period: a wick from low to high, a body from open to close.
+
+```go
+comps.CandlestickChart{
+    Subject: "ACME",
+    Labels:  days,
+    Candles: []comps.Candle{{Open: 102, High: 108, Low: 101, Close: 107}, ...},
+}
+```
+
+- **The axis does not start at zero.** A candle states a range, not a length,
+  so the scale brackets the lows and highs, as `LineChart`'s does.
+- **`UpColor` and `DownColor` are fields** because the convention is regional:
+  the defaults are the theme's `Success` for a close at or above the open and
+  `Error` below it, and markets in China, Japan and Korea print it the other
+  way round. `ShowLegend` keys the two (`UpLabel`, `DownLabel`).
+- **A doji keeps a 1px body**, so it does not read as missing data. Exact
+  without measuring: the plot is `Height` px and the stretched canvas maps y
+  linearly.
+- Four shapes carry every candle (rising and falling wicks and bodies). A
+  candle holding a NaN keeps its slot and draws nothing.
+- One `RoleImg`, one sentence. Colour is the only drawn difference between a
+  rise and a fall, so it ends "…; low 97 in Wed, high 109 in Tue; 2 up, 1
+  down." Up to five periods are read in full.
+
+## FunnelChart
+
+How many survive each step of a process.
+
+```go
+comps.FunnelChart{
+    Subject:   "Checkout",
+    ShowRates: true,
+    Stages: []comps.FunnelStage{{Label: "Visited", Value: 1200}, {Label: "Signed up", Value: 744}, {Label: "Paid", Value: 93}},
+}
+//   Visited  ████████████████  1200
+//             ╲████████████╱         62%     a rate sits on the boundary
+// Signed up    ██████████       744          it describes
+//               ╲██████╱             13%
+//      Paid       ██             93
+```
+
+- A band is as wide at the top as its own value and at the bottom as the next
+  stage's. Names, values and rates are columns of Text cut into the same px
+  bands as the drawing; the rates column is shifted half a band.
+- **A stage larger than the one before is drawn as given, never clamped**:
+  real funnels have them (re-entry), and its rate reads over 100%. The usual
+  cause is stages out of order, so debug builds report
+  `ConcernFunnelChartStageGrows` until `AllowIncrease` says it is meant.
+- **One hue, fading**, not the categorical palette: the stages are one
+  population at successive moments. `FunnelStage.Color` or `Colors` overrides.
+- One `RoleImg`: "Checkout: Visited 1200; Signed up 744, 62% of the step
+  before; Paid 93, 13% of the step before; 8% overall."
+
+## RadarChart
+
+Several measures of one subject as a polygon on spokes.
+
+```go
+comps.RadarChart{
+    Subject: "Player",
+    Axes:    []string{"Speed", "Power", "Stamina", "Skill", "Vision"},
+    Series:  []comps.ChartSeries{{Name: "Ade", Values: []float64{8, 6, 7, 9, 5}}},
+    Max:     10,
+    Filled:  true,
+}
+```
+
+- The first axis points up and the rest run clockwise. The grid is polygons,
+  so a gridline between two spokes is as straight as the data's edge.
+- **Rim labels are ZStack layers moved by `core.Translate` in px.** A ZStack's
+  nine named places cover four axes and no more. The px are exact because
+  `Size` is: the canvas is a `Size` px square. Labels on the right are
+  start-aligned and on the left end-aligned; `LabelWidth` (56) is each one's
+  box, and the widget is wider than `Size` by two of them.
+- Ring values sit beside the upward spoke on a translucent chip, since a
+  polygon can pass through them anywhere inside the rim. `HideScale` drops
+  them.
+- `Max` is shared by every axis; 0 widens the data's high to a value `Rings`
+  divides roundly. A value over `Max` is held at the rim, a negative or NaN one
+  at the centre.
+- **Under RTL the labels mirror and the drawing does not**, which is every
+  chart's label row's disagreement with its Canvas.
+- Fewer than three axes: `ConcernRadarChartTooFewAxes`, and an empty rim.
+- One `RoleImg`: "Player: Ade, Speed 8, Power 6, …". Past eight axes, each
+  series' low and high.
+
+## Waveform
+
+A recording's loudness as mirrored bars, the played part in the accent.
+
+```go
+w := comps.Waveform{Peaks: msg.Peaks, Progress: position / duration}
+w.Bars = w.BarsFor(win.Width - insets)
+```
+
+- **The peaks are the caller's**, 0 to 1 in time order. No host decodes audio
+  for Go; a server or a build step computes them.
+- **Bars are round-capped strokes, not rectangles.** The drawing is stretched
+  to the width the layout gives, which would turn a rounded rectangle's
+  corners into ellipses; a Canvas stroke is never scaled, so a bar's
+  thickness and its round ends are exact px on every target.
+- **More peaks than `Bars`: each bar keeps its bucket's maximum**, never the
+  mean, so a one-sample transient survives. `Bars` of 0 is one per peak, up to
+  56. `BarsFor(width)` is the count that fits a width you supply, as
+  `CalendarHeatmap.WeeksFor` is for weeks. Too many bars for the real width
+  close the gaps between them, so err low.
+- **Display only.** Seeking by tap needs the tap's x, which no event carries.
+  [AudioPlayer](#audioplayer) offers it as its `Waveform` field, above the
+  seek bar, and keeps the slider.
+- One `RoleImg`: "Audio waveform, 40 percent played". `Decorative` hides it
+  beside a control that already speaks the position.
+
 ## Compass
 
 A bearing drawn as a compass rose.
@@ -3701,6 +3816,9 @@ comps.AudioPlayer{
 - A `RoleGroup` named by the title. The seek bar is "Position", with its value
   spoken as "12:04 of 41:30" once a duration is known. It states no range
   before then, because a 0-to-0 range is one Compose cannot express.
+- `Waveform []float64` draws the track's peaks above the seek bar as a
+  [Waveform](#waveform) filled to the position (and to the finger while
+  scrubbing). It is hidden from screen readers and is not a control.
 - `SkipSeconds` is 15 by default; a negative value drops the skip buttons.
   It holds hooks: render it unconditionally. `ConcernAudioPlayerNoTrack` for a
   missing URL.

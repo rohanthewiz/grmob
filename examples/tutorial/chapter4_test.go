@@ -3162,3 +3162,98 @@ func TestTreeAndWizardLesson(t *testing.T) {
 	}
 	assertNoConcerns(t)
 }
+
+// 4.36. Each demo's control reaches its chart: the convention swaps which
+// colour the candles' legend and shapes use without changing the sentence,
+// the rates switch takes the percentages off the funnel, the second profile
+// adds a legend and a clause to the radar, and Forward moves the waveform's
+// playhead. The funnel's stages only shrink, so the empty concern list at
+// the end also says the lesson's data does not trip the grows check.
+func TestFourMoreChartsLesson(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Four more charts")
+
+	summary := func(prefix string) string {
+		t.Helper()
+		n := findNode(tree(t, mgr), func(n *node) bool {
+			return n.Style != nil && strings.HasPrefix(n.Style.AccessibilityLabel, prefix)
+		})
+		if n == nil {
+			t.Fatalf("no chart announced as %q…", prefix)
+		}
+		return n.Style.AccessibilityLabel
+	}
+	// fills are the flat fill colours of the shapes under the chart
+	// announced with prefix, in drawing order.
+	fills := func(prefix string) []any {
+		t.Helper()
+		chart := findNode(tree(t, mgr), func(n *node) bool {
+			return n.Style != nil && strings.HasPrefix(n.Style.AccessibilityLabel, prefix)
+		})
+		var out []any
+		for _, s := range findNodes(chart, func(n *node) bool { return n.Type == "CanvasShape" }) {
+			if f, ok := s.Props["fill"]; ok {
+				out = append(out, f)
+			}
+		}
+		return out
+	}
+
+	candles := summary("ACME: ")
+	if !strings.HasSuffix(candles, "8 up, 2 down.") {
+		// Day 6 is a doji and counts as up: it did not close below its open.
+		t.Errorf("candles = %q, want 8 up and 2 down", candles)
+	}
+	if !strings.Contains(candles, "low 101 in 1, high 118 in 10") {
+		t.Errorf("candles = %q, want the fortnight's range", candles)
+	}
+	before := fills("ACME: ")
+	tap(t, mgr, "Red rises")
+	if summary("ACME: ") != candles {
+		t.Error("the convention is ink only; the sentence should not change")
+	}
+	// Rising bodies are drawn before falling ones, so the swap reverses the pair.
+	if after := fills("ACME: "); len(before) != 2 || len(after) != 2 ||
+		before[0] == before[1] || after[0] != before[1] || after[1] != before[0] {
+		t.Errorf("body fills before %v, after %v: want the two colours exchanged", before, after)
+	}
+
+	funnel := summary("Checkout: ")
+	if !strings.Contains(funnel, "Signed up 744, 62% of the step before") || !strings.HasSuffix(funnel, "8% overall.") {
+		t.Errorf("funnel = %q", funnel)
+	}
+	if !hasText(tree(t, mgr), "62%") {
+		t.Error("rates start shown")
+	}
+	toggleBool(t, mgr, "Switch", 0, false)
+	if hasText(tree(t, mgr), "62%") {
+		t.Error("the switch should take the rates off")
+	}
+
+	if got := summary("Player: "); strings.Contains(got, "Bo") {
+		t.Errorf("radar = %q before the rival is added", got)
+	}
+	if len(fills("Player: ")) != 2 {
+		t.Errorf("one filled profile wants a tint and its markers, got %v", fills("Player: "))
+	}
+	toggleBool(t, mgr, "Switch", 1, true)
+	if got := summary("Player: "); !strings.Contains(got, "Bo, Speed 5, Power 9") {
+		t.Errorf("radar = %q, want Bo's clause", got)
+	}
+	if !hasText(tree(t, mgr), "Bo") {
+		t.Error("two profiles want a legend")
+	}
+
+	if got := summary("Audio waveform"); got != "Audio waveform, 30 percent played" {
+		t.Errorf("waveform = %q", got)
+	}
+	tap(t, mgr, "Forward")
+	tap(t, mgr, "Forward")
+	if got := summary("Audio waveform"); got != "Audio waveform, 50 percent played" {
+		t.Errorf("waveform after two Forwards = %q", got)
+	}
+	if !hasText(tree(t, mgr), "50% played.") {
+		t.Error("the caption should follow the playhead")
+	}
+	assertNoConcerns(t)
+}

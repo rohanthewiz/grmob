@@ -5,8 +5,9 @@
 broke this round's rule twice, on purpose: K4's spike found a caret bug in
 the Android field and the look found a hole in the web runtime, and both
 were fixed where they were (see K4). **Phase 3 landed 2026-09-21** (L1, L2,
-lesson 4.35) with the rule kept: nothing under a renderer changed. Phases 4
-to 6 are not started.
+lesson 4.35) with the rule kept: nothing under a renderer changed. **Phase 4
+landed 2026-09-21** (M1–M4, lesson 4.36, which is in chapter 4 and not 6),
+rule kept again. Phases 5 and 6 are not started.
 
 Rounds one to three (`comps-low-hanging-fruit.md`, `-2.md`, `-3.md`, Tiers
 A–I) are complete. This round follows the same rule. Every item in Phases 1 to
@@ -23,7 +24,7 @@ keep the lettering (J, K, L, M), so a session doc can still say "K2".
 | 1 | The chat family | J1 `TypingIndicator`, J2 `ReactionBar`, J3 `Poll` | one, chapter 4 |
 | 2 | Inputs | K1 `NumberPad`, K2 `ColorSwatchPicker`, K3 `RangeSlider`, K4 `MaskedInput` | one, chapter 5 |
 | 3 | Structure | L1 `TreeView`, L2 `Wizard` | one, chapter 4 |
-| 4 | Charts on Canvas | M1 `CandlestickChart`, M2 `FunnelChart`, M3 `RadarChart`, M4 `Waveform` | one, chapter 6 |
+| 4 | Charts on Canvas | M1 `CandlestickChart`, M2 `FunnelChart`, M3 `RadarChart`, M4 `Waveform` | one, chapter 4 (the guess of 6 was wrong: 6 is navigation, and the chart lessons are 4.20 and 4.28) |
 | 5 | A spreadsheet-like grid | N1–N3 `EditableGrid` | one, chapter 4 |
 | 6 | Renderer-gated | `SignaturePad`, `QRScanner`, `Confetti` | none; each gets a plan of its own |
 
@@ -569,6 +570,21 @@ Ordered by how much of the scaffolding each reuses.
   it, so both are fields.
 - A doji (open equals close) draws a 1px body so that it stays visible.
 
+**What the build changed from the sketch.** Four things.
+
+- **`Subject` and `AccessibilityLabel` were added,** as every chart here
+  has. The summary ends by counting rises and falls ("2 up, 1 down"),
+  because colour is the only drawn difference between them. Up to five
+  periods are read in full; past that, first open, last close and the range.
+- **`ShowLegend`, `UpLabel`, `DownLabel`.** With the convention regional, a
+  reader cannot know which colour is up without a key. Off by default.
+- **`BodyFill`** (0.6 of the slot), beside `BarChart.BarFill`.
+- **The 1px doji is exact, not an estimate:** the plot is `Height` px and
+  `CanvasStretch` maps y linearly, so a px is `100/Height` units. Four shapes
+  carry every candle. The wick spans all four prices, so a malformed row
+  (High under the body) still draws inside the axis. A close equal to the
+  open counts as up.
+
 ### M2. `FunnelChart`
 
 - Shape: `FunnelChart{Stages []FunnelStage, Height float64, ShowRates bool,
@@ -580,6 +596,22 @@ Ordered by how much of the scaffolding each reuses.
 - **The decision:** a stage larger than the one before it is drawn as it is,
   and is not clamped. Real funnels have them (re-entry), and hiding it would
   misreport the data. Debug builds note it.
+
+**What the build changed from the sketch.** Four things.
+
+- **`AllowIncrease bool` was added.** "Debug builds note it" alone would
+  leave a caller whose data really does grow with a permanent concern.
+  `ConcernFunnelChartStageGrows` says the usual cause (stages out of order)
+  and the field says the data is meant. Widths are shares of the *largest*
+  stage, so a growing stage fills the width and the one above flares to it.
+- **The rates sit on the boundaries by arithmetic:** the rates column is the
+  value column's px bands shifted down half a band (weights ½, 1, …, 1, ½).
+  A step from a stage of zero has no rate.
+- **One hue fading, not the categorical palette** (solid to 35% alpha). The
+  stages are one population at successive moments. `Colors` and
+  `FunnelStage.Color` override.
+- `Subject`, `LabelWidth`, `Format`, `AccessibilityLabel` added. The summary
+  ends with the overall rate when there are three stages or more.
 
 ### M3. `RadarChart`
 
@@ -598,6 +630,29 @@ Ordered by how much of the scaffolding each reuses.
   legend, numbered around the rim, and the rim labels join N-007.
 - Fewer than three axes is not a radar. `ConcernRadarChartTooFewAxes`.
 
+**What the build changed from the sketch.** Five things.
+
+- **The "check first" was not needed.** The sketch reached for a percentage
+  `Left` and `Top`. `core.Translate` takes px, and the px are known: `Size`
+  is the canvas's side, so a viewBox unit is `Size/100` px. Each label is a
+  layer the ZStack centres (its default), translated from the same
+  trigonometry as the drawing. `Translate`'s doc already states what each of
+  the four targets does with px, so the fallback (numbered legend) was not
+  taken. Unseen on a native all the same: N-070.
+- **Labels are anchored by side.** Right of centre the box's start edge is
+  on the point and the text start-aligned, left of centre the reverse,
+  centred at top and bottom; so text runs away from the drawing. The stack
+  is pinned to `Size` plus a `LabelWidth` (56) either side.
+- **Ring values were added** (`HideScale` drops them), beside the upward
+  spoke. **The look found them struck through** by a profile's edge, so each
+  sits on a chip of `Background` at 85%. Nowhere inside the rim is safe from
+  every dataset.
+- **`radarStep` adds 2.5 to the nice-number ladder.** With the ring count
+  fixed, `niceNum` took a high of 9 over four rings to a rim of 20.
+- **Under RTL the labels mirror and the drawing does not** (`Translate`'s x
+  is leading-relative; no target mirrors a Canvas, read from source). It is
+  the disagreement every chart's label row already has. N-071.
+
 ### M4. `Waveform`
 
 - Shape: `Waveform{Peaks []float64, Progress float64, Height float64,
@@ -615,6 +670,25 @@ Ordered by how much of the scaffolding each reuses.
   tap's x position, which no event carries (N-007 again). So this does not
   replace `AudioPlayer`'s slider. It is offered as
   `AudioPlayer.Waveform []float64`, drawn above the seek bar.
+
+**What the build changed from the sketch.** Four things.
+
+- **A bar is a stroke, not a `Rect`.** The sketch's "rounded by the bar
+  width" cannot be a path under `CanvasStretch`: the corners would stretch
+  into ellipses. A Canvas stroke is never scaled, so each bar is a vertical
+  line `BarWidth` px thick with `CapRound`. The viewBox is `Height` units
+  tall, so the caps' overshoot comes off the reach exactly. Two shapes.
+- **`Bars int` and `BarsFor(width)`** took the place of a width field, as
+  `CalendarHeatmap.WeeksFor` did. `Gap` is only `BarsFor`'s: drawn bars are
+  spread over whatever width the layout gives. Unset, one bar per peak up to
+  56. **The look found the lesson's own estimate wrong** (win.Width − 64,
+  copied from 4.29, against a real inset of 118): 70 bars packed solid. The
+  lesson now subtracts 120 and caps the window at a phone's, because in the
+  browser's two-pane layout the window is a desktop's and the demo is not.
+- **`Decorative bool`** hides it; `AudioPlayer` sets it, since its slider
+  already speaks the position. Otherwise "Audio waveform, 40 percent played".
+- A silent bar is a dot (half a px of reach), not a zero-length subpath,
+  whose caps SVG draws and some path APIs drop.
 
 ---
 
@@ -865,6 +939,8 @@ New this round:
 - **Focus on a heading after an in-place navigation** (a focus command on
   a Text; see L2 and N-069).
 - **An emoji picker popover** (anchored popover; see J2).
+- **A Canvas that agrees with its labels under RTL** (a mirrored Canvas, or
+  a direction Go can read; see M3 and N-071).
 
 ## Suggested order
 
@@ -875,7 +951,7 @@ New this round:
 | 3 | ~~Phase 2 (K1–K3, and K4 if the spike allows) + lesson~~ | the form family's remaining gaps. Landed as lesson 5.9; device checks are N-065 and N-066 |
 | 4 | ~~L1 `TreeView`~~ | the only hierarchical widget; its role decision is worth settling early. Settled as (a), nested lists |
 | 5 | ~~L2 `Wizard` + the Phase 3 lesson~~ | builds on `StepIndicator`; lands last in its phase so N-002's footer checks have the most time. Landed as lesson 4.35; device checks are N-068, the heading focus is N-069 |
-| 6 | Phase 4 (M1–M4) + lesson | independent of everything above; can be taken in any gap |
+| 6 | ~~Phase 4 (M1–M4) + lesson~~ | independent of everything above; can be taken in any gap. Landed as lesson 4.36; device checks are N-070, RTL is N-071 |
 | 7 | Phase 5's two "check first" items | an hour; they decide the grid's structure before N1 is written |
 | 8 | Phase 5 (N1, then N2, then N3) + lesson | the largest item; it goes last so the smaller phases are not held up behind it |
 | 9 | Phase 6 | only a decision: which one, if any, gets a plan |

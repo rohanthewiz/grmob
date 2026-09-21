@@ -68,6 +68,7 @@ func chapter4() Chapter {
 			lessonMessageThread(),
 			lessonChatFamily(),
 			lessonTreeAndWizard(),
+			lessonFourMoreCharts(),
 		},
 	}
 }
@@ -5911,6 +5912,208 @@ comps.Wizard{
 					"A branch toggles, a leaf selects; TreeNode.Branch keeps an empty folder a folder.",
 					"Hold every Wizard step's state above the Wizard; Blocked disables Next, Optional turns it into Skip.",
 					"Wizard.Footer() with DetachFooter lifts the buttons into Screen.Footer.",
+				),
+			)
+		},
+	}
+}
+
+// tutorialCandles is a fortnight of prices for 4.36: mostly rising, with two
+// falling days and one doji (day 6, open = close), so every kind of candle
+// the lesson talks about is on screen.
+var tutorialCandles = []comps.Candle{
+	{Open: 102, High: 106, Low: 101, Close: 105},
+	{Open: 105, High: 109, Low: 104, Close: 108},
+	{Open: 108, High: 110, Low: 103, Close: 104},
+	{Open: 104, High: 107, Low: 102, Close: 106},
+	{Open: 106, High: 112, Low: 105, Close: 111},
+	{Open: 111, High: 114, Low: 108, Close: 111},
+	{Open: 111, High: 113, Low: 106, Close: 107},
+	{Open: 107, High: 111, Low: 106, Close: 110},
+	{Open: 110, High: 116, Low: 109, Close: 115},
+	{Open: 115, High: 118, Low: 113, Close: 117},
+}
+
+var tutorialCandleDays = []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"}
+
+// tutorialPeaks stands in for what a server would compute from a recording:
+// 120 loudness samples shaped like speech, phrases swelling and dying away
+// with pauses between them. It is a fixed function of the index and not
+// random, so the lesson draws the same strip on every run and every target,
+// which the screenshots depend on. One sample is a transient at full scale,
+// for the lesson's point about downsampling by maximum.
+func tutorialPeaks() []float64 {
+	peaks := make([]float64, 120)
+	for i := range peaks {
+		x := float64(i)
+		// A slow envelope (the phrases) times a fast ripple (the syllables).
+		phrase := math.Abs(math.Sin(x / 19))
+		ripple := 0.55 + 0.45*math.Sin(x*1.7)*math.Cos(x/3.1)
+		peaks[i] = math.Min(1, 0.08+0.8*phrase*ripple)
+	}
+	peaks[67] = 1
+	return peaks
+}
+
+// 4.36 — Phase 4 of the fourth low-hanging-fruit round: four charts over the
+// scaffolding 4.20 and 4.28 built. The lesson is organised around the one
+// question each chart had to answer that the earlier ones did not, since the
+// drawing itself is by now routine: what colour means up, what to do with
+// data that breaks the shape's promise, how to label a rim with no text in
+// the canvas, and how to keep a bar round in a stretched drawing.
+//
+// Appended at the end of the chapter for the reason 4.25 was.
+func lessonFourMoreCharts() Lesson {
+	return Lesson{
+		Title:   "Four more charts",
+		Summary: "comps.CandlestickChart, FunnelChart, RadarChart and Waveform, and the one decision each had to make.",
+		Body: func(ctx *core.Context) core.View {
+			convention := core.NewState(ctx, 0)
+			rates := core.NewState(ctx, true)
+			rival := core.NewState(ctx, false)
+			played := core.NewState(ctx, 0.3)
+			win := hooks.UseWindow(ctx)
+
+			t := ctx.Theme()
+			up, down := t.Colors.Success, t.Colors.Error
+			if convention.Get() == 1 {
+				up, down = down, up
+			}
+
+			profiles := []comps.ChartSeries{{Name: "Ade", Values: []float64{8, 6, 7, 9, 5}}}
+			if rival.Get() {
+				profiles = append(profiles, comps.ChartSeries{Name: "Bo", Values: []float64{5, 9, 6, 4, 8}})
+			}
+
+			// The strip's width is the window less everything between the
+			// window's edge and the strip: the screen's padding, the demo
+			// panel's border and padding, both sides, measured at 118 px in
+			// a 414 px window and rounded up, since a bar too few only
+			// loosens the strip while a bar too many starts closing the gaps.
+			//
+			// The window is capped at a phone's first. In the browser's
+			// two-pane layout (split.go) the demos sit on a phone-sized
+			// screen inside a desktop-sized window, and the window's real
+			// width would ask for three times the bars the strip can hold.
+			//
+			// Zero before a window is reported (a headless test, the static
+			// export) leaves Bars unset, and the widget's own cap applies.
+			strip := comps.Waveform{Peaks: tutorialPeaks(), Progress: played.Get()}
+			if win.Width > 0 {
+				strip.Bars = strip.BarsFor(math.Min(win.Width, 430) - 120)
+			}
+
+			return core.Column(
+				core.Gap(14),
+				prose("4.20 and 4.28 built the chart scaffolding: a stretched core.Canvas, a nice-number "+
+					"scale, labels placed by flex arithmetic because the canvas holds no text, and one "+
+					"spoken sentence per chart. Four more charts sit on it, and with the drawing "+
+					"routine, what is left of each is one decision."),
+				prose("A candlestick is a wick from the period's low to its high and a body from open to "+
+					"close. Its axis does not start at zero: a candle states a range, not a length, and "+
+					"prices near 100 on an axis from 0 are a row of slivers. The decision is the colour. "+
+					"Green for a rise is the Western convention; markets in China, Japan and Korea print "+
+					"red for a rise. So both are fields, defaulting to the theme's Success and Error."),
+				codeBlock(`comps.CandlestickChart{
+    Subject: "ACME",
+    Candles: candles,   // []comps.Candle{Open, High, Low, Close}
+    Labels:  days,
+    UpColor: up, DownColor: down,   // "" means Success and Error
+    ShowLegend: true,
+}`),
+				demoPanel("Swap the convention. Day 6 closed where it opened: its body is one px, not nothing.",
+					comps.SegmentedControl{
+						Labels:   []string{"Green rises", "Red rises"},
+						Selected: convention.Get(),
+						OnSelect: convention.Set,
+					},
+					comps.CandlestickChart{
+						Subject:    "ACME",
+						Candles:    tutorialCandles,
+						Labels:     tutorialCandleDays,
+						UpColor:    up,
+						DownColor:  down,
+						ShowLegend: true,
+					},
+				),
+				prose("Colour is the only drawn difference between a rise and a fall, so the spoken "+
+					"sentence ends by counting them. The one-px body is exact without measuring: the "+
+					"plot is Height px tall and the stretched canvas maps y linearly, so a px is "+
+					"100/Height viewBox units."),
+				prose("A funnel's band is as wide at the top as its own stage and at the bottom as the "+
+					"next, so the slope is the drop. The names, values and rates are columns of Text "+
+					"cut into the same px bands as the drawing; the rates column is shifted half a "+
+					"band, which puts each rate on the boundary it describes."),
+				demoPanel("The rate is each stage as a share of the one before.",
+					comps.SwitchRow{Title: "Show rates", On: rates.Get(), OnToggle: rates.Set},
+					comps.FunnelChart{
+						Subject:   "Checkout",
+						ShowRates: rates.Get(),
+						Stages: []comps.FunnelStage{
+							{Label: "Visited", Value: 1200},
+							{Label: "Signed up", Value: 744},
+							{Label: "Added to cart", Value: 310},
+							{Label: "Paid", Value: 93},
+						},
+					},
+				),
+				prose("The decision was a stage larger than the one before it. It is drawn as given and "+
+					"its rate reads over 100%, because real funnels have them (people re-entering at a "+
+					"later step) and clamping would misreport the data. But the usual cause is stages "+
+					"passed out of order, so debug builds report it until AllowIncrease says it is "+
+					"meant. The stages are one hue fading, not the categorical palette: they are one "+
+					"population at successive moments, not different kinds of thing."),
+				prose("A radar's labels sit round a rim, and a ZStack offers nine named places: enough "+
+					"for Compass's four letters, not for five axes. So each label is a layer the stack "+
+					"centres, moved by core.Translate in px from the same trigonometry as the drawing. "+
+					"The px are exact because Size is: the canvas is a Size px square, so Go knows where "+
+					"every spoke ends. Labels on the right are start-aligned and on the left "+
+					"end-aligned, so text always runs away from the drawing."),
+				demoPanel("Add a second profile. Outlines stay readable where fills would pile up.",
+					comps.SwitchRow{Title: "Compare with Bo", On: rival.Get(), OnToggle: rival.Set},
+					comps.RadarChart{
+						Subject: "Player",
+						Axes:    []string{"Speed", "Power", "Stamina", "Skill", "Vision"},
+						Series:  profiles,
+						Max:     10,
+						Filled:  !rival.Get(),
+					},
+				),
+				prose("The grid is polygons, not circles, so a gridline between two spokes is straight, "+
+					"as the data's edge is. Every axis shares Max: measures on different scales are the "+
+					"caller's to normalise. Fewer than three axes enclose nothing, and debug builds say so."),
+				prose("A waveform's peaks come from the caller. No host decodes audio for Go, so a "+
+					"server or a build step computes them and ships them beside the file. The decision "+
+					"here was how to keep a bar round in a drawing stretched to an unknown width, where "+
+					"a rounded rectangle's corners would stretch into ellipses. A Canvas stroke is "+
+					"never scaled, so each bar is a line: its thickness is the stroke's width and its "+
+					"round ends are the stroke's caps, exact px on every target."),
+				codeBlock(`w := comps.Waveform{Peaks: peaks, Progress: position / duration}
+w.Bars = w.BarsFor(stripWidth)   // how many 3px bars fit; you know your insets, Go cannot measure`),
+				demoPanel("120 peaks into however many bars fit. The spike two thirds along survives: a bucket keeps its maximum, never its mean.",
+					strip,
+					core.Row(
+						core.Padding(0),
+						core.Gap(8),
+						comps.Button{Label: "Back", Emphasis: comps.EmphasisOutlined, OnTap: func() {
+							played.Set(math.Max(0, played.Get()-0.1))
+						}},
+						comps.Button{Label: "Forward", Emphasis: comps.EmphasisOutlined, OnTap: func() {
+							played.Set(math.Min(1, played.Get()+0.1))
+						}},
+					),
+					caption(fmt.Sprintf("%.0f%% played.", played.Get()*100)),
+				),
+				prose("It is a picture, not a control. Seeking by tapping the strip needs the tap's x "+
+					"position, which no event carries to Go. So AudioPlayer takes the peaks as its "+
+					"Waveform field, draws the strip above its seek bar, hides it from screen readers "+
+					"(the slider already speaks the position) and keeps the slider for seeking."),
+				keyPoints(
+					"CandlestickChart: the axis brackets the prices; UpColor and DownColor because the convention is regional; a doji keeps a 1px body.",
+					"FunnelChart: a growing stage is drawn, never clamped, and reported in debug until AllowIncrease.",
+					"RadarChart: rim labels are centred ZStack layers moved by core.Translate in px, exact because Size is.",
+					"Waveform: bars are round-capped strokes, which never stretch; BarsFor sizes it; buckets keep their maximum.",
+					"AudioPlayer.Waveform draws the strip above the seek bar. It shows progress and does not seek.",
 				),
 			)
 		},

@@ -30,7 +30,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-070
+**Next ID:** N-072
 
 ## Open
 
@@ -323,6 +323,30 @@ with each item's `raised` traced back through all session docs.
   a different thing from input focus and may deserve its own prop. Until
   then `Wizard` announces the step through a `RoleStatus` line, which iOS
   does not speak.
+- **N-070** · raised `2026-0921-1057-comps-round-four-phase-4-charts` · value medium
+  **Phase 4's charts, unrun on a device.** Lesson 4.36 was looked at in
+  headless Chrome only (all four demos; the look found two defects, fixed).
+  - `Waveform`: that a round-capped stroke `BarWidth` px thick really is
+    unscaled under `CanvasStretch` on Compose and SwiftUI, as core.Canvas's
+    doc says of every stroke. It is the widget's whole premise, and no
+    earlier chart stroked anything wider than 2 px, where a scaled stroke
+    would not have shown. Also the half-px silent bar drawn as a dot.
+  - `RadarChart`: rim labels placed by `core.Translate` px on a centred
+    ZStack layer, on both natives (Translate's only other consumer is
+    Drawer's "-100%"); the ring-value chips over a filled polygon.
+  - `CandlestickChart`: the 1px doji body at a native's pixel density.
+  - `AudioPlayer.Waveform` with a real stream: the strip filling as the
+    status ticks, and under the finger while scrubbing.
+  - Every chart's one spoken sentence on TalkBack and VoiceOver.
+- **N-071** · raised `2026-0921-1057-comps-round-four-phase-4-charts` · value low (API decision)
+  **Under RTL a chart's labels mirror and its Canvas does not.** Read from
+  source, not seen: no target mirrors a Canvas, while Rows, `Translate`'s x
+  and start/end alignment all follow the layout direction. So `LineChart`'s
+  label row runs right to left under a line that still runs left to right,
+  and `RadarChart` puts axis k's label on axis n−k's spoke. The fix is a
+  renderer's (mirror the Canvas) or core's (a direction Go can read, so a
+  widget can mirror its own geometry). First thing to do is look at lesson
+  4.20 under an RTL locale and see which charts are actually wrong.
 
 ## Non-goals
 

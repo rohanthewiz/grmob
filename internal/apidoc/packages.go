@@ -281,9 +281,9 @@ var Packages = []Pkg{
 		}, {
 			Slug:  "charts",
 			Title: "Charts",
-			Blurb: "Sparklines, line, area, bar and scatter charts, histograms, heatmaps and calendar heatmaps, donuts and pies, and gauges, drawn on core.Canvas.",
+			Blurb: "Sparklines, line, area, bar and scatter charts, histograms, heatmaps and calendar heatmaps, donuts and pies, gauges, candlesticks, funnels, radars and audio waveforms, drawn on core.Canvas.",
 			Files: []string{"chart.go", "sparkline.go", "line_chart.go", "bar_chart.go", "histogram.go", "scatter_chart.go",
-				"heatmap.go", "donut_chart.go", "gauge.go"},
+				"heatmap.go", "donut_chart.go", "gauge.go", "candlestick_chart.go", "funnel_chart.go", "radar_chart.go", "waveform.go"},
 		}},
 	},
 	{

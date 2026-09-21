@@ -26,6 +26,7 @@ const ConcernAudioPlayerNoTrack = "audio-player-no-track"
 //	┌ Column  role=group  name=Title ──────────────────────┐
 //	│ Sunday, 14 March                                     │  Typography.Body, bold
 //	│ Pastor Ade                                           │  Artist, or the state
+//	│ ╷┃╷┃┃╷╷┃╷╷┃┃╷┃╷╷┃╷┃┃╷╷┃╷                             │  Waveform, when given peaks
 //	│ ●━━━━━━━━━━━━━━━━○──────────────────────────────     │  Slider, seeks on release
 //	│ 12:04                                        41:30   │  elapsed · total
 //	│            [ −15s ]  [ Pause ]  [ +15s ]             │
@@ -89,6 +90,15 @@ type AudioPlayer struct {
 
 	// ShowStop adds a Stop button, which unloads the track.
 	ShowStop bool
+
+	// Waveform, when set, draws the track's loudness above the seek bar as a
+	// comps.Waveform whose played part follows the position (the scrub
+	// reading too, so it fills under the finger). The peaks are the
+	// caller's, 0 to 1 in time order; see Waveform for where they come from.
+	// It is a picture and not a control (no event carries a tap's x), so the
+	// slider stays, and the strip is hidden from screen readers, to whom the
+	// slider already speaks the position.
+	Waveform []float64
 
 	// Style is applied to the outer column after its defaults.
 	Style []core.StyleProp
@@ -174,6 +184,14 @@ func (p AudioPlayer) Render(ctx *core.Context) *core.Node {
 			Max:  fmt.Sprintf("%.0f", duration),
 			Text: audioClock(position) + " of " + audioClock(duration),
 		}))
+	}
+
+	if len(p.Waveform) > 0 {
+		progress := 0.0
+		if duration > 0 {
+			progress = position / duration
+		}
+		items = append(items, Waveform{Peaks: p.Waveform, Progress: progress, Decorative: true})
 	}
 
 	items = append(items,

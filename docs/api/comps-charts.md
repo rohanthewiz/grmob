@@ -4,12 +4,13 @@
 import "github.com/rohanthewiz/grmob/comps"
 ```
 
-Sparklines, line, area, bar and scatter charts, histograms, heatmaps and calendar heatmaps, donuts and pies, and gauges, drawn on core.Canvas.
+Sparklines, line, area, bar and scatter charts, histograms, heatmaps and calendar heatmaps, donuts and pies, gauges, candlesticks, funnels, radars and audio waveforms, drawn on core.Canvas.
 
-One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/chart.go`, `comps/sparkline.go`, `comps/line_chart.go`, `comps/bar_chart.go`, `comps/histogram.go`, `comps/scatter_chart.go`, `comps/heatmap.go`, `comps/donut_chart.go`, `comps/gauge.go`.
+One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/chart.go`, `comps/sparkline.go`, `comps/line_chart.go`, `comps/bar_chart.go`, `comps/histogram.go`, `comps/scatter_chart.go`, `comps/heatmap.go`, `comps/donut_chart.go`, `comps/gauge.go`, `comps/candlestick_chart.go`, `comps/funnel_chart.go`, `comps/radar_chart.go`, `comps/waveform.go`.
 
 ## Index
 
+- [Constants](#constants) — `ConcernFunnelChartStageGrows`, `ConcernRadarChartTooFewAxes`
 - [`type AreaChart`](#type-areachart)
     - [`func (AreaChart) Render`](#func-areachart-render)
 - [`type BarChart`](#type-barchart)
@@ -17,12 +18,18 @@ One of 7 topic pages of [package comps](comps.md), which has the package overvie
 - [`type CalendarHeatmap`](#type-calendarheatmap)
     - [`func (CalendarHeatmap) Render`](#func-calendarheatmap-render)
     - [`func (CalendarHeatmap) WeeksFor`](#func-calendarheatmap-weeksfor)
+- [`type Candle`](#type-candle)
+- [`type CandlestickChart`](#type-candlestickchart)
+    - [`func (CandlestickChart) Render`](#func-candlestickchart-render)
 - [`type ChartPoint`](#type-chartpoint)
 - [`type ChartSeries`](#type-chartseries)
 - [`type ChartSlice`](#type-chartslice)
 - [`type DayValue`](#type-dayvalue)
 - [`type DonutChart`](#type-donutchart)
     - [`func (DonutChart) Render`](#func-donutchart-render)
+- [`type FunnelChart`](#type-funnelchart)
+    - [`func (FunnelChart) Render`](#func-funnelchart-render)
+- [`type FunnelStage`](#type-funnelstage)
 - [`type Gauge`](#type-gauge)
     - [`func (Gauge) Render`](#func-gauge-render)
 - [`type Heatmap`](#type-heatmap)
@@ -33,11 +40,34 @@ One of 7 topic pages of [package comps](comps.md), which has the package overvie
     - [`func (LineChart) Render`](#func-linechart-render)
 - [`type PieChart`](#type-piechart)
     - [`func (PieChart) Render`](#func-piechart-render)
+- [`type RadarChart`](#type-radarchart)
+    - [`func (RadarChart) Render`](#func-radarchart-render)
 - [`type ScatterChart`](#type-scatterchart)
     - [`func (ScatterChart) Render`](#func-scatterchart-render)
 - [`type ScatterSeries`](#type-scatterseries)
 - [`type Sparkline`](#type-sparkline)
     - [`func (Sparkline) Render`](#func-sparkline-render)
+- [`type Waveform`](#type-waveform)
+    - [`func (Waveform) BarsFor`](#func-waveform-barsfor)
+    - [`func (Waveform) Render`](#func-waveform-render)
+
+## Constants
+
+ConcernFunnelChartStageGrows is raised, in debug builds only, when a FunnelChart stage is larger than the one before it and AllowIncrease is not set. The stage is drawn as it is either way (see "A stage that grows"); the concern is that the usual cause is stages passed out of order, which draws a plausible funnel that says the wrong thing.
+
+```go
+const ConcernFunnelChartStageGrows = "funnel-chart-stage-grows"
+```
+
+<small>[comps/funnel_chart.go:15](https://github.com/rohanthewiz/grmob/blob/master/comps/funnel_chart.go#L15)</small>
+
+ConcernRadarChartTooFewAxes is raised, in debug builds only, when a RadarChart has fewer than three Axes. Two axes span a line and one a point, so there is no polygon to draw and the chart shows its empty rim.
+
+```go
+const ConcernRadarChartTooFewAxes = "radar-chart-too-few-axes"
+```
+
+<small>[comps/radar_chart.go:14](https://github.com/rohanthewiz/grmob/blob/master/comps/radar_chart.go#L14)</small>
 
 ## Types
 
@@ -269,6 +299,116 @@ It is arithmetic on a width the caller supplies, not a measurement: no host repo
 
 <small>[comps/heatmap.go:528](https://github.com/rohanthewiz/grmob/blob/master/comps/heatmap.go#L528)</small>
 
+### type Candle
+
+```go
+type Candle struct {
+	Open, High, Low, Close float64
+}
+```
+
+Candle is one period of a CandlestickChart: where the price opened and closed, and the highest and lowest it reached in between.
+
+<small>[comps/candlestick_chart.go:11](https://github.com/rohanthewiz/grmob/blob/master/comps/candlestick_chart.go#L11)</small>
+
+### type CandlestickChart
+
+```go
+type CandlestickChart struct {
+	// Candles are the periods, oldest first. A candle holding a NaN or an
+	// infinity is not drawn and keeps its slot, as a gap in the row.
+	Candles []Candle
+
+	// Labels name the periods. Up to five are drawn; all feed the summary.
+	Labels []string
+
+	// Subject says what is priced. It leads the spoken summary and is not
+	// drawn.
+	Subject string
+
+	// Height is the plot's height in px, excluding labels; 0 means 160.
+	Height float64
+
+	// UpColor and DownColor ink a period that rose (close at or above open)
+	// and one that fell; empty means the theme's Success and Error. See
+	// "Which colour is up".
+	UpColor   string
+	DownColor string
+
+	// BodyFill is the fraction of each slot the body takes; 0 means 0.6.
+	BodyFill float64
+
+	// ShowLegend draws a key for the two colours under the plot, reading
+	// UpLabel and DownLabel ("Up" and "Down" when empty).
+	ShowLegend bool
+	UpLabel    string
+	DownLabel  string
+
+	// Format writes a tick label and a spoken price.
+	Format func(float64) string
+
+	// Style is applied last, to the outer column.
+	Style []core.StyleProp
+
+	// AccessibilityLabel replaces the generated summary.
+	AccessibilityLabel string
+}
+```
+
+CandlestickChart draws a price per period as a candle: a thin wick from the period's low to its high, and a body from its open to its close, coloured by which way the period went.
+
+	comps.CandlestickChart{
+	    Subject: "ACME",
+	    Labels:  []string{"Mon", "Tue", "Wed"},
+	    Candles: []comps.Candle{{Open: 102, High: 108, Low: 101, Close: 107}, ...},
+	}
+
+#### Slots
+
+The width is BarChart's: one equal slot per period, so the label row under the plot is bandLabels unchanged and each label sits under its candle on every target without Go knowing the drawn width.
+
+	│  slot 0  │  slot 1  │  slot 2  │
+	│    │     │          │    │     │   wick: a 1 px line, low to high,
+	│   ┌┴┐    │    │     │   ┌┴┐    │         at the slot's centre
+	│   │ │    │   ┌┴┐    │   │ │    │   body: BodyFill of the slot wide,
+	│   └┬┘    │   └┬┘    │   └┬┘    │         open to close
+	│   Mon    │   Tue    │   Wed    │
+
+#### The axis does not start at zero
+
+A bar's length is its value, so BarChart's axis must include zero. A candle states a range, not a length, and a share trading between 101 and 108 drawn on an axis from 0 would be a row of identical slivers. The axis is niceScale over the lows and highs, as LineChart's is by default.
+
+#### Which colour is up
+
+A period that closed at or above its open takes UpColor, the theme's Success, and one that closed below takes DownColor, its Error. That is the Western convention. Markets in China, Japan and Korea print it the other way round (red rises), so both are fields, and a chart for those readers swaps them. ShowLegend keys the two colours for a page whose readers may be used to either.
+
+Colour is the only drawn difference between the two, so the spoken summary counts the periods that rose and fell.
+
+#### A doji
+
+A period that closed where it opened has a body of no height, which would leave a bare wick that looks like missing data. Its body is drawn one px tall. The plot is Height px tall and CanvasStretch maps the viewBox's y linearly onto it, so one px is exactly chartView/Height units: no measurement needed.
+
+#### One shape per kind, not per candle
+
+Four shapes carry every candle: the rising wicks, the falling wicks, the rising bodies, the falling bodies, each as one path of subpaths. Thirty candles cost four nodes and not sixty, and the slots stay put while the data changes, so a new period patches props and moves nothing.
+
+#### Theme roles read
+
+	Rising     Colors.Success
+	Falling    Colors.Error
+	Gridlines  Colors.BorderColor()
+	Labels     Colors.TextSecondary
+
+<small>[comps/candlestick_chart.go:78](https://github.com/rohanthewiz/grmob/blob/master/comps/candlestick_chart.go#L78)</small>
+
+#### func (CandlestickChart) Render
+
+```go
+func (c CandlestickChart) Render(ctx *core.Context) *core.Node
+```
+
+<small>[comps/candlestick_chart.go:123](https://github.com/rohanthewiz/grmob/blob/master/comps/candlestick_chart.go#L123)</small>
+
 ### type ChartPoint
 
 ```go
@@ -409,6 +549,127 @@ func (c DonutChart) Render(ctx *core.Context) *core.Node
 ```
 
 <small>[comps/donut_chart.go:108](https://github.com/rohanthewiz/grmob/blob/master/comps/donut_chart.go#L108)</small>
+
+### type FunnelChart
+
+```go
+type FunnelChart struct {
+	// Stages are the steps, first to last. A negative, NaN or infinite value
+	// draws as zero.
+	Stages []FunnelStage
+
+	// Subject says what is being funnelled. It leads the spoken summary and
+	// is not drawn.
+	Subject string
+
+	// Height is the drawing's height in px; 0 means 40 a stage (at least 80).
+	Height float64
+
+	// ShowRates adds the step conversion between each pair of stages: the
+	// later stage as a percentage of the earlier one. A step from a stage of
+	// zero has no rate and shows none.
+	ShowRates bool
+
+	// LabelWidth caps the name column, in px; 0 means 96. A longer name is
+	// cut with an ellipsis.
+	LabelWidth float64
+
+	// Colors overrides the fading single hue with a colour per stage, cycled.
+	Colors []string
+
+	// AllowIncrease says a stage larger than the one before it is intended.
+	// See "A stage that grows".
+	AllowIncrease bool
+
+	// Format writes a stage's value, drawn and spoken.
+	Format func(float64) string
+
+	// Style is applied last, to the outer row.
+	Style []core.StyleProp
+
+	// AccessibilityLabel replaces the generated summary.
+	AccessibilityLabel string
+}
+```
+
+FunnelChart draws how many of a population survive each step of a process: visitors, sign-ups, purchases. Each stage is a centred band whose width is its value, tapering into the next.
+
+	comps.FunnelChart{
+	    Subject:   "Checkout",
+	    ShowRates: true,
+	    Stages: []comps.FunnelStage{
+	        {Label: "Visited", Value: 1200},
+	        {Label: "Signed up", Value: 744},
+	        {Label: "Paid", Value: 93},
+	    },
+	}
+
+#### Layout
+
+	┌───────────┬──────────────────────┬──────┬─────┐
+	│  Visited  │ ████████████████████ │ 1200 │     │  one band per stage,
+	│           │  ╲████████████████╱  │      │ 62% │  Height/n px each
+	│ Signed up │   ██████████████     │  744 │     │
+	│           │     ╲████████╱       │      │ 13% │  a rate sits on the
+	│      Paid │       ██             │   93 │     │  line between two bands
+	└───────────┴──────────────────────┴──────┴─────┘
+	  names        core.Canvas, stretched  values  ShowRates
+
+Canvas has no text, so the names, the values and the rates are columns of Text beside it, the arrangement a horizontal BarChart uses. Every column is Height px tall and cut into px bands by the same arithmetic as the drawing, so a name is level with its band on every target. The rates column is the same bands shifted down by half of one, which puts each rate level with the boundary it describes:
+
+	values   │ band 0 │ band 1 │ band 2 │
+	rates    │ ½ │ 0→1    │ 1→2    │ ½ │
+
+#### The shape of a band
+
+A stage's band is a trapezoid: as wide at the top as its own value and at the bottom as the next stage's, so the slope between two stages is the drop between them. The last stage has no next and is a rectangle. Widths are shares of the largest stage, which is usually the first.
+
+#### One colour, fading
+
+The stages are one population at successive moments, not categories, so they are one hue: the first chart colour, stepping down in alpha from solid to funnelMinAlpha. The categorical palette would say the stages are different kinds of thing. A stage's Color, or Colors, overrides it.
+
+#### A stage that grows
+
+A stage larger than the one before it is drawn as it is: its band is wider than the one above, and the band above flares out to meet it. It is not clamped, because real funnels have them (people who re-enter at a later step, a stage counted over a longer window) and a chart that hid the growth would misreport the data. Its rate reads over 100%.
+
+Far more often it is a mistake, stages passed out of order, so debug builds report ConcernFunnelChartStageGrows. AllowIncrease says the data is meant and silences it.
+
+#### Accessibility
+
+One element: "Checkout: Visited 1200; Signed up 744, 62% of the step before; Paid 93, 13% of the step before; 8% overall."
+
+#### Theme roles read
+
+	Bands    Colors.ChartColors()[0], fading in alpha
+	Names    Colors.TextSecondary
+	Values   Colors.TextPrimary
+	Rates    Colors.TextSecondary
+
+<small>[comps/funnel_chart.go:98](https://github.com/rohanthewiz/grmob/blob/master/comps/funnel_chart.go#L98)</small>
+
+#### func (FunnelChart) Render
+
+```go
+func (c FunnelChart) Render(ctx *core.Context) *core.Node
+```
+
+<small>[comps/funnel_chart.go:146](https://github.com/rohanthewiz/grmob/blob/master/comps/funnel_chart.go#L146)</small>
+
+### type FunnelStage
+
+```go
+type FunnelStage struct {
+	Label string
+	Value float64
+
+	// Color overrides the stage's colour.
+	Color string
+}
+```
+
+FunnelStage is one step of a FunnelChart.
+
+<small>[comps/funnel_chart.go:18](https://github.com/rohanthewiz/grmob/blob/master/comps/funnel_chart.go#L18)</small>
 
 ### type Gauge
 
@@ -787,6 +1048,117 @@ func (p PieChart) Render(ctx *core.Context) *core.Node
 
 <small>[comps/donut_chart.go:102](https://github.com/rohanthewiz/grmob/blob/master/comps/donut_chart.go#L102)</small>
 
+### type RadarChart
+
+```go
+type RadarChart struct {
+	// Axes name the measures, clockwise from the top. Their count is the
+	// number of spokes; fewer than three reports ConcernRadarChartTooFewAxes.
+	Axes []string
+
+	// Series are the profiles. Value k of each belongs to axis k; a series
+	// shorter than Axes is missing the rest.
+	Series []ChartSeries
+
+	// Subject says what is being profiled. It leads the spoken summary and is
+	// not drawn.
+	Subject string
+
+	// Max is the value at the rim; 0 means the data's highest, widened to a
+	// round number. Every axis shares it, so measures on different scales
+	// must be normalised by the caller.
+	Max float64
+
+	// Rings is the number of grid polygons, the rim included; 0 means 4.
+	Rings int
+
+	// Size is the drawing's diameter in px; 0 means 180. The widget is wider
+	// and taller than that by its labels.
+	Size float64
+
+	// Filled tints each polygon with its own colour. Off, the polygons are
+	// outlines, which is clearer once three or more overlap.
+	Filled bool
+
+	// LabelWidth is the width of an axis label's box, in px; 0 means 56. A
+	// longer label is cut with an ellipsis.
+	LabelWidth float64
+
+	// HideScale drops the ring values beside the upward spoke.
+	HideScale bool
+
+	// Colors overrides the theme palette for series without their own Color.
+	Colors []string
+
+	// Format writes a ring value and a spoken value.
+	Format func(float64) string
+
+	// Style is applied last, to the outer column.
+	Style []core.StyleProp
+
+	// AccessibilityLabel replaces the generated summary.
+	AccessibilityLabel string
+}
+```
+
+RadarChart draws several measures of one subject as a polygon on spokes around a centre, one spoke per measure, so that a profile reads as a shape: a player's speed, power and stamina; a product scored on five criteria.
+
+	comps.RadarChart{
+	    Subject: "Player",
+	    Axes:    []string{"Speed", "Power", "Stamina", "Skill", "Vision"},
+	    Series:  []comps.ChartSeries{{Name: "Ade", Values: []float64{8, 6, 7, 9, 5}}},
+	    Max:     10,
+	    Filled:  true,
+	}
+
+#### Geometry
+
+Axis k of n points at −90° + k·360°/n: the first straight up, the rest clockwise, the order a clock face and DonutChart both read in. Value v sits at v/Max of the way out. The grid is Rings concentric polygons with the same corners and a spoke to each, so a gridline is a straight run between two spokes and a value on a spoke reads against it exactly (a circular grid would only agree with the polygon on the spokes themselves).
+
+#### The labels, and why they are not in the drawing
+
+core.Canvas has no text, so every label is a Text laid over the drawing in a core.ZStack. A ZStack gives nine named places (core.StackAlign), which is Compass's four letters and no more; five or seven labels round a rim need arbitrary ones. They get them from core.Translate. Each label is a box the stack centres, as it centres any layer that says nothing, moved by px offsets from the same trigonometry as the drawing:
+
+	            Speed                  box of LabelWidth × a label line,
+	        ┌─────────┐                centred, then translated so that the
+	Vision ╱     │     ╲ Power         edge nearest the rim touches the point
+	      │      ┼      │              radarLabelGap px outside the spoke's
+	      ╲     ╱ ╲     ╱              end: start-aligned on the right,
+	  Skill ───       ─── Stamina      end-aligned on the left, centred at
+	                                   the top and bottom
+
+Translate's px are exact because Size is: the drawing is a Size px square under CanvasFit, so a viewBox unit is Size/100 px on both axes and Go knows where every spoke ends without measuring anything. The stack is pinned to the drawing plus a label's width either side and a label's height above and below, so no label leaves it.
+
+The scale's values are written the same way, just beside the upward spoke at each ring, because a radar with unlabelled rings shows shape and no magnitude.
+
+#### Right to left
+
+Translate's x is leading-relative, so in a right-to-left layout the labels mirror across the vertical spoke while the drawing, like every Canvas, does not. Axis k's label then sits on axis n−k's spoke. That is the same disagreement LineChart's label row has with its line under RTL, and it wants the same answer (a Canvas that mirrors, or a direction Go can read), which is a renderer's to give.
+
+#### Values outside the scale
+
+A value above Max is drawn at Max and a negative one at the centre: the rim is the chart's edge and a polygon crossing it would run under the labels. The spoken summary reads the value as given. NaN is a missing value; it draws at the centre and is left out of the summary.
+
+#### Accessibility
+
+One element. Up to radarSummaryLimit axes are read in full, per series ("Ade, Speed 8, Power 6, …"); past that, each series' lowest and highest.
+
+#### Theme roles read
+
+	Series   Colors.ChartColors(), a fill of the same hue at radarFillAlpha
+	Grid     Colors.BorderColor()
+	Labels   Colors.TextSecondary
+
+<small>[comps/radar_chart.go:90](https://github.com/rohanthewiz/grmob/blob/master/comps/radar_chart.go#L90)</small>
+
+#### func (RadarChart) Render
+
+```go
+func (c RadarChart) Render(ctx *core.Context) *core.Node
+```
+
+<small>[comps/radar_chart.go:160](https://github.com/rohanthewiz/grmob/blob/master/comps/radar_chart.go#L160)</small>
+
 ### type ScatterChart
 
 ```go
@@ -939,4 +1311,109 @@ func (s Sparkline) Render(ctx *core.Context) *core.Node
 ```
 
 <small>[comps/sparkline.go:58](https://github.com/rohanthewiz/grmob/blob/master/comps/sparkline.go#L58)</small>
+
+### type Waveform
+
+```go
+type Waveform struct {
+	// Peaks are the loudness samples in time order, 0 (silence) to 1 (full
+	// scale). Values outside that are clamped; NaN reads as silence.
+	Peaks []float64
+
+	// Progress is how much has played, 0 to 1. A bar is played once its
+	// centre is behind the playhead.
+	Progress float64
+
+	// Bars is how many bars to draw; 0 means one per peak, up to 56. See
+	// "More peaks than bars" and BarsFor.
+	Bars int
+
+	// Height is the strip's height in px; 0 means 48.
+	Height float64
+
+	// BarWidth is each bar's thickness in px (0 means 3), and Gap the space
+	// BarsFor leaves between bars (0 means 2). Gap is only BarsFor's: drawn
+	// bars are spread evenly over the width the layout gives.
+	BarWidth float64
+	Gap      float64
+
+	// PlayedColor and RestColor ink the bars behind and ahead of the
+	// playhead; empty means the theme's Primary and its control border.
+	PlayedColor string
+	RestColor   string
+
+	// Decorative hides the strip from screen readers, for a waveform beside
+	// a control that already speaks the position.
+	Decorative bool
+
+	// Style is applied last, to the canvas.
+	Style []core.StyleProp
+
+	// AccessibilityLabel replaces the generated sentence.
+	AccessibilityLabel string
+}
+```
+
+Waveform draws a recording's loudness over time as a row of bars mirrored about a centre line, with the part already played in the accent colour: the strip a voice message or a podcast player shows.
+
+The peaks come from the caller. No host decodes audio for Go, so a server or a build step computes them (one number per slice of the recording, its loudest sample, scaled to 0–1) and ships them beside the file. Without peaks there is no waveform to draw, and this widget does not invent one.
+
+	comps.Waveform{Peaks: msg.Peaks, Progress: position / duration}
+
+#### Bars are strokes, and that is what keeps them round
+
+	    ╷   ┃ ╷                 one vertical line per bar, stroked BarWidth
+	  ╷ ┃ ╷ ┃ ┃ ╷   ╷           px wide with round caps, mirrored about the
+	──┃─┃─┃─┃─┃─┃─╷─┃─╷──       centre: from mid − peak·reach to mid + peak·reach
+	  ╵ ┃ ╵ ┃ ┃ ╵   ╵
+	    ╵   ┃ ╵
+	 ◀─ played ─▶◀─ rest ─▶
+
+The drawing is stretched across whatever width the layout gives (core.CanvasStretch), and a rounded rectangle drawn as a path would stretch with it, its corners turning to ellipses. A Canvas stroke is never scaled: its width is layout px on every target (see core.Canvas). So a bar is a line, its thickness is the stroke's, and its rounded ends are the stroke's round caps, all exactly BarWidth px however wide the strip is drawn. Only the bars' spacing stretches, which is the part that should.
+
+The viewBox is Height units tall and the canvas Height px, so y is one to one and the caps' half a BarWidth of overshoot can be taken off the line's reach exactly: no bar is cut by the canvas's edge.
+
+Two shapes carry everything, the played bars and the rest, each one path. Progress moving only shifts subpaths from one to the other.
+
+#### More peaks than bars
+
+Bars says how many bars to draw. With more peaks than that, each bar takes the maximum of its bucket, never the mean: a clap in a quiet passage is one sample wide, and averaging would erase the one feature a listener scans the strip for. With fewer peaks than Bars, there is a bar per peak.
+
+Go cannot measure the strip, so how many bars suit it is the caller's arithmetic, from the width it knows (hooks.UseWindow less its own insets). BarsFor does it, as CalendarHeatmap.WeeksFor does for weeks:
+
+	w := comps.Waveform{Peaks: peaks, Progress: p}
+	w.Bars = w.BarsFor(win.Width - 32)
+
+#### Display only
+
+Tapping a waveform to seek needs the tap's x position, which no event carries to Go. So this is a picture of progress and not a control, and AudioPlayer, which offers it through its Waveform field, keeps its slider for seeking.
+
+#### Accessibility
+
+One image: "Audio waveform, 40 percent played". AccessibilityLabel replaces the sentence. Beside a seek bar that already speaks the position, as in AudioPlayer, it is decoration, and Decorative hides it.
+
+#### Theme roles read
+
+	Played   Colors.Primary
+	Rest     Colors.ControlBorderColor()
+
+<small>[comps/waveform.go:76](https://github.com/rohanthewiz/grmob/blob/master/comps/waveform.go#L76)</small>
+
+#### func (Waveform) BarsFor
+
+```go
+func (w Waveform) BarsFor(width float64) int
+```
+
+BarsFor is how many bars fit width px at BarWidth and Gap, at least 1. n bars take n·BarWidth + (n−1)·Gap.
+
+<small>[comps/waveform.go:134](https://github.com/rohanthewiz/grmob/blob/master/comps/waveform.go#L134)</small>
+
+#### func (Waveform) Render
+
+```go
+func (w Waveform) Render(ctx *core.Context) *core.Node
+```
+
+<small>[comps/waveform.go:142](https://github.com/rohanthewiz/grmob/blob/master/comps/waveform.go#L142)</small>
 

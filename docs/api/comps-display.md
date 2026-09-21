@@ -513,6 +513,15 @@ type AudioPlayer struct {
 	// ShowStop adds a Stop button, which unloads the track.
 	ShowStop bool
 
+	// Waveform, when set, draws the track's loudness above the seek bar as a
+	// comps.Waveform whose played part follows the position (the scrub
+	// reading too, so it fills under the finger). The peaks are the
+	// caller's, 0 to 1 in time order; see Waveform for where they come from.
+	// It is a picture and not a control (no event carries a tap's x), so the
+	// slider stays, and the strip is hidden from screen readers, to whom the
+	// slider already speaks the position.
+	Waveform []float64
+
 	// Style is applied to the outer column after its defaults.
 	Style []core.StyleProp
 }
@@ -528,6 +537,7 @@ AudioPlayer is the transport for one track on the app's one player: the title, a
 	┌ Column  role=group  name=Title ──────────────────────┐
 	│ Sunday, 14 March                                     │  Typography.Body, bold
 	│ Pastor Ade                                           │  Artist, or the state
+	│ ╷┃╷┃┃╷╷┃╷╷┃┃╷┃╷╷┃╷┃┃╷╷┃╷                             │  Waveform, when given peaks
 	│ ●━━━━━━━━━━━━━━━━○──────────────────────────────     │  Slider, seeks on release
 	│ 12:04                                        41:30   │  elapsed · total
 	│            [ −15s ]  [ Pause ]  [ +15s ]             │
@@ -556,7 +566,7 @@ The column is a RoleGroup named by the track's title, so a reader entering it he
 	Controls     comps.Button: Play filled, the rest outlined
 	Gaps         Spacing.SM
 
-<small>[comps/audio_player.go:76](https://github.com/rohanthewiz/grmob/blob/master/comps/audio_player.go#L76)</small>
+<small>[comps/audio_player.go:77](https://github.com/rohanthewiz/grmob/blob/master/comps/audio_player.go#L77)</small>
 
 #### func (AudioPlayer) Render
 
@@ -566,7 +576,7 @@ func (p AudioPlayer) Render(ctx *core.Context) *core.Node
 
 Render draws the transport. It takes two hook slots — the audio status subscription and the scrub reading — so render it unconditionally.
 
-<small>[comps/audio_player.go:99](https://github.com/rohanthewiz/grmob/blob/master/comps/audio_player.go#L99)</small>
+<small>[comps/audio_player.go:109](https://github.com/rohanthewiz/grmob/blob/master/comps/audio_player.go#L109)</small>
 
 ### type Avatar
 
