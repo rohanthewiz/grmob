@@ -2972,3 +2972,78 @@ func TestMessageThreadLessonLoadsOlderPages(t *testing.T) {
 	}
 	assertNoConcerns(t)
 }
+
+// 4.34. The indicator stays in the tree when switched off; a reaction tap
+// toggles the reader's own and an unheld emoji is not drawn; a vote turns the
+// poll's buttons into results that total 100, and the closed poll shows the
+// 34 / 33 / 33 split the largest-remainder rule exists for.
+func TestChatFamilyLesson(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Typing, reactions and polls")
+
+	labelled := func(name string) *node {
+		return findNode(tree(t, mgr), func(n *node) bool {
+			return n.Style != nil && n.Style.AccessibilityLabel == name
+		})
+	}
+	button := func(label string) *node {
+		return findNode(tree(t, mgr), func(n *node) bool { return n.Type == "Button" && n.Props["label"] == label })
+	}
+
+	// The indicator: a status, visible, and still present once switched off.
+	status := findNode(tree(t, mgr), func(n *node) bool {
+		return n.Style != nil && n.Style.AccessibilityRole == "status" && n.Style.AccessibilityLabel == "Ana is typing"
+	})
+	if status == nil || status.Style.Display == "none" {
+		t.Fatal("the typing indicator should open visible")
+	}
+	box := findNode(tree(t, mgr), func(n *node) bool {
+		return n.Type == "Checkbox" && n.Style != nil && n.Style.AccessibilityLabel == "Ana is typing"
+	})
+	if box == nil {
+		t.Fatal("the typing switch is missing")
+	}
+	mgr.DispatchBoolCallback(box.Props["onToggle"].(string), false)
+	status = findNode(tree(t, mgr), func(n *node) bool {
+		return n.Style != nil && n.Style.AccessibilityRole == "status" && n.Style.AccessibilityLabel == "Ana is typing"
+	})
+	if status == nil || status.Style.Display != "none" {
+		t.Error("switched off, the indicator is display none and still in the tree: it owns hooks")
+	}
+
+	// Reactions: the unheld 🤔 is not drawn; tapping 🎉 makes it the reader's.
+	if button("🤔 0") != nil {
+		t.Error("a reaction with no count is not drawn")
+	}
+	tap(t, mgr, "🎉 1")
+	if labelled("party popper, 2 reactions") == nil {
+		t.Error("tapping 🎉 should add the reader's reaction")
+	}
+	tap(t, mgr, "👍 3")
+	if labelled("thumbs up, 2 reactions") == nil {
+		t.Error("tapping the reader's own 👍 should take it back off")
+	}
+
+	// The closed poll is already showing thirds that total 100.
+	for _, want := range []string{
+		"Tabs, 34 percent, 1 vote", "Spaces, 33 percent, 1 vote", "Whatever gofmt says, 33 percent, 1 vote",
+	} {
+		if labelled(want) == nil {
+			t.Errorf("the closed poll should read %q", want)
+		}
+	}
+
+	// The open poll: vote, read the results, reset.
+	tap(t, mgr, "Spaces")
+	if labelled("Spaces, 50 percent, 2 votes, your choice") == nil || labelled("Tabs, 25 percent, 1 vote") == nil {
+		t.Error("a vote for Spaces should show 50 / 25 / 25 with the reader's choice marked")
+	}
+	if button("Spaces") != nil {
+		t.Error("the option buttons should be gone once the reader has voted")
+	}
+	tap(t, mgr, "Reset the poll")
+	if button("Spaces") == nil {
+		t.Error("reset should ask again")
+	}
+	assertNoConcerns(t)
+}

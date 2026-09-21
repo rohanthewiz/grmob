@@ -1,6 +1,7 @@
 # Low-hanging fruit for `comps`, round four
 
-**Status:** drafted 2026-09-21. Nothing in this file is started.
+**Status:** drafted 2026-09-21. **Phase 1 landed 2026-09-21** (J1–J3, lesson 4.34,
+`examples/chat`). Phases 2 to 6 are not started.
 
 Rounds one to three (`comps-low-hanging-fruit.md`, `-2.md`, `-3.md`, Tiers
 A–I) are complete. This round follows the same rule. Every item in Phases 1 to
@@ -95,6 +96,23 @@ lesson is written.
 
 **Concern:** none. Every field has a default.
 
+**What the build changed from the sketch.** Three things.
+
+- **The dots fade by background colour, not opacity.** `core.Style` has no
+  opacity, and adding one is renderer work on three targets. Background
+  colour is what `core.Transition` animates everywhere, so the phase picks
+  the dark dot (`TextPrimary`) and the others rest at `ControlBorderColor()`.
+  The sketch's "1.0 to 0.4" swing has no equivalent; the Reduce Motion claim
+  now rests on the dot being 6pt, and is N-062.
+- **Decision (b) as leaned, with `Display none` for hidden**, not a
+  zero-height box. That is `Spinner.Hidden`'s answer, and it keeps the
+  status region unannounced. `Visible`'s zero value is hidden, on purpose:
+  the visible state costs render passes, so forgetting the field should
+  draw nothing.
+- **The bubble carries `MessageBubble`'s tail and radius**, which landed
+  after the sketch (per-corner radius is no longer blocked), so the
+  indicator is replaced by a bubble without a jump.
+
 ### J2. `ReactionBar`
 
 Emoji chips with counts, under a message. A tap toggles the reader's own
@@ -122,6 +140,18 @@ its own `+` chip in `ChipStrip.Children` and open a `Dialog`.
 **Concern:** `ConcernReactionBarInert` for reactions with no `OnToggle` and
 not `Disabled`.
 
+**What the build changed from the sketch.** Three things.
+
+- **"including yours" is not in the spoken name.** `Chip` already sends
+  `Mine` as `core.AccessibilitySelected`, and its doc argues at length that
+  a state belongs in the state channel and not in a name. Saying both would
+  announce it twice.
+- **`Trailing core.View` was added** as the slot for the caller's "+" chip.
+  The sketch pointed at `ChipStrip.Children`, which the bar does not expose.
+- **`GroupLabel` was added** ("Reactions"), so the strip is a named
+  `RoleGroup` and can be localized. An empty bar is `Display none`, and the
+  chips are `Keyed` by emoji.
+
 ### J3. `Poll`
 
 A question, and options that turn into labelled result bars after a vote.
@@ -144,6 +174,22 @@ and the percentage column reads "0%".
 reason.
 
 **Concern:** `ConcernPollInert` for `Voted < 0` with no `OnVote`.
+
+**What the build changed from the sketch.** Four things.
+
+- **`Voted int` became `PollOption.Mine bool`.** An `int` defaults to 0, so a
+  `Poll` written without the field would have opened already voted for its
+  first option. A bool per option has the right zero and is `Reaction.Mine`'s
+  shape. `ConcernPollInert` is now "asking, no `OnVote`, and neither
+  `ShowResults` nor `Disabled`".
+- **Outlined buttons, not ghost.** A column of ghost labels under a question
+  reads as text. `Stepper` had recorded the same finding.
+- **`Disabled` and `ChoiceLabel` were added**, and the total ("8 votes") is
+  drawn under the results.
+- **The headless render found two defects.** The results sat indented from
+  the question (the theme's Column inset), and the question was in
+  Subtitle's grey and read as disabled. Both are fixed and pinned in
+  `TestPollResultsAreOneStopPerOption`.
 
 ---
 
@@ -674,7 +720,7 @@ New this round:
 
 | Order | Item | Why |
 |---|---|---|
-| 1 | Phase 1 (J1–J3) + lesson | smallest; `examples/chat` is waiting for J1 and J2 |
+| 1 | ~~Phase 1 (J1–J3) + lesson~~ | smallest; `examples/chat` is waiting for J1 and J2. Landed as lesson 4.34; device checks are N-062 |
 | 2 | K4's spike | an hour, and it decides whether K4 stays in Phase 2 |
 | 3 | Phase 2 (K1–K3, and K4 if the spike allows) + lesson | the form family's remaining gaps |
 | 4 | L1 `TreeView` | the only hierarchical widget; its role decision is worth settling early |

@@ -3490,6 +3490,93 @@ comps.MessageThread{
 - Under it are two `core.List` props any list can use: `core.StartAtEnd()`
   and `core.OnStartReached(fn)`. See their doc for what each host does.
 
+## TypingIndicator
+
+Three dots in a theirs-coloured bubble, darkening one after another while
+somebody is writing.
+
+```go
+comps.TypingIndicator{Visible: anaTyping, Who: "Ana"}
+```
+
+- **Always render it, and switch it with `Visible`.** The widget owns two hook
+  slots (which dot is dark, and the interval that moves it), so a `core.If`
+  around it is a conditional hook. Hidden is `Display none` with the interval
+  paused (`hooks.UseIntervalWhile`), which costs no render passes. The zero
+  value is hidden.
+- The dots fade by **background colour**, not opacity: `core.Style` has no
+  opacity, and colour is what `core.Transition` animates on every target. Go
+  steps the phase every 400ms and the platform draws the frames.
+- One `RoleStatus` stop named by `Label`: `Who + " is typing"` by default, or
+  "Typing". Set `Label` to localize, or for a group ("Ana and Rui are
+  typing"). `Caption` draws the same text beside the dots.
+- Put it after the transcript, not inside the `RoleLog`: nested, the dots
+  would be recorded as a message.
+- Under Reduce Motion each host drops the transition, and the dots change
+  colour without the ease. Not yet looked at on a device with the setting on.
+
+## ReactionBar
+
+Emoji chips with counts under a message. A tap toggles the reader's own.
+
+```go
+comps.ReactionBar{
+    Reactions: []comps.Reaction{
+        {Emoji: "👍", Count: 3, Mine: true, Label: "thumbs up"},
+        {Emoji: "🎉", Count: 1, Label: "party popper"},
+    },
+    OnToggle: func(emoji string) { toggleReaction(msgID, emoji) },
+}
+```
+
+- **The caller holds the counts.** A reaction is server state, so the widget
+  is stateless, like `Stepper`: it draws `Reactions` and reports the tapped
+  emoji. Whether the tap adds or removes is the caller's to decide.
+- It is a `ChipStrip` of `Chip`s: `Mine` is the selected chip, and the look
+  and the selected-state announcement are `Chip`'s.
+- `Reaction.Label` is the emoji's spoken name, because no platform names an
+  emoji reliably: "thumbs up, 3 reactions". The reader's own is the chip's
+  selected state, not words in the name.
+- A `Count` of zero is not drawn, so a caller can pass its whole emoji table.
+  Zero with `Mine` set is a caller's bug and is drawn, so it gets seen. A bar
+  with nothing to draw is `Display none`.
+- `Trailing` is the slot for a caller's own "+" chip. There is no emoji
+  picker: that is an anchored popover, which is blocked on a renderer.
+- `Disabled` draws the chips inert. No `OnToggle` and not `Disabled` raises
+  `ConcernReactionBarInert` in debug builds.
+
+## Poll
+
+A question whose options turn into labelled result bars after a vote.
+
+```go
+comps.Poll{
+    Question: "Tabs or spaces?",
+    Options: []comps.PollOption{
+        {Label: "Tabs", Votes: 5, Mine: true},
+        {Label: "Spaces", Votes: 3},
+    },
+    OnVote: func(i int) { castVote(pollID, i) },
+}
+```
+
+- **Asking** until an option is `Mine`: full-width outlined buttons, and
+  `OnVote` reports the tapped index. The caller records the vote and passes
+  the option back with `Mine` set, for `ReactionBar`'s reason. The vote is a
+  bool per option and not an index on the poll, because an `int` field would
+  default to 0 and open the poll already voted for its first option.
+- **Showing results** after that, or with `ShowResults` (a closed poll): each
+  option is its label, its share and a `ProgressBar`, with the reader's choice
+  checked and in the on-light `Primary`, and the total underneath.
+- The shares **always total 100**, by the largest-remainder method: three
+  options at one vote each read 34 / 33 / 33, not 33 / 33 / 33. With no votes
+  every share is 0%. The bars use the true fractions.
+- Each result is one spoken stop: "Tabs, 63 percent, 5 votes, your choice".
+  `ChoiceLabel` localizes the last part.
+- Options keep the caller's order; they are not sorted by share.
+- Asking with no `OnVote`, and neither `ShowResults` nor `Disabled`, raises
+  `ConcernPollInert` in debug builds.
+
 ## ExpandableText
 
 Body text capped at a few lines, with a Read more that opens it in place.

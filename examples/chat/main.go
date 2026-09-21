@@ -10,8 +10,14 @@
 //     used to build it by hand with core.UseStyle and literal colours; the
 //     widget reads the theme instead. core.UseStyle is still taught where it
 //     belongs, in docs/concepts/styling-and-theming.md and the tutorial.
-//   - a single mutation choke point — every write to the thread goes through
-//     `send`, so there is exactly one place where the message list changes.
+//   - comps.ReactionBar and comps.TypingIndicator — the two presence widgets
+//     of the chat family. Both show the same contract from opposite sides: the
+//     bar holds no counts (they are server state, so the thread does), and
+//     the indicator holds hooks (so it is always rendered, and Visible is a
+//     field rather than a core.If around it).
+//   - a mutation choke point per kind of write — every new message goes
+//     through `send` and every reaction through `react`, so there is exactly
+//     one place where each changes the thread.
 //
 // It is stateful, so like examples/runtime it drives two render passes by hand
 // and prints the HTML before and after a simulated send. The feed/social UI
@@ -36,6 +42,11 @@ type Message struct {
 	ID   string
 	From string
 	Text string
+
+	// Reactions is the tally under the message, in first-used order. It lives
+	// on the message because it is the conversation's data, not the widget's:
+	// comps.ReactionBar draws what it is handed and reports taps.
+	Reactions []comps.Reaction
 }
 
 func (m Message) Mine() bool { return m.From == "" }
@@ -44,16 +55,22 @@ func seedThread() []Message {
 	return []Message{
 		{ID: "1", From: "Ana", Text: "Já viste a nova versão do GrMob?"},
 		{ID: "2", From: "", Text: "Ainda não — o que mudou?"},
-		{ID: "3", From: "Ana", Text: "Componentes, cache e modo de depuração 🎉"},
+		{ID: "3", From: "Ana", Text: "Componentes, cache e modo de depuração 🎉",
+			// Label is the emoji's spoken name, in this screen's language: no
+			// platform names an emoji reliably, so the app that chose it does.
+			Reactions: []comps.Reaction{{Emoji: "🎉", Count: 1, Label: "festa"}}},
 	}
 }
 
 func ChatApp(ctx *core.Context) core.View {
-	// Both hooks are allocated unconditionally, at the top, in a fixed order:
+	// Every hook is allocated unconditionally, at the top, in a fixed order:
 	// slots are positional, so a hook behind an `if` would shift every slot
 	// after it the moment the condition flips.
 	thread := core.NewState(ctx, seedThread())
 	draft := core.NewState(ctx, "")
+	// Whether Ana is writing. A real app sets this from a presence event on
+	// its socket; here `send` raises it, as a reply would follow a message.
+	anaTyping := core.NewState(ctx, false)
 
 	// send is the only writer of the thread. Routing every mutation through one
 	// helper is what keeps a growing app's state honest: the trimming rule, the
@@ -75,6 +92,42 @@ func ChatApp(ctx *core.Context) core.View {
 		next = append(next, Message{ID: strconv.Itoa(len(msgs) + 1), Text: text})
 		thread.Set(next)
 		draft.Set("")
+		anaTyping.Set(true)
+	}
+
+	// react is the only writer of a reaction, for the reason send is the only
+	// writer of a message. It toggles the reader's own reaction on one
+	// message: Mine flips and Count follows it. comps.ReactionBar asked for
+	// this to live here — a count bumped inside the widget would be a second
+	// source of truth beside the server's.
+	//
+	// Copy-on-write twice over: the thread slice, and the one message's
+	// Reactions slice. Copying only the outer slice would leave the new
+	// thread sharing the old Reactions backing array, which is the same
+	// in-place mutation `send` avoids, one level down.
+	react := func(msgID, emoji string) {
+		msgs := thread.Get()
+		next := make([]Message, len(msgs))
+		copy(next, msgs)
+		for i := range next {
+			if next[i].ID != msgID {
+				continue
+			}
+			rs := append([]comps.Reaction(nil), next[i].Reactions...)
+			for j := range rs {
+				if rs[j].Emoji != emoji {
+					continue
+				}
+				if rs[j].Mine {
+					rs[j].Count--
+				} else {
+					rs[j].Count++
+				}
+				rs[j].Mine = !rs[j].Mine
+			}
+			next[i].Reactions = rs
+		}
+		thread.Set(next)
 	}
 
 	// Screen.Scroll stays false: the scrolling region here is MessageList's
@@ -91,7 +144,7 @@ func ChatApp(ctx *core.Context) core.View {
 		KeyboardAware: true,
 		Children: []core.View{
 			ThreadHeader("Ana"),
-			MessageList(thread.Get()),
+			MessageList(thread.Get(), anaTyping.Get(), react),
 			Composer(draft, send),
 		},
 	}
@@ -124,10 +177,30 @@ func ThreadHeader(who string) core.View {
 // list: the spacing belongs to a message bubble wherever one is placed, not
 // to this particular container. Switching to Gap is a legitimate cleanup, not
 // a fix.
-func MessageList(msgs []Message) core.View {
-	return core.Scroll(
+//
+// The scroller's content is two things, so there is a Column around them:
+//
+//	Scroll
+//	└─ Column  padding
+//	   ├─ Column  role=log      the transcript: For(msgs) → Keyed rows
+//	   └─ TypingIndicator       role=status, always rendered
+//
+// The indicator sits after the log and not inside it. Both are live regions,
+// and they say different things: the log announces a message that arrived and
+// keeps it, the status announces that one may be coming and then withdraws.
+// Nested, the dots would be recorded in the transcript as if they were a
+// message.
+func MessageList(msgs []Message, typing bool, react func(msgID, emoji string)) core.View {
+	return core.Scroll(core.Column(
+		core.Padding(12),
+		// The theme's Column gap would add to the bubbles' own bottom
+		// margins; the spacing is the rows' (see above).
+		core.Gap(0),
 		core.Column(
-			core.Padding(12),
+			// The inset moved to the outer column with the indicator, which
+			// has to share it.
+			core.Padding(0),
+			core.Gap(0),
 			// A transcript is ARIA's `log`, and this is the widget that asked
 			// for the role: content that is appended to and whose order is
 			// meaningful, as against `status`, which is one advisory that is
@@ -147,9 +220,44 @@ func MessageList(msgs []Message) core.View {
 			// the other two live regions have. See core/role.go.
 			core.AccessibilityRole(core.RoleLog),
 			core.For(msgs, func(m Message, _ int) core.View {
-				return core.Keyed("msg-"+m.ID, MessageBubble(m))
+				return core.Keyed("msg-"+m.ID, MessageRow(m, react))
 			}),
 		),
+		// Always rendered, never behind a core.If: the widget owns two hook
+		// slots (its phase and its interval), so leaving it out on the passes
+		// where nobody types would shift every hook after it. Visible is the
+		// switch, and hidden costs no render passes.
+		comps.TypingIndicator{Visible: typing, Who: "Ana", Label: "Ana está a escrever"},
+	))
+}
+
+// MessageRow is one message as the transcript lays it out: the bubble, and
+// under it the reactions, held to the bubble's own side.
+//
+// The bar is rendered for every message, including the ones with no
+// reactions: an empty comps.ReactionBar is Display none, so the row is the
+// same shape either way and a first reaction arriving is a style patch plus
+// one inserted chip, not a restructured row.
+func MessageRow(m Message, react func(msgID, emoji string)) core.View {
+	side := core.JustifyStart
+	if m.Mine() {
+		side = core.JustifyEnd
+	}
+	return core.Column(
+		core.Padding(0),
+		core.Gap(0),
+		MessageBubble(m),
+		comps.ReactionBar{
+			Reactions:  m.Reactions,
+			GroupLabel: "Reações",
+			OnToggle:   func(emoji string) { react(m.ID, emoji) },
+			Style: []core.StyleProp{
+				core.Justify(side),
+				// The same bottom gap the bubble states, so a message with
+				// reactions is as far from the next as one without.
+				core.MarginBottom(8),
+			},
+		},
 	)
 }
 
@@ -220,6 +328,25 @@ func renderPass(ctx *core.Context) *core.Node {
 	return node
 }
 
+// buttonCallback returns the onClick callback ID of the first Button labelled
+// label, or "" when there is none. It is how this file and its tests address a
+// control without hard-coding where in the render order it falls.
+func buttonCallback(n *core.Node, label string) string {
+	if n == nil {
+		return ""
+	}
+	if n.Type == "Button" && n.Props["label"] == label {
+		id, _ := n.Props["onClick"].(string)
+		return id
+	}
+	for _, c := range n.Children {
+		if id := buttonCallback(c, label); id != "" {
+			return id
+		}
+	}
+	return ""
+}
+
 func main() {
 	ctx := core.NewContext().WithTheme(core.DefaultTheme)
 
@@ -230,10 +357,12 @@ func main() {
 	// Simulate the native side sending two events for one message: the text
 	// change from the field, then the tap on "Enviar". The callback IDs are the
 	// ones the pass above registered — "txt_cb_0" is the composer's onChange
-	// (the only text callback in the tree) and "cb_1" is the send button
-	// (onSubmit takes cb_0, registered first).
+	// (the only text callback in the tree). The send button's is read off the
+	// tree, as a native shell reads it: IDs are issued in render order, so it
+	// moves whenever a tappable thing is drawn before it, and the reaction
+	// chips in the transcript are exactly that.
 	ctx.ReceiveEventPayload(map[string]any{"callback": "txt_cb_0", "value": "Vou experimentar hoje!"})
-	ctx.ReceiveEventPayload(map[string]any{"callback": "cb_1"})
+	ctx.ReceiveEventPayload(map[string]any{"callback": buttonCallback(tree, "Enviar")})
 
 	tree = renderPass(ctx)
 	fmt.Println("\nApós enviar:")

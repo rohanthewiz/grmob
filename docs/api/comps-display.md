@@ -4,13 +4,13 @@
 import "github.com/rohanthewiz/grmob/comps"
 ```
 
-Avatars and avatar stacks, stat tiles, the compass, clocks, countdowns and alarms, an audio player, message bubbles, expandable text, QR codes, map panels and static maps.
+Avatars and avatar stacks, stat tiles, the compass, clocks, countdowns and alarms, an audio player, message bubbles and threads, typing indicators, reaction bars, polls, expandable text, QR codes, map panels and static maps.
 
-One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/avatar.go`, `comps/avatar_stack.go`, `comps/stat_tile.go`, `comps/compass.go`, `comps/clock.go`, `comps/timers.go`, `comps/alarm.go`, `comps/audio_player.go`, `comps/message_bubble.go`, `comps/message_thread.go`, `comps/expandable_text.go`, `comps/qr_code.go`, `comps/map_panel.go`, `comps/static_map.go`.
+One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/avatar.go`, `comps/avatar_stack.go`, `comps/stat_tile.go`, `comps/compass.go`, `comps/clock.go`, `comps/timers.go`, `comps/alarm.go`, `comps/audio_player.go`, `comps/message_bubble.go`, `comps/message_thread.go`, `comps/typing_indicator.go`, `comps/reaction_bar.go`, `comps/poll.go`, `comps/expandable_text.go`, `comps/qr_code.go`, `comps/map_panel.go`, `comps/static_map.go`.
 
 ## Index
 
-- [Constants](#constants) — `ConcernAudioPlayerNoTrack`, `ConcernCountdownUntilUnset`, `ConcernNoMapProvider`, `ConcernQRDataTooLong`, `ConcernStopwatchSinceUnset`, `DefaultMapHeight`, `DefaultMapPanelHeight`, `DefaultMapScale`, `DefaultMapWidth`, `DefaultMapZoom`, `FitPadding`, `MaxFitZoom`, and 6 more
+- [Constants](#constants) — `ConcernAudioPlayerNoTrack`, `ConcernCountdownUntilUnset`, `ConcernNoMapProvider`, `ConcernPollInert`, `ConcernQRDataTooLong`, `ConcernReactionBarInert`, `ConcernStopwatchSinceUnset`, `DefaultMapHeight`, `DefaultMapPanelHeight`, `DefaultMapScale`, `DefaultMapWidth`, `DefaultMapZoom`, and 8 more
 - [`func FitRegion`](#func-fitregion)
 - [`func GoogleMapsHandoff`](#func-googlemapshandoff)
 - [`func OSMStaticMap`](#func-osmstaticmap)
@@ -45,8 +45,14 @@ One of 7 topic pages of [package comps](comps.md), which has the package overvie
     - [`func (MessageBubble) Render`](#func-messagebubble-render)
 - [`type MessageThread`](#type-messagethread)
     - [`func (MessageThread) Render`](#func-messagethread-render)
+- [`type Poll`](#type-poll)
+    - [`func (Poll) Render`](#func-poll-render)
+- [`type PollOption`](#type-polloption)
 - [`type QRCode`](#type-qrcode)
     - [`func (QRCode) Render`](#func-qrcode-render)
+- [`type Reaction`](#type-reaction)
+- [`type ReactionBar`](#type-reactionbar)
+    - [`func (ReactionBar) Render`](#func-reactionbar-render)
 - [`type StatTile`](#type-stattile)
     - [`func (StatTile) Render`](#func-stattile-render)
 - [`type StaticMap`](#type-staticmap)
@@ -58,6 +64,8 @@ One of 7 topic pages of [package comps](comps.md), which has the package overvie
 - [`type Stopwatch`](#type-stopwatch)
     - [`func (Stopwatch) Render`](#func-stopwatch-render)
 - [`type ThreadMessage`](#type-threadmessage)
+- [`type TypingIndicator`](#type-typingindicator)
+    - [`func (TypingIndicator) Render`](#func-typingindicator-render)
 
 ## Constants
 
@@ -179,6 +187,14 @@ const ConcernNoMapProvider = "no-map-provider"
 
 <small>[comps/static_map.go:318](https://github.com/rohanthewiz/grmob/blob/master/comps/static_map.go#L318)</small>
 
+ConcernPollInert is raised, in debug builds only, when a Poll is still asking — no option is Mine and ShowResults is off — and has no OnVote. It draws buttons that record nothing.
+
+```go
+const ConcernPollInert = "poll-inert"
+```
+
+<small>[comps/poll.go:13](https://github.com/rohanthewiz/grmob/blob/master/comps/poll.go#L13)</small>
+
 ConcernQRDataTooLong is raised, in debug builds only, when Data is longer than any QR Code can hold at the requested level. The widget then draws nothing: there is no half of a QR Code that is worth showing, and a symbol that encodes a truncated URL is worse than a blank space because it scans.
 
 ```go
@@ -186,6 +202,14 @@ const ConcernQRDataTooLong = "qr-data-too-long"
 ```
 
 <small>[comps/qr_code.go:54](https://github.com/rohanthewiz/grmob/blob/master/comps/qr_code.go#L54)</small>
+
+ConcernReactionBarInert is raised, in debug builds only, when a ReactionBar that is not Disabled has no OnToggle. Its chips look tappable and do nothing, which is the one silent way to get this widget wrong.
+
+```go
+const ConcernReactionBarInert = "reaction-bar-inert"
+```
+
+<small>[comps/reaction_bar.go:12](https://github.com/rohanthewiz/grmob/blob/master/comps/reaction_bar.go#L12)</small>
 
 ConcernStopwatchSinceUnset is raised, in debug builds only, when Running is true and Since is the zero time.Time. The elapsed time is then measured from year 1, which reads as a seventeen-million-hour stopwatch — visibly wrong, but only if somebody is looking at the digits rather than at a screenshot, and silently wrong in the accessible label.
 
@@ -1321,6 +1345,125 @@ func (m MessageThread) Render(ctx *core.Context) *core.Node
 
 <small>[comps/message_thread.go:95](https://github.com/rohanthewiz/grmob/blob/master/comps/message_thread.go#L95)</small>
 
+### type Poll
+
+```go
+type Poll struct {
+	// Question is drawn above the options and names the group.
+	Question string
+
+	// Options are drawn in order. Order is the caller's and does not change
+	// with the votes: results sorted by share would move the reader's own
+	// choice away from where they tapped it.
+	Options []PollOption
+
+	// OnVote receives the index of the tapped option. Nil reports
+	// ConcernPollInert while the poll is asking.
+	OnVote func(index int)
+
+	// ShowResults draws the results even though no option is Mine.
+	ShowResults bool
+
+	// Disabled keeps the poll asking and draws its buttons inert: a poll the
+	// reader may see and not answer.
+	Disabled bool
+
+	// ChoiceLabel is appended to the spoken name of the reader's choice;
+	// empty gives "your choice".
+	ChoiceLabel string
+
+	// Style is applied to the outer column after the widget's own props.
+	Style []core.StyleProp
+}
+```
+
+Poll is a question whose options turn into labelled result bars once the reader has voted: the poll in a chat, the quick survey at the end of an article.
+
+	comps.Poll{
+	    Question: "Tabs or spaces?",
+	    Options: []comps.PollOption{
+	        {Label: "Tabs", Votes: 5, Mine: true},
+	        {Label: "Spaces", Votes: 3},
+	    },
+	    OnVote: func(i int) { castVote(pollID, i) },
+	}
+
+	asking                               showing results
+	┌ Column  role=group  label=Q ───┐   ┌ Column  role=group  label=Q ───┐
+	│ Tabs or spaces?                │   │ Tabs or spaces?                │
+	│ ┌────────────────────────────┐ │   │ Tabs ✓                    63%  │
+	│ │           Tabs             │ │   │ ████████████░░░░░░░           │
+	│ └────────────────────────────┘ │   │ Spaces                    37%  │
+	│ ┌────────────────────────────┐ │   │ ███████░░░░░░░░░░░░           │
+	│ │          Spaces            │ │   │ 8 votes                        │
+	│ └────────────────────────────┘ │   └────────────────────────────────┘
+	└────────────────────────────────┘
+
+#### Who holds the vote
+
+The caller does, for ReactionBar's reason: a poll's counts are server state that other people change, so the widget holds none of it. OnVote reports the tapped index, and the poll keeps asking until the caller's data comes back with an option marked Mine.
+
+The plan sketched the choice as \`Voted int\`, an index with -1 for "not yet". It is PollOption.Mine instead, because Go's zero value for that int is 0, and a Poll written without the field would have opened already voted for its first option, silently, with its buttons gone. A bool per option has the right zero, and it is the shape ReactionBar's Reaction.Mine already has, so the two chat widgets read the same way.
+
+#### Percentages that sum to 100
+
+Three options with a vote each round to 33 + 33 + 33, and a poll whose results add up to 99% looks broken to exactly the reader who checks. The shares are apportioned by the largest-remainder method (pollPercents), so they always total 100 when there is at least one vote. With none, every bar is empty and every share reads 0%: there is nothing to apportion, and inventing an even split would report votes nobody cast.
+
+The bars are drawn from the true fractions, not from the rounded shares, so a bar's length never jumps by a rounding step.
+
+#### Asking: outlined buttons, not ghost
+
+The plan sketched ghost buttons. A ghost button is a bare label, and a column of bare labels under a question reads as a list of text, not as things to tap — Stepper's doc records the same finding for its − and +. So the options are full-width EmphasisOutlined buttons.
+
+#### ShowResults
+
+ShowResults draws the bars without a vote from the reader: a closed poll, or an author looking at their own. There is then nothing to tap, so a nil OnVote is not a concern in that state.
+
+#### Accessibility
+
+The poll is a RoleGroup named by Question, and the question is drawn as a RoleHeading inside it. While asking, each option is a plain button. In the results each option is one stop named in full — "Tabs, 63 percent, 5 votes, your choice" — with its text, its bar and its check hidden beneath it, so a reader hears each result whole, as MessageBubble does for a message. The bar is left unnamed for that reason: a named ProgressBar would announce the same number a second time.
+
+#### Theme roles read
+
+	Question      Typography.Subtitle, in Colors.TextPrimary
+	Option text   Typography.Body; the reader's choice bold, in
+	              Colors.PrimaryOnLightColor()
+	Share, total  Typography.Caption, Colors.TextSecondary
+	Bars          comps.ProgressBar: Colors.Primary on Colors.Surface
+	Buttons       comps.Button outlined
+
+<small>[comps/poll.go:109](https://github.com/rohanthewiz/grmob/blob/master/comps/poll.go#L109)</small>
+
+#### func (Poll) Render
+
+```go
+func (p Poll) Render(ctx *core.Context) *core.Node
+```
+
+Render draws the question over either the buttons or the results. It takes no hook slot.
+
+<small>[comps/poll.go:194](https://github.com/rohanthewiz/grmob/blob/master/comps/poll.go#L194)</small>
+
+### type PollOption
+
+```go
+type PollOption struct {
+	// Label is the answer as drawn and spoken.
+	Label string
+
+	// Votes is how many people chose it, the reader included.
+	Votes int
+
+	// Mine marks the reader's own choice. Any option with Mine set turns the
+	// poll from asking to showing results. See Poll, "Who holds the vote".
+	Mine bool
+}
+```
+
+PollOption is one answer and its tally.
+
+<small>[comps/poll.go:16](https://github.com/rohanthewiz/grmob/blob/master/comps/poll.go#L16)</small>
+
 ### type QRCode
 
 ```go
@@ -1397,6 +1540,117 @@ func (q QRCode) Render(ctx *core.Context) *core.Node
 ```
 
 <small>[comps/qr_code.go:162](https://github.com/rohanthewiz/grmob/blob/master/comps/qr_code.go#L162)</small>
+
+### type Reaction
+
+```go
+type Reaction struct {
+	// Emoji is drawn on the chip and handed back to OnToggle ("👍").
+	Emoji string
+
+	// Count is how many people reacted with it, the reader included.
+	Count int
+
+	// Mine reports that the reader is one of them. It draws the chip
+	// selected.
+	Mine bool
+
+	// Label is the emoji's spoken name ("thumbs up"). No host names an emoji
+	// reliably — the same glyph is "thumbs up sign", "like" or silence
+	// depending on the platform and its voice — and Go carries no table of
+	// them, so the caller, who chose the emoji, says what it is called. Empty
+	// falls back to the emoji itself, which is whatever the platform makes
+	// of it.
+	Label string
+}
+```
+
+Reaction is one emoji's tally under a message.
+
+<small>[comps/reaction_bar.go:15](https://github.com/rohanthewiz/grmob/blob/master/comps/reaction_bar.go#L15)</small>
+
+### type ReactionBar
+
+```go
+type ReactionBar struct {
+	// Reactions are drawn in order. Order is the caller's: most apps keep
+	// first-used first, so a chip does not move when its count changes.
+	Reactions []Reaction
+
+	// OnToggle receives the tapped chip's Emoji. Whether that adds or removes
+	// the reader's reaction is the caller's to decide from its own state.
+	// Nil reports ConcernReactionBarInert unless Disabled.
+	OnToggle func(emoji string)
+
+	// Trailing is drawn after the last chip: the slot for an "add reaction"
+	// chip of the caller's own. It is drawn even when no reaction is, since
+	// an empty bar with a "+" is how a first reaction gets added.
+	Trailing core.View
+
+	// GroupLabel is the strip's spoken name; empty gives "Reactions".
+	GroupLabel string
+
+	// Disabled draws the chips inert: a locked thread, a reader without
+	// permission to react.
+	Disabled bool
+
+	// Style is applied to the strip after the widget's own props.
+	Style []core.StyleProp
+}
+```
+
+ReactionBar is the row of emoji chips under a chat message: each chip an emoji and its count, the reader's own drawn selected, a tap toggling the reader's reaction.
+
+	comps.ReactionBar{
+	    Reactions: []comps.Reaction{
+	        {Emoji: "👍", Count: 3, Mine: true, Label: "thumbs up"},
+	        {Emoji: "🎉", Count: 1, Label: "party popper"},
+	    },
+	    OnToggle: func(emoji string) { toggleReaction(msgID, emoji) },
+	}
+
+	┌ ChipStrip  role=group  label="Reactions" ─┐
+	│  (👍 3)   ( 🎉 1 )                         │
+	│   ▲ Mine: the selected chip               │
+	└───────────────────────────────────────────┘
+
+#### The caller holds the counts
+
+The widget is stateless, like Stepper: it draws Reactions and reports a tap through OnToggle, and the caller decides what the tap did. A reaction is server state — other people change the same count — so a count bumped locally on tap would be a second source of truth that disagrees with the first the moment the server answers. A caller who wants the optimistic bump does it in its own state, where it can also undo it. This is AudioPlayer's reasoning pointing the other way: that widget holds its position because nobody else can move it, and this one holds nothing because everybody else can.
+
+#### It is a ChipStrip, and adds only the vocabulary
+
+Each reaction becomes a comps.Chip (Label "👍 3", Selected from Mine) in a wrapping comps.ChipStrip, so the look, the 3:1 control ring and the selected state's announcement are Chip's and stay in step with every other chip in an app. What this type adds is the spoken name, the zero-count rule and OnToggle's single callback in place of a closure per chip.
+
+#### A count of zero
+
+A reaction nobody holds is not drawn: a caller can pass its whole emoji table and see only the ones in use. The exception is Count 0 with Mine set. That is a caller's bug (the reader is one of nobody), and it is drawn rather than hidden, because a chip reading "👍 0" is a bug somebody will see and fix, and a missing chip is one nobody will.
+
+A bar with nothing to draw renders as Display none rather than as an empty row, so it takes no gap in the column under its message.
+
+#### What it is not
+
+  - \*\*Not an emoji picker.\*\* Adding a reaction that is not yet on the bar needs a grid of emoji in an anchored popover, and the popover is blocked on a renderer (layout measurement). Trailing is the slot for a caller's own "+" chip, which can open a comps.Dialog.
+
+#### Accessibility
+
+The strip is a RoleGroup named GroupLabel ("Reactions"). Each chip is a button named in full — "thumbs up, 3 reactions" — with the reader's own stated as the chip's selected state (core.AccessibilitySelected, from Chip), not as words in the name: a name is meant to be stable, and a toggle should be announced as a state change. See Chip's AccessibilityLabel for the long version.
+
+#### Theme roles read
+
+None of its own; see comps.Chip and comps.ChipStrip.
+
+<small>[comps/reaction_bar.go:102](https://github.com/rohanthewiz/grmob/blob/master/comps/reaction_bar.go#L102)</small>
+
+#### func (ReactionBar) Render
+
+```go
+func (rb ReactionBar) Render(ctx *core.Context) *core.Node
+```
+
+Render builds the ChipStrip. It takes no hook slot, so a bar may be rendered conditionally.
+
+<small>[comps/reaction_bar.go:140](https://github.com/rohanthewiz/grmob/blob/master/comps/reaction_bar.go#L140)</small>
 
 ### type StatTile
 
@@ -1829,4 +2083,89 @@ type ThreadMessage struct {
 ThreadMessage is one message in a MessageThread.
 
 <small>[comps/message_thread.go:6](https://github.com/rohanthewiz/grmob/blob/master/comps/message_thread.go#L6)</small>
+
+### type TypingIndicator
+
+```go
+type TypingIndicator struct {
+	// Visible shows the indicator and runs its animation. False (the zero
+	// value) is Display none with the interval paused. See the type doc for
+	// why this is a field and not a core.If.
+	Visible bool
+
+	// Who is the person typing ("Ana"). It feeds the default Label and
+	// nothing else.
+	Who string
+
+	// Label is the spoken name, and the caption's text when Caption is set.
+	// Empty gives Who + " is typing", or "Typing" when Who is empty too. Set
+	// it to localise, or for a group chat ("Ana and Rui are typing").
+	Label string
+
+	// Caption draws Label beside the dots. Off by default, because the dots
+	// usually sit where the next bubble will appear and say enough there.
+	Caption bool
+
+	// Style is applied to the outer row — the placement, as with
+	// MessageBubble — after its defaults.
+	Style []core.StyleProp
+}
+```
+
+TypingIndicator is the three dots a chat draws while the other side is writing: a small theirs-coloured bubble on the leading side, one dot after another darkening in turn, with an optional "Ana is typing" caption.
+
+	comps.TypingIndicator{Visible: anaTyping.Get(), Who: "Ana"}
+
+	┌ Row  justify=start  role=status  label="Ana is typing" ─┐
+	│ ┌ Row  Surface + hairline ┐                             │
+	│ │   ●   ○   ○             │  Ana is typing   (Caption)  │
+	│ └─────────────────────────┘                             │
+	└─────────────────────────────────────────────────────────┘
+	      ▲ the dark dot moves one place every typingBeat
+
+#### Visible, and why the widget is never left out
+
+A typing indicator is conditional by nature — it is there only while somebody types — and the animation needs two hook slots (the phase and its interval). Those two facts collide: a widget that owns hooks must render on every pass, in the same place, or every hook after it shifts onto a neighbour's slot. So the switch is a field, not a core.If around the widget:
+
+	comps.TypingIndicator{Visible: typing}        // right
+	core.If(typing, comps.TypingIndicator{...})   // wrong: a conditional hook
+
+Hidden is Display none — Spinner.Hidden's answer — so the tree keeps its shape both ways and showing the indicator is a style patch, not an inserted subtree. The interval is hooks.UseIntervalWhile keyed on Visible, so a hidden indicator costs one goroutine wake per beat and no render pass; comps.Countdown's ticking is the precedent.
+
+The zero value is hidden. That is the safe way round for a widget whose visible state costs render passes: forgetting the field draws nothing, rather than animating for the life of the screen.
+
+#### How the dots move: colour, not opacity
+
+The plan sketched an opacity pulse. core.Style has no opacity, and adding one is renderer work on three targets, which this round rules out. What core.Transition does animate on every target is background colour, so the phase picks which dot is dark and each dot eases between two fills. Go sends one patch per beat (two dots change colour); every frame between the beats is the platform's.
+
+This is not Spinner's old mistake restated. Spinner stepped twelve passes a second to fake a rotation a renderer could do itself, and core.Spin removed it. Here there is no native primitive to hand the loop to (a looping transition is what core.Spin's doc declines to generalise), the rate is two and a half passes a second, and it runs only while somebody is typing.
+
+#### Reduce Motion
+
+Each host drops the Transition on its own side (core.Transition, "Reduced motion") and nothing tells Go, so under the setting the interval still steps the phase and the dots change colour without the ease. The dots are six points across and the change is one grey to another, so the un-eased form is a quiet blink rather than a flash. It has not been looked at on a device with the setting on; that check is on the Next list.
+
+#### Accessibility
+
+The whole widget is one RoleStatus stop named by Label — a polite live region, announced when it appears. The dots and the caption are hidden from assistive technology: the dots are decoration, and the caption repeats the name. The phase changes only the dots' fills, so the name is stable and a beat re-announces nothing. Hidden is display:none and is not announced.
+
+#### Theme roles read
+
+	Bubble        Colors.Surface fill, Colors.BorderColor() hairline — theirs,
+	              as MessageBubble draws it, so the dots read as a bubble
+	              about to arrive
+	Resting dot   Colors.ControlBorderColor()
+	Dark dot      Colors.TextPrimary
+	Caption       Typography.Caption, Colors.TextSecondary
+
+<small>[comps/typing_indicator.go:86](https://github.com/rohanthewiz/grmob/blob/master/comps/typing_indicator.go#L86)</small>
+
+#### func (TypingIndicator) Render
+
+```go
+func (ti TypingIndicator) Render(ctx *core.Context) *core.Node
+```
+
+Render takes two hook slots, unconditionally, and then draws Row(bubble(dot × 3), caption?).
+
+<small>[comps/typing_indicator.go:141](https://github.com/rohanthewiz/grmob/blob/master/comps/typing_indicator.go#L141)</small>
 

@@ -65,6 +65,7 @@ func chapter4() Chapter {
 			lessonMessageBubbles(),
 			lessonReadMoreAndHalfStars(),
 			lessonMessageThread(),
+			lessonChatFamily(),
 		},
 	}
 }
@@ -5526,6 +5527,168 @@ func lessonMessageThread() Lesson {
 					"MessageThread: oldest first, every message with a stable Key, OnLoadOlder nil at the beginning.",
 					"core.StartAtEnd opens a List at its end; core.OnStartReached is the top edge, guarded per row count.",
 					"The loading caption is a line above the list, so the list's first row, which every host keeps your place by, is always a message.",
+				),
+			)
+		},
+	}
+}
+
+// tutorialPollOption is one answer of lesson 4.34's poll: the label and the
+// votes other people cast. The reader's own vote is lesson state, added on
+// top when the comps.PollOption values are built.
+type tutorialPollOption struct {
+	label string
+	votes int
+}
+
+// 4.34 — Phase 1 of the fourth low-hanging-fruit round: the three widgets the
+// chat family was missing. The lesson is organised around the one question
+// all three answer differently — who holds the state — because that is what a
+// reader wiring them to a server has to get right: the indicator holds its
+// own animation and so must always render, and the bar and the poll hold
+// nothing and so are fed by the caller's data.
+//
+// Appended at the end of the chapter for the reason 4.25 was.
+func lessonChatFamily() Lesson {
+	return Lesson{
+		Title:   "Typing, reactions and polls",
+		Summary: "comps.TypingIndicator, ReactionBar and Poll: the chat family's presence widgets, and who holds their state.",
+		Body: func(ctx *core.Context) core.View {
+			// All three hooks first, unconditionally. The TypingIndicator
+			// below adds two of its own, which is the lesson's first point.
+			typing := core.NewState(ctx, true)
+			reactions := core.NewState(ctx, []comps.Reaction{
+				{Emoji: "👍", Count: 3, Mine: true, Label: "thumbs up"},
+				{Emoji: "🎉", Count: 1, Label: "party popper"},
+				{Emoji: "🤔", Count: 0, Label: "thinking face"},
+			})
+			// -1 is "not voted". The lesson may hold an index with a
+			// sentinel, because it writes the initial value out; the widget
+			// may not, because its zero value has to be safe. See Poll.
+			voted := core.NewState(ctx, -1)
+
+			// The reader's reaction toggles: Mine flips and Count follows.
+			// Copy, change the copy, Set it.
+			toggle := func(emoji string) {
+				next := append([]comps.Reaction(nil), reactions.Get()...)
+				for i := range next {
+					if next[i].Emoji != emoji {
+						continue
+					}
+					if next[i].Mine {
+						next[i].Count--
+					} else {
+						next[i].Count++
+					}
+					next[i].Mine = !next[i].Mine
+				}
+				reactions.Set(next)
+			}
+
+			// Three options at one vote each, so that the reader's vote makes
+			// 2 + 1 + 1: 50 / 25 / 25. Reset and look at the closed poll
+			// below it for the 34 / 33 / 33 case.
+			others := []tutorialPollOption{{"Tabs", 1}, {"Spaces", 1}, {"Whatever gofmt says", 1}}
+			options := func(mine int) []comps.PollOption {
+				out := make([]comps.PollOption, len(others))
+				for i, o := range others {
+					out[i] = comps.PollOption{Label: o.label, Votes: o.votes}
+					if i == mine {
+						out[i].Votes++
+						out[i].Mine = true
+					}
+				}
+				return out
+			}
+
+			return core.Column(
+				core.Gap(14),
+				prose("A chat screen needs three small things around its bubbles: a sign that somebody is "+
+					"writing, the reactions under a message, and now and then a poll. They are a lesson "+
+					"together because they answer one question in two ways: who holds the state."),
+
+				codeBlock(`comps.TypingIndicator{Visible: anaTyping.Get(), Who: "Ana"}`),
+				demoPanel("Three dots in a theirs-coloured bubble. The switch hides it; the widget is still in the tree.",
+					comps.MessageBubble{Text: "Did you see the new release?", Sender: "Ana", Time: "10:41",
+						Style: []core.StyleProp{core.MarginBottom(6)}},
+					comps.TypingIndicator{Visible: typing.Get(), Who: "Ana", Caption: true},
+					core.Row(
+						core.Padding(0),
+						core.Gap(8),
+						core.AlignItemsProp(core.AlignItemsCenter),
+						core.Checkbox(typing.Get(), typing.Set, core.AccessibilityLabel("Ana is typing")),
+						caption("Ana is typing"),
+					),
+				),
+				prose("The dots are driven by two hooks inside the widget: which dot is dark, and the "+
+					"interval that moves it. A widget that owns hooks must render on every pass, so the "+
+					"switch is the Visible field and never a core.If around the widget. Hidden is "+
+					"Display none, and the interval is hooks.UseIntervalWhile, so a hidden indicator "+
+					"costs no render passes."),
+				prose("Go only picks which dot is dark. core.Transition declares the fade, and the "+
+					"platform draws every frame of it. The thing that fades is the background colour: "+
+					"core.Style has no opacity, and colour is what every target animates."),
+
+				codeBlock(`comps.ReactionBar{
+    Reactions: []comps.Reaction{
+        {Emoji: "👍", Count: 3, Mine: true, Label: "thumbs up"},
+        {Emoji: "🎉", Count: 1, Label: "party popper"},
+    },
+    OnToggle: func(emoji string) { toggle(emoji) },
+}`),
+				demoPanel("Tap a chip. The 🤔 has no count, so it is not drawn until somebody holds it.",
+					comps.MessageBubble{Text: "Bubbles are a widget now.", Sender: "Ana", Time: "10:41",
+						Style: []core.StyleProp{core.MarginBottom(6)}},
+					comps.ReactionBar{Reactions: reactions.Get(), OnToggle: toggle},
+				),
+				prose("A reaction is server state: other people move the same count. So the bar draws "+
+					"what it is given and reports the tap, and the toggle above is the caller's. It is a "+
+					"comps.ChipStrip of comps.Chips underneath, and adds the spoken name. No platform "+
+					"names an emoji reliably, so Reaction.Label does: \"thumbs up, 3 reactions\". The "+
+					"reader's own is the chip's selected state, not words in its name."),
+
+				codeBlock(`comps.Poll{
+    Question: "Tabs or spaces?",
+    Options: []comps.PollOption{
+        {Label: "Tabs", Votes: 2, Mine: true},
+        {Label: "Spaces", Votes: 1},
+    },
+    OnVote: func(i int) { castVote(i) },
+}`),
+				demoPanel("Vote, and the buttons become result bars. Reset asks again.",
+					comps.Poll{
+						Question: "Tabs or spaces?",
+						Options:  options(voted.Get()),
+						OnVote:   voted.Set,
+					},
+					comps.Button{
+						Label:    "Reset the poll",
+						Emphasis: comps.EmphasisGhost,
+						Disabled: voted.Get() < 0,
+						OnTap:    func() { voted.Set(-1) },
+					},
+				),
+				demoPanel("A closed poll: ShowResults draws the bars with no vote of yours. One vote each, and the shares still total 100.",
+					comps.Poll{
+						Question:    "Tabs or spaces? (closed)",
+						Options:     options(-1),
+						ShowResults: true,
+					},
+				),
+				prose("Three options with a vote each round to 33 + 33 + 33, and a poll that totals 99% "+
+					"looks broken. Poll apportions the shares by the largest-remainder method: every "+
+					"share is rounded down, and the points left over go to the largest remainders, "+
+					"earliest first. The bars are drawn from the true fractions."),
+				prose("The reader's vote is PollOption.Mine, not an index on the Poll. An int field "+
+					"would default to 0, and a poll written without it would open already voted for "+
+					"its first option. After the vote each option is one spoken stop: \"Tabs, 50 "+
+					"percent, 2 votes, your choice\"."),
+				keyPoints(
+					"TypingIndicator owns hooks: always render it and switch it with Visible, never with core.If.",
+					"Its dots fade by background colour under core.Transition; Go steps the phase, the platform draws the frames.",
+					"ReactionBar and Poll hold no state: counts and votes are server data, so the caller toggles and records.",
+					"Reaction.Label names the emoji; a count of zero is not drawn; Trailing is the slot for an add chip.",
+					"Poll's shares always total 100 (largest remainder), and the reader's choice is PollOption.Mine.",
 				),
 			)
 		},

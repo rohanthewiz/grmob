@@ -25,7 +25,7 @@ import (
 
 // TestMain turns on debug mode for the package, so every pass driven below is
 // audited for cursor drift and duplicate keys — the same discipline the other
-// example tests follow. ChatApp allocates two hooks unconditionally at the top,
+// example tests follow. ChatApp allocates its hooks unconditionally at the top,
 // which is exactly what that audit checks has not drifted.
 func TestMain(m *testing.M) {
 	core.SetDebugMode(true)
@@ -129,7 +129,15 @@ func TestTheTranscriptIsALogAndNotAStatus(t *testing.T) {
 	ctx := core.NewContext().WithTheme(core.DefaultTheme)
 	tree := pass(t, ctx)
 
-	if find(tree, roled(core.RoleStatus)) != nil {
+	// Asked of the transcript and not of the whole tree: the screen does hold
+	// one status, the typing indicator, and it is a status for the reason the
+	// transcript is not — it is one advisory that is replaced. What must stay
+	// true is that the log is a log and that no status is nested inside it.
+	log := find(tree, roled(core.RoleLog))
+	if log == nil {
+		t.Fatal("no core.RoleLog in the tree")
+	}
+	if find(log, roled(core.RoleStatus)) != nil {
 		t.Error("the transcript is marked status: a conversation is appended to and read " +
 			"back in order, which is what distinguishes the two roles on the web")
 	}
@@ -171,7 +179,7 @@ func TestSendAppendsOneMessageAndClearsTheComposer(t *testing.T) {
 	}
 
 	ctx.ReceiveEventPayload(map[string]any{"callback": "txt_cb_0", "value": "Vou experimentar hoje!"})
-	ctx.ReceiveEventPayload(map[string]any{"callback": "cb_1"})
+	ctx.ReceiveEventPayload(map[string]any{"callback": buttonCallback(before, "Enviar")})
 	after := pass(t, ctx)
 
 	// Once, not twice. Appending in place onto the slice the state already
@@ -209,12 +217,12 @@ func TestSendAppendsOneMessageAndClearsTheComposer(t *testing.T) {
 // in the transcript.
 func TestSendingNothingChangesNothing(t *testing.T) {
 	ctx := core.NewContext().WithTheme(core.DefaultTheme)
-	pass(t, ctx)
+	before := pass(t, ctx)
 
 	// Whitespace, not the empty string: the guard trims first, which is what
 	// makes a composer holding a space behave like one holding nothing.
 	ctx.ReceiveEventPayload(map[string]any{"callback": "txt_cb_0", "value": "   "})
-	ctx.ReceiveEventPayload(map[string]any{"callback": "cb_1"})
+	ctx.ReceiveEventPayload(map[string]any{"callback": buttonCallback(before, "Enviar")})
 	after := pass(t, ctx)
 
 	log := find(after, roled(core.RoleLog))
@@ -240,9 +248,13 @@ func TestNoDebugConcernsAcrossAConversation(t *testing.T) {
 	core.ClearConcerns()
 
 	ctx := core.NewContext().WithTheme(core.DefaultTheme)
-	pass(t, ctx)
+	first := pass(t, ctx)
 	ctx.ReceiveEventPayload(map[string]any{"callback": "txt_cb_0", "value": "olá"})
-	ctx.ReceiveEventPayload(map[string]any{"callback": "cb_1"})
+	ctx.ReceiveEventPayload(map[string]any{"callback": buttonCallback(first, "Enviar")})
+	second := pass(t, ctx)
+	// A reaction as well, so the audit also covers the pass in which a chip
+	// changes state under its key.
+	ctx.ReceiveEventPayload(map[string]any{"callback": buttonCallback(second, "🎉 1")})
 	pass(t, ctx)
 
 	if cs := core.Concerns(); len(cs) != 0 {
@@ -272,5 +284,71 @@ func TestTheGapBetweenMessagesIsOnTheBottomOfTheBubble(t *testing.T) {
 	want := core.EdgeInsets{Bottom: 8}
 	if row.Style == nil || row.Style.Margin != want {
 		t.Errorf("bubble row margin = %+v, want %+v", row.Style.Margin, want)
+	}
+}
+
+// A tap on a reaction goes through `react`, and toggles the reader's own: the
+// count follows Mine up and then back down, and the chip stays in place.
+//
+// The second half is the copy-on-write check. `react` copies the message's
+// Reactions slice as well as the thread; had it copied only the thread, the
+// first tree's chip would have been rewritten in place, and "🎉 1" would be
+// gone from a tree nobody re-rendered.
+func TestAReactionTogglesTheReadersOwn(t *testing.T) {
+	ctx := core.NewContext().WithTheme(core.DefaultTheme)
+	before := pass(t, ctx)
+
+	id := buttonCallback(before, "🎉 1")
+	if id == "" {
+		t.Fatal("the seeded 🎉 reaction is not drawn as a chip")
+	}
+	ctx.ReceiveEventPayload(map[string]any{"callback": id})
+	reacted := pass(t, ctx)
+
+	chip := find(reacted, func(n *core.Node) bool { return n.Type == "Button" && n.Props["label"] == "🎉 2" })
+	if chip == nil {
+		t.Fatal("the count did not go to 2 after the reader reacted")
+	}
+	if chip.Style.AccessibilitySelected != core.SelectedOn {
+		t.Errorf("selected = %q; the reader's own reaction is the selected chip", chip.Style.AccessibilitySelected)
+	}
+	if chip.Style.AccessibilityLabel != "festa, 2 reactions" {
+		t.Errorf("spoken name = %q", chip.Style.AccessibilityLabel)
+	}
+	if buttonCallback(before, "🎉 1") == "" {
+		t.Error("the previous tree was mutated in place: react must copy the Reactions slice too")
+	}
+
+	ctx.ReceiveEventPayload(map[string]any{"callback": buttonCallback(reacted, "🎉 2")})
+	if buttonCallback(pass(t, ctx), "🎉 1") == "" {
+		t.Error("a second tap should take the reader's reaction back off")
+	}
+}
+
+// The typing indicator is in the tree on every pass — it owns hooks — hidden
+// until a message is sent, and a status beside the log rather than inside it.
+func TestTheTypingIndicatorIsAlwaysRenderedAndShownAfterASend(t *testing.T) {
+	ctx := core.NewContext().WithTheme(core.DefaultTheme)
+	before := pass(t, ctx)
+
+	status := find(before, roled(core.RoleStatus))
+	if status == nil {
+		t.Fatal("no typing indicator in the first tree: it must render even while hidden")
+	}
+	if status.Style.Display != core.DisplayNone {
+		t.Error("nobody is typing yet, so the indicator should be display none")
+	}
+	if find(find(before, roled(core.RoleLog)), roled(core.RoleStatus)) != nil {
+		t.Error("the status is inside the log: the dots would be recorded as a message")
+	}
+
+	ctx.ReceiveEventPayload(map[string]any{"callback": "txt_cb_0", "value": "olá"})
+	ctx.ReceiveEventPayload(map[string]any{"callback": buttonCallback(before, "Enviar")})
+	after := find(pass(t, ctx), roled(core.RoleStatus))
+	if after == nil || after.Style.Display == core.DisplayNone {
+		t.Error("Ana should be typing after a message is sent")
+	}
+	if after != nil && after.Style.AccessibilityLabel != "Ana está a escrever" {
+		t.Errorf("spoken name = %q", after.Style.AccessibilityLabel)
 	}
 }

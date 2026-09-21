@@ -30,7 +30,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-062
+**Next ID:** N-064
 
 ## Open
 
@@ -208,6 +208,31 @@ with each item's `raised` traced back through all session docs.
   `env(safe-area-inset-*)`; reading them means a probe element and a
   `getComputedStyle` per report. Left undone on purpose (the reason is in
   `wasm/grmob-runtime.js`'s windowMetrics comment), not overlooked.
+
+- **N-062** · raised `2026-0921-0912-comps-round-four-phase-1-chat-family` · value medium
+  **Phase 1's chat widgets, unrun on a device.** Lesson 4.34 and
+  `examples/chat` were looked at in headless Chrome only.
+  - `TypingIndicator` under Reduce Motion on all three live targets: the
+    hosts drop the `Transition` and Go still steps the phase, so the dots
+    change colour without the ease. The widget's doc claims that is a quiet
+    blink (a 6pt dot, one grey to another) and nobody has seen it.
+  - That a background-colour `Transition` on a 6pt `Box` actually eases on
+    Compose and SwiftUI. It is the only thing that moves the dots.
+  - `TypingIndicator`'s `RoleStatus` appearing from `Display none`: heard on
+    TalkBack? VoiceOver is expected to say nothing (the known live-region
+    gap, core/role.go).
+  - `ReactionBar` chips: the selected state heard with the spelled-out name
+    ("thumbs up, 3 reactions, selected"), and emoji glyphs drawn in a `Button`
+    label on both natives.
+  - `Poll` results: one stop per option, with the hidden `ProgressBar` and
+    texts not reachable by swipe.
+
+- **N-063** · raised `2026-0921-0912-comps-round-four-phase-1-chat-family` · value low
+  **Two stale statements.** README's chapter table gives per-chapter lesson
+  counts that no test checks (chapter 4 reads 14 and has 34). And
+  `comps-low-hanging-fruit-4.md`'s "still blocked" list carries "Per-corner
+  radius, and so bubble tails", though `core.CornerRadii` exists and
+  `MessageBubble` uses it.
 
 ## Non-goals
 
