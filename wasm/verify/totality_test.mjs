@@ -97,7 +97,7 @@ const FULL_STYLE = {
     Background: "#eeeeee",
     Padding: { Top: 1, Right: 2, Bottom: 3, Left: 4 },
     Margin: { Top: 1, Right: 2, Bottom: 3, Left: 4 },
-    BorderRadius: 6, Rotate: 10, Shadow: 4, LineHeight: 20,
+    BorderRadius: 6, Rotate: 10, Opacity: 0.5, Shadow: 4, LineHeight: 20,
     Width: "10px", Height: "11px",
     Gap: 5, JustifyContent: "center", AlignItems: "center",
     FlexGrow: 1, BorderWidth: 1, BorderColor: "#000000",

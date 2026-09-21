@@ -3504,9 +3504,10 @@ comps.TypingIndicator{Visible: anaTyping, Who: "Ana"}
   around it is a conditional hook. Hidden is `Display none` with the interval
   paused (`hooks.UseIntervalWhile`), which costs no render passes. The zero
   value is hidden.
-- The dots fade by **background colour**, not opacity: `core.Style` has no
-  opacity, and colour is what `core.Transition` animates on every target. Go
-  steps the phase every 400ms and the platform draws the frames.
+- The dots fade by **opacity**: all three are `TextPrimary`, the dark one at
+  `core.Opacity(1)` and the others at 0.4, each with a `core.Transition`, so
+  no second tone has to read on the bubble in every theme. Go steps the phase
+  every 400ms and the platform draws the frames.
 - One `RoleStatus` stop named by `Label`: `Who + " is typing"` by default, or
   "Typing". Set `Label` to localize, or for a group ("Ana and Rui are
   typing"). `Caption` draws the same text beside the dots.

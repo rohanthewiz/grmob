@@ -904,8 +904,20 @@ private fun animatedStyle(s: GrMobStyle?): GrMobStyle? {
         launch { ty.animateTo(s.translateY.amount, s.transitionTween()) }
         launch { tyf.animateTo(s.translateY.fraction, s.transitionTween()) }
     }
+    // core.Opacity under the same Transition, and the reason the field
+    // exists: a fade. One Float, started at the alpha the node arrived with,
+    // so a node that appears already dimmed does not fade in from opaque.
+    // s.opacity is the resolved alpha (GrMobStyle.alphaOf), so an undeclared
+    // Opacity animates to 1 like any other target and a node that drops the
+    // prop fades back in. coerceIn because an overshooting easing may step
+    // outside [0, 1], where Modifier.alpha throws.
+    val alpha = remember { FloatAnimatable(s.opacity) }
+    LaunchedEffect(s.opacity, s.transitionMs) {
+        alpha.animateTo(s.opacity, s.transitionTween())
+    }
     return s.copy(
         background = bg.value,
+        opacity = alpha.value.coerceIn(0f, 1f),
         translateX = GrMobShift(tx.value, txf.value),
         translateY = GrMobShift(ty.value, tyf.value),
     )

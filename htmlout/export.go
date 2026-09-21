@@ -2010,6 +2010,15 @@ func styleValue(s *core.Style, nodeType string) string {
 	if s.Rotate != 0 {
 		styles = append(styles, fmt.Sprintf("transform:rotate(%gdeg)", s.Rotate))
 	}
+	// core.Opacity, read through OpacityFactor so that the OpacityClear rule
+	// (-1 on the wire is an alpha of zero) is core's statement and not a
+	// second copy here. Undeclared writes nothing: CSS's initial value is 1.
+	// %g like the angle above, since the alpha is the caller's own number. A
+	// static export has no patch to transition between, so this is the
+	// resting value only; the WASM runtime writes the same declaration.
+	if alpha, declared := s.OpacityFactor(); declared {
+		styles = append(styles, fmt.Sprintf("opacity:%g", alpha))
+	}
 	// core.Translate, on the individual `translate` property so it composes
 	// with Rotate's transform above and Spin's `rotate` (CSS applies translate
 	// outermost). x is multiplied by --grmob-inline, which

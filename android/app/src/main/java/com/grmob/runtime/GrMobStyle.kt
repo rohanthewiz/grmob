@@ -111,6 +111,19 @@ data class GrMobStyle(
     val translateX: GrMobShift = GrMobShift.Zero,
     val translateY: GrMobShift = GrMobShift.Zero,
     /**
+     * core.Opacity, already resolved to the alpha to draw with: 1 when the
+     * node declared nothing. NOT the wire value, which spells an alpha of zero
+     * as core.OpacityClear (-1) because its plain zero means "unset"; see
+     * [alphaOf], the only place in this runtime that knows that.
+     *
+     * Resolved at parse, unlike [flexShrink], which keeps its sentinel and is
+     * read through a getter. The difference is animatedStyle (Renderer.kt):
+     * under a Transition it writes each frame's alpha back with `copy`, and a
+     * frame that has reached 0 must stay a 0. Stored raw, that frame would
+     * read as "unset" and the node would flash opaque as its fade ended.
+     */
+    val opacity: Float = 1f,
+    /**
      * core.Overflow. Only "hidden" is read, as a clip to the box in
      * boxModifier: it is what keeps a child translated out of its parent (a
      * Drawer's shut panel) from drawing over whatever sits beside the parent.
@@ -354,6 +367,22 @@ data class GrMobStyle(
     val shrinkPinned: Boolean get() = shrinkFactor == 0f
 
     companion object {
+        /**
+         * The alpha a wire Opacity asks for: 1 when nothing was sent (the CSS
+         * initial value), 0 for core.OpacityClear, and the number otherwise,
+         * held to [0, 1] because Modifier.alpha throws outside it where CSS
+         * would clamp.
+         *
+         * The mirror of core.Style.OpacityFactor and of GrMobStyle.swift's
+         * alpha(of:). wasm/verify's opacity_test.go pins the sentinel arm to
+         * core.OpacityClear, and the unset arm beside it.
+         */
+        fun alphaOf(opacity: Float): Float = when (opacity) {
+            0f -> 1f
+            -1f -> 0f
+            else -> opacity.coerceIn(0f, 1f)
+        }
+
         fun parse(obj: JSONObject?): GrMobStyle? {
             if (obj == null) return null
             return GrMobStyle(
@@ -369,6 +398,7 @@ data class GrMobStyle(
                 spinMs = obj.optInt("Spin", 0),
                 translateX = GrMobShift.parse(obj.optString("TranslateX")),
                 translateY = GrMobShift.parse(obj.optString("TranslateY")),
+                opacity = alphaOf(obj.optDouble("Opacity", 0.0).toFloat()),
                 overflow = obj.optString("Overflow"),
                 align = obj.optString("Align"),
                 display = obj.optString("Display"),
@@ -765,6 +795,18 @@ fun GrMobStyle?.boxModifier(extra: Modifier = Modifier, gestures: Modifier = Mod
     if (!translateX.isZero || !translateY.isZero) {
         m = m.then(TranslateElement(translateX, translateY))
     }
+    // core.Opacity, at the rotations' layer position and for their reason:
+    // Modifier.alpha is a graphics layer, and a layer fades only what is drawn
+    // after it in the chain. Here it fades the whole painted box (shadow,
+    // fill, border and content) as one composited picture, which is CSS's
+    // group opacity; below the background it would fade the content over a
+    // fill that stayed solid. Outside the rotations or inside them draws the
+    // same pixels. Guarded like rotate, so an opaque node gains no layer;
+    // under a Transition the value arrives already eased (animatedStyle).
+    //
+    // Separate from DisplayHidden's alpha(0f) at the foot of this chain,
+    // which is that mode's own rule and is left where it was.
+    if (opacity < 1f) m = m.alpha(opacity)
     if (rotate != 0f) m = m.rotate(rotate)
     // core.Spin, at the same layer position as the fixed angle and for the
     // same reasons: it must turn the whole painted box and the touch target

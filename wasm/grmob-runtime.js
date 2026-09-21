@@ -6641,6 +6641,16 @@ const GrMob = (() => {
         // return. htmlout can omit the declaration instead because it builds a
         // fresh string per export and has no element to leave stale.
         out.transform = style.Rotate ? `rotate(${style.Rotate}deg)` : "";
+        // core.Opacity. core.OpacityClear (-1) is how the Go side spells an
+        // alpha of zero, because a plain zero is what an unset field looks
+        // like (and `omitzero` would not even send it). Total like transform:
+        // a node that fades back in by dropping the prop sends no Opacity, and
+        // the declaration has to go. No clamp here: core.Opacity is the only
+        // door into the field and it clamps, and CSS clamps again. See
+        // core.OpacityClear and Style.OpacityFactor.
+        out.opacity = style.Opacity === -1
+            ? "0"
+            : style.Opacity ? `${style.Opacity}` : "";
         // core.Translate, on the individual `translate` property so it composes
         // with Rotate's transform and Spin's rotate (translate is applied
         // outermost). Total like transform: a drawer that opens sends no

@@ -82,6 +82,24 @@ struct GrMobStyle: Equatable {
     /// core.Spin: milliseconds per revolution, negative for anticlockwise, 0
     /// for still. Applied by GrMobSpin beside `rotate`.
     var spin: Int = 0
+    /// core.Opacity, as written on the wire, which is NOT the alpha. Zero means
+    /// "unset" (opaque), and an alpha of zero arrives as core.OpacityClear
+    /// (-1). `alpha` below is the reading; this stays a decode of the JSON,
+    /// the arrangement flexShrink and shrinkFactor have.
+    var opacity: CGFloat = 0
+
+    /// The alpha this style asks for: 1 when nothing was set (the CSS initial
+    /// value), 0 for core.OpacityClear, and the number otherwise, clamped to
+    /// [0, 1] as CSS clamps it.
+    ///
+    /// The mirror of core.Style.OpacityFactor, and the only place in this
+    /// runtime that knows what an Opacity of -1 means.
+    var alpha: CGFloat {
+        if opacity == 0 { return 1 }
+        if opacity == -1 { return 0 }
+        return min(max(opacity, 0), 1)
+    }
+
     /// core.Translate, one axis each, as GrMobShift.parse resolves it. Applied
     /// by GrMobTranslate just outside the two rotations.
     var translateX: GrMobShift = .zero
@@ -280,6 +298,7 @@ struct GrMobStyle: Equatable {
         s.shadow = num("Shadow")
         s.rotate = num("Rotate")
         s.spin = int("Spin")
+        s.opacity = num("Opacity")
         s.translateX = GrMobShift.parse(str("TranslateX"))
         s.translateY = GrMobShift.parse(str("TranslateY"))
         s.overflow = str("Overflow")
@@ -825,7 +844,17 @@ struct GrMobBoxModifier: ViewModifier {
                                             margin: grMobHorizontalMargin(s)))
             // "hidden" keeps the node's space but not its pixels ("none" is
             // handled earlier by not rendering the node at all — see RenderNode).
-            .opacity(s?.display == "hidden" ? 0 : 1)
+            //
+            // core.Opacity rides the same modifier, not one of its own: the
+            // two are one question ("how opaque is this box drawn") with
+            // hidden taking precedence, and a second .opacity would be one
+            // more layer on a chain whose height already crashes the compiler
+            // (see grMobTransition). It sits outside the painted box, the
+            // rotation and the margin, so the whole box fades as one picture
+            // (CSS's group opacity; a margin paints nothing, so being inside
+            // the fade changes no pixel). grMobTransition is further out
+            // still, which is what eases a changed alpha under a Transition.
+            .opacity(s?.display == "hidden" ? 0 : (s?.alpha ?? 1))
             // The platform disabled state. SwiftUI's `.disabled` propagates
             // down the subtree, which is deliberate and is what the Android
             // renderer's LocalGrMobDisabled and the web target's

@@ -176,7 +176,7 @@ var Packages = []Pkg{
 			Slug:  "style-props",
 			Title: "Styling: style props",
 			Blurb: "The StyleProp constructors: spacing and per-side insets, flex, typography, colour, borders, per-corner radii and animation.",
-			Files: []string{"style_props.go", "margin_sides.go", "padding_sides.go", "corners.go", "animation.go"},
+			Files: []string{"style_props.go", "margin_sides.go", "padding_sides.go", "corners.go", "opacity.go", "animation.go"},
 		}, {
 			Slug:  "theme",
 			Title: "Theming",

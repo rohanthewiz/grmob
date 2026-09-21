@@ -30,7 +30,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-064
+**Next ID:** N-065
 
 ## Open
 
@@ -214,10 +214,12 @@ with each item's `raised` traced back through all session docs.
   `examples/chat` were looked at in headless Chrome only.
   - `TypingIndicator` under Reduce Motion on all three live targets: the
     hosts drop the `Transition` and Go still steps the phase, so the dots
-    change colour without the ease. The widget's doc claims that is a quiet
+    change alpha without the ease. The widget's doc claims that is a quiet
     blink (a 6pt dot, one grey to another) and nobody has seen it.
-  - That a background-colour `Transition` on a 6pt `Box` actually eases on
-    Compose and SwiftUI. It is the only thing that moves the dots.
+  - That a `core.Opacity` `Transition` on a 6pt `Box` actually eases on
+    Compose and SwiftUI. It is the only thing that moves the dots (they were
+    a background-colour ease until the session that added `core.Opacity`;
+    see N-064).
   - `TypingIndicator`'s `RoleStatus` appearing from `Display none`: heard on
     TalkBack? VoiceOver is expected to say nothing (the known live-region
     gap, core/role.go).
@@ -233,6 +235,25 @@ with each item's `raised` traced back through all session docs.
   `comps-low-hanging-fruit-4.md`'s "still blocked" list carries "Per-corner
   radius, and so bubble tails", though `core.CornerRadii` exists and
   `MessageBubble` uses it.
+
+- **N-064** · raised `2026-0921-0935-core-opacity-and-typing-indicator-fade` · value medium
+  **`core.Opacity` is unrun on a device.** It
+  compiles on all four targets and its call sites, layer order and sentinel
+  are pinned from source, but nobody has seen it fade.
+  - Compose: that `Modifier.alpha` outside `Modifier.shadow` keeps the whole
+    shadow mid-fade. An alpha below 1 composites the layer offscreen, and an
+    offscreen layer may clip what is drawn outside the node's bounds.
+  - Compose: `animatedStyle` easing the alpha, and snapping under "Remove
+    animations".
+  - SwiftUI: the fade under the node's one `.animation`, and whether a view
+    at exactly 0 still takes taps and VoiceOver focus (the doc says taps stop;
+    that is from SwiftUI's known behaviour, not measured here).
+  - Noticed beside it, untouched: Compose's `DisplayHidden` alpha sits at the
+    foot of `boxModifier`, inside the background and border, so a hidden node
+    with a fill may still draw the fill. iOS and the web hide the whole box.
+  - Its one consumer is `TypingIndicator`'s dots (looked at in headless
+    Chrome only), so N-062's device checks are this field's too. No lesson
+    teaches the prop itself.
 
 ## Non-goals
 

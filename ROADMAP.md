@@ -287,6 +287,14 @@
       Layer order is pinned in both natives by `mobile/verify/rotate_test.go`:
       a rotation applied below the background turns the content inside a box
       that stays square, which compiles and animates and is still wrong
+- [x] `core.Opacity(alpha)` — group opacity on all four targets (`opacity`,
+      `Modifier.alpha`, `.opacity`), paint only, and animatable under a
+      `Transition` everywhere (Compose eases it by hand in `animatedStyle`).
+      The second `Style` number whose zero is not its value: `Opacity(0)`
+      crosses the wire as `core.OpacityClear` (-1), pinned to all three
+      runtimes by `wasm/verify/opacity_test.go`, with the layer order and the
+      call sites pinned by `mobile/verify/opacity_test.go`. First consumer:
+      `comps.TypingIndicator`'s dots. Unrun on a device.
 - [x] Heading sensor — `core.StartHeading`/`StopHeading` (refcounted, so two
       screens can each hold the compass), `core.CurrentHeading`/`OnHeading`
       and `hooks.UseHeading`, over one `"sensor"` system event carrying a

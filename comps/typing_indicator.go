@@ -43,14 +43,24 @@ import (
 // visible state costs render passes: forgetting the field draws nothing,
 // rather than animating for the life of the screen.
 //
-// # How the dots move: colour, not opacity
+// # How the dots move: opacity
 //
-// The plan sketched an opacity pulse. core.Style has no opacity, and adding
-// one is renderer work on three targets, which this round rules out. What
-// core.Transition does animate on every target is background colour, so the
-// phase picks which dot is dark and each dot eases between two fills. Go
-// sends one patch per beat (two dots change colour); every frame between the
-// beats is the platform's.
+// Every dot is the same fill, Colors.TextPrimary, and the phase picks which
+// one is drawn at full strength; the other two rest at typingRestAlpha. Each
+// carries a core.Transition, so a dot eases between the two alphas, and Go
+// sends one patch per beat (two dots change); every frame between the beats
+// is the platform's.
+//
+// The first build eased between two background colours, because core.Style
+// had no opacity then. That needed a second tone that reads on the bubble in
+// every theme, and finding one took three tries: TextSecondary already
+// carries an alpha byte in DefaultTheme, so dimming it further did nothing;
+// Border is 1.26:1 on the page and vanished; ControlBorderColor() worked.
+// One colour at two alphas asks the theme for nothing but its text colour,
+// which is legible on Surface by definition, so a custom theme cannot break
+// the resting dots. The dark dot states Opacity(1) rather than leaving the
+// field unset, so both states are written the same way and neither depends
+// on what an absent key means to a renderer.
 //
 // This is not Spinner's old mistake restated. Spinner stepped twelve passes a
 // second to fake a rotation a renderer could do itself, and core.Spin removed
@@ -62,7 +72,7 @@ import (
 //
 // Each host drops the Transition on its own side (core.Transition, "Reduced
 // motion") and nothing tells Go, so under the setting the interval still
-// steps the phase and the dots change colour without the ease. The dots are
+// steps the phase and the dots change alpha without the ease. The dots are
 // six points across and the change is one grey to another, so the un-eased
 // form is a quiet blink rather than a flash. It has not been looked at on a
 // device with the setting on; that check is on the Next list.
@@ -72,7 +82,7 @@ import (
 // The whole widget is one RoleStatus stop named by Label — a polite live
 // region, announced when it appears. The dots and the caption are hidden from
 // assistive technology: the dots are decoration, and the caption repeats the
-// name. The phase changes only the dots' fills, so the name is stable and a
+// name. The phase changes only the dots' opacity, so the name is stable and a
 // beat re-announces nothing. Hidden is display:none and is not announced.
 //
 // # Theme roles read
@@ -80,8 +90,7 @@ import (
 //	Bubble        Colors.Surface fill, Colors.BorderColor() hairline — theirs,
 //	              as MessageBubble draws it, so the dots read as a bubble
 //	              about to arrive
-//	Resting dot   Colors.ControlBorderColor()
-//	Dark dot      Colors.TextPrimary
+//	Dots          Colors.TextPrimary, at typingRestAlpha except the dark one
 //	Caption       Typography.Caption, Colors.TextSecondary
 type TypingIndicator struct {
 	// Visible shows the indicator and runs its animation. False (the zero
@@ -113,7 +122,15 @@ const (
 	// stalled, faster reads as a loading spinner.
 	typingBeat = 400 * time.Millisecond
 
-	// typingEaseMs is the colour ease. Shorter than the beat, so each dot
+	// typingRestAlpha is how strongly a resting dot is drawn. Low enough that
+	// the dark dot is unmistakable beside it, high enough that three resting
+	// dots still read as dots on Surface in a light theme and a dark one.
+	// 0.4 is fitted to the tone the colour build was looked at with:
+	// DefaultTheme's black at 0.4 over Surface (#F2F2F7) composites to about
+	// #919194, against ControlBorderColor()'s #89898E.
+	typingRestAlpha = 0.4
+
+	// typingEaseMs is the opacity ease. Shorter than the beat, so each dot
 	// reaches its dark tone and holds it briefly before the next takes over;
 	// equal to the beat would leave every dot permanently mid-fade.
 	typingEaseMs = 300
@@ -166,15 +183,16 @@ func (ti TypingIndicator) Render(ctx *core.Context) *core.Node {
 		core.AccessibilityHidden(),
 	}
 	for i := range typingDots {
-		fill := t.Colors.ControlBorderColor()
+		alpha := typingRestAlpha
 		if i == phase.Get() {
-			fill = t.Colors.TextPrimary
+			alpha = 1
 		}
 		bubble = append(bubble, core.Box(
 			core.Width(px),
 			core.Height(px),
 			core.BorderRadius(typingDotSize/2),
-			core.BackgroundColor(fill),
+			core.BackgroundColor(t.Colors.TextPrimary),
+			core.Opacity(alpha),
 			core.Transition(typingEaseMs, core.EaseInOut),
 		))
 	}

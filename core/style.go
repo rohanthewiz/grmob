@@ -29,12 +29,13 @@ package core
 // (Go 1.24) does, and it means the same thing for every other kind here, so
 // one spelling covers the struct instead of two.
 //
-// # The one field whose zero is not its value
+// # The two fields whose zero is not their value
 //
-// FlexShrink. Its "unset" and its "explicitly zero" are different states, and
-// the difference is carried by a non-zero sentinel (ShrinkNone) rather than by
-// the field's presence — which is exactly why these tags are safe on it. See
-// ShrinkNone.
+// FlexShrink and Opacity. For each, "unset" and "explicitly zero" are different
+// states (both properties' CSS initial value is 1), and the difference is
+// carried by a non-zero sentinel (ShrinkNone, OpacityClear) rather than by the
+// field's presence — which is exactly why these tags are safe on them. See
+// ShrinkNone, and OpacityClear for the second.
 //
 // # What this constrains
 //
@@ -175,6 +176,17 @@ type Style struct {
 	// added to Rotate. Zero holds still. See core.Spin for what each renderer
 	// maps it onto and why it is a rotation rather than a general loop.
 	Spin int `json:",omitzero"`
+
+	// Opacity is how opaque the node and its subtree are drawn, and it is the
+	// second number in this struct whose zero is not its own value: 0 is
+	// "unset", which draws fully opaque, and fully transparent is stored as
+	// OpacityClear. Read it through OpacityFactor rather than off the field;
+	// write it through core.Opacity, which clamps and places the sentinel.
+	//
+	// A paint-time property like the three above it: the box keeps its size
+	// and place. See core.Opacity for the group-opacity rule, what a faded
+	// node still does, and each renderer's mapping.
+	Opacity float64 `json:",omitzero"`
 
 	// TranslateX and TranslateY shift the node's painted box, and its touch
 	// target with it, without moving anything around it. See core.Translate
@@ -1180,6 +1192,13 @@ func (s Style) applyTo(target *Style) {
 	// Translate merges per axis on "non-empty wins", so a role style can
 	// shift one axis and leave the other to the node. A node is put back
 	// with the Translate("", "") prop, not by a role style.
+	// Opacity merges on "non-zero wins" too, and unlike Rotate and Spin it
+	// loses nothing by it: both ends of its range are stored non-zero (1 as
+	// 1, 0 as OpacityClear), so a role style can merge a node to transparent
+	// and back to opaque.
+	if s.Opacity != 0 {
+		target.Opacity = s.Opacity
+	}
 	if s.TranslateX != "" {
 		target.TranslateX = s.TranslateX
 	}

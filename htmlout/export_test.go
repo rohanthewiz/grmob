@@ -2357,3 +2357,44 @@ func TestKeyboardExportsAsInputMode(t *testing.T) {
 		}
 	}
 }
+
+// --- Opacity ----------------------------------------------------------------
+
+// The three states the field has, against the one declaration each should
+// produce. Zero is the case a plain number could not express: it arrives as
+// core.OpacityClear and must leave as opacity:0, not as a negative alpha and
+// not as nothing.
+func TestOpacityExportsItsAlphaIncludingZero(t *testing.T) {
+	for _, c := range []struct {
+		alpha float64
+		want  string
+	}{
+		{0.4, "opacity:0.4"},
+		{1, "opacity:1"},
+		{0, "opacity:0"},
+	} {
+		s := &core.Style{}
+		core.Opacity(c.alpha).Apply(s)
+		out := ExportHTML(&core.Node{Type: "Box", Props: map[string]any{}, Style: s})
+		if !strings.Contains(out, c.want+";") && !strings.Contains(out, c.want+`"`) {
+			t.Errorf("Opacity(%g): want the declaration %q in:\n%s", c.alpha, c.want, out)
+		}
+		if strings.Contains(out, "opacity:-1") {
+			t.Errorf("Opacity(%g): the sentinel reached the page as an alpha:\n%s", c.alpha, out)
+		}
+	}
+}
+
+// An undeclared opacity writes nothing, which keeps every existing export
+// byte-identical: CSS's initial value is already 1. The node carries another
+// style field so that a style attribute is written at all.
+func TestAnUnsetOpacityEmitsNoDeclaration(t *testing.T) {
+	out := ExportHTML(&core.Node{
+		Type:  "Box",
+		Props: map[string]any{},
+		Style: &core.Style{Rotate: 10},
+	})
+	if strings.Contains(out, "opacity") {
+		t.Fatalf("a Style with no Opacity emitted one:\n%s", out)
+	}
+}

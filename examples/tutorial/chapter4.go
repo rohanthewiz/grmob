@@ -5685,7 +5685,7 @@ func lessonChatFamily() Lesson {
 					"percent, 2 votes, your choice\"."),
 				keyPoints(
 					"TypingIndicator owns hooks: always render it and switch it with Visible, never with core.If.",
-					"Its dots fade by background colour under core.Transition; Go steps the phase, the platform draws the frames.",
+					"Its dots fade by core.Opacity under core.Transition; Go steps the phase, the platform draws the frames.",
 					"ReactionBar and Poll hold no state: counts and votes are server data, so the caller toggles and records.",
 					"Reaction.Label names the emoji; a count of zero is not drawn; Trailing is the slot for an add chip.",
 					"Poll's shares always total 100 (largest remainder), and the reader's choice is PollOption.Mine.",

@@ -2134,30 +2134,31 @@ Hidden is Display none — Spinner.Hidden's answer — so the tree keeps its sha
 
 The zero value is hidden. That is the safe way round for a widget whose visible state costs render passes: forgetting the field draws nothing, rather than animating for the life of the screen.
 
-#### How the dots move: colour, not opacity
+#### How the dots move: opacity
 
-The plan sketched an opacity pulse. core.Style has no opacity, and adding one is renderer work on three targets, which this round rules out. What core.Transition does animate on every target is background colour, so the phase picks which dot is dark and each dot eases between two fills. Go sends one patch per beat (two dots change colour); every frame between the beats is the platform's.
+Every dot is the same fill, Colors.TextPrimary, and the phase picks which one is drawn at full strength; the other two rest at typingRestAlpha. Each carries a core.Transition, so a dot eases between the two alphas, and Go sends one patch per beat (two dots change); every frame between the beats is the platform's.
+
+The first build eased between two background colours, because core.Style had no opacity then. That needed a second tone that reads on the bubble in every theme, and finding one took three tries: TextSecondary already carries an alpha byte in DefaultTheme, so dimming it further did nothing; Border is 1.26:1 on the page and vanished; ControlBorderColor() worked. One colour at two alphas asks the theme for nothing but its text colour, which is legible on Surface by definition, so a custom theme cannot break the resting dots. The dark dot states Opacity(1) rather than leaving the field unset, so both states are written the same way and neither depends on what an absent key means to a renderer.
 
 This is not Spinner's old mistake restated. Spinner stepped twelve passes a second to fake a rotation a renderer could do itself, and core.Spin removed it. Here there is no native primitive to hand the loop to (a looping transition is what core.Spin's doc declines to generalise), the rate is two and a half passes a second, and it runs only while somebody is typing.
 
 #### Reduce Motion
 
-Each host drops the Transition on its own side (core.Transition, "Reduced motion") and nothing tells Go, so under the setting the interval still steps the phase and the dots change colour without the ease. The dots are six points across and the change is one grey to another, so the un-eased form is a quiet blink rather than a flash. It has not been looked at on a device with the setting on; that check is on the Next list.
+Each host drops the Transition on its own side (core.Transition, "Reduced motion") and nothing tells Go, so under the setting the interval still steps the phase and the dots change alpha without the ease. The dots are six points across and the change is one grey to another, so the un-eased form is a quiet blink rather than a flash. It has not been looked at on a device with the setting on; that check is on the Next list.
 
 #### Accessibility
 
-The whole widget is one RoleStatus stop named by Label — a polite live region, announced when it appears. The dots and the caption are hidden from assistive technology: the dots are decoration, and the caption repeats the name. The phase changes only the dots' fills, so the name is stable and a beat re-announces nothing. Hidden is display:none and is not announced.
+The whole widget is one RoleStatus stop named by Label — a polite live region, announced when it appears. The dots and the caption are hidden from assistive technology: the dots are decoration, and the caption repeats the name. The phase changes only the dots' opacity, so the name is stable and a beat re-announces nothing. Hidden is display:none and is not announced.
 
 #### Theme roles read
 
 	Bubble        Colors.Surface fill, Colors.BorderColor() hairline — theirs,
 	              as MessageBubble draws it, so the dots read as a bubble
 	              about to arrive
-	Resting dot   Colors.ControlBorderColor()
-	Dark dot      Colors.TextPrimary
+	Dots          Colors.TextPrimary, at typingRestAlpha except the dark one
 	Caption       Typography.Caption, Colors.TextSecondary
 
-<small>[comps/typing_indicator.go:86](https://github.com/rohanthewiz/grmob/blob/master/comps/typing_indicator.go#L86)</small>
+<small>[comps/typing_indicator.go:95](https://github.com/rohanthewiz/grmob/blob/master/comps/typing_indicator.go#L95)</small>
 
 #### func (TypingIndicator) Render
 
@@ -2167,5 +2168,5 @@ func (ti TypingIndicator) Render(ctx *core.Context) *core.Node
 
 Render takes two hook slots, unconditionally, and then draws Row(bubble(dot × 3), caption?).
 
-<small>[comps/typing_indicator.go:141](https://github.com/rohanthewiz/grmob/blob/master/comps/typing_indicator.go#L141)</small>
+<small>[comps/typing_indicator.go:158](https://github.com/rohanthewiz/grmob/blob/master/comps/typing_indicator.go#L158)</small>
 

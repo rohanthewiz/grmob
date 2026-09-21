@@ -20,7 +20,7 @@ const (
 )
 
 // Transition declares that changes to this node's animatable properties —
-// background color, size, padding, list placement — should animate over the
+// background color, opacity, size, padding, list placement — should animate over the
 // given duration instead of snapping. This is the "declare in Go, drive
 // natively" model: Go only ships the declaration in the style; each frame of
 // the animation is produced by the platform's animation system (Compose,

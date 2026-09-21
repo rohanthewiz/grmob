@@ -46,7 +46,7 @@ difference is structural rather than an oversight:
 
 | group | Android | iOS | WASM DOM | `htmlout` |
 |---|---|---|---|---|
-| typography, color, box model, borders, `Shadow`, `Gap`, `RowGap`/`ColumnGap`, `Justify`, `AlignItems`, `FlexWrap`, `StackAlign`, `Transition`, `Rotate`, `Spin`, `Translate`, accessibility, `Disabled` | yes | yes | yes | yes |
+| typography, color, box model, borders, `Shadow`, `Gap`, `RowGap`/`ColumnGap`, `Justify`, `AlignItems`, `FlexWrap`, `StackAlign`, `Transition`, `Rotate`, `Spin`, `Translate`, `Opacity`, accessibility, `Disabled` | yes | yes | yes | yes |
 | `Position` + `Top`/`Right`/`Bottom`/`Left`/`ZIndex`, `MaxHeight`, `WhiteSpace`, `AlignSelf`, `FlexBasis`, `FlexDirection`, `Inert` | — | — | yes | yes |
 | `MinWidth`, `MinHeight` | px, % | px, % | yes | yes |
 | `Overflow` | `hidden` only | `hidden` only | yes | yes |
@@ -1605,6 +1605,42 @@ forwards and the second unwinds 340 the other way. Folding the value into
 [0, 360) would take that choice away and pick the wrong one for a compass,
 which would unwind the whole rose every time the bearing passed north.
 `core.AngleDelta` is the arithmetic for accumulating an unwrapped angle.
+
+## Opacity
+
+`Opacity(alpha)` sets how opaque a node and everything inside it is drawn: 1 is
+opaque (and what an unset node is), 0 is transparent.
+
+```go
+core.Box(core.Opacity(0.4))                                      // dimmed
+core.Box(core.Opacity(0), core.Transition(200, core.EaseOut))    // fades out
+```
+
+| target | mapping |
+|---|---|
+| htmlout / WASM | `opacity: N` |
+| Compose | `Modifier.alpha(N)`, eased by hand under a `Transition` |
+| SwiftUI | `.opacity(N)`, under the node's one `.animation` |
+
+**Group opacity.** The node is composited as one picture and the picture is
+faded, on every target, so a child overlapping its parent's fill does not show
+the fill through itself. That is the difference from an alpha byte in
+`Background` or `TextColor`, which fades one paint. It multiplies down the
+tree: a 0.5 child of a 0.5 parent is drawn at 0.25.
+
+**Paint only.** The box keeps its size and place, as with `Rotate` and
+`Translate`. A faded node also keeps its semantics: a screen reader still reads
+a node at `Opacity(0)`, and on the web and Compose it still takes taps (SwiftUI
+alone stops hit-testing at exactly zero). A node that should be out of reach
+says so with `Display`, `Inert` or `AccessibilityHidden`, alongside the fade.
+
+**Zero is a sentinel on the wire.** Every optional number in a `Style` means
+"unset" by being zero, and opacity's initial value is 1, so a plain zero would
+be dropped as unset three times before it reached a screen. `Opacity(0)` stores
+`core.OpacityClear` (-1), and renderers read `Style.OpacityFactor()`. It is the
+same arrangement `FlexShrink(0)` has, and the same number. The argument is
+clamped to [0, 1], and both ends are stored non-zero, so a merged style can take
+a node to transparent and back to opaque.
 
 ## Translate
 

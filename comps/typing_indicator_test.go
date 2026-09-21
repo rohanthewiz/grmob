@@ -21,12 +21,24 @@ func typingDotsOf(t *testing.T, n *core.Node) []*core.Node {
 	return dots
 }
 
-// darkDot is the index of the one dot in the dark tone, or -1.
+// darkDot is the index of the one dot drawn at full strength, or -1. Every
+// dot is the same fill; the dark one is the one whose opacity reads as 1, and
+// the others must rest at typingRestAlpha, declared (an undeclared opacity is
+// also 1, which would make a resting dot dark).
 func darkDot(t *testing.T, n *core.Node) int {
 	t.Helper()
 	dark := -1
 	for i, d := range typingDotsOf(t, n) {
-		if d.Style.Background == core.DefaultTheme.Colors.TextPrimary {
+		if d.Style.Background != core.DefaultTheme.Colors.TextPrimary {
+			t.Fatalf("dot %d is filled %q; every dot is TextPrimary and only the alpha differs",
+				i, d.Style.Background)
+		}
+		alpha, declared := d.Style.OpacityFactor()
+		if !declared || (alpha != 1 && alpha != typingRestAlpha) {
+			t.Fatalf("dot %d: opacity (%g, declared %v), want a declared 1 or %g",
+				i, alpha, declared, typingRestAlpha)
+		}
+		if alpha == 1 {
 			if dark >= 0 {
 				t.Fatalf("dots %d and %d are both dark; exactly one should be", dark, i)
 			}
@@ -63,7 +75,7 @@ func TestTypingIndicatorIsOneStatusStopOverThreeDots(t *testing.T) {
 	}
 	for i, d := range typingDotsOf(t, n) {
 		if d.Style.Transition == "" {
-			t.Errorf("dot %d has no Transition, so its colour would snap on every target", i)
+			t.Errorf("dot %d has no Transition, so its opacity would snap on every target", i)
 		}
 	}
 }
