@@ -83,6 +83,7 @@ type canvasCase struct {
 	BoxW    float64     `json:"boxW"`
 	BoxH    float64     `json:"boxH"`
 	Stretch bool        `json:"stretch"`
+	Mirror  bool        `json:"mirror"`
 	Ops     []float64   `json:"ops"`
 	SX      float64     `json:"sx"`
 	SY      float64     `json:"sy"`
@@ -101,7 +102,7 @@ func canvasCases() []canvasCase {
 	for _, c := range canvasfixture.Cases() {
 		w := canvasfixture.WantFor(c)
 		cc := canvasCase{Name: c.Name, VW: c.VW, VH: c.VH, BoxW: c.BoxW, BoxH: c.BoxH,
-			Stretch: c.Stretch, Ops: c.Ops, SX: w.SX, SY: w.SY, OX: w.OX, OY: w.OY}
+			Stretch: c.Stretch, Mirror: c.Mirror, Ops: c.Ops, SX: w.SX, SY: w.SY, OX: w.OX, OY: w.OY}
 		for _, call := range w.Calls {
 			args := call.Args
 			if args == nil {

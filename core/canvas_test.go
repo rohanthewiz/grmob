@@ -311,3 +311,44 @@ func TestStrokeGradientWire(t *testing.T) {
 		t.Errorf("GradientKey = %q", got)
 	}
 }
+
+// CanvasMirrorsRTL is opt-in and writes to the wire only when set, so every
+// Canvas that does not ask for it sends exactly the patch it sent before the
+// prop existed. It means nothing to any other node.
+func TestCanvasMirrorIsOptInAndCanvasOnly(t *testing.T) {
+	render := func(v View) *Node {
+		ctx := NewContext()
+		ctx.BeginRenderPass()
+		return v.Render(ctx)
+	}
+	shapes := []Shape{{Path: Line(0, 0, 10, 10), Stroke: "#000"}}
+	if _, ok := render(Canvas(10, 10, shapes)).Props["mirror"]; ok {
+		t.Error("a Canvas that did not ask to mirror carries a mirror prop")
+	}
+	if got := render(Canvas(10, 10, shapes, CanvasMirrorsRTL)).Props["mirror"]; got != true {
+		t.Errorf("CanvasMirrorsRTL wrote mirror = %v, want true", got)
+	}
+	if _, ok := render(Canvas(10, 10, shapes, CanvasMirrorsRTL, CanvasMirror(false))).Props["mirror"]; ok {
+		t.Error("a later CanvasMirror(false) should take the prop back off")
+	}
+	if _, ok := render(Column(CanvasMirrorsRTL)).Props["mirror"]; ok {
+		t.Error("CanvasMirrorsRTL wrote a prop on a Column")
+	}
+}
+
+// MirrorCanvasMapping reflects about the box's vertical centre line: the
+// viewBox's left edge lands on the box's right edge and the other way round,
+// under both scales, and y is untouched by construction (it is not an input).
+func TestMirrorCanvasMappingReflectsTheBox(t *testing.T) {
+	for _, scale := range []CanvasScale{CanvasStretch, CanvasFit} {
+		sx, _, ox, _ := CanvasMapping(10, 40, 200, 100, scale)
+		msx, mox := MirrorCanvasMapping(sx, ox, 200)
+		for _, x := range []float64{0, 3, 10} {
+			plain := x*sx + ox
+			mirrored := x*msx + mox
+			if math.Abs(mirrored-(200-plain)) > 1e-9 {
+				t.Errorf("%s: x=%v lands at %v mirrored, want %v", scale, x, mirrored, 200-plain)
+			}
+		}
+	}
+}

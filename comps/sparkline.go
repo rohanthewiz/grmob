@@ -100,7 +100,7 @@ func (s Sparkline) Render(ctx *core.Context) *core.Node {
 	}
 
 	props := make([]core.PropsAndChildren, 0, 4+len(s.Style))
-	props = append(props, core.CanvasStretch, core.Height(px(h)), core.AccessibilityLabel(s.label()))
+	props = append(props, core.CanvasStretch, core.CanvasMirrorsRTL, core.Height(px(h)), core.AccessibilityLabel(s.label()))
 	for _, sp := range s.Style {
 		props = append(props, sp)
 	}

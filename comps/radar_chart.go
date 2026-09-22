@@ -273,7 +273,7 @@ func (c RadarChart) Render(ctx *core.Context) *core.Node {
 		core.Width(px(stackW)),
 		core.Height(px(stackH)),
 		core.AccessibilityHidden(),
-		core.Canvas(chartView, chartView, shapes, core.Width(dim), core.Height(dim)),
+		core.Canvas(chartView, chartView, shapes, core.CanvasMirrorsRTL, core.Width(dim), core.Height(dim)),
 	}
 	// A viewBox unit in px; see "The labels".
 	unit := size / chartView

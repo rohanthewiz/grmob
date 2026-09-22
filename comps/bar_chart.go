@@ -224,7 +224,7 @@ func (c BarChart) Render(ctx *core.Context) *core.Node {
 		Stroke: t.Colors.ControlBorderColor(), StrokeWidth: 1,
 	})
 
-	canvas := core.Canvas(chartView, chartView, shapes, core.CanvasStretch, core.Height(px(h)))
+	canvas := core.Canvas(chartView, chartView, shapes, core.CanvasStretch, core.CanvasMirrorsRTL, core.Height(px(h)))
 
 	var legendView core.View
 	if len(c.Series) > 1 {
@@ -581,8 +581,22 @@ func (c BarChart) bandValueLayer(t *core.Theme, n int, fill float64, scale value
 	if len(texts) == 0 || len(tips) != len(texts) || total <= 0 {
 		return nil
 	}
+	// The gap between a label and its bar's tip is a fixed-width box in a Row,
+	// not a PaddingLeft or PaddingRight. Under RTL the chart mirrors
+	// (core.CanvasMirrorsRTL) and so does every Row, but padding does not
+	// mirror the same way on every target: the natives read Padding.Left as
+	// the leading side, and the web writes a physical padding-left. A box in a
+	// Row is leading-relative everywhere, so the gap stays on the tip's side.
+	//
+	//	gapLead   [ gap ][ label ]   the gap on the label's leading side
+	//	gapTrail  [ label ][ gap ]   the gap on its trailing side
 	const gap = barValueGap
-	segment := func(weight float64, text string, align core.Alignment, ink string, side core.StyleProp) core.View {
+	const (
+		gapNone = iota
+		gapLead
+		gapTrail
+	)
+	segment := func(weight float64, text string, align core.Alignment, ink string, side int) core.View {
 		if weight <= 1e-9 {
 			return nil
 		}
@@ -592,11 +606,21 @@ func (c BarChart) bandValueLayer(t *core.Theme, n int, fill float64, scale value
 			core.FlexBasis("0"),
 			core.MinWidth("0px"),
 		}
-		if side != nil {
-			props = append(props, side)
-		}
 		if text != "" {
-			props = append(props, chartLabelText(t, text, align, ink))
+			label := core.Column(core.Padding(0), core.FlexGrow(1), core.FlexBasis("0"), core.MinWidth("0px"),
+				chartLabelText(t, text, align, ink))
+			spacer := core.Box(core.Padding(0), core.Width(px(gap)), core.FlexShrink(0))
+			row := []core.PropsAndChildren{core.Padding(0), core.Gap(0), core.Width("100%"),
+				core.AlignItemsProp(core.AlignItemsCenter)}
+			switch side {
+			case gapLead:
+				row = append(row, spacer, label)
+			case gapTrail:
+				row = append(row, label, spacer)
+			default:
+				row = append(row, label)
+			}
+			props = append(props, core.Row(row...))
 		}
 		return core.Column(props...)
 	}
@@ -622,22 +646,22 @@ func (c BarChart) bandValueLayer(t *core.Theme, n int, fill float64, scale value
 		switch {
 		case !tip.negative && (1-p >= room || p-z < room):
 			row = append(row,
-				segment(p, "", core.AlignStart, "", nil),
-				segment(1-p, text, core.AlignStart, outside, core.PaddingLeft(gap)))
+				segment(p, "", core.AlignStart, "", gapNone),
+				segment(1-p, text, core.AlignStart, outside, gapLead))
 		case !tip.negative:
 			row = append(row,
-				segment(z, "", core.AlignStart, "", nil),
-				segment(p-z, text, core.AlignEnd, inside, core.PaddingRight(gap)),
-				segment(1-p, "", core.AlignStart, "", nil))
+				segment(z, "", core.AlignStart, "", gapNone),
+				segment(p-z, text, core.AlignEnd, inside, gapTrail),
+				segment(1-p, "", core.AlignStart, "", gapNone))
 		case p >= room || z-p < room:
 			row = append(row,
-				segment(p, text, core.AlignEnd, outside, core.PaddingRight(gap)),
-				segment(1-p, "", core.AlignStart, "", nil))
+				segment(p, text, core.AlignEnd, outside, gapTrail),
+				segment(1-p, "", core.AlignStart, "", gapNone))
 		default:
 			row = append(row,
-				segment(p, "", core.AlignStart, "", nil),
-				segment(z-p, text, core.AlignStart, inside, core.PaddingLeft(gap)),
-				segment(1-z, "", core.AlignStart, "", nil))
+				segment(p, "", core.AlignStart, "", gapNone),
+				segment(z-p, text, core.AlignStart, inside, gapLead),
+				segment(1-z, "", core.AlignStart, "", gapNone))
 		}
 		items = append(items, core.Row(row...))
 	}

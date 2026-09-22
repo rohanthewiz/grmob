@@ -392,6 +392,9 @@ type canvasCase struct {
 	// ViewBox and Preserve are the <svg>'s two attributes.
 	ViewBox  string `json:"viewBox"`
 	Preserve string `json:"preserve"`
+	// Scale is the <svg>'s CSS scale: the core.CanvasMirrorsRTL reflection,
+	// or "" for a canvas that does not mirror.
+	Scale string `json:"scale"`
 	// Shapes is each <path>'s attributes as htmlout writes them, in order.
 	Shapes [][]string `json:"shapes"`
 	// Gradients is the leading <defs>'s paint servers as htmlout writes them,
@@ -420,6 +423,7 @@ func canvasCases() []canvasCase {
 			Tree:     jsonout.Export(n),
 			ViewBox:  "0 0 " + strconv.FormatFloat(n.Props["vw"].(float64), 'g', -1, 64) + " " + strconv.FormatFloat(n.Props["vh"].(float64), 'g', -1, 64),
 			Preserve: map[bool]string{true: "none", false: "xMidYMid meet"}[n.Props["scale"] == "stretch"],
+			Scale:    htmlout.CanvasMirrorScale(n.Props),
 		}
 		// The runtime test mounts the canvas as the first child of a root
 		// Column, so it sits at "root/0" and its gradient ids are scoped so.
@@ -464,6 +468,13 @@ func canvasCases() []canvasCase {
 			{Path: core.NewPath().Arc(50, 25, 20, 0, 360).Close().Arc(50, 25, 10, 0, 360).Close(), FillRule: core.FillEvenOdd, FillGradient: core.RadialGradientFill(50, 25, 20, core.Stop(0, "#ffffff"), core.Stop(0.5, "#eb6834"), core.Stop(1, "#4a3aa7"))},
 			{Path: core.Rect(0, 0, 10, 10), FillGradient: core.LinearGradientFill(1, 1, 1, 1, core.Stop(0, "#000000"), core.Stop(1, "#123456"))},
 		}, core.CanvasStretch)),
+		// A core.CanvasMirrorsRTL chart line: the reflection is a CSS scale on
+		// the <svg>, and the shapes are exactly what an unmirrored canvas
+		// sends (the flip is the renderer's, not Go's).
+		build("a mirrored stretched line with a gradient", core.Canvas(100, 50, []core.Shape{
+			{Path: core.Polyline(0, 50, 50, 0, 100, 25), Stroke: "#2a78d6", StrokeWidth: 2, Cap: core.CapRound},
+			{Path: core.Rect(0, 25, 100, 25), FillGradient: core.LinearGradientFill(0, 25, 0, 50, core.Stop(0, "#2a78d666"), core.Stop(1, "#2a78d600"))},
+		}, core.CanvasStretch, core.CanvasMirrorsRTL)),
 		// Stroke gradients: one alone on a dashed line, one beside a fill
 		// gradient on the same shape (two servers, fill first), and a
 		// degenerate one sent as a flat stroke.

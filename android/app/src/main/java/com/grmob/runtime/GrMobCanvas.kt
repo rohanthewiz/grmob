@@ -19,6 +19,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.unit.LayoutDirection
 
 /**
  * The Compose half of core.Canvas: a foundation Canvas that draws each
@@ -62,13 +63,23 @@ internal fun GrMobCanvas(node: GrMobNode, modifier: Modifier) {
     val vw = node.doubleProp("vw").takeIf { it > 0 } ?: 100.0
     val vh = node.doubleProp("vh").takeIf { it > 0 } ?: 100.0
     val stretch = node.stringProp("scale") == "stretch"
+    // core.CanvasMirrorsRTL: opt-in, because a clock face or a QR code must
+    // never mirror. See core.CanvasMirror.
+    val mirror = node.boolProp("mirror")
 
     var sized = modifier
     if (node.style?.width.isNullOrEmpty()) sized = sized.fillMaxWidth()
     if (node.style?.height.isNullOrEmpty()) sized = sized.aspectRatio((vw / vh).toFloat())
 
     Canvas(sized) {
-        val vp = canvasViewport(vw, vh, size.width.toDouble(), size.height.toDouble(), stretch)
+        // The DrawScope's own layoutDirection, not a CompositionLocal read
+        // outside it: it is the direction this canvas was laid out in, and
+        // reading it here keeps a direction change a redraw, not a
+        // recomposition. Mirrored in the mapping (CanvasViewport.mirrored)
+        // rather than by a scale(-1, 1) on the scope, so android/verify holds
+        // it to Go's table and the gradient shaders, built from vp, follow.
+        val base = canvasViewport(vw, vh, size.width.toDouble(), size.height.toDouble(), stretch)
+        val vp = if (mirror && layoutDirection == LayoutDirection.Rtl) base.mirrored(size.width.toDouble()) else base
         for (shape in node.children) {
             val props = shape.props
             val ops = props["d"] as? List<*> ?: continue

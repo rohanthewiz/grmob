@@ -2453,11 +2453,17 @@ let grMobCanvasMiterLimit: CGFloat = 4
 private struct GrMobCanvas: View {
     let node: GrMobNode
     let grow: GrMobGrow
+    // core.CanvasMirrorsRTL reads it. A SwiftUI Canvas does not mirror its
+    // drawing under RTL by itself, so the viewport is reflected by hand.
+    @Environment(\.layoutDirection) private var layoutDirection
 
     var body: some View {
         let vw = node.doubleProp("vw") > 0 ? node.doubleProp("vw") : 100
         let vh = node.doubleProp("vh") > 0 ? node.doubleProp("vh") : 100
         let stretch = node.stringProp("scale") == "stretch"
+        // Opt-in, because a clock face or a QR code must never mirror. See
+        // core.CanvasMirror.
+        let mirror = node.boolProp("mirror") && layoutDirection == .rightToLeft
         let fillWidth = (node.style?.width ?? "").isEmpty
         let keepRatio = (node.style?.height ?? "").isEmpty
         let shapes = node.children.map(\.props)
@@ -2500,8 +2506,12 @@ private struct GrMobCanvas: View {
             let size = CGSize(width: max(0, outer.width - 2 * outset),
                               height: max(0, outer.height - 2 * outset))
             ctx.translateBy(x: outset, y: outset)
-            let vp = GrMobCanvasViewport(vw: vw, vh: vh, width: Double(size.width),
-                                         height: Double(size.height), stretch: stretch)
+            // Mirrored in the mapping, over the unpadded box the viewport
+            // already uses, so the outset translation above is unaffected and
+            // ios/verify holds the reflection to Go's table.
+            let base = GrMobCanvasViewport(vw: vw, vh: vh, width: Double(size.width),
+                                           height: Double(size.height), stretch: stretch)
+            let vp = mirror ? base.mirrored(width: Double(size.width)) : base
             for props in shapes {
                 guard let ops = props["d"] as? [Any] else { continue }
                 var path = Path()

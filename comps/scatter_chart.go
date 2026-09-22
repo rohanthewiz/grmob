@@ -166,7 +166,7 @@ func (c ScatterChart) Render(ctx *core.Context) *core.Node {
 		shapes = append(shapes, core.Shape{Path: p, Stroke: color, StrokeWidth: dot, Cap: capStyle})
 	}
 
-	canvas := core.Canvas(chartView, chartView, shapes, core.CanvasStretch, core.Height(px(h)))
+	canvas := core.Canvas(chartView, chartView, shapes, core.CanvasStretch, core.CanvasMirrorsRTL, core.Height(px(h)))
 
 	ticks := xScale.ticks()
 	extent := math.Max(math.Abs(xScale.lo), math.Abs(xScale.hi))

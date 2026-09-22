@@ -142,7 +142,7 @@ func (c Histogram) Render(ctx *core.Context) *core.Node {
 		Path:   core.Line(0, yscale.y(0), chartView, yscale.y(0)),
 		Stroke: t.Colors.ControlBorderColor(), StrokeWidth: 1,
 	})
-	canvas := core.Canvas(chartView, chartView, shapes, core.CanvasStretch, core.Height(px(h)))
+	canvas := core.Canvas(chartView, chartView, shapes, core.CanvasStretch, core.CanvasMirrorsRTL, core.Height(px(h)))
 
 	format := c.edgeFormat(bins)
 	var xLabels core.View

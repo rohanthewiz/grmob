@@ -977,10 +977,11 @@ func TestHorizontalValuesFollowOrEnterTheBar(t *testing.T) {
 		sum := 0.0
 		for _, seg := range band.Children {
 			sum += seg.Style.FlexGrow
-			if len(seg.Children) == 0 {
+			text := findFirst(seg, func(n *core.Node) bool { return n.Type == "Text" })
+			if text == nil {
 				continue
 			}
-			switch seg.Children[0].Props["content"] {
+			switch text.Props["content"] {
 			case "1900":
 				long = seg
 			case "400":
@@ -994,12 +995,35 @@ func TestHorizontalValuesFollowOrEnterTheBar(t *testing.T) {
 	if long == nil || short == nil {
 		t.Fatal("both values should be drawn")
 	}
-	if want := contrastInk("#4A3AA7", th.Colors.TextPrimary, th.Colors.Background); long.Children[0].Style.TextColor != want ||
-		long.Children[0].Style.Align != core.AlignEnd {
-		t.Errorf("1900 of %v should sit inside, end-aligned in %s: %+v", s.hi, want, long.Children[0].Style)
+	// The label and its gap: a Row of [label][gap] inside the bar (the gap
+	// against the tip, on the trailing side) and [gap][label] past it. A
+	// Row, not a PaddingLeft/Right, because Rows mirror under RTL on every
+	// target and padding does not (see bandValueLayer).
+	gapSide := func(seg *core.Node) string {
+		row := seg.Children[0]
+		if row.Type != "Row" || len(row.Children) != 2 {
+			return "none"
+		}
+		if row.Children[0].Type == "Box" {
+			return "lead"
+		}
+		return "trail"
 	}
-	if short.Children[0].Style.TextColor != th.Colors.TextSecondary || short.Children[0].Style.Align != core.AlignStart {
-		t.Errorf("400 should follow its tip in the secondary ink: %+v", short.Children[0].Style)
+	if g := gapSide(long); g != "trail" {
+		t.Errorf("1900's gap is %s, want trail (against the tip inside the bar)", g)
+	}
+	if g := gapSide(short); g != "lead" {
+		t.Errorf("400's gap is %s, want lead (between the tip and the label)", g)
+	}
+	textIn := func(seg *core.Node) *core.Node {
+		return findFirst(seg, func(n *core.Node) bool { return n.Type == "Text" })
+	}
+	if want := contrastInk("#4A3AA7", th.Colors.TextPrimary, th.Colors.Background); textIn(long).Style.TextColor != want ||
+		textIn(long).Style.Align != core.AlignEnd {
+		t.Errorf("1900 of %v should sit inside, end-aligned in %s: %+v", s.hi, want, textIn(long).Style)
+	}
+	if textIn(short).Style.TextColor != th.Colors.TextSecondary || textIn(short).Style.Align != core.AlignStart {
+		t.Errorf("400 should follow its tip in the secondary ink: %+v", textIn(short).Style)
 	}
 	if want := 1 - 400/s.hi; math.Abs(short.Style.FlexGrow-want) > 1e-9 {
 		t.Errorf("400's label box = %v of the plot, want the %v past its tip", short.Style.FlexGrow, want)

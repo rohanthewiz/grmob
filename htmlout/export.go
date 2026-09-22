@@ -160,6 +160,13 @@ func treeMotion(n *core.Node) (m motion) {
 		m.translatesX = translateLength(n.Style.TranslateX) != ""
 		m.borderBox = needsBorderBox(n)
 	}
+	// A core.CanvasMirrorsRTL canvas reads --grmob-inline as well (see
+	// canvasChassis), so it needs the same direction rule a translate does.
+	// Without it the export still draws, unmirrored, which is right for
+	// every left-to-right document.
+	if n.Type == "Canvas" && n.Props["mirror"] == true {
+		m.translatesX = true
+	}
 	for _, c := range n.Children {
 		if m.spins && m.transitions && m.translatesX && m.borderBox {
 			break

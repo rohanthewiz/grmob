@@ -1,5 +1,5 @@
 // The facts a shimmed DOM cannot check, checked in a browser: seven about the
-// keyboard, four about paint, seven about layout, one about what a browser
+// keyboard, five about paint, seven about layout, one about what a browser
 // does with an accessibility value nobody here resolves, and one about how it
 // reads a CSS shorthand back.
 //
@@ -7,7 +7,7 @@
 // few hundred lines that model element trees, attributes, listeners and which
 // element holds focus. That is enough for almost everything, and its limits
 // are stated in its own header: there is no layout, no bubbling, and `focus()`
-// is an assignment, and nothing is ever painted. Twenty claims sit exactly in
+// is an assignment, and nothing is ever painted. Twenty-one claims sit exactly in
 // that blind spot, and no amount of widening the shim would settle them,
 // because each one is a claim about what a *browser* does:
 //
@@ -208,6 +208,14 @@
 //      data-theme="light" on <html> before <body> exists, and the first
 //      tree RenderInitial returns must already be drawn in the light
 //      palette.
+//  21. a mirrored canvas reflects under dir="rtl", and only then.
+//      core.CanvasMirrorsRTL is a CSS `scale` on the <svg> read through
+//      --grmob-inline (canvas_test.mjs holds the declaration to htmlout's),
+//      and dom.mjs has no layout to say whether a browser applies an
+//      individual `scale` to an outer <svg> at all. Two canvases side by
+//      side, each with a mark at its viewBox's left edge, one mirrored:
+//      under dir="rtl" the mirrored mark must sit at its box's right edge and
+//      the plain one stay at its left; under dir="ltr" both at the left.
 //
 // The numbering is one sequence, and it is the order the checks run in rather
 // than the order they were written. It is also load-bearing: a dozen comments
@@ -10393,6 +10401,57 @@ async function main() {
             }
         }
 
+        // ------------------------------------------------------------------
+        // 21. a mirrored canvas reflects under dir="rtl", and only then
+        // ------------------------------------------------------------------
+        //
+        // Back on the plain page, which loads the runtime and nothing else.
+        // Each canvas is 200px wide over a 100-unit viewBox, with a 10-unit
+        // mark at x 0..10 (20px). Where the mark lands, as a fraction of its
+        // own canvas's width, is the whole reading:
+        //
+        //	                 ltr        rtl
+        //	plain            0 .. 0.1   0 .. 0.1
+        //	mirrored         0 .. 0.1   0.9 .. 1
+        {
+            const plainLoaded = session.once("Page.loadEventFired");
+            await session.send("Page.navigate", { url: origin });
+            await plainLoaded;
+            const canvas = (mirror) => ({
+                Type: "Canvas",
+                Style: { Width: "200px", Height: "40px" },
+                Props: { vw: 100, vh: 20, scale: "stretch", ...(mirror ? { mirror: true } : {}) },
+                Children: [{ Type: "CanvasShape", Props: { d: [0, 0, 0, 1, 10, 0, 1, 10, 20, 1, 0, 20, 3], fill: "#000000" } }],
+            });
+            await mount({ Type: "Column", Children: [canvas(false), canvas(true)] });
+            const read = (dir) => evaluate(`(() => {
+                document.documentElement.setAttribute("dir", ${JSON.stringify(dir)});
+                return [...document.querySelectorAll('#app svg[data-node-type="Canvas"]')].map((svg) => {
+                    const box = svg.getBoundingClientRect();
+                    const mark = svg.querySelector("path").getBoundingClientRect();
+                    return { from: (mark.left - box.left) / box.width, to: (mark.right - box.left) / box.width };
+                });
+            })()`);
+            const near = (a, b) => Math.abs(a - b) < 0.02;
+            const at = (r, from, to) => r && near(r.from, from) && near(r.to, to);
+            const rtl = await read("rtl");
+            const ltr = await read("ltr");
+            await evaluate(`document.documentElement.removeAttribute("dir")`);
+            const fmt = (r) => r ? `${r.from.toFixed(3)}..${r.to.toFixed(3)}` : "missing";
+            let held = true;
+            const want = (label, r, from, to) => {
+                if (!at(r, from, to)) {
+                    problems.push(`check 21: ${label}: the mark spans ${fmt(r)} of its canvas, want ${from}..${to}`);
+                    held = false;
+                }
+            };
+            want("plain canvas under rtl", rtl[0], 0, 0.1);
+            want("mirrored canvas under rtl", rtl[1], 0.9, 1);
+            want("plain canvas under ltr", ltr[0], 0, 0.1);
+            want("mirrored canvas under ltr", ltr[1], 0, 0.1);
+            if (held) asked.canvasMirror = true;
+        }
+
     } finally {
         if (session) session.close();
         chrome.kill();
@@ -10437,7 +10496,9 @@ async function main() {
         ? "lesson 4.33's thread opens at its end, loads one older page at the top with the reader's row kept in place, and follows a send only from the end,"
         : "the thread unscrolled,"} ${asked.themeSwitch
         ? "the site page's panes and the app's palette switch scheme together, with no flash for a remembered pick,"
-        : "the theme switch untried,"} ${PALETTES.length} palette swatches paint the
+        : "the theme switch untried,"} ${asked.canvasMirror
+        ? "a mirrored canvas reflects under dir=\"rtl\" and a plain one does not,"
+        : "the canvas mirror unmeasured,"} ${PALETTES.length} palette swatches paint the
     hexes the contrast census measures, ${WIDGETS.length} real widgets draw
     their own boundary tones on both edges, a sticky band pins, ${VALUE_RANGES.length}
     value ranges resolve the way core.Progress says a browser resolves them,

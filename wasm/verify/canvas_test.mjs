@@ -48,6 +48,7 @@ for (const c of canvases ?? []) {
         assert.equal(svg.getAttribute("preserveAspectRatio"), c.preserve);
         assert.equal(svg.style.display, "block");
         assert.equal(svg.style.width, "100%");
+        assert.equal(svg.style.scale || "", c.scale || "", "the mirror's CSS scale, as htmlout writes it");
         // The node children are the shapes; a leading <defs> is chrome.
         const gradients = c.gradients ?? [];
         const [defs, ...paths] = gradients.length ? [...svg.children] : [null, ...svg.children];
@@ -210,4 +211,25 @@ test("a stroke gradient's server follows its slot and goes with it", () => {
     assert.deepEqual(ids(), ["grmob-root-0-fill-1"]);
     assert.equal(shapes()[0].getAttribute("stroke"), "#123456");
     assert.equal(shapes()[1].getAttribute("stroke"), null);
+});
+
+test("a mirror follows update-props both ways and adds the direction rule once", () => {
+    // core.CanvasMirrorsRTL reads --grmob-inline, so the page needs
+    // core.TranslateDirectionCSS as a translating node does. Off, the scale is
+    // cleared: a canvas that stops mirroring must not keep a stale reflection.
+    const base = { Type: "Canvas", Props: { vw: 100, vh: 50, scale: "stretch" }, Children: [] };
+    const { rt, svg } = mount(JSON.stringify({ ...base, Props: { ...base.Props, mirror: true } }));
+    assert.equal(svg.style.scale, "var(--grmob-inline, 1) 1");
+    const rules = () => rt.document.head.children
+        .filter((s) => s.textContent === "[dir=rtl]{--grmob-inline:-1}[dir=ltr]{--grmob-inline:1}").length;
+    assert.equal(rules(), 1, "the direction rule is on the page");
+
+    rt.GrMob.patch(JSON.stringify([{ Type: "update-props", TargetID: "root/0", Changes: base.Props }]));
+    rt.drainFrames();
+    assert.equal(svg.style.scale || "", "", "a canvas that stops mirroring keeps no reflection");
+
+    rt.GrMob.patch(JSON.stringify([{ Type: "update-props", TargetID: "root/0", Changes: { ...base.Props, mirror: true } }]));
+    rt.drainFrames();
+    assert.equal(svg.style.scale, "var(--grmob-inline, 1) 1");
+    assert.equal(rules(), 1, "added once, not per canvas or per patch");
 });

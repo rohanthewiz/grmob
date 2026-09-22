@@ -188,7 +188,7 @@ func (c CandlestickChart) Render(ctx *core.Context) *core.Node {
 		core.Shape{Path: bodies[0], Fill: up},
 		core.Shape{Path: bodies[1], Fill: down},
 	)
-	canvas := core.Canvas(chartView, chartView, shapes, core.CanvasStretch, core.Height(px(h)))
+	canvas := core.Canvas(chartView, chartView, shapes, core.CanvasStretch, core.CanvasMirrorsRTL, core.Height(px(h)))
 
 	var legendView core.View
 	if c.ShowLegend {

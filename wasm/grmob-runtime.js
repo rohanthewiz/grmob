@@ -4188,6 +4188,21 @@ const GrMob = (() => {
             // A property of the viewBox, so written from the props channel;
             // see the chassis in styleFromGrMob for why it is not there.
             el.style.aspectRatio = `${props.vw} / ${props.vh}`;
+            // core.CanvasMirrorsRTL: reflect the drawing under dir="rtl".
+            // The individual `scale` property rather than `transform`,
+            // because `transform` is Style.Rotate's and `translate` is
+            // Translate's; the three compose instead of overwriting one
+            // another. --grmob-inline is the custom property Translate
+            // already reads (-1 under rtl, 1 otherwise, 1 with no rule on the
+            // page), so a direction change reflows with no patch. The rule is
+            // added on first use, as a translating node adds it. htmlout's
+            // canvasChassis writes the same declaration.
+            if (props.mirror === true) {
+                el.style.scale = "var(--grmob-inline, 1) 1";
+                ensureRule(TRANSLATE_DIRECTION_CSS);
+            } else {
+                el.style.scale = "";
+            }
             return;
         }
         if (nodeType !== "CanvasShape") return;

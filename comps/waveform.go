@@ -176,6 +176,9 @@ func (w Waveform) Render(ctx *core.Context) *core.Node {
 
 	props := []core.PropsAndChildren{
 		core.CanvasStretch,
+		// Played time runs in reading order, as the seek slider beside it
+		// does on every target under RTL.
+		core.CanvasMirrorsRTL,
 		core.Width("100%"),
 		core.Height(px(h)),
 	}

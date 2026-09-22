@@ -42,6 +42,21 @@ fun canvasViewport(vw: Double, vh: Double, width: Double, height: Double, stretc
     return CanvasViewport(k, k, (width - w * k) / 2, (height - h * k) / 2)
 }
 
+/**
+ * This mapping reflected about the vertical centre line of a width-wide box:
+ * a point that landed at x · scaleX + offsetX lands at width minus that. It is
+ * core.MirrorCanvasMapping, restated, and applies to a core.CanvasMirrorsRTL
+ * canvas laid out right-to-left. y is untouched, and so is a stroke's width
+ * (a reflection has scale magnitude 1).
+ *
+ * Mirroring the mapping rather than the DrawScope (a scale(-1, 1)) keeps it
+ * in this file, where android/verify can hold it to Go's table, and keeps a
+ * gradient's shader in step: canvasGradientBrush builds its matrix from the
+ * same viewport.
+ */
+fun CanvasViewport.mirrored(width: Double): CanvasViewport =
+    copy(scaleX = -scaleX, offsetX = width - offsetX)
+
 /** The four drawing calls every platform's path API has. */
 interface CanvasPathSink {
     fun moveTo(x: Double, y: Double)

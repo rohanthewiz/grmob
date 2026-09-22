@@ -212,8 +212,8 @@ val canvasCases: List<CanvasCase> = listOf(
 	}
 	for _, c := range canvasfixture.Cases() {
 		w := canvasfixture.WantFor(c)
-		fmt.Fprintf(b, "    CanvasCase(%s, %s, %s, %s, %s, %t, %s, %s, %s, %s, %s, listOf(\n",
-			kstr(c.Name), kdouble(c.VW), kdouble(c.VH), kdouble(c.BoxW), kdouble(c.BoxH), c.Stretch,
+		fmt.Fprintf(b, "    CanvasCase(%s, %s, %s, %s, %s, %t, %t, %s, %s, %s, %s, %s, listOf(\n",
+			kstr(c.Name), kdouble(c.VW), kdouble(c.VH), kdouble(c.BoxW), kdouble(c.BoxH), c.Stretch, c.Mirror,
 			dlist(c.Ops), kdouble(w.SX), kdouble(w.SY), kdouble(w.OX), kdouble(w.OY))
 		for _, call := range w.Calls {
 			fmt.Fprintf(b, "        CanvasCall(%s, %s),\n", kstr(call.Op), dlist(call.Args))

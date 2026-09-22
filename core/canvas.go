@@ -140,6 +140,79 @@ func (c CanvasScale) Apply(_ *Context, n *Node) {
 	n.Props["scale"] = string(c)
 }
 
+// CanvasMirror says whether a Canvas's drawing follows the layout direction.
+// It is passed among a Canvas's props like a CanvasScale:
+//
+//	core.Canvas(100, 50, shapes, core.CanvasStretch, core.CanvasMirrorsRTL)
+//
+// # Why a canvas needs to be told
+//
+// Everything else in a right-to-left layout mirrors by itself: a Row runs
+// from the right, start and end alignment swap, and Translate's x flips. A
+// Canvas does not, on any target, because its shapes are written in absolute
+// viewBox coordinates with x growing rightwards. A chart is a Canvas with its
+// labels laid out around it as Text, so under RTL the labels mirrored and the
+// drawing did not: a line chart's "Jan" sat under December's point, a
+// horizontal bar grew away from its own zero, and a radar's rim labels moved
+// to the opposite spokes (N-071, seen in lessons 4.20 and 4.36).
+//
+// With CanvasMirrorsRTL the drawing is reflected about the box's vertical
+// centre line when the layout is right-to-left, so Go draws in reading order
+// once and the widget's labels and its marks agree in both directions.
+//
+// # Opt-in, not the default
+//
+// Some drawings must never mirror: a clock face, a QR code, a compass rose, a
+// map-like picture of the physical world. That is also the platforms' own
+// stance (Android's drawables mirror only when marked autoMirrored, SwiftUI's
+// images only under flipsForRightToLeftLayoutDirection), and it keeps every
+// existing Canvas drawing exactly what it drew before. The prop is written to
+// the wire only when set, so an unmirrored Canvas's patch is unchanged too.
+//
+// # What it reflects
+//
+// The whole drawing, gradients included, and nothing else: strokes keep their
+// width (a reflection has scale magnitude 1), and the box does not move. Under
+// CanvasFit the drawing is centred in its box, so reflecting the box
+// reflects the drawing in place. The mapping is MirrorCanvasMapping.
+//
+//	web      scale: var(--grmob-inline, 1) 1 on the <svg>; the same custom
+//	         property Translate reads, so it follows dir="rtl" live
+//	Compose  the viewport mirrored when the DrawScope's layoutDirection is Rtl
+//	SwiftUI  the viewport mirrored when the environment's layoutDirection is
+//	         rightToLeft
+type CanvasMirror bool
+
+// CanvasMirrorsRTL reflects a Canvas's drawing under a right-to-left layout.
+// See CanvasMirror.
+const CanvasMirrorsRTL CanvasMirror = true
+
+// Apply makes a CanvasMirror a BehaviorProp, for the reason CanvasScale is
+// one. False writes nothing, so the default wire is the one every existing
+// Canvas already sends.
+func (m CanvasMirror) Apply(_ *Context, n *Node) {
+	if n.Type != "Canvas" {
+		return
+	}
+	if m {
+		n.Props["mirror"] = true
+	} else {
+		delete(n.Props, "mirror")
+	}
+}
+
+// MirrorCanvasMapping reflects a mapping from CanvasMapping about the vertical
+// centre line of a boxW-wide box: a point drawn at x·sx + ox lands at
+// boxW − (x·sx + ox) instead, which is x·(−sx) + (boxW − ox). y is untouched.
+//
+// It is the statement the two native renderers restate when a mirrored Canvas
+// is laid out right-to-left, and internal/canvasfixture holds them to it. The
+// web targets never call it: CSS reflects the <svg> element, which is the same
+// transform about the same line.
+func MirrorCanvasMapping(sx, ox, boxW float64) (float64, float64) {
+	return -sx, boxW - ox
+}
+
 // CanvasMapping is how a w × h viewBox lands in a boxW × boxH box under a
 // scale: a viewBox point (x, y) is drawn at (x·sx + ox, y·sy + oy).
 //

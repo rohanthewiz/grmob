@@ -253,7 +253,7 @@ func (g heatGrid) render(ctx *core.Context) *core.Node {
 		shapes = append(shapes, core.Shape{Path: p, Fill: fill})
 	}
 	height := g.cellHeight * float64(max(1, rows))
-	canvas := core.Canvas(chartView, chartView, shapes, core.CanvasStretch, core.Height(px(height)))
+	canvas := core.Canvas(chartView, chartView, shapes, core.CanvasStretch, core.CanvasMirrorsRTL, core.Height(px(height)))
 
 	plot := []core.PropsAndChildren{
 		core.Padding(0),

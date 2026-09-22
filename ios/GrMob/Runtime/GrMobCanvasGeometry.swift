@@ -39,6 +39,24 @@ struct GrMobCanvasViewport: Equatable {
             (scaleX, scaleY, offsetX, offsetY) = (k, k, (width - w * k) / 2, (height - h * k) / 2)
         }
     }
+
+    private init(scaleX: Double, scaleY: Double, offsetX: Double, offsetY: Double) {
+        (self.scaleX, self.scaleY, self.offsetX, self.offsetY) = (scaleX, scaleY, offsetX, offsetY)
+    }
+
+    /// This mapping reflected about the vertical centre line of a width-wide
+    /// box: a point that landed at x · scaleX + offsetX lands at width minus
+    /// that. core.MirrorCanvasMapping, restated, for a core.CanvasMirrorsRTL
+    /// canvas laid out right-to-left. y is untouched, and so is a stroke's
+    /// width (a reflection has scale magnitude 1).
+    ///
+    /// The mapping rather than the GraphicsContext (a scaleBy(x: -1)) or
+    /// flipsForRightToLeftLayoutDirection, so it stays in this file where
+    /// ios/verify holds it to Go's table, and so a gradient, which is built
+    /// from the same viewport, reflects with its shape.
+    func mirrored(width: Double) -> GrMobCanvasViewport {
+        GrMobCanvasViewport(scaleX: -scaleX, scaleY: scaleY, offsetX: width - offsetX, offsetY: offsetY)
+    }
 }
 
 /// One drawing call in box points, as the decoder emits it.

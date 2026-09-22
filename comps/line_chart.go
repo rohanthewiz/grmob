@@ -210,7 +210,7 @@ func (c LineChart) Render(ctx *core.Context) *core.Node {
 	}
 	shapes = append(shapes, lines...)
 
-	canvas := core.Canvas(chartView, chartView, shapes, core.CanvasStretch, core.Height(px(h)))
+	canvas := core.Canvas(chartView, chartView, shapes, core.CanvasStretch, core.CanvasMirrorsRTL, core.Height(px(h)))
 
 	var legendView core.View
 	if len(c.Series) > 1 {

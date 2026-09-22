@@ -22,6 +22,7 @@ struct CanvasCase: Decodable {
     let boxW: Double
     let boxH: Double
     let stretch: Bool
+    let mirror: Bool
     let ops: [Double]
     let sx: Double
     let sy: Double
@@ -39,7 +40,8 @@ func checkCanvas(_ cases: [CanvasCase]) -> [String] {
     func close(_ a: Double, _ b: Double) -> Bool { abs(a - b) <= 1e-9 }
     var problems: [String] = []
     for c in cases {
-        let vp = GrMobCanvasViewport(vw: c.vw, vh: c.vh, width: c.boxW, height: c.boxH, stretch: c.stretch)
+        let base = GrMobCanvasViewport(vw: c.vw, vh: c.vh, width: c.boxW, height: c.boxH, stretch: c.stretch)
+        let vp = c.mirror ? base.mirrored(width: c.boxW) : base
         guard close(vp.scaleX, c.sx), close(vp.scaleY, c.sy),
               close(vp.offsetX, c.ox), close(vp.offsetY, c.oy)
         else {

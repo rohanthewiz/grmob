@@ -1924,7 +1924,10 @@ func isSequence(t *testing.T, what string, list []numbered) bool {
 // this reads.
 var tallyByKind = regexp.MustCompile(
 	`(\w+) about the keyboard, (\w+) about paint, (\w+) about layout, (\w+) about [^,]+, and (\w+) about`)
-var tallyOutright = regexp.MustCompile(`(\w+) claims sit exactly in that blind spot`)
+
+// [\w-] rather than \w so a compound number word ("Twenty-one") is read whole
+// instead of as its last half.
+var tallyOutright = regexp.MustCompile(`([\w-]+) claims sit exactly in that blind spot`)
 
 // checkTallies holds both to the sequence's length.
 //
@@ -1939,6 +1942,7 @@ func checkTallies(t *testing.T, src string, want int) {
 		"seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
 		"thirteen": 13, "fourteen": 14, "fifteen": 15, "sixteen": 16,
 		"seventeen": 17, "eighteen": 18, "nineteen": 19, "twenty": 20,
+		"twenty-one": 21,
 	}
 
 	if m := tallyByKind.FindStringSubmatch(src); m == nil {

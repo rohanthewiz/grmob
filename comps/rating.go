@@ -248,6 +248,9 @@ func ratingStar(t *core.Theme, fill float64) core.View {
 		size = 22
 	}
 	return core.Canvas(view, view, shapes,
+		// A half star fills its leading half: the left in LTR, the right
+		// under RTL, where the row of stars also runs from the right.
+		core.CanvasMirrorsRTL,
 		core.Width(fmt.Sprintf("%gpx", size)),
 		core.Height(fmt.Sprintf("%gpx", size)),
 		core.FlexShrink(0),

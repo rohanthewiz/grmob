@@ -314,6 +314,7 @@ data class CanvasCase(
     val boxW: Double,
     val boxH: Double,
     val stretch: Boolean,
+    val mirror: Boolean,
     val ops: List<Double>,
     val sx: Double,
     val sy: Double,
@@ -335,7 +336,8 @@ fun checkCanvas(cases: List<CanvasCase>): List<String> {
     val problems = mutableListOf<String>()
     fun close(a: Double, b: Double) = kotlin.math.abs(a - b) <= 1e-9
     for (c in cases) {
-        val vp = canvasViewport(c.vw, c.vh, c.boxW, c.boxH, c.stretch)
+        val base = canvasViewport(c.vw, c.vh, c.boxW, c.boxH, c.stretch)
+        val vp = if (c.mirror) base.mirrored(c.boxW) else base
         if (!close(vp.scaleX, c.sx) || !close(vp.scaleY, c.sy) ||
             !close(vp.offsetX, c.ox) || !close(vp.offsetY, c.oy)
         ) {

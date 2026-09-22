@@ -12,7 +12,7 @@
 #
 # Some of what was in that bucket is not any more: browser.mjs drives a
 # headless Chrome over the DevTools protocol at the end of this script and
-# checks seven keyboard facts, four about paint, seven about layout, one about
+# checks seven keyboard facts, five about paint, seven about layout, one about
 # ARIA's value rules and one about the CSSOM — that every bundled palette's
 # ControlBorder reaches the
 # screen as the hex the contrast census did its arithmetic about, that a real
@@ -38,7 +38,8 @@
 # one older page at the top with the reader's row kept, sends followed only
 # from the end. The fourth paint fact switches the site page's colour scheme
 # and checks the panes' CSS and the app's palette move together, with no
-# flash for a remembered pick.
+# flash for a remembered pick. The fifth measures a core.CanvasMirrorsRTL
+# canvas reflecting under dir="rtl" and a plain one staying put.
 # It skips when there is no Chrome to launch, which keeps the promise above
 # intact — see that file for the claims and why no amount of widening dom.mjs
 # would settle them.

@@ -30,7 +30,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-076
+**Next ID:** N-077
 
 ## Open
 
@@ -329,32 +329,6 @@ with each item's `raised` traced back through all session docs.
   - `AudioPlayer.Waveform` with a real stream: the strip filling as the
     status ticks, and under the finger while scrubbing.
   - Every chart's one spoken sentence on TalkBack and VoiceOver.
-- **N-071** · raised `2026-0921-1057-comps-round-four-phase-4-charts` · value medium (API decision)
-  **Under RTL a chart's labels mirror and its Canvas does not.** Seen
-  (2026-09-21, headless Chrome, phone layout, `dir="rtl"` on `<html>`,
-  lessons 4.20 and 4.36), no longer only read from source. Every chart with
-  a direction draws its data the wrong way round against its own labels:
-  - Line, Area and vertical Bar: the x labels run Oct…Jan right to left and
-    the y axis moves to the right, but the plot still runs left to right, so
-    "Jan" sits under December's point and "Mon" under Sunday's bar.
-  - Horizontal Bar: the value axis reads $1.5k…$0 from the left while the
-    bars still grow from the left edge, and the in-bar value labels land at
-    mirrored offsets, off their bars.
-  - Stacked Bar (ShowValues): the value chips sit over the wrong bars.
-  - Scatter and Candlestick: axis labels reversed, marks not.
-  - Radar: as predicted, each rim label moves to its mirror spoke
-    (Power↔Vision, Skill↔Stamina) under an unmirrored polygon; the ring-value
-    chips hop to the other side of the spoke.
-  - Fine: Donut, Pie, Gauge and Funnel (no direction, or symmetric).
-  - Sparkline and Waveform: unlabelled, so self-consistent, but they still
-    run left to right, which disagrees with a mirrored slider (AudioPlayer).
-  The cheapest fix is a renderer's: mirror a Canvas under RTL (on the web a
-  `scaleX(var(--grmob-inline))`, the variable Translate already uses), so
-  Go draws in reading order. It cannot be unconditional, because
-  `AnalogClock` is a Canvas and a clock face never mirrors, so it needs an
-  opt-out prop on `core.Canvas` (and the Compose/SwiftUI halves). The
-  alternative is core exposing the direction so each chart mirrors its own
-  geometry. Unchanged: no target mirrors a Canvas.
 - **N-072** · raised `2026-0921-1118-comps-round-four-phase-5-editable-grid` · value medium
   **`EditableGrid`, unrun on a device.** Lesson 4.37 was looked at and driven
   in headless Chrome only (the look found two defects, fixed; the keyboard
@@ -399,6 +373,19 @@ with each item's `raised` traced back through all session docs.
   `*OnLight` fields hold light inks. Promoting it means renaming or
   re-arguing those roles and adding it to `BundledThemes`. Its contrast
   figures were computed by hand, not by a census.
+- **N-076** · raised `2026-0921-2318-next-list-radio-arrows-readme-counts-theme-check-canvas-rtl-mirror` · value medium
+  **`PaddingLeft`/`PaddingRight` are leading/trailing on the natives and
+  physical on the web.** Compose writes `padding(start = padding.left)` and
+  SwiftUI `EdgeInsets(leading: padding.left)`, so both mirror under RTL; the
+  runtime and htmlout write `padding-left`, which does not. Found while
+  mirroring charts (N-071): `BarChart`'s horizontal value labels kept their
+  gap on the wrong side on the web only, and were moved to a spacer Box in a
+  Row (Rows mirror everywhere). Every other `PaddingLeft` in comps (TreeView's
+  indent is a spacer already; `PaddingLeft(16*depth)` is the prop's own doc
+  example) is still a web-only RTL defect. The fix is the web's: write
+  `padding-inline-start`/`-end` (both targets, and cssstyle.mjs's shorthand
+  table), or a decision that Left means left and the natives change.
+
 ## Non-goals
 
 - **N-001** · declined `2026-0912-1744-the-widget-library-answers-to-comps` —
@@ -476,20 +463,36 @@ with each item's `raised` traced back through all session docs.
 
 ## Closed
 
+- **N-071** · raised `2026-0921-1057-comps-round-four-phase-4-charts`
+  · closed 2026-09-21, `2026-0921-2318-next-list-radio-arrows-readme-counts-theme-check-canvas-rtl-mirror` — `core.CanvasMirrorsRTL`, an opt-in Canvas prop
+  (`mirror: true` on the wire, only when set), reflects the drawing about its
+  box's centre under RTL. Web and htmlout: `scale: var(--grmob-inline, 1) 1`
+  on the `<svg>`, with `core.TranslateDirectionCSS` added on first use.
+  Compose and SwiftUI: the viewport mirrored (`core.MirrorCanvasMapping`,
+  restated as `CanvasViewport.mirrored` / `GrMobCanvasViewport.mirrored`)
+  when the layout direction is RTL, held to `internal/canvasfixture`'s three
+  mirrored cases by both native harnesses. Adopted by Line/Area, Bar
+  (both orientations), Histogram, Scatter, Candlestick, Radar, Heatmap,
+  Sparkline, Waveform and Rating's half star; Donut, Pie, Gauge, Funnel and
+  QRCode stay fixed (`comps/canvas_mirror_test.go` is the census). Seen
+  right under RTL in headless Chrome (4.20, 4.36) and on the Compose emulator
+  with a per-app Arabic locale (4.20, 4.36's radar); browser check 21 pins
+  the reflection, mutation-tested. SwiftUI type-checks and its geometry is
+  verified, but it is unrun.
 - **N-067** · raised `2026-0921-1019-comps-round-four-phase-2-inputs`
-  · closed this session — a `radiogroup` now answers both arrow pairs on the
+  · closed 2026-09-21, `2026-0921-2318-next-list-radio-arrows-readme-counts-theme-check-canvas-rtl-mirror` — a `radiogroup` now answers both arrow pairs on the
   web (Down/Right forward, Up/Left back, the horizontal pair mirrored under
   RTL, whatever the group's axis), in `handleCompositeKey`. One-axis
   composites still leave the cross pair to the page. Pinned in
   `wasm/verify/keynav_test.mjs` (dom.mjs only; not tried in a real Chrome on
   lesson 5.9).
 - **N-063** · raised `2026-0921-0912-comps-round-four-phase-1-chat-family`
-  · closed this session — README's chapter table restated (chapters 4, 5, 6
+  · closed 2026-09-21, `2026-0921-2318-next-list-radio-arrows-readme-counts-theme-check-canvas-rtl-mirror` — README's chapter table restated (chapters 4, 5, 6
   were 14/6/5, are 37/9/8), and `examples/tutorial/readme_counts_test.go`
   now holds the table and both "N lessons across M chapters" sentences to
   `Chapters`. The plan doc's per-corner-radius entry is struck through.
 - **N-075** · raised `2026-0921-1419-tutorial-light-dark-theme`
-  · closed this session — browser check 20 (`wasm/verify/browser.mjs`)
+  · closed 2026-09-21, `2026-0921-2318-next-list-radio-arrows-readme-counts-theme-check-canvas-rtl-mirror` — browser check 20 (`wasm/verify/browser.mjs`)
   boots the site page at 1280px on lesson 1.2 and holds each pane's
   background and caption ink to the scheme under System on a dark OS, a
   click on Light, a reload with Light remembered (the head script's

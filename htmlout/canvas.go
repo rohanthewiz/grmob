@@ -42,9 +42,31 @@ import (
 // default where the natives' canvases do not.
 
 // canvasChassis is the fixed CSS of a Canvas, as a function of its viewBox.
+//
+// A core.CanvasMirrorsRTL canvas adds `scale: var(--grmob-inline, 1) 1`: the
+// individual property, so it composes with Rotate's `transform` and
+// Translate's `translate` instead of replacing either, and the custom property
+// core.TranslateDirectionCSS sets to -1 under dir="rtl", so the drawing
+// reflects about its box's centre only in a right-to-left document. The WASM
+// runtime's applyCanvasProps writes the same declaration.
 func canvasChassis(props map[string]any) string {
-	return "display:block; width:100%; overflow:visible; aspect-ratio:" +
+	css := "display:block; width:100%; overflow:visible; aspect-ratio:" +
 		formatNumber(props["vw"]) + " / " + formatNumber(props["vh"])
+	if m := CanvasMirrorScale(props); m != "" {
+		css += "; scale:" + m
+	}
+	return css
+}
+
+// CanvasMirrorScale is the value of a Canvas's CSS `scale` property: the
+// reflection for a core.CanvasMirrorsRTL canvas, "" for every other one.
+// Exported so wasm/verify can hold the runtime's applyCanvasProps to the
+// string this exporter writes.
+func CanvasMirrorScale(props map[string]any) string {
+	if props["mirror"] == true {
+		return "var(--grmob-inline, 1) 1"
+	}
+	return ""
 }
 
 // preserveAspectRatio is the SVG spelling of a core.CanvasScale. Anything but

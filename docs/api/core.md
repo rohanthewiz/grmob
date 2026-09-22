@@ -50,7 +50,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
 | [Styling: the Style struct](core-style.md) | Style and the value types its fields take: alignment, flex, position, weights and edge insets. | 11 types, 12 functions and methods |
 | [Styling: style props](core-style-props.md) | The StyleProp constructors: spacing and per-side insets, flex, typography, colour, borders, per-corner radii and animation. | 2 types, 73 functions and methods |
 | [Theming](core-theme.md) | Themes, palettes, typography and spacing scales, and per-component defaults. | 5 types, 17 functions and methods |
-| [Controls](core-controls.md) | Buttons, text inputs, switches, sliders, selects, images, tab views, text grids and vector canvases. | 19 types, 46 functions and methods |
+| [Controls](core-controls.md) | Buttons, text inputs, switches, sliders, selects, images, tab views, text grids and vector canvases. | 20 types, 48 functions and methods |
 | [Editors](core-editors.md) | The code editor and the rich text editor, and the refs and commands that drive them. | 2 types, 15 functions and methods |
 | [Events & focus](core-events.md) | Event props, host and system events, focus refs and focus order, and scrolling a node into view. | 2 types, 21 functions and methods |
 | [Navigation & overlays](core-navigation.md) | The navigator stack, modals, toasts, deep links and opening URLs. | 4 types, 19 functions and methods |
@@ -257,6 +257,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
     - [`func InputPassword`](core-controls.md#func-inputpassword)
     - [`func InputWithSubmit`](core-controls.md#func-inputwithsubmit)
     - [`func Keyboard`](core-controls.md#func-keyboard)
+    - [`func MirrorCanvasMapping`](core-controls.md#func-mirrorcanvasmapping)
     - [`func NumericInput`](core-controls.md#func-numericinput)
     - [`func OnSliderChangeEnd`](core-controls.md#func-onsliderchangeend)
     - [`func Select`](core-controls.md#func-select)
@@ -266,6 +267,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
     - [`func TabView`](core-controls.md#func-tabview)
     - [`func TextArea`](core-controls.md#func-textarea)
     - [`func TextGrid`](core-controls.md#func-textgrid)
+    - [`type CanvasMirror`](core-controls.md#type-canvasmirror)
     - [`type CanvasScale`](core-controls.md#type-canvasscale)
     - [`type ContentMode`](core-controls.md#type-contentmode)
         - [`func ContentModes`](core-controls.md#func-contentmodes)
