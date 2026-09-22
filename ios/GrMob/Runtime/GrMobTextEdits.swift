@@ -191,6 +191,65 @@ func rebaseCaret(basis: String, local: String, rewrite: String, caret: Int) -> I
     return at
 }
 
+/// Where a focused plain field's caret goes when new text is written into it:
+/// `before` is what the field showed, `after` what it shows now, `caret` the
+/// caret in `before`, all in UTF-16 units. internal/rebasefixture's `Carry` is
+/// the statement of the rule, the Android renderer has the same function
+/// under the same name, and ios/verify runs this copy against `CarryCases`.
+///
+/// `rebaseCaret` is not the answer for a plain field: it follows typing that
+/// was in flight, and with none it sends the caret to the end, which breaks
+/// typing mid-text under an UPPERCASE onChange.
+func carryCaret(before: String, after: String, caret: Int) -> Int {
+    carryPlan(Array(before.utf16), Array(after.utf16), caret: caret).caret
+}
+
+/// The one replacement GrMobTextInput's `write` makes, and where it leaves the
+/// caret: `a[start..<end]` is replaced by `b[start..<(end + b.count - a.count)]`.
+///
+/// The caret is `Carry`'s:
+///
+///     caret at or after the span's end    shifted by the change in length
+///     caret at or before its start        left where it is
+///     caret inside a span that kept its   left where it is (UPPERCASE)
+///     length
+///     caret inside a span that changed    the end of the new span
+///     length
+///     a result that would split a         the end of the text
+///     surrogate pair
+///
+/// The span is the differing one, *extended to the caret* when the caret is at
+/// or after it. That is `write`'s business rather than the rule's, and it is
+/// here so the two are computed from one span: UITextInput's `replace` leaves
+/// the caret at the end of the replacement, and a correction made afterwards
+/// is too late, because the keyboard inserts a key it was holding at the
+/// caret the replacement left (the "HELL o" log in `write`). Ending the span
+/// at the caret makes the replacement leave the caret where `Carry` says,
+/// with no move after it.
+///
+/// It lived inline in `write` until it was pulled out to be run against the
+/// table; the arms were already `Carry`'s, and the surrogate guard is the one
+/// thing added.
+struct CarryPlan: Equatable {
+    let start: Int
+    let end: Int
+    let caret: Int
+}
+
+func carryPlan(_ a: [UInt16], _ b: [UInt16], caret was: Int) -> CarryPlan {
+    let (prefix, suffix) = rebaseCommonSpan(a, b)
+    let spanEnd = a.count - suffix
+    var caret = rebaseMapOffset(was, a.count, prefix, spanEnd, b.count)
+    // Inside a span that changed length: the end of the new span, the nearest
+    // place still after the text the caret was after.
+    if caret < 0 { caret = b.count - suffix }
+    if caret > b.count || rebaseSplitsPair(b, caret) { caret = b.count }
+    // Extended to the caret when the caret follows the change, so `replace`
+    // leaves it in place by itself. Both ends then sit in text the two share,
+    // the end counted from the back, so it is `end + delta` in `b`.
+    return CarryPlan(start: prefix, end: max(spanEnd, min(was, a.count)), caret: caret)
+}
+
 /// One successful merge and the offsets `rebaseCaret` needs from it. The
 /// fields are internal/rebasefixture's `merged`, under the same names.
 private struct RebaseMerge {

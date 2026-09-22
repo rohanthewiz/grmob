@@ -22,7 +22,7 @@ package core
 //
 // EdgeInsets carries six fields: the four sides plus a Horizontal/Vertical
 // pair. Every renderer resolves a side as "the explicit field if non-zero,
-// otherwise the shorthand for that axis" (htmlout.EdgeCSS, edgeToCSS in
+// otherwise the shorthand for that axis" (htmlout.EdgeCSS, edgeLogicalCSS in
 // wasm/grmob-runtime.js, parseEdges in GrMobStyle.kt and GrMobStyle.swift).
 //
 // A side prop that only assigned its own field would inherit that rule's one
@@ -149,6 +149,9 @@ func PaddingBottom(px int) StyleProp {
 
 // PaddingLeft sets the left inset alone. A zero clears.
 //
+// Left is the leading side: under a right-to-left layout it is the right
+// edge, on every target (see EdgeInsets).
+//
 // This is the indent prop: a nested row states its own depth without having
 // to restate the three sides its theme container already got right.
 //
@@ -160,7 +163,8 @@ func PaddingLeft(px int) StyleProp {
 	})
 }
 
-// PaddingRight sets the right inset alone. A zero clears.
+// PaddingRight sets the right inset alone. A zero clears. Right is the
+// trailing side, the left edge under RTL (see EdgeInsets).
 func PaddingRight(px int) StyleProp {
 	return styleFunc(func(s *Style) {
 		settleHorizontal(&s.Padding)

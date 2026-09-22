@@ -922,7 +922,7 @@ const (
 //	top = Top != 0 ? Top : Vertical        htmlout.edgeSide
 //	                                       GrMobStyle.kt   parseEdges
 //	                                       GrMobStyle.swift parseEdges
-//	                                       grmob-runtime.js edgeToCSS
+//	                                       grmob-runtime.js edgeLogicalCSS
 //
 // — so a zero side is already *defined* to mean "unset, use the axis". A
 // field whose zero means "I said nothing" is precisely a field that can be
@@ -953,6 +953,21 @@ const (
 // Small next to the 370KB the Style-level tags took off, and free in a way
 // that one was not: no renderer changed, because none of them could tell the
 // difference.
+//
+// # Left and Right are leading and trailing
+//
+// Under a right-to-left layout, Left is the right edge and Right the left,
+// on all four targets. The natives always drew it that way — Compose writes
+// `padding(start = left)` and SwiftUI `EdgeInsets(leading: left)` — while
+// both web targets wrote the physical `padding-left`, so an indent
+// (PaddingLeft(16*depth)) or a label's gap landed on opposite sides of the
+// same Arabic screen in a browser and on a phone. The web now writes
+// `padding-inline`/`margin-inline` (htmlout.EdgeLogicalCSS and the runtime's
+// edgeLogicalCSS), which in LTR resolve to exactly the sides they replaced.
+// The field names were kept rather than renamed Start/End: every call site
+// is LTR-correct as written, and a rename would have cost every one of them
+// for no change in any LTR picture. Corners, by contrast, are physical
+// everywhere (see CornerRadii), because a shape does not follow the text.
 type EdgeInsets struct {
 	Top    int `json:",omitzero"`
 	Right  int `json:",omitzero"`

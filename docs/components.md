@@ -3699,8 +3699,9 @@ comps.RadarChart{
 - `Max` is shared by every axis; 0 widens the data's high to a value `Rings`
   divides roundly. A value over `Max` is held at the rim, a negative or NaN one
   at the centre.
-- **Under RTL the labels mirror and the drawing does not**, which is every
-  chart's label row's disagreement with its Canvas.
+- **Under RTL the drawing mirrors with its labels.** The Canvas sets
+  `core.CanvasMirrorsRTL`, as every axis chart does, so the spokes and the
+  rim labels swap together.
 - Fewer than three axes: `ConcernRadarChartTooFewAxes`, and an empty rim.
 - One `RoleImg`: "Player: Ade, Speed 8, Power 6, …". Past eight axes, each
   series' low and high.

@@ -554,6 +554,21 @@ two DOM copies agree with each other under either one, so the choice lives in
 text alignment to itself, but it still earns its keep as a filter — the
 identity must not extend to the two cross-axis values.
 
+Insets went the same way, later. `core.EdgeInsets`' `Left` and `Right` are
+the leading and trailing sides on both natives (Compose's
+`padding(start = left)`, SwiftUI's `EdgeInsets(leading: left)`), and both DOM
+renderers wrote the physical `padding`/`margin` shorthand, so a
+`core.PaddingLeft(16*depth)` indent sat on the left of an RTL page and on the
+right of the same screen in the phone app. Both now write the logical pairs,
+`padding-block`/`padding-inline` and `margin-block`/`margin-inline`
+(`htmlout.EdgeLogicalCSS`, the runtime's `edgeLogicalCSS`), which name the
+same sides in LTR. No physical side is written for an inset any more; the
+code editor's gutter inset is `padding-inline-start` for the same reason (the
+editor is `dir="ltr"`, so that is its left edge). A physical and a logical
+declaration for one side resolve by declaration order, so wasm/verify's
+cssstyle.mjs refuses an element given both, and browser check 21 reads a
+`Left` inset's computed side under each direction in Chrome.
+
 `justify-content` and `align-items` themselves need no table. Core's spellings
 *are* the CSS ones, so both DOM renderers pass them through verbatim and
 neither can be wrong about a value it never interprets.

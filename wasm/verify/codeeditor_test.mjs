@@ -97,7 +97,7 @@ test("lineNumbers draws the gutter and opens the padding it sits in", () => {
     assert.equal(gutter.textContent, "1\n2\n3", "one text node, newline-separated");
     assert.equal(gutter.getAttribute("aria-hidden"), "true", "the numbers are chrome, not code");
     assert.equal(gutter.style.width, "3ch", "one digit plus a column of room");
-    assert.equal(editor.style.paddingLeft, "3ch", "the rows begin where the gutter ends");
+    assert.equal(editor.style.paddingInlineStart, "3ch", "the rows begin where the gutter ends");
     assert.equal(gutter.style.userSelect, "none", "copying the buffer must not take the numbers");
 });
 
@@ -123,10 +123,11 @@ test("the gutter widens with the line count and disappears when asked to", () =>
     }]));
     rt.drainFrames();
     assert.equal(gutter.style.display, "none");
-    assert.equal(editor.style.paddingLeft, "", "and the padding it opened goes with it");
+    assert.equal(editor.style.paddingInlineStart, "", "and the padding it opened goes with it");
 });
 
-// The gutter owns padding-left only while it is showing. With the numbers off
+// The gutter owns padding-inline-start (the editor is dir="ltr", so its left
+// edge) only while it is showing. With the numbers off
 // the author's own left padding is the one that stands — htmlout's
 // codeEditorPadding writes nothing in that case — and switching the numbers
 // off hands it back rather than clearing it. Clearing it was the TextGrid
@@ -152,15 +153,15 @@ test("the gutter hands padding-left back to the author's Style when the numbers 
         rt.drainFrames();
     };
 
-    assert.equal(editor.style.paddingLeft, "7px", "no gutter, so the author's left padding stands");
-    assert.equal(editor.style.paddingTop, "1px");
+    assert.equal(editor.style.paddingInlineStart, "7px", "no gutter, so the author's left padding stands");
+    assert.equal(editor.style.paddingBlockStart, "1px");
 
     lineNumbers(true);
-    assert.equal(editor.style.paddingLeft, "3ch", "the gutter's inset wins while it is drawn");
-    assert.equal(editor.style.paddingTop, "1px", "and takes only the left side");
+    assert.equal(editor.style.paddingInlineStart, "3ch", "the gutter's inset wins while it is drawn");
+    assert.equal(editor.style.paddingBlockStart, "1px", "and takes only the left side");
 
     lineNumbers(false);
-    assert.equal(editor.style.paddingLeft, "7px", "switching the numbers off restores the author's value");
+    assert.equal(editor.style.paddingInlineStart, "7px", "switching the numbers off restores the author's value");
 
     // A restyle with the numbers off: the value handed back is the new one.
     rt.GrMob.patch(JSON.stringify([{
@@ -168,10 +169,10 @@ test("the gutter hands padding-left back to the author's Style when the numbers 
         Changes: { Padding: { Top: 1, Right: 2, Bottom: 3, Left: 9 } },
     }]));
     rt.drainFrames();
-    assert.equal(editor.style.paddingLeft, "9px");
+    assert.equal(editor.style.paddingInlineStart, "9px");
     lineNumbers(true);
     lineNumbers(false);
-    assert.equal(editor.style.paddingLeft, "9px", "the restored value is the latest Style's, not the first");
+    assert.equal(editor.style.paddingInlineStart, "9px", "the restored value is the latest Style's, not the first");
 });
 
 // Rule 2 of the shared editor design: decoration is advisory and *per line*.

@@ -201,7 +201,7 @@ func TestACallerStylePropOutranksAWidgetsOwnInsets(t *testing.T) {
 		}
 		// The settle, observed through a real widget. A zero side sitting
 		// beside a non-zero shorthand is resolved back to the shorthand by
-		// htmlout.EdgeCSS, edgeToCSS, and both parseEdges — so this is the
+		// htmlout.EdgeCSS, edgeLogicalCSS, and both parseEdges — so this is the
 		// difference between the prop working and the prop appearing to work.
 		if got := c.axis(styled); got != 0 {
 			t.Errorf("%s: the axis shorthand is still %d beside a cleared %s (%+v) — "+

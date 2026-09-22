@@ -32,7 +32,7 @@ func TestBothNativeParsersReadOpacity(t *testing.T) {
 // asked to fade out.
 func TestBothNativeRenderersApplyTheOpacityReading(t *testing.T) {
 	kotlin := codeIn(t, kotlinStyle)
-	if !strings.Contains(kotlin, "if (opacity < 1f) m = m.alpha(opacity)") {
+	if !strings.Contains(kotlin, "if (layerAlpha < 1f) m = m.alpha(layerAlpha)") {
 		t.Errorf("%s: no Modifier.alpha for core.Opacity in boxModifier — the "+
 			"alpha parses and never fades anything", kotlinStyle)
 	}
@@ -52,7 +52,7 @@ func TestBothNativeRenderersApplyTheOpacityReading(t *testing.T) {
 // where the mistake is available.
 func TestOpacityWrapsThePaintedBoxOnBothNatives(t *testing.T) {
 	kotlin := codeIn(t, kotlinStyle)
-	alphaAt := strings.Index(kotlin, "if (opacity < 1f) m = m.alpha(opacity)")
+	alphaAt := strings.Index(kotlin, "if (layerAlpha < 1f) m = m.alpha(layerAlpha)")
 	shadowAt := strings.Index(kotlin, "m = m.shadow(elevation")
 	bgAt := strings.Index(kotlin, "background?.let { m = m.background(it) }")
 	if alphaAt < 0 || shadowAt < 0 || bgAt < 0 {
@@ -84,6 +84,23 @@ func TestOpacityWrapsThePaintedBoxOnBothNatives(t *testing.T) {
 	if opacityAt > transitionAt {
 		t.Errorf("%s: .opacity is applied outside grMobTransition, so a changed "+
 			"alpha snaps under a Transition", swiftStyle)
+	}
+}
+
+// DisplayHidden's alpha is the Opacity layer's, not a second alpha at the
+// foot of boxModifier. At the foot it sat inside the shadow, the background
+// and the border, and faded only the content, so a hidden node with a fill
+// still drew the fill on Compose alone (N-064): the web's visibility:hidden
+// and SwiftUI's opacity hide the whole box.
+func TestComposeHidesTheWholePaintedBox(t *testing.T) {
+	// valuesIn, not codeIn: the mode is named by a string literal.
+	kotlin := valuesIn(t, kotlinStyle)
+	if !strings.Contains(kotlin, `val layerAlpha = if (display == "hidden") 0f else opacity`) {
+		t.Errorf("%s: DisplayHidden no longer feeds the Opacity layer's alpha", kotlinStyle)
+	}
+	if strings.Contains(kotlin, `if (display == "hidden") m = m.alpha(0f)`) {
+		t.Errorf("%s: a DisplayHidden alpha is back inside the painted box, where "+
+			"it fades the content and leaves the fill, shadow and border drawn", kotlinStyle)
 	}
 }
 

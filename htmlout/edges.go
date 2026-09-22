@@ -52,7 +52,7 @@ import (
 // this function existed the two web targets read the four per-side fields
 // only, so core.PaddingHorizontal(16) applied cleanly, rendered as 16px of
 // padding on both natives, and as nothing at all in the browser. The WASM
-// runtime's copy is edgeToCSS in wasm/grmob-runtime.js.
+// runtime's copy is edgeLogicalCSS in wasm/grmob-runtime.js.
 func EdgeCSS(e core.EdgeInsets) string {
 	return fmt.Sprintf("%dpx %dpx %dpx %dpx",
 		edgeSide(e.Top, e.Vertical),
@@ -69,4 +69,24 @@ func edgeSide(explicit, shorthand int) int {
 		return explicit
 	}
 	return shorthand
+}
+
+// EdgeLogicalCSS is the same resolved inset as EdgeCSS, stated as the two
+// logical shorthands the exporter actually writes: block is "top bottom" and
+// inline is "left right", where Left is the *leading* side.
+//
+// Leading, because that is what core.EdgeInsets' Left has always meant on
+// both natives (Compose's `padding(start = left)`, SwiftUI's
+// `EdgeInsets(leading: left)`). A physical `padding:` put a Left inset on the
+// left edge of a right-to-left page and on the right edge of the same
+// screen's phone app. padding-inline follows the element's direction, and in
+// LTR it names exactly the side padding-left did, so no LTR export changes
+// its picture. EdgeCSS is kept as the four-number contract the fixtures and
+// the natives' harnesses parse; only the declaration moved.
+//
+// The runtime's copy is edgeLogicalCSS in wasm/grmob-runtime.js.
+func EdgeLogicalCSS(e core.EdgeInsets) (block, inline string) {
+	block = fmt.Sprintf("%dpx %dpx", edgeSide(e.Top, e.Vertical), edgeSide(e.Bottom, e.Vertical))
+	inline = fmt.Sprintf("%dpx %dpx", edgeSide(e.Left, e.Horizontal), edgeSide(e.Right, e.Horizontal))
+	return block, inline
 }

@@ -25,6 +25,7 @@ Package htmlout exports a rendered core.Node tree as a standalone HTML document.
 - [`func CrossAxisAlignFor`](#func-crossaxisalignfor)
 - [`func CrossAxisAligns`](#func-crossaxisaligns)
 - [`func EdgeCSS`](#func-edgecss)
+- [`func EdgeLogicalCSS`](#func-edgelogicalcss)
 - [`func ExportHTML`](#func-exporthtml)
 - [`func GenericTags`](#func-generictags)
 - [`func InputModeFor`](#func-inputmodefor)
@@ -265,9 +266,23 @@ The DSL is not subject to it. core.PaddingLeft and its three siblings dissolve t
 
 core.EdgeInsets' six fields are \`json:",omitzero"\`, which is safe precisely because of the rule above: a zero side already means "unset, take the axis", so a field at zero carries nothing and the three JSON readers each turn a missing key back into 0. This function never sees JSON — htmlout walks the Go tree directly — so it is unaffected either way; the note is here because this is where the rule is written down, and the tags rest on it.
 
-This is a restatement of GrMobStyle.swift's parseEdges and GrMobStyle.kt's parseEdges, which have honored the shorthand since they were written. Until this function existed the two web targets read the four per-side fields only, so core.PaddingHorizontal(16) applied cleanly, rendered as 16px of padding on both natives, and as nothing at all in the browser. The WASM runtime's copy is edgeToCSS in wasm/grmob-runtime.js.
+This is a restatement of GrMobStyle.swift's parseEdges and GrMobStyle.kt's parseEdges, which have honored the shorthand since they were written. Until this function existed the two web targets read the four per-side fields only, so core.PaddingHorizontal(16) applied cleanly, rendered as 16px of padding on both natives, and as nothing at all in the browser. The WASM runtime's copy is edgeLogicalCSS in wasm/grmob-runtime.js.
 
 <small>[htmlout/edges.go:56](https://github.com/rohanthewiz/grmob/blob/master/htmlout/edges.go#L56)</small>
+
+### func EdgeLogicalCSS
+
+```go
+func EdgeLogicalCSS(e core.EdgeInsets) (block, inline string)
+```
+
+EdgeLogicalCSS is the same resolved inset as EdgeCSS, stated as the two logical shorthands the exporter actually writes: block is "top bottom" and inline is "left right", where Left is the \*leading\* side.
+
+Leading, because that is what core.EdgeInsets' Left has always meant on both natives (Compose's \`padding(start = left)\`, SwiftUI's \`EdgeInsets(leading: left)\`). A physical \`padding:\` put a Left inset on the left edge of a right-to-left page and on the right edge of the same screen's phone app. padding-inline follows the element's direction, and in LTR it names exactly the side padding-left did, so no LTR export changes its picture. EdgeCSS is kept as the four-number contract the fixtures and the natives' harnesses parse; only the declaration moved.
+
+The runtime's copy is edgeLogicalCSS in wasm/grmob-runtime.js.
+
+<small>[htmlout/edges.go:88](https://github.com/rohanthewiz/grmob/blob/master/htmlout/edges.go#L88)</small>
 
 ### func ExportHTML
 

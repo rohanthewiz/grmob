@@ -583,10 +583,13 @@ func (c BarChart) bandValueLayer(t *core.Theme, n int, fill float64, scale value
 	}
 	// The gap between a label and its bar's tip is a fixed-width box in a Row,
 	// not a PaddingLeft or PaddingRight. Under RTL the chart mirrors
-	// (core.CanvasMirrorsRTL) and so does every Row, but padding does not
-	// mirror the same way on every target: the natives read Padding.Left as
-	// the leading side, and the web writes a physical padding-left. A box in a
-	// Row is leading-relative everywhere, so the gap stays on the tip's side.
+	// (core.CanvasMirrorsRTL) and so does every Row. When this was written the
+	// web's padding did not: the natives read Padding.Left as the leading side
+	// and the web wrote a physical padding-left. The web writes padding-inline
+	// now (see core.EdgeInsets), so a padding would also work; the Row is kept
+	// because it is leading-relative by construction rather than by a rule
+	// every target has to restate, and TestHorizontalValuesFollowOrEnterTheBar
+	// pins it.
 	//
 	//	gapLead   [ gap ][ label ]   the gap on the label's leading side
 	//	gapTrail  [ label ][ gap ]   the gap on its trailing side

@@ -378,7 +378,7 @@ func renderNode(b *element.Builder, node *core.Node, from imposed, path string) 
 	// The gutter's inset, after the author's own declarations rather than
 	// before them like every other chassis above. The exception is deliberate:
 	// the other chassis rules are a *look* an author may disagree with, and
-	// this one is layout the line numbers depend on — a padding-left the author
+	// this one is layout the line numbers depend on — a left padding the author
 	// set would slide the numbers over the code. The WASM runtime writes it
 	// after every style patch for the same reason (syncCodeGutter), so the two
 	// DOM targets draw one picture.
@@ -1985,11 +1985,16 @@ func styleValue(s *core.Style, nodeType string) string {
 	// Horizontal/Vertical shorthand pair, which both natives resolve into the
 	// unset sides and which this exporter used to drop on the floor. See
 	// htmlout/edges.go for the rule and for what it silently cost.
+	//
+	// Logical declarations, so Left is the leading side as it is on both
+	// natives; see EdgeLogicalCSS.
 	if s.Padding != (core.EdgeInsets{}) {
-		styles = append(styles, "padding:"+EdgeCSS(s.Padding))
+		block, inline := EdgeLogicalCSS(s.Padding)
+		styles = append(styles, "padding-block:"+block, "padding-inline:"+inline)
 	}
 	if s.Margin != (core.EdgeInsets{}) {
-		styles = append(styles, "margin:"+EdgeCSS(s.Margin))
+		block, inline := EdgeLogicalCSS(s.Margin)
+		styles = append(styles, "margin-block:"+block, "margin-inline:"+inline)
 	}
 	// Flex *item* properties, as opposed to the container properties above:
 	// they describe how this node behaves inside its parent's flex layout, so

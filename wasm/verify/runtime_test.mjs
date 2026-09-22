@@ -866,10 +866,38 @@ test("Padding/Margin resolve the Horizontal and Vertical shorthands", () => {
         { Type: "Box", Props: {}, Style: { Padding: { Top: 1, Right: 2, Bottom: 3, Left: 4 } } },
     ]);
 
-    assert.equal(at(0).style.padding, "0px 16px 0px 16px");
-    assert.equal(at(1).style.margin, "6px 0px 6px 0px");
-    assert.equal(at(2).style.padding, "0px 8px 0px 20px");
-    assert.equal(at(3).style.padding, "1px 2px 3px 4px");
+    // Written as the logical pairs, block "top bottom" and inline
+    // "left right", so Left is the leading side as on both natives.
+    assert.equal(at(0).style.paddingBlock, "0px 0px");
+    assert.equal(at(0).style.paddingInline, "16px 16px");
+    assert.equal(at(1).style.marginBlock, "6px 6px");
+    assert.equal(at(1).style.marginInline, "0px 0px");
+    assert.equal(at(2).style.paddingInline, "20px 8px");
+    assert.equal(at(3).style.paddingBlock, "1px 3px");
+    assert.equal(at(3).style.paddingInline, "4px 2px");
+});
+
+// core.EdgeInsets' Left is the leading side on every target: Compose writes
+// padding(start = left) and SwiftUI EdgeInsets(leading: left), so an indent
+// mirrors under RTL there. The web has to say the same thing, which means no
+// physical side may be written for an inset, on create or on update — a
+// physical padding-left beside the logical pair would also be resolved by
+// declaration order, not direction.
+test("an inset is written without a physical side, so Left follows the direction", () => {
+    const { rt, at } = mount([
+        { Type: "Box", Props: {}, Style: { Padding: { Left: 24, Top: 2 }, Margin: { Right: 5 } } },
+    ]);
+    const el = at(0);
+    assert.equal(el.style.paddingInlineStart, "24px");
+    assert.equal(el.style.paddingInlineEnd, "0px");
+    assert.equal(el.style.marginInlineEnd, "5px");
+    for (const name of ["padding", "paddingLeft", "paddingRight", "margin", "marginLeft", "marginRight"]) {
+        assert.equal(el.style[name], undefined, `${name} was never written`);
+    }
+    rt.GrMob.patch(JSON.stringify([{ Type: "update-style", TargetID: "root/0", Changes: {} }]));
+    rt.drainFrames();
+    assert.equal(el.style.paddingInline, "", "an inset that goes is cleared");
+    assert.equal(el.style.marginBlock, "");
 });
 
 // One elevation number on every target against a CSS property that wants

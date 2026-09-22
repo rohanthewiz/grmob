@@ -376,6 +376,69 @@ final class TutorialDevicePassUITests: XCTestCase {
         dump(app, "dp-5.8-burst")
     }
 
+    // MARK: 5.9 — MaskedInput
+
+    /// comps.MaskedInput on the UIKit field, which had never been typed into
+    /// (N-065). Every key is a formatting rewrite from Go that inserts a
+    /// literal *before* the caret, which is the one arm of the field's write
+    /// (carryPlan, GrMobTextEdits.swift) no earlier rewrite reached: UPPERCASE
+    /// keeps the length, a TagInput commit shortens the text after it.
+    ///
+    ///   - ten digits in one typeText: every key must land after the one
+    ///     before it, so the text reads "(555) 123-4567". The Android field
+    ///     that kept the caret's raw offset read back "(234) 651" here;
+    ///   - the same, a key at a time, a second apart (the human-speed path,
+    ///     where no typing is in flight when the rewrite lands);
+    ///   - a letter, which the mask refuses: the text must not change;
+    ///   - backspace from the end, through the ") " a group break wrote.
+    func testMaskedInputFormatsAsItIsTyped() throws {
+        let app = XCUIApplication()
+        open(app, lesson: "5.9")
+        let phone = app.textFields.matching(NSPredicate(format: "label == 'Phone'")).firstMatch
+        scroll(app, to: phone)
+        // Hittable is not enough: the first run found it at the screen's
+        // bottom edge, where the tap raised no keyboard.
+        lift(app)
+        dump(app, "dp-5.9-mask-start")
+        XCTAssertTrue(phone.exists, "5.9's phone field is not on screen")
+        phone.tap()
+        sleep(1)
+        XCTAssertEqual(app.keyboards.count, 1, "tapping the phone field raised no keyboard")
+        app.typeText("5551234567")
+        sleep(1)
+        shot("dp-5.9-mask-fast")
+        XCTAssertEqual(phone.value as? String, "(555) 123-4567", "ten digits in one burst")
+
+        // The letter first, at the end: refused, so nothing moves.
+        app.typeText("x")
+        sleep(1)
+        XCTAssertEqual(phone.value as? String, "(555) 123-4567", "the mask took a letter")
+
+        // Backspace from the end. Every delete removes a digit: the "-" goes
+        // with the 4 before it, because a literal is written only once a
+        // character follows it, so six deletes leave "(555) 1". One more
+        // takes the 1, and the ") " with it.
+        app.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 6))
+        sleep(1)
+        XCTAssertEqual(phone.value as? String, "(555) 1", "six deletes from the end")
+        app.typeText(XCUIKeyboardKey.delete.rawValue)
+        sleep(1)
+        XCTAssertEqual(phone.value as? String, "(555", "the break's literals outlived the digit after them")
+
+        let card = app.textFields.matching(NSPredicate(format: "label == 'Card number'")).firstMatch
+        scroll(app, to: card)
+        card.tap()
+        sleep(1)
+        if app.keyboards.count == 0 { card.tap() }
+        sleep(1)
+        for key in "42424242" {
+            app.typeText(String(key))
+            sleep(1)
+        }
+        shot("dp-5.9-mask-slow")
+        XCTAssertEqual(card.value as? String, "4242 4242", "eight digits a second apart")
+    }
+
     // MARK: 4.13, 4.14 — the editors on the text-edit protocol
 
     /// The rich-text editor's echo path, and the heading's own bold.

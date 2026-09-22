@@ -108,6 +108,15 @@ export const CSSOM_READS = [
     // the author's padding, the gutter's inset over its left side, then the
     // author's left value restored.
     { sets: [["padding", "1px 2px 3px 7px"], ["paddingLeft", "3ch"], ["paddingLeft", "7px"]], reads: { padding: "1px 2px 3px 7px", paddingLeft: "7px", paddingTop: "1px" } },
+    // The logical pairs core.EdgeInsets is written as, and the same gutter
+    // sequence as the row above in logical terms: the author's inline pair,
+    // the gutter's inset over its start, the author's start restored.
+    { sets: [["paddingInline", "4px 9px"]], reads: { paddingInlineStart: "4px", paddingInlineEnd: "9px" } },
+    { sets: [["paddingInline", "4px 9px"], ["paddingInlineEnd", ""]], reads: { paddingInline: "", paddingInlineStart: "4px" } },
+    { sets: [["paddingInline", "4px 9px"], ["paddingInlineStart", "9px"]], reads: { paddingInline: "9px" } },
+    { sets: [["paddingBlock", "1px 3px"], ["paddingBlockStart", "5px"]], reads: { paddingBlock: "5px 3px", paddingBlockEnd: "3px" } },
+    { sets: [["marginBlock", "0px 2px"]], reads: { marginBlockStart: "0px", marginBlockEnd: "2px" } },
+    { sets: [["paddingInline", "7px 2px"], ["paddingInlineStart", "3ch"], ["paddingInlineStart", "7px"]], reads: { paddingInline: "7px 2px", paddingInlineStart: "7px" } },
 ];
 
 const CSS_WIDE = new Set(["inherit", "initial", "unset", "revert", "revert-layer"]);
@@ -228,6 +237,15 @@ const SHORTHANDS = {
     overflow: pair("overflow", ["overflowX", "overflowY"]),
     padding: box("padding", SIDES.map((s) => `padding${s}`)),
     margin: box("margin", SIDES.map((s) => `margin${s}`)),
+    // The logical pairs the style pass writes for core.EdgeInsets (see
+    // styleFromGrMob). Their longhands are the logical ones, stored under
+    // their own names: which physical side paddingInlineStart lands on is a
+    // question of direction, which is layout. DIRECTIONAL below is what
+    // keeps that from mattering.
+    paddingBlock: pair("paddingBlock", ["paddingBlockStart", "paddingBlockEnd"]),
+    paddingInline: pair("paddingInline", ["paddingInlineStart", "paddingInlineEnd"]),
+    marginBlock: pair("marginBlock", ["marginBlockStart", "marginBlockEnd"]),
+    marginInline: pair("marginInline", ["marginInlineStart", "marginInlineEnd"]),
     inset: box("inset", ["top", "right", "bottom", "left"]),
     borderWidth: box("borderWidth", SIDES.map((s) => `border${s}Width`)),
     borderStyle: box("borderStyle", SIDES.map((s) => `border${s}Style`)),
@@ -307,13 +325,21 @@ const UNMODELED = {
     gridColumn: ["gridColumnStart", "gridColumnEnd"],
     overscrollBehavior: ["overscrollBehaviorX", "overscrollBehaviorY"],
     listStyle: ["listStyleType", "listStylePosition", "listStyleImage"],
-    // The logical box properties map onto physical sides by writing mode,
-    // which is layout, which this harness does not have.
-    paddingInline: ["paddingLeft", "paddingRight"],
-    paddingBlock: ["paddingTop", "paddingBottom"],
-    marginInline: ["marginLeft", "marginRight"],
-    marginBlock: ["marginTop", "marginBottom"],
 };
+
+// DIRECTIONAL pairs each box's logical names with its physical ones. The two
+// sets describe the same four sides, mapped onto each other by the writing
+// mode and direction, and a browser resolves an element given both by
+// declaration order — the later one wins, and in Chrome "later" is where the
+// declaration sits in the block, which re-assigning one does not always
+// move. This harness has no layout to map them with and no reason to model
+// that order, so an element given names from both halves of a row is
+// refused: it is the one situation where the stored values would not say
+// what the browser draws.
+const DIRECTIONAL = ["padding", "margin"].map((box) => ({
+    logical: [`${box}Block`, `${box}Inline`, ...["BlockStart", "BlockEnd", "InlineStart", "InlineEnd"].map((s) => `${box}${s}`)],
+    physical: [box, ...SIDES.map((s) => `${box}${s}`)],
+}));
 
 // leafNames flattens a property to the stored longhands it covers.
 function leafNames(name) {
@@ -400,6 +426,20 @@ export function makeStyle() {
         }
     }
 
+    function refuseDirectionalMix(name) {
+        for (const { logical, physical } of DIRECTIONAL) {
+            const other = logical.includes(name) ? physical : physical.includes(name) ? logical : null;
+            const seen = other && other.find((n) => written.has(n));
+            if (seen) {
+                throw new Error(
+                    `cssstyle.mjs: this element was given both ${seen} and ${name}, a physical and a ` +
+                    `logical name for the same box, and which one a browser draws depends on direction ` +
+                    `and declaration order. Write one kind.`,
+                );
+            }
+        }
+    }
+
     return new Proxy({}, {
         get(_, name) {
             if (name === WRITES) return { written, leaves };
@@ -410,6 +450,7 @@ export function makeStyle() {
             // A CSSStyleDeclaration stringifies what it is given; null clears.
             const v = value === null ? "" : String(value);
             refuseUnmodeledMix(name);
+            refuseDirectionalMix(name);
             assign(name, v);
             written.delete(name);
             written.set(name, v);

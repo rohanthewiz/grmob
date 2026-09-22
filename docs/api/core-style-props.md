@@ -652,7 +652,7 @@ This is the inset prop: a rule that stops short of the screen edge, which is wha
 
 It writes the explicit sides as well as the shorthand, for the reason given on PaddingHorizontal.
 
-<small>[core/margin_sides.go:112](https://github.com/rohanthewiz/grmob/blob/master/core/margin_sides.go#L112)</small>
+<small>[core/margin_sides.go:114](https://github.com/rohanthewiz/grmob/blob/master/core/margin_sides.go#L114)</small>
 
 ### func MarginLeft
 
@@ -660,9 +660,9 @@ It writes the explicit sides as well as the shorthand, for the reason given on P
 func MarginLeft(px int) StyleProp
 ```
 
-MarginLeft sets the left margin alone. A zero clears.
+MarginLeft sets the left margin alone. A zero clears. Left is the leading side, the right edge under RTL (see EdgeInsets).
 
-<small>[core/margin_sides.go:88](https://github.com/rohanthewiz/grmob/blob/master/core/margin_sides.go#L88)</small>
+<small>[core/margin_sides.go:89](https://github.com/rohanthewiz/grmob/blob/master/core/margin_sides.go#L89)</small>
 
 ### func MarginRight
 
@@ -670,9 +670,9 @@ MarginLeft sets the left margin alone. A zero clears.
 func MarginRight(px int) StyleProp
 ```
 
-MarginRight sets the right margin alone. A zero clears.
+MarginRight sets the right margin alone. A zero clears. Right is the trailing side, the left edge under RTL (see EdgeInsets).
 
-<small>[core/margin_sides.go:96](https://github.com/rohanthewiz/grmob/blob/master/core/margin_sides.go#L96)</small>
+<small>[core/margin_sides.go:98](https://github.com/rohanthewiz/grmob/blob/master/core/margin_sides.go#L98)</small>
 
 ### func MarginTop
 
@@ -692,7 +692,7 @@ func MarginVertical(px int) StyleProp
 
 MarginVertical sets the top and bottom margins. Writes the explicit sides as well as the shorthand, for the reason given on PaddingHorizontal.
 
-<small>[core/margin_sides.go:122](https://github.com/rohanthewiz/grmob/blob/master/core/margin_sides.go#L122)</small>
+<small>[core/margin_sides.go:124](https://github.com/rohanthewiz/grmob/blob/master/core/margin_sides.go#L124)</small>
 
 ### func MaxHeight
 
@@ -829,11 +829,13 @@ func PaddingLeft(px int) StyleProp
 
 PaddingLeft sets the left inset alone. A zero clears.
 
+Left is the leading side: under a right-to-left layout it is the right edge, on every target (see EdgeInsets).
+
 This is the indent prop: a nested row states its own depth without having to restate the three sides its theme container already got right.
 
 	core.Row(core.PaddingLeft(16*depth), ...)
 
-<small>[core/padding_sides.go:156](https://github.com/rohanthewiz/grmob/blob/master/core/padding_sides.go#L156)</small>
+<small>[core/padding_sides.go:159](https://github.com/rohanthewiz/grmob/blob/master/core/padding_sides.go#L159)</small>
 
 ### func PaddingRight
 
@@ -841,9 +843,9 @@ This is the indent prop: a nested row states its own depth without having to res
 func PaddingRight(px int) StyleProp
 ```
 
-PaddingRight sets the right inset alone. A zero clears.
+PaddingRight sets the right inset alone. A zero clears. Right is the trailing side, the left edge under RTL (see EdgeInsets).
 
-<small>[core/padding_sides.go:164](https://github.com/rohanthewiz/grmob/blob/master/core/padding_sides.go#L164)</small>
+<small>[core/padding_sides.go:168](https://github.com/rohanthewiz/grmob/blob/master/core/padding_sides.go#L168)</small>
 
 ### func PaddingTop
 

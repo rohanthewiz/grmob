@@ -26,7 +26,7 @@ func TestCodeEditorExportsAGutterAndItsRows(t *testing.T) {
 		// chassis declaration that outranks the author; see renderNode.
 		`<pre style="margin:0; line-height:1.2; white-space:normal; overflow:auto; position:relative;`,
 		`font-size:13px`,
-		`padding-left:3ch" data-onchange=`,
+		`padding-inline-start:3ch" data-onchange=`,
 		// The gutter: chrome, out of flow, unselectable, and hidden from
 		// readers. Its numbers are one text node, newline-separated.
 		`position:absolute; left:0; top:0; width:3ch`,
@@ -60,7 +60,7 @@ func TestCodeEditorWithoutLineNumbersHasNoGutter(t *testing.T) {
 	if strings.Contains(out, "data-grmob-chrome") {
 		t.Errorf("a gutterless editor still exported chrome:\n%s", out)
 	}
-	if strings.Contains(out, "padding-left") {
+	if strings.Contains(out, "padding-inline-start") {
 		t.Errorf("a gutterless editor still exported the gutter inset:\n%s", out)
 	}
 }

@@ -30,7 +30,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-077
+**Next ID:** N-078
 
 ## Open
 
@@ -231,7 +231,8 @@ with each item's `raised` traced back through all session docs.
     gap, core/role.go).
   - `ReactionBar` chips: the selected state heard with the spelled-out name
     ("thumbs up, 3 reactions, selected"), and emoji glyphs drawn in a `Button`
-    label on both natives.
+    label on both natives. Heard on the emulator (2026-09-21), unselected
+    only: "Not selected, party popper, 1 reaction, Button".
   - `Poll` results: one stop per option, with the hidden `ProgressBar` and
     texts not reachable by swipe.
 
@@ -247,9 +248,11 @@ with each item's `raised` traced back through all session docs.
   - SwiftUI: the fade under the node's one `.animation`, and whether a view
     at exactly 0 still takes taps and VoiceOver focus (the doc says taps stop;
     that is from SwiftUI's known behaviour, not measured here).
-  - Noticed beside it, untouched: Compose's `DisplayHidden` alpha sits at the
+  - Fixed (2026-09-21): Compose's `DisplayHidden` alpha used to sit at the
     foot of `boxModifier`, inside the background and border, so a hidden node
-    with a fill may still draw the fill. iOS and the web hide the whole box.
+    with a fill still drew the fill. It now shares the Opacity layer
+    (`layerAlpha`), as iOS's `.opacity` already did; pinned from source by
+    `TestComposeHidesTheWholePaintedBox`. Compiled, not watched.
   - Seen once on Compose (2026-09-21, the emulator): `NumberPad`'s unpainted
     corner key is `Opacity(0)` and draws nothing, so the sentinel reaches
     `Modifier.alpha` as 0. A static zero only; no fade has been watched.
@@ -264,11 +267,14 @@ with each item's `raised` traced back through all session docs.
     mid-text, and lesson 2.3's UPPERCASE mid-text). Not on the Fold6, and not
     with an IME that composes (Gboard's suggestions, Samsung's keyboard):
     `adb shell input text` commits whole keys.
-  - iOS: `MaskedInput` has not been typed into at all. The iOS field's
-    `write` is believed to follow `rebasefixture.Carry`'s rule (read, not
-    run), and `ios/verify` does not run the Swift side against `CarryCases`,
-    because the rule lives inside `write` and not in a function of its own.
-    Extracting it is the way to hold iOS to the table.
+  - iOS: done on the simulator (2026-09-21). `write`'s arithmetic is
+    `carryPlan` in GrMobTextEdits.swift, run by `ios/verify` against
+    `CarryCases` (the caret, and that the span ends at the caret when the
+    caret follows the change; both mutation-tested). It gained Carry's
+    surrogate guard. `testMaskedInputFormatsAsItIsTyped` types 5.9's phone
+    mask in one burst ("(555) 123-4567"), refuses a letter, backspaces
+    through the group break, and types the card mask a key a second. Not on
+    a real iPhone.
   - The known limit (a key typed mid-text at the end of a group leaves the
     caret after the reflow) is the same on all three hosts by construction;
     seen on Android only.
@@ -288,6 +294,11 @@ with each item's `raised` traced back through all session docs.
   - The lock-screen dots' `RoleStatus` line ("Passcode, 2 of 4 entered"):
     heard on TalkBack per key? VoiceOver is expected to say nothing (the
     known live-region gap, core/role.go).
+  - Heard on the emulator's TalkBack (2026-09-21, Tab sweep): pad keys as
+    "2, Button" … "Delete, Button"; swatches as "Not selected, orange, Radio
+    button" (the selected one was not reached). Compose's Tab order goes
+    9 → 0 → Delete, so the unpainted corner is not a Tab stop. The swatches'
+    positions are wrong: see N-077.
 - **N-068** · raised `2026-0921-1035-comps-round-four-phase-3-structure` · value medium
   **Phase 3's structure widgets, unrun on a device.** Lesson 4.35 was looked
   at in headless Chrome only (tree alignment, indents, the wizard's footer).
@@ -296,8 +307,15 @@ with each item's `raised` traced back through all session docs.
     a button and a nested list is walked in order by swipe; that the level,
     inert on both natives by design, does no harm there. On the web, a
     screen reader saying "level 2" (the DOM was not read for `aria-level`).
-  - `TreeView` under RTL: the indent is a Row's leading spacer, which should
-    mirror on all three live targets. Unseen.
+  - `TreeView` under RTL: seen mirrored in headless Chrome and on the Compose
+    emulator (per-app Arabic locale), 2026-09-21. SwiftUI unseen. On both
+    seen targets the collapsed chevron "▸" still points right, against the
+    reading direction; a glyph has no way to mirror (an API decision: a
+    mirror-under-RTL prop for Text, like `CanvasMirrorsRTL`).
+  - Heard on the emulator's TalkBack: "expanded. docs. Expands or collapses
+    the branch, Button", "Selected, guide.md, Button", "collapsed. api. …".
+    TalkBack skipped src, assets and README.md on Tab although Compose's own
+    focus visits all six rows (N-058's gap).
   - `Wizard`: the `RoleStatus` line heard on a step change on TalkBack and
     in a browser's screen reader; where TalkBack's focus lands after Next
     replaces the body (the keyed body is a replacement, and Compose clears
@@ -353,6 +371,9 @@ with each item's `raised` traced back through all session docs.
   - TalkBack and VoiceOver: a cell heard as "Amount, row 2, $310.50, button",
     the editor's name, the `RoleAlert` message heard on a refused commit
     (TalkBack; VoiceOver is expected to say nothing), and the row menu.
+    Heard on the emulator (2026-09-21): "Amount, row 2, $310.50. Edits the
+    cell, Button" and "Row 1. Opens the row's menu, Button". A Category cell
+    (the frameless `core.Select`) says "Category, row 1, Home" with no role.
   - The cost on a phone: the doc's "about 5,000 cells" is 4µs a cell measured
     on an M3, times a guess. Type into a 10 × 500 sheet on the Fold6.
 - **N-073** · raised `2026-0921-1118-comps-round-four-phase-5-editable-grid` · value low (API decision)
@@ -373,18 +394,16 @@ with each item's `raised` traced back through all session docs.
   `*OnLight` fields hold light inks. Promoting it means renaming or
   re-arguing those roles and adding it to `BundledThemes`. Its contrast
   figures were computed by hand, not by a census.
-- **N-076** · raised `2026-0921-2318-next-list-radio-arrows-readme-counts-theme-check-canvas-rtl-mirror` · value medium
-  **`PaddingLeft`/`PaddingRight` are leading/trailing on the natives and
-  physical on the web.** Compose writes `padding(start = padding.left)` and
-  SwiftUI `EdgeInsets(leading: padding.left)`, so both mirror under RTL; the
-  runtime and htmlout write `padding-left`, which does not. Found while
-  mirroring charts (N-071): `BarChart`'s horizontal value labels kept their
-  gap on the wrong side on the web only, and were moved to a spacer Box in a
-  Row (Rows mirror everywhere). Every other `PaddingLeft` in comps (TreeView's
-  indent is a spacer already; `PaddingLeft(16*depth)` is the prop's own doc
-  example) is still a web-only RTL defect. The fix is the web's: write
-  `padding-inline-start`/`-end` (both targets, and cssstyle.mjs's shorthand
-  table), or a decision that Left means left and the natives change.
+- **N-077** · raised `2026-0922-0204-n076-logical-insets-hidden-fill-ios-carry-talkback-sweep` · value medium
+  **TalkBack says the wrong position for ColorSwatchPicker's radios.** Heard
+  on the emulator (lesson 5.9, Tab sweep): orange "3 of 8", teal 5, yellow
+  6, pink 7, green 8, purple 1, red 3, where the grid reads blue, orange,
+  teal, yellow, pink, green / purple, red (six columns, a padded second
+  row). The app sets no collection info; Compose derives it for a
+  `selectableGroup` from its Selected children, and here those are
+  grandchildren through semantics-less Rows with four hidden padding boxes
+  beside the last two. Undiagnosed: which of those confuses the count, and
+  whether a single-row RadioGroup is heard right.
 
 ## Non-goals
 
@@ -462,6 +481,20 @@ with each item's `raised` traced back through all session docs.
   path works. (was #76)
 
 ## Closed
+
+- **N-076** · raised `2026-0921-2318-next-list-radio-arrows-readme-counts-theme-check-canvas-rtl-mirror`
+  · closed 2026-09-22, `2026-0922-0204-n076-logical-insets-hidden-fill-ios-carry-talkback-sweep` — Left
+  means leading, everywhere: the web now writes `padding-block`/`padding-inline`
+  and `margin-block`/`margin-inline` (the runtime's `edgeLogicalCSS`,
+  `htmlout.EdgeLogicalCSS`), matching Compose's `start` and SwiftUI's
+  `leading`, and never a physical side for an inset; the code editor's gutter
+  inset is `padding-inline-start` (the editor is `dir="ltr"`). The field names
+  stay Left/Right, documented on `core.EdgeInsets` and the four side props.
+  cssstyle.mjs models the logical pairs and refuses an element given both a
+  physical and a logical name for one box; its CSSOM table gained six rows,
+  replayed against Chrome by check 14. Browser check 21 now also reads a Left
+  inset's computed side under each direction (mutation-tested by restoring
+  the physical shorthand). BarChart's spacer Row is kept, its comment updated.
 
 - **N-071** · raised `2026-0921-1057-comps-round-four-phase-4-charts`
   · closed 2026-09-21, `2026-0921-2318-next-list-radio-arrows-readme-counts-theme-check-canvas-rtl-mirror` — `core.CanvasMirrorsRTL`, an opt-in Canvas prop

@@ -96,7 +96,11 @@ func codeEditorPadding(node *core.Node) string {
 	if node.Props["lineNumbers"] != true || len(node.Children) == 0 {
 		return ""
 	}
-	return "padding-left:" + gutterWidth(len(node.Children))
+	// padding-inline-start, not padding-left: the author's own Padding is
+	// written as padding-inline (EdgeLogicalCSS), and a physical and a
+	// logical declaration for one side resolve by order in a way nobody
+	// should have to read. The editor is dir="ltr", so this is its left edge.
+	return "padding-inline-start:" + gutterWidth(len(node.Children))
 }
 
 // gutterWidth is wide enough for the largest line number plus a column of

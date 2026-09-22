@@ -804,9 +804,14 @@ fun GrMobStyle?.boxModifier(extra: Modifier = Modifier, gestures: Modifier = Mod
     // same pixels. Guarded like rotate, so an opaque node gains no layer;
     // under a Transition the value arrives already eased (animatedStyle).
     //
-    // Separate from DisplayHidden's alpha(0f) at the foot of this chain,
-    // which is that mode's own rule and is left where it was.
-    if (opacity < 1f) m = m.alpha(opacity)
+    // DisplayHidden shares this layer. It used to be an alpha(0f) at the foot
+    // of the chain, inside the shadow, background and border, which faded
+    // only the content: a hidden node with a fill still drew the fill (and
+    // its shadow and border), where the web's visibility:hidden and iOS's
+    // opacity(0) hide the whole box. Hidden wins over any Opacity, since
+    // "keeps its space but not its pixels" has no partial form.
+    val layerAlpha = if (display == "hidden") 0f else opacity
+    if (layerAlpha < 1f) m = m.alpha(layerAlpha)
     if (rotate != 0f) m = m.rotate(rotate)
     // core.Spin, at the same layer position as the fixed angle and for the
     // same reasons: it must turn the whole painted box and the touch target
@@ -848,9 +853,9 @@ fun GrMobStyle?.boxModifier(extra: Modifier = Modifier, gestures: Modifier = Mod
             end = (padding.right + borderInset).dp, bottom = (padding.bottom + borderInset).dp,
         )
     }
-    // "hidden" keeps the node's space but not its pixels ("none" is handled
+    // "hidden" keeps the node's space but not its pixels; its alpha is the
+    // Opacity layer above, so the whole painted box goes ("none" is handled
     // earlier by not composing the node at all — see RenderNode).
-    if (display == "hidden") m = m.alpha(0f)
     return m
 }
 

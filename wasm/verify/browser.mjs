@@ -208,7 +208,8 @@
 //      data-theme="light" on <html> before <body> exists, and the first
 //      tree RenderInitial returns must already be drawn in the light
 //      palette.
-//  21. a mirrored canvas reflects under dir="rtl", and only then.
+//  21. a mirrored canvas reflects under dir="rtl", and only then; and an
+//      inset's Left is the leading side.
 //      core.CanvasMirrorsRTL is a CSS `scale` on the <svg> read through
 //      --grmob-inline (canvas_test.mjs holds the declaration to htmlout's),
 //      and dom.mjs has no layout to say whether a browser applies an
@@ -216,6 +217,12 @@
 //      side, each with a mark at its viewBox's left edge, one mirrored:
 //      under dir="rtl" the mirrored mark must sit at its box's right edge and
 //      the plain one stay at its left; under dir="ltr" both at the left.
+//      In the same mount, a Box with Padding Left 30 and Margin Left 7: its
+//      computed padding-right and margin-right must be 30px and 7px under
+//      rtl, and its left ones under ltr. Both natives draw Left as leading
+//      (padding(start = left), EdgeInsets(leading: left)), and the runtime
+//      writes padding-inline for it; whether a browser resolves that pair by
+//      the inherited direction is layout, which dom.mjs does not have.
 //
 // The numbering is one sequence, and it is the order the checks run in rather
 // than the order they were written. It is also load-bearing: a dozen comments
@@ -10402,7 +10409,8 @@ async function main() {
         }
 
         // ------------------------------------------------------------------
-        // 21. a mirrored canvas reflects under dir="rtl", and only then
+        // 21. a mirrored canvas reflects under dir="rtl", and only then; and
+        //     an inset's Left is the leading side
         // ------------------------------------------------------------------
         //
         // Back on the plain page, which loads the runtime and nothing else.
@@ -10423,15 +10431,27 @@ async function main() {
                 Props: { vw: 100, vh: 20, scale: "stretch", ...(mirror ? { mirror: true } : {}) },
                 Children: [{ Type: "CanvasShape", Props: { d: [0, 0, 0, 1, 10, 0, 1, 10, 20, 1, 0, 20, 3], fill: "#000000" } }],
             });
-            await mount({ Type: "Column", Children: [canvas(false), canvas(true)] });
+            // The inset's witness: Left only, so which physical side carries
+            // it is the whole answer. data-probe names it for the read.
+            const inset = {
+                Type: "Box",
+                Style: { Width: "120px", Height: "10px", Padding: { Left: 30 }, Margin: { Left: 7 } },
+                Props: {},
+                Children: [],
+            };
+            await mount({ Type: "Column", Children: [canvas(false), canvas(true), inset] });
             const read = (dir) => evaluate(`(() => {
                 document.documentElement.setAttribute("dir", ${JSON.stringify(dir)});
-                return [...document.querySelectorAll('#app svg[data-node-type="Canvas"]')].map((svg) => {
+                const marks = [...document.querySelectorAll('#app svg[data-node-type="Canvas"]')].map((svg) => {
                     const box = svg.getBoundingClientRect();
                     const mark = svg.querySelector("path").getBoundingClientRect();
                     return { from: (mark.left - box.left) / box.width, to: (mark.right - box.left) / box.width };
                 });
-            })()`);
+                const box = document.querySelector('#app [data-node-type="Box"]');
+                const cs = box && getComputedStyle(box);
+                marks.inset = cs && { pl: cs.paddingLeft, pr: cs.paddingRight, ml: cs.marginLeft, mr: cs.marginRight };
+                return { marks, inset: marks.inset };
+            })()`).then((r) => Object.assign(r.marks, { inset: r.inset }));
             const near = (a, b) => Math.abs(a - b) < 0.02;
             const at = (r, from, to) => r && near(r.from, from) && near(r.to, to);
             const rtl = await read("rtl");
@@ -10449,6 +10469,19 @@ async function main() {
             want("mirrored canvas under rtl", rtl[1], 0.9, 1);
             want("plain canvas under ltr", ltr[0], 0, 0.1);
             want("mirrored canvas under ltr", ltr[1], 0, 0.1);
+            // lead and trail are "l" or "r", the first letter of the side
+            // the reading's keys (pl, pr, ml, mr) are named by.
+            const side = (label, got, lead, trail) => {
+                const ok = got && got[`p${lead}`] === "30px" && got[`p${trail}`] === "0px"
+                    && got[`m${lead}`] === "7px" && got[`m${trail}`] === "0px";
+                if (!ok) {
+                    problems.push(`check 21: ${label}: a Left inset of 30 (margin 7) computed as ` +
+                        `${got ? JSON.stringify(got) : "missing"}, want it on the ${lead === "l" ? "left" : "right"}`);
+                    held = false;
+                }
+            };
+            side("the inset under rtl", rtl.inset, "r", "l");
+            side("the inset under ltr", ltr.inset, "l", "r");
             if (held) asked.canvasMirror = true;
         }
 
@@ -10497,8 +10530,8 @@ async function main() {
         : "the thread unscrolled,"} ${asked.themeSwitch
         ? "the site page's panes and the app's palette switch scheme together, with no flash for a remembered pick,"
         : "the theme switch untried,"} ${asked.canvasMirror
-        ? "a mirrored canvas reflects under dir=\"rtl\" and a plain one does not,"
-        : "the canvas mirror unmeasured,"} ${PALETTES.length} palette swatches paint the
+        ? "a mirrored canvas reflects under dir=\"rtl\" and a plain one does not, and a Left inset lands on the leading side,"
+        : "the canvas mirror and the leading inset unmeasured,"} ${PALETTES.length} palette swatches paint the
     hexes the contrast census measures, ${WIDGETS.length} real widgets draw
     their own boundary tones on both edges, a sticky band pins, ${VALUE_RANGES.length}
     value ranges resolve the way core.Progress says a browser resolves them,

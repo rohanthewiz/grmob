@@ -32,7 +32,7 @@ package core
 // EdgeInsets is one type and every renderer resolves a margin side exactly
 // as it resolves a padding side — "the explicit field if non-zero, otherwise
 // the shorthand for that axis" — because both go through one function on
-// each target (htmlout.EdgeCSS, edgeToCSS in wasm/grmob-runtime.js,
+// each target (htmlout.EdgeCSS, edgeLogicalCSS in wasm/grmob-runtime.js,
 // parseEdges in GrMobStyle.kt and GrMobStyle.swift, each called for Padding
 // and Margin alike).
 //
@@ -84,7 +84,8 @@ func MarginBottom(px int) StyleProp {
 	})
 }
 
-// MarginLeft sets the left margin alone. A zero clears.
+// MarginLeft sets the left margin alone. A zero clears. Left is the leading
+// side, the right edge under RTL (see EdgeInsets).
 func MarginLeft(px int) StyleProp {
 	return styleFunc(func(s *Style) {
 		settleHorizontal(&s.Margin)
@@ -92,7 +93,8 @@ func MarginLeft(px int) StyleProp {
 	})
 }
 
-// MarginRight sets the right margin alone. A zero clears.
+// MarginRight sets the right margin alone. A zero clears. Right is the
+// trailing side, the left edge under RTL (see EdgeInsets).
 func MarginRight(px int) StyleProp {
 	return styleFunc(func(s *Style) {
 		settleHorizontal(&s.Margin)

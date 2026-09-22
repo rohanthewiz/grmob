@@ -50,6 +50,10 @@ type transcript struct {
 	// not seen onto Go's rewrite. rebase.swift runs GrMobTextEdits.swift's
 	// copy of the rule against internal/rebasefixture's answers.
 	RebaseCases []rebasefixture.Case `json:"rebaseCases"`
+	// The caret-carry cases: where a focused plain field's caret goes when
+	// Go's text is written into it (rebasefixture.Carry). rebase.swift runs
+	// GrMobTextEdits.swift's carryPlan, which the field's write uses.
+	CarryCases []rebasefixture.CarryCase `json:"carryCases"`
 
 	// The band cases, riding along for the same reason and with even less to
 	// do with the replay: they are pure geometry, solved by band.swift through
@@ -236,6 +240,7 @@ func main() {
 		Initial: initial, Steps: rec.steps, Final: final,
 		MenuCases:   menufixture.Cases(),
 		RebaseCases: rebasefixture.Cases(),
+		CarryCases:  rebasefixture.CarryCases(),
 		BandCases:   bandfixture.Cases(),
 		PinCases:    pinfixture.Cases(),
 

@@ -18,6 +18,9 @@ struct Transcript: Decodable {
     /// The text-edit rebase cases: typing replayed onto a rewrite from Go,
     /// with internal/rebasefixture's answers. See rebase.swift.
     let rebaseCases: [RebaseCase]
+    /// The caret-carry cases: Go's text written into a focused plain field,
+    /// with rebasefixture.Carry's answers. See rebase.swift.
+    let carryCases: [CarryCase]
     /// The band-inset cases, which have even less to do with the replay: they
     /// are pure geometry solved through GrMobFlexSolver. See band.swift.
     let bandCases: [BandCase]
@@ -224,6 +227,15 @@ func run() -> Int32 {
     } else {
         print("FAIL: \(rebaseProblems.count) text-edit rebase difference(s)")
         for p in rebaseProblems { print("  " + p) }
+        return 1
+    }
+    let carryProblems = checkCarry(transcript.carryCases)
+    if carryProblems.isEmpty {
+        print("OK: \(transcript.carryCases.count) writes into a focused field carry the caret "
+            + "as rebasefixture.Carry does")
+    } else {
+        print("FAIL: \(carryProblems.count) caret-carry difference(s)")
+        for p in carryProblems { print("  " + p) }
         return 1
     }
 

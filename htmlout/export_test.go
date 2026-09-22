@@ -769,11 +769,32 @@ func TestPaddingAndMarginShorthandReachTheStyleAttribute(t *testing.T) {
 		},
 	}
 	out := ExportHTML(n)
-	if !strings.Contains(out, "padding:0px 16px 0px 16px") {
+	if !strings.Contains(out, "padding-block:0px 0px; padding-inline:16px 16px") {
 		t.Fatalf("PaddingHorizontal not resolved:\n%s", out)
 	}
-	if !strings.Contains(out, "margin:8px 0px 8px 0px") {
+	if !strings.Contains(out, "margin-block:8px 8px; margin-inline:0px 0px") {
 		t.Fatalf("MarginVertical not resolved:\n%s", out)
+	}
+}
+
+// core.EdgeInsets' Left is the leading side, as on both natives, so the
+// export writes the inline pair and never a physical side: in an RTL page a
+// PaddingLeft indent lands on the right, as it does in the phone app.
+func TestInsetsAreWrittenLeadingAndTrailing(t *testing.T) {
+	n := &core.Node{Type: "Box", Style: &core.Style{
+		Padding: core.EdgeInsets{Left: 24, Top: 2},
+		Margin:  core.EdgeInsets{Right: 5},
+	}}
+	out := ExportHTML(n)
+	for _, want := range []string{"padding-inline:24px 0px", "padding-block:2px 0px", "margin-inline:0px 5px"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("export lacks %q:\n%s", want, out)
+		}
+	}
+	for _, physical := range []string{"padding:", "padding-left", "padding-right", "margin:", "margin-left", "margin-right"} {
+		if strings.Contains(out, physical) {
+			t.Errorf("export wrote the physical %q:\n%s", physical, out)
+		}
 	}
 }
 

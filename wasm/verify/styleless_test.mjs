@@ -107,7 +107,8 @@ test("a styleless grid still gets the grid chassis", () => {
     // branch is gone; the chassis is not.
     const { at } = mount([{ Type: "TextGrid", Children: [] }]);
 
-    assert.equal(at(0).style.margin, "0");
+    assert.equal(at(0).style.marginBlock, "0");
+    assert.equal(at(0).style.marginInline, "0");
     assert.equal(at(0).style.lineHeight, "1.2");
     assert.equal(at(0).style.overflowX, "auto");
 });

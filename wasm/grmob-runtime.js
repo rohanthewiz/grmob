@@ -2687,14 +2687,15 @@ const GrMob = (() => {
         // worse than the empty string a modal has always recorded here.
         el.dataset.baseDisplay = css.display ?? "";
         // The author's own left padding on a code editor, kept for the same
-        // reason as baseDisplay: syncCodeGutter overwrites padding-left while
-        // line numbers are drawn, and switching them off has to put back what
-        // the style pass computed. Read off the element rather than parsed out
-        // of css.padding, because the `padding` shorthand's four-value string
-        // is the browser's to split. Refreshed on every style patch, so it is
+        // reason as baseDisplay: syncCodeGutter overwrites padding-inline-start
+        // while line numbers are drawn, and switching them off has to put back
+        // what the style pass computed. Read off the element rather than
+        // parsed out of css.paddingInline, because the shorthand's string is
+        // the browser's to split. An editor is always dir="ltr", so its inline
+        // start is its left edge, where the gutter is drawn. Refreshed on every style patch, so it is
         // never older than the Style on the wire.
         if (nodeType === "CodeEditor") {
-            el.dataset.basePaddingLeft = css.padding ? el.style.paddingLeft : "";
+            el.dataset.basePaddingLeft = css.paddingInline ? el.style.paddingInlineStart : "";
         }
         // core.Style.StackAlign, parked on the element rather than turned into
         // a declaration here. It is a *layer* property, and only the overlay
@@ -5128,13 +5129,13 @@ const GrMob = (() => {
         if (!gutter) return;
         if (el.dataset.lineNumbers !== "true") {
             gutter.style.display = "none";
-            // The author's value, not "". padding-left is a longhand of the
-            // `padding` the style pass assigned, so "" does not mean "the
+            // The author's value, not "". padding-inline-start is a longhand
+            // of the `padding-inline` the style pass assigned, so "" does not mean "the
             // gutter's inset is gone" — it removes the left side of the
             // author's Padding too (the TextGrid overflowX bug's shape).
             // htmlout writes no padding-left at all when the numbers are off,
             // so the author's declaration is what stands there as well.
-            el.style.paddingLeft = el.dataset.basePaddingLeft ?? "";
+            el.style.paddingInlineStart = el.dataset.basePaddingLeft ?? "";
             return;
         }
         gutter.style.display = "";
@@ -5142,8 +5143,12 @@ const GrMob = (() => {
         gutter.style.width = width;
         // Written after any update-style patch in the same batch, which is what
         // the sync pass running at the end of patch() buys: a style patch
-        // assigns the `padding` shorthand and would otherwise wipe this.
-        el.style.paddingLeft = width;
+        // assigns the `padding-inline` shorthand and would otherwise wipe
+        // this. The logical longhand, not padding-left, so the element never
+        // carries a physical and a logical declaration for the same side (see
+        // styleFromGrMob's padding note); the editor is dir="ltr", so the two
+        // name the same edge.
+        el.style.paddingInlineStart = width;
 
         let text = "";
         for (let i = 1; i <= lines; i++) text += (i > 1 ? "\n" : "") + i;
@@ -6723,8 +6728,24 @@ const GrMob = (() => {
         // padding and this runtime forced it to zero. They agree now. Do not
         // "fix" this by defaulting to an empty object — that would restore the
         // divergence in the other direction.
-        out.padding = style.Padding ? edgeToCSS(style.Padding) : "";
-        out.margin = style.Margin ? edgeToCSS(style.Margin) : "";
+        //
+        // Logical, not physical: core.EdgeInsets' Left and Right are the
+        // *leading* and *trailing* sides, because that is what both natives
+        // have always drawn (Compose's `padding(start = left)`, SwiftUI's
+        // `EdgeInsets(leading: left)`), and they mirror under RTL. The web used
+        // to write the physical `padding` shorthand, so PaddingLeft(16*depth)
+        // indented from the left on an Arabic page and from the right on the
+        // same page's phone app. padding-block/padding-inline say the same
+        // four numbers relative to the text direction instead; in LTR they
+        // resolve to exactly the old sides. Two shorthands where there was
+        // one, and each still assigned on every pass, so the totality rule
+        // holds as it did. Nothing in the style pass writes a physical side
+        // any more, which matters: a physical and a logical declaration for
+        // the same box side are resolved by declaration order, and an inline
+        // style that carried both would draw whichever was written last.
+        // (wasm/verify's cssstyle.mjs refuses that mixture outright.)
+        Object.assign(out, edgeLogicalCSS("padding", style.Padding));
+        Object.assign(out, edgeLogicalCSS("margin", style.Margin));
         out.borderRadius = radiusCSS(style.Corners, style.BorderRadius);
         // Rotation. Assigned unconditionally like everything else here: a
         // compass whose heading passes through 0 sends Rotate: 0 in the patch,
@@ -7030,7 +7051,7 @@ const GrMob = (() => {
         // grid, and carries the rules so that it does not *differ* from the
         // exporter that does.
         if (nodeType === "TextGrid") {
-            out.margin = out.margin || "0";
+            zeroMarginUnlessSet(out);
             out.lineHeight = out.lineHeight || "1.2";
             out.whiteSpace = out.whiteSpace || "normal";
             // Sideways scrolling unless the author said otherwise — and never
@@ -7084,7 +7105,7 @@ const GrMob = (() => {
         // padding is not here: it is a function of the line count, so
         // syncCodeGutter writes it after every batch.
         if (nodeType === "CodeEditor") {
-            out.margin = out.margin || "0";
+            zeroMarginUnlessSet(out);
             out.lineHeight = out.lineHeight || "1.2";
             out.whiteSpace = out.whiteSpace || "normal";
             out.overflow = out.overflow || "auto";
@@ -7225,8 +7246,8 @@ const GrMob = (() => {
         return Math.round(v * 100) / 100;
     }
 
-    // The four-value CSS shorthand from one core.EdgeInsets, resolving the
-    // Horizontal/Vertical pair the way htmlout.EdgeCSS and both natives do.
+    // The CSS for one core.EdgeInsets, resolving the Horizontal/Vertical pair
+    // the way htmlout.EdgeCSS and both natives do.
     //
     // All six fields are `json:",omitzero"` in Go, so most insets arrive here
     // with only the sides that were set. That needs no handling beyond what is
@@ -7234,11 +7255,32 @@ const GrMob = (() => {
     // is correct because the resolution rule itself defines a zero side as
     // "unset, take the axis". An absent key and a zero one have never been
     // different questions here, and Go no longer sends the second one.
-    function edgeToCSS(edge) {
+    //
+    // Returned as the two logical shorthands, keyed for a style object:
+    // `${prop}Block` is "top bottom" and `${prop}Inline` is "left right",
+    // where Left is the leading side (see the note in styleFromGrMob). A
+    // missing inset answers "" for both, which clears them. Same numbers as
+    // htmlout.EdgeLogicalCSS, which states the rule in Go.
+    function edgeLogicalCSS(prop, edge) {
+        if (!edge) return { [`${prop}Block`]: "", [`${prop}Inline`]: "" };
         const side = (explicit, shorthand) => (explicit || 0) || (shorthand || 0);
         const h = edge.Horizontal, v = edge.Vertical;
-        return `${side(edge.Top, v)}px ${side(edge.Right, h)}px `
-            + `${side(edge.Bottom, v)}px ${side(edge.Left, h)}px`;
+        return {
+            [`${prop}Block`]: `${side(edge.Top, v)}px ${side(edge.Bottom, v)}px`,
+            [`${prop}Inline`]: `${side(edge.Left, h)}px ${side(edge.Right, h)}px`,
+        };
+    }
+
+    // zeroMarginUnlessSet pins a chassis's margin to 0 when the author gave
+    // none — the `out.margin = out.margin || "0"` a <pre> needed while margin
+    // was one shorthand. Both halves move together because edgeLogicalCSS
+    // sets or clears them together, so reading one says whether the author
+    // set a Margin at all.
+    function zeroMarginUnlessSet(out) {
+        if (!out.marginBlock) {
+            out.marginBlock = "0";
+            out.marginInline = "0";
+        }
     }
 
     // The Go node type -> the HTML tag. Go states this table once, in

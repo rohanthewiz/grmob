@@ -378,7 +378,7 @@ func arrangementOf(what string, badge bool) read {
 //
 // Through the renderer's own function rather than by reimplementing the
 // "explicit side, else the axis shorthand" rule: that rule exists four times in
-// this repository (htmlout.EdgeCSS, edgeToCSS in the WASM runtime, parseEdges
+// this repository (htmlout.EdgeCSS, edgeLogicalCSS in the WASM runtime, parseEdges
 // in both native GrMobStyle files) and a fifth copy here would be one more
 // thing to keep in step. Parsing the CSS back out is the cost, and it is small:
 // the output is four "<n>px" tokens in CSS order, which is the one shape that

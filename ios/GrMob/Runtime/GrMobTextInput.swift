@@ -480,13 +480,6 @@ final class GrMobTextInputCoordinator: NSObject, UITextFieldDelegate, UITextView
         guard current != next else { return }
         guard let input else { return }
         let a = Array(current.utf16), b = Array(next.utf16)
-        let n = min(a.count, b.count)
-        var prefix = 0
-        while prefix < n && a[prefix] == b[prefix] { prefix += 1 }
-        if prefix > 0 && UTF16.isLeadSurrogate(a[prefix - 1]) { prefix -= 1 }
-        var suffix = 0
-        while suffix < n - prefix && a[a.count - 1 - suffix] == b[b.count - 1 - suffix] { suffix += 1 }
-        if suffix > 0 && UTF16.isTrailSurrogate(a[a.count - suffix]) { suffix -= 1 }
         // The span replaced, chosen so the caret lands where it belongs with
         // no move after the edit. UITextInput's `replace` leaves the caret at
         // the end of the replacement, and a correction made afterwards is too
@@ -507,19 +500,13 @@ final class GrMobTextInputCoordinator: NSObject, UITextFieldDelegate, UITextView
         // only when it sat inside text Go replaced with text of another
         // length, where there is no telling. Sending it to the span's end
         // there too put the next keys after the W: "Hellox Wyzorld".
+        //
+        // The arithmetic is carryPlan (GrMobTextEdits.swift), which is
+        // internal/rebasefixture's Carry and is run against its table by
+        // ios/verify; this method owns only the UIKit half.
+        let plan = carryPlan(a, b, caret: caretOffset(input) ?? a.count)
         let delta = b.count - a.count
-        let start = prefix
-        var end = a.count - suffix
-        let was = caretOffset(input) ?? a.count
-        let caret: Int
-        if was >= end {
-            end = was
-            caret = was + delta
-        } else if was <= start || delta == 0 {
-            caret = was
-        } else {
-            caret = b.count - suffix
-        }
+        let start = plan.start, end = plan.end, caret = plan.caret
         // [start, end) in the field's text is [start, end + delta) in next:
         // both ends sit in text the two share, the end counted from the back.
         let replacement = String(decoding: b[start..<(end + delta)], as: UTF16.self)
