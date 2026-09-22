@@ -235,13 +235,6 @@ with each item's `raised` traced back through all session docs.
   - `Poll` results: one stop per option, with the hidden `ProgressBar` and
     texts not reachable by swipe.
 
-- **N-063** · raised `2026-0921-0912-comps-round-four-phase-1-chat-family` · value low
-  **Two stale statements.** README's chapter table gives per-chapter lesson
-  counts that no test checks (chapter 4 reads 14 and has 34). And
-  `comps-low-hanging-fruit-4.md`'s "still blocked" list carries "Per-corner
-  radius, and so bubble tails", though `core.CornerRadii` exists and
-  `MessageBubble` uses it.
-
 - **N-064** · raised `2026-0921-0935-core-opacity-and-typing-indicator-fade` · value medium
   **`core.Opacity` is unrun on a device.** It
   compiles on all four targets and its call sites, layer order and sentinel
@@ -295,14 +288,6 @@ with each item's `raised` traced back through all session docs.
   - The lock-screen dots' `RoleStatus` line ("Passcode, 2 of 4 entered"):
     heard on TalkBack per key? VoiceOver is expected to say nothing (the
     known live-region gap, core/role.go).
-- **N-067** · raised `2026-0921-1019-comps-round-four-phase-2-inputs` · value low (API decision)
-  **A radiogroup's arrows follow one axis on the web.** The runtime picks
-  Up/Down or Left/Right from the container's direction
-  (`compositeIsVertical`). ARIA gives a radiogroup both pairs, and
-  `ColorSwatchPicker` is a column of rows, where Right is the key a sighted
-  keyboard user reaches for and does nothing. Up/Down walk the swatches in
-  reading order, measured in headless Chrome. The fix is in
-  `handleCompositeKey`: for `radiogroup`, accept both pairs.
 - **N-068** · raised `2026-0921-1035-comps-round-four-phase-3-structure` · value medium
   **Phase 3's structure widgets, unrun on a device.** Lesson 4.35 was looked
   at in headless Chrome only (tree alignment, indents, the wizard's footer).
@@ -344,15 +329,32 @@ with each item's `raised` traced back through all session docs.
   - `AudioPlayer.Waveform` with a real stream: the strip filling as the
     status ticks, and under the finger while scrubbing.
   - Every chart's one spoken sentence on TalkBack and VoiceOver.
-- **N-071** · raised `2026-0921-1057-comps-round-four-phase-4-charts` · value low (API decision)
-  **Under RTL a chart's labels mirror and its Canvas does not.** Read from
-  source, not seen: no target mirrors a Canvas, while Rows, `Translate`'s x
-  and start/end alignment all follow the layout direction. So `LineChart`'s
-  label row runs right to left under a line that still runs left to right,
-  and `RadarChart` puts axis k's label on axis n−k's spoke. The fix is a
-  renderer's (mirror the Canvas) or core's (a direction Go can read, so a
-  widget can mirror its own geometry). First thing to do is look at lesson
-  4.20 under an RTL locale and see which charts are actually wrong.
+- **N-071** · raised `2026-0921-1057-comps-round-four-phase-4-charts` · value medium (API decision)
+  **Under RTL a chart's labels mirror and its Canvas does not.** Seen
+  (2026-09-21, headless Chrome, phone layout, `dir="rtl"` on `<html>`,
+  lessons 4.20 and 4.36), no longer only read from source. Every chart with
+  a direction draws its data the wrong way round against its own labels:
+  - Line, Area and vertical Bar: the x labels run Oct…Jan right to left and
+    the y axis moves to the right, but the plot still runs left to right, so
+    "Jan" sits under December's point and "Mon" under Sunday's bar.
+  - Horizontal Bar: the value axis reads $1.5k…$0 from the left while the
+    bars still grow from the left edge, and the in-bar value labels land at
+    mirrored offsets, off their bars.
+  - Stacked Bar (ShowValues): the value chips sit over the wrong bars.
+  - Scatter and Candlestick: axis labels reversed, marks not.
+  - Radar: as predicted, each rim label moves to its mirror spoke
+    (Power↔Vision, Skill↔Stamina) under an unmirrored polygon; the ring-value
+    chips hop to the other side of the spoke.
+  - Fine: Donut, Pie, Gauge and Funnel (no direction, or symmetric).
+  - Sparkline and Waveform: unlabelled, so self-consistent, but they still
+    run left to right, which disagrees with a mirrored slider (AudioPlayer).
+  The cheapest fix is a renderer's: mirror a Canvas under RTL (on the web a
+  `scaleX(var(--grmob-inline))`, the variable Translate already uses), so
+  Go draws in reading order. It cannot be unconditional, because
+  `AnalogClock` is a Canvas and a clock face never mirrors, so it needs an
+  opt-out prop on `core.Canvas` (and the Compose/SwiftUI halves). The
+  alternative is core exposing the direction so each chart mirrors its own
+  geometry. Unchanged: no target mirrors a Canvas.
 - **N-072** · raised `2026-0921-1118-comps-round-four-phase-5-editable-grid` · value medium
   **`EditableGrid`, unrun on a device.** Lesson 4.37 was looked at and driven
   in headless Chrome only (the look found two defects, fixed; the keyboard
@@ -397,12 +399,6 @@ with each item's `raised` traced back through all session docs.
   `*OnLight` fields hold light inks. Promoting it means renaming or
   re-arguing those roles and adding it to `BundledThemes`. Its contrast
   figures were computed by hand, not by a census.
-- **N-075** · raised `2026-0921-1419-tutorial-light-dark-theme` · value low
-  **No browser check pins the theme switch.** It is covered by Go tests
-  (theme_test.go) and one manual Chrome pass; nothing in wasm/verify checks
-  that the pane tokens and the app's palette switch together, or the
-  no-flash head script.
-
 ## Non-goals
 
 - **N-001** · declined `2026-0912-1744-the-widget-library-answers-to-comps` —
@@ -479,6 +475,27 @@ with each item's `raised` traced back through all session docs.
   path works. (was #76)
 
 ## Closed
+
+- **N-067** · raised `2026-0921-1019-comps-round-four-phase-2-inputs`
+  · closed this session — a `radiogroup` now answers both arrow pairs on the
+  web (Down/Right forward, Up/Left back, the horizontal pair mirrored under
+  RTL, whatever the group's axis), in `handleCompositeKey`. One-axis
+  composites still leave the cross pair to the page. Pinned in
+  `wasm/verify/keynav_test.mjs` (dom.mjs only; not tried in a real Chrome on
+  lesson 5.9).
+- **N-063** · raised `2026-0921-0912-comps-round-four-phase-1-chat-family`
+  · closed this session — README's chapter table restated (chapters 4, 5, 6
+  were 14/6/5, are 37/9/8), and `examples/tutorial/readme_counts_test.go`
+  now holds the table and both "N lessons across M chapters" sentences to
+  `Chapters`. The plan doc's per-corner-radius entry is struck through.
+- **N-075** · raised `2026-0921-1419-tutorial-light-dark-theme`
+  · closed this session — browser check 20 (`wasm/verify/browser.mjs`)
+  boots the site page at 1280px on lesson 1.2 and holds each pane's
+  background and caption ink to the scheme under System on a dark OS, a
+  click on Light, a reload with Light remembered (the head script's
+  attribute before `<body>`, and RenderInitial's first tree), System again,
+  and an OS change with no reload. Mutation-tested: removing boot()'s
+  sendTheme and removing the head script's attribute each fail it.
 
 - **N-055** · raised
   `2026-0919-1254-fold6-talkback-hid-harness-focus-after-navigation-inert-named-controls`

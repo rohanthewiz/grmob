@@ -1,5 +1,5 @@
 // The facts a shimmed DOM cannot check, checked in a browser: seven about the
-// keyboard, three about paint, seven about layout, one about what a browser
+// keyboard, four about paint, seven about layout, one about what a browser
 // does with an accessibility value nobody here resolves, and one about how it
 // reads a CSS shorthand back.
 //
@@ -7,7 +7,7 @@
 // few hundred lines that model element trees, attributes, listeners and which
 // element holds focus. That is enough for almost everything, and its limits
 // are stated in its own header: there is no layout, no bubbling, and `focus()`
-// is an assignment, and nothing is ever painted. Nineteen claims sit exactly in
+// is an assignment, and nothing is ever painted. Twenty claims sit exactly in
 // that blind spot, and no amount of widening the shim would settle them,
 // because each one is a claim about what a *browser* does:
 //
@@ -192,6 +192,22 @@
 //      page too), with the row that was first in view back at its offset; a
 //      message sent while at the end must be shown; and one sent while the
 //      reader is scrolled back must leave them where they are.
+//  20. the page's panes and the app's palette switch scheme together. The
+//      tutorial's colour scheme has two halves that nothing else holds to
+//      each other: the page's CSS tokens (--screen-bg on the guide pane and
+//      the phone glass) and the app's theme, which Go only hears about
+//      through the "theme" host event (examples/tutorial/theme.go).
+//      theme_test.go holds the app's half and cannot see the page. In the
+//      live build at 1280px (the split, so both panes are app content), on
+//      lesson 1.2, each pane's background and the caption ink inside it
+//      (the two themes' TextSecondary, the witness theme_test.go uses) must
+//      agree with the scheme: under System on a dark OS, after a click on
+//      Light, after a reload with Light remembered on a dark OS, and under
+//      System again when the OS itself turns light, with no reload. The
+//      reload is also the no-flash claim: the head script must have put
+//      data-theme="light" on <html> before <body> exists, and the first
+//      tree RenderInitial returns must already be drawn in the light
+//      palette.
 //
 // The numbering is one sequence, and it is the order the checks run in rather
 // than the order they were written. It is also load-bearing: a dozen comments
@@ -423,6 +439,56 @@ const BOOT_FRAME_PROBE = `
         window.__bootFrame = {
             split: !!document.getElementById("tutorial-split"),
             width: window.innerWidth,
+        };
+        observer.disconnect();
+    }).observe(document, { childList: true, subtree: true });
+`;
+
+// Check 20's probe, installed before any of the page's scripts run on the
+// reload.
+//
+// Two readings, both taken as early as the page allows:
+//
+//	at <body>      the attribute on <html> and the resolved --screen-bg the
+//	               moment <body> first exists. No paint can come before
+//	               <body>, and the head script and the stylesheet are both
+//	               above it, so this is what a first paint would use.
+//	first tree     which caption ink the tree RenderInitial returned carries,
+//	               through the same GrMobWASM setter trap check 17 uses
+//	               (that probe is removed before this one is installed).
+//
+// Hexes are compared case-insensitively because the patch carries a theme's
+// strings as written, and nothing promises their case.
+const THEME_BOOT_PROBE = `
+    window.__themeAtBody = null;
+    window.__themeFirstTree = null;
+    let host;
+    Object.defineProperty(window, "GrMobWASM", {
+        configurable: true,
+        get() { return host; },
+        set(v) {
+            host = v;
+            const render = v && v.RenderInitial;
+            if (typeof render !== "function") return;
+            v.RenderInitial = function (...args) {
+                const out = render.apply(this, args);
+                if (window.__themeFirstTree === null) {
+                    const text = String(out).toUpperCase();
+                    window.__themeFirstTree = {
+                        light: text.includes(${JSON.stringify("#3C3C4399")}),
+                        dark: text.includes(${JSON.stringify("#AEAEB2")}),
+                    };
+                }
+                return out;
+            };
+        },
+    });
+    new MutationObserver((records, observer) => {
+        if (!document.body) return;
+        const root = document.documentElement;
+        window.__themeAtBody = {
+            attr: root.dataset.theme || null,
+            screenBg: getComputedStyle(root).getPropertyValue("--screen-bg").trim().toLowerCase(),
         };
         observer.disconnect();
     }).observe(document, { childList: true, subtree: true });
@@ -10161,6 +10227,172 @@ async function main() {
             }
         }
 
+        // ------------------------------------------------------------------
+        // 20. the page's panes and the app's palette switch scheme together
+        // ------------------------------------------------------------------
+        //
+        // The site page again, at the split's width, deep-linked to 1.2 so
+        // both panes hold a lesson's text. The OS scheme is Chrome's emulated
+        // prefers-color-scheme, which drives both the stylesheet's media query
+        // and the page's matchMedia listener, the two things System reads.
+        //
+        // One reading covers both panes: the pane's own background (the CSS
+        // half) and a count of elements inside it whose computed colour is
+        // each theme's caption ink (the Go half). A pane is in scheme s when
+        // its background is s's --screen-bg and it holds s's captions and none
+        // of the other's. A pane with no captions at all fails too, because
+        // that would pass whichever palette the app was in.
+        //
+        //	step               OS     stored   expected
+        //	system             dark   none     dark,  no data-theme, System pressed
+        //	click Light        dark   light    light, data-theme=light
+        //	reload             dark   light    light before <body>, and in the first tree
+        //	click System       dark   system   dark
+        //	OS turns light     light  system   light, no reload
+        if (liveBuild) {
+            const themeProblem = (msg) => problems.push(`check 20: ${msg}`);
+            const SCHEMES = {
+                dark: { bg: "rgb(28, 28, 30)", caption: "rgb(174, 174, 178)", screenBg: "#1c1c1e" },
+                light: { bg: "rgb(255, 255, 255)", caption: "rgba(60, 60, 67, 0.6)", screenBg: "#ffffff" },
+            };
+            const osScheme = (value) => session.send("Emulation.setEmulatedMedia",
+                { features: [{ name: "prefers-color-scheme", value }] });
+            const readScheme = () => evaluate(`(() => {
+                const schemes = ${JSON.stringify(SCHEMES)};
+                const pane = (id) => {
+                    const el = document.getElementById(id);
+                    if (!el) return null;
+                    const count = { dark: 0, light: 0 };
+                    for (const n of el.querySelectorAll("*")) {
+                        const c = getComputedStyle(n).color;
+                        if (c === schemes.dark.caption) count.dark++;
+                        else if (c === schemes.light.caption) count.light++;
+                    }
+                    return { bg: getComputedStyle(el).backgroundColor, ...count };
+                };
+                let stored = null;
+                try { stored = localStorage.getItem("grmob-tutorial-theme"); } catch { /* none */ }
+                return {
+                    attr: document.documentElement.dataset.theme || null,
+                    pressed: [...document.querySelectorAll('#theme-toggle button[aria-pressed="true"]')]
+                        .map((b) => b.dataset.theme),
+                    stored,
+                    guide: pane("tutorial-guide"),
+                    phone: pane("tutorial-phone-screen"),
+                };
+            })()`);
+            // What is wrong with reading r for scheme s, or null. Every pane
+            // is judged, so one message names every half that disagreed.
+            const schemeFault = (r, s) => {
+                const other = s === "dark" ? "light" : "dark";
+                const faults = [];
+                for (const name of ["guide", "phone"]) {
+                    const p = r[name];
+                    if (!p) { faults.push(`no #tutorial-${name === "guide" ? "guide" : "phone-screen"} (not the split?)`); continue; }
+                    if (p.bg !== SCHEMES[s].bg) faults.push(`the ${name} pane's background is ${p.bg}, not ${SCHEMES[s].bg}`);
+                    if (p[s] === 0) faults.push(`the ${name} pane holds no ${s} caption ink`);
+                    if (p[other] > 0) faults.push(`the ${name} pane holds ${p[other]} element(s) in the ${other} caption ink`);
+                }
+                return faults.length ? faults.join("; ") : null;
+            };
+            // Polls for up to ms, because a switch is a host event, a render
+            // and a patch; the last reading is kept for the message.
+            const settleOn = async (s, ms) => {
+                const started = Date.now();
+                let r;
+                for (;;) {
+                    r = await readScheme();
+                    if (!schemeFault(r, s) || Date.now() - started > ms) return r;
+                    await new Promise((done) => setTimeout(done, 50));
+                }
+            };
+            const click = (choice) => evaluate(
+                `document.querySelector('#theme-toggle button[data-theme="${choice}"]').click()`);
+
+            await session.send("Emulation.setDeviceMetricsOverride",
+                { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+            await osScheme("dark");
+            // A clean slate on this origin: check 17 loaded the same page, and
+            // an earlier run of a person's own could not have reached this
+            // fresh profile, but the step table starts from "none stored".
+            await evaluate(`(() => { try { localStorage.removeItem("grmob-tutorial-theme"); } catch {} })()`);
+            let identifier = null;
+            try {
+                const siteLoaded = session.once("Page.loadEventFired");
+                await session.send("Page.navigate", { url: `${origin}/site/#1.2` });
+                await siteLoaded;
+                let held = true;
+                const step = async (label, s, want) => {
+                    if (!held) return;
+                    const r = await settleOn(s, 30000);
+                    const fault = schemeFault(r, s);
+                    if (fault) { themeProblem(`${label}: ${fault}`); held = false; return; }
+                    for (const [k, v] of Object.entries(want)) {
+                        const got = JSON.stringify(r[k]);
+                        if (got !== JSON.stringify(v)) {
+                            themeProblem(`${label}: ${k} is ${got}, not ${JSON.stringify(v)}`);
+                            held = false;
+                        }
+                    }
+                };
+
+                await step("System on a dark OS", "dark", { attr: null, pressed: ["system"], stored: null });
+
+                await click("light");
+                await step("after a click on Light", "light", { attr: "light", pressed: ["light"], stored: "light" });
+
+                if (held) {
+                    ({ identifier } = await session.send("Page.addScriptToEvaluateOnNewDocument",
+                        { source: THEME_BOOT_PROBE }));
+                    const reloaded = session.once("Page.loadEventFired");
+                    await session.send("Page.reload", {});
+                    await reloaded;
+                    const boot = await evaluate(`new Promise((done) => {
+                        const started = Date.now();
+                        const poll = () => {
+                            if (window.__themeAtBody && window.__themeFirstTree) {
+                                return done({ body: window.__themeAtBody, tree: window.__themeFirstTree });
+                            }
+                            if (Date.now() - started > 30000) return done(null);
+                            setTimeout(poll, 50);
+                        };
+                        poll();
+                    })`);
+                    if (!boot) {
+                        themeProblem("the reload never reached <body> and a first render within 30s");
+                        held = false;
+                    } else {
+                        if (boot.body.attr !== "light" || boot.body.screenBg !== SCHEMES.light.screenBg) {
+                            themeProblem(`with Light remembered on a dark OS, <html> said data-theme=` +
+                                `${JSON.stringify(boot.body.attr)} and --screen-bg ${boot.body.screenBg} when ` +
+                                `<body> first existed: the head script has to set the pick before first paint`);
+                            held = false;
+                        }
+                        if (!boot.tree.light || boot.tree.dark) {
+                            themeProblem(`with Light remembered on a dark OS, the first tree RenderInitial ` +
+                                `returned carried the ${boot.tree.dark ? "dark" : "no"} caption ink: boot() ` +
+                                `has to send the "theme" host event before RenderInitial`);
+                            held = false;
+                        }
+                    }
+                    await step("after a reload with Light remembered", "light", { attr: "light", pressed: ["light"] });
+                }
+
+                await click("system");
+                await step("after a click on System, on a dark OS", "dark", { attr: null, pressed: ["system"], stored: "system" });
+
+                await osScheme("light");
+                await step("under System when the OS turns light", "light", { attr: null, pressed: ["system"] });
+
+                if (held) asked.themeSwitch = true;
+            } finally {
+                if (identifier) await session.send("Page.removeScriptToEvaluateOnNewDocument", { identifier });
+                await session.send("Emulation.setEmulatedMedia", { features: [] });
+                await session.send("Emulation.clearDeviceMetricsOverride");
+                await evaluate(`(() => { try { localStorage.removeItem("grmob-tutorial-theme"); } catch {} })()`);
+            }
+        }
+
     } finally {
         if (session) session.close();
         chrome.kill();
@@ -10172,7 +10404,7 @@ async function main() {
     // that only appears on the happy path is a skip that goes missing exactly
     // when the log is long.
     if (asked.liveSkip) {
-        console.log(`SKIP: checks 15 to 19, the live calendar, shortcuts, boot frame, mid-text typing and thread (${asked.liveSkip})`);
+        console.log(`SKIP: checks 15 to 20, the live calendar, shortcuts, boot frame, mid-text typing, thread and theme switch (${asked.liveSkip})`);
     }
     if (asked.inkFaceSkip) {
         console.log(`SKIP: the band grid's ink scan (${asked.inkFaceSkip})`);
@@ -10203,7 +10435,9 @@ async function main() {
         ? "typing mid-text under lesson 2.3's UPPERCASE stays where it is typed,"
         : "mid-text typing untried,"} ${asked.thread
         ? "lesson 4.33's thread opens at its end, loads one older page at the top with the reader's row kept in place, and follows a send only from the end,"
-        : "the thread unscrolled,"} ${PALETTES.length} palette swatches paint the
+        : "the thread unscrolled,"} ${asked.themeSwitch
+        ? "the site page's panes and the app's palette switch scheme together, with no flash for a remembered pick,"
+        : "the theme switch untried,"} ${PALETTES.length} palette swatches paint the
     hexes the contrast census measures, ${WIDGETS.length} real widgets draw
     their own boundary tones on both edges, a sticky band pins, ${VALUE_RANGES.length}
     value ranges resolve the way core.Progress says a browser resolves them,
