@@ -1853,6 +1853,57 @@ test("an arrow steps over a disabled radio", () => {
         "a radio the walk skips is not given a stop to rove through");
 });
 
+test("a radio group answers both arrow pairs, whichever way it is drawn", () => {
+    // Before: a Column radiogroup took Up/Down only, and Right, the key a
+    // sighted user reaches for on comps.ColorSwatchPicker's rows, did nothing.
+    // ARIA's radio group pattern gives Down and Right forward and Up and Left
+    // back regardless of orientation.
+    for (const type of ["Column", "Row"]) {
+        const rg = mountTree(composite("radiogroup",
+            [0, 1, 2].map((i) => member("radio", { selected: i === 0, onClick: `cb_${i}` })),
+            { type }));
+        const radios = rg.root.children;
+        radios[0].focus();
+
+        let e = radios[0].dispatch("keydown", { key: "ArrowRight" });
+        assert.equal(rg.focused(), radios[1], `${type}: Right did not go forward`);
+        assert.equal(e.defaultPrevented, true, `${type}: Right let the page scroll`);
+        radios[1].dispatch("keydown", { key: "ArrowDown" });
+        assert.equal(rg.focused(), radios[2], `${type}: Down did not go forward`);
+        radios[2].dispatch("keydown", { key: "ArrowLeft" });
+        assert.equal(rg.focused(), radios[1], `${type}: Left did not go back`);
+        e = radios[1].dispatch("keydown", { key: "ArrowUp" });
+        assert.equal(rg.focused(), radios[0], `${type}: Up did not go back`);
+        assert.equal(e.defaultPrevented, true);
+        assert.deepEqual(rg.rt.dispatched.map((d) => d.id), ["cb_1", "cb_2", "cb_1", "cb_0"],
+            `${type}: every arrow moves the check`);
+    }
+});
+
+test("under RTL a radio group's horizontal pair mirrors, even in a column", () => {
+    const rg = radiogroup({ checked: 0 });
+    rg.rt.mountPoint.setAttribute("dir", "rtl");
+    const radios = rg.root.children;
+    radios[0].focus();
+    radios[0].dispatch("keydown", { key: "ArrowLeft" });
+    assert.equal(rg.focused(), radios[1], "Left is forward on a right-to-left page");
+    radios[1].dispatch("keydown", { key: "ArrowRight" });
+    assert.equal(rg.focused(), radios[0]);
+    radios[0].dispatch("keydown", { key: "ArrowDown" });
+    assert.equal(rg.focused(), radios[1], "the vertical pair never mirrors");
+});
+
+test("a one-axis composite still leaves the other pair to the page", () => {
+    // The two-pair rule is the radio group's alone. A listbox answering Right
+    // would take a key a page may be using for something else.
+    const lb = listbox();
+    const items = lb.root.children;
+    items[0].focus();
+    const e = items[0].dispatch("keydown", { key: "ArrowRight" });
+    assert.equal(e.defaultPrevented, false);
+    assert.equal(lb.focused(), items[0]);
+});
+
 // --------------------------------------------------------------------------
 // A container control outside any toolbar
 // --------------------------------------------------------------------------

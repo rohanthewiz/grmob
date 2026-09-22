@@ -1960,9 +1960,9 @@ comps.ColorSwatchPicker{
 - **It holds a hook** (the half-typed hex, which no application wants), so
   render it unconditionally, in a stable position. The hook is taken whether
   or not `AllowCustom` is set.
-- On the web the group's arrow keys are Up and Down, in reading order through
-  the rows: the runtime gives a composite one axis, and this one is a column
-  of rows.
+- On the web the group answers both arrow pairs in reading order through the
+  rows: Down and Right go forward, Up and Left go back, as a radio group does
+  in ARIA's pattern (Left goes forward under RTL).
 - It is not a hue and saturation square. That needs a touch position on a
   Canvas, which no event carries.
 

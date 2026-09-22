@@ -569,9 +569,9 @@ go run ./serve -dev
 | 1 — Views & Layout | 5 | Views as plain Go values, and the flex layout system |
 | 2 — State, Events & Lists | 6 | `NewState`, callbacks, keyed and virtualized lists |
 | 3 — Hooks & Effects | 5 | Timers, effects, memos and reducers |
-| 4 — The Widget Library | 14 | Everything in `comps`, screen by screen |
-| 5 — Forms & Validation | 6 | Rules, cross-field checks and reveal policies |
-| 6 — Navigation & Overlays | 5 | The `Navigator`, modals and toasts |
+| 4 — The Widget Library | 37 | Everything in `comps`, screen by screen |
+| 5 — Forms & Validation | 9 | Rules, cross-field checks and reveal policies |
+| 6 — Navigation & Overlays | 8 | The `Navigator`, modals and toasts |
 | 7 — Theming & Styling | 5 | Tokens, themes and style inheritance |
 | 8 — Robustness | 5 | Error boundaries, debug mode and cached subtrees |
 

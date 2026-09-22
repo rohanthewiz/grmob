@@ -1000,7 +1000,9 @@ Carried over from round three, less the two stale entries above:
 - Tooltip and anchored popover (layout measurement)
 - Native time wheel (node type)
 - `RichTextView` with inline marks (inline span node)
-- Per-corner radius, and so bubble tails
+- ~~Per-corner radius, and so bubble tails~~. No longer blocked:
+  `core.CornerRadii` exists and `MessageBubble` uses it (see the note above
+  and N-063).
 - Strikethrough and underline (text decoration)
 - A year-wide `CalendarHeatmap` that opens on the newest week
 

@@ -835,6 +835,7 @@ What the runtime does with that:
 |---|---|
 | arrow along the container's axis | moves to the next or previous member, wrapping at both ends |
 | arrow across it | left to the page, so a horizontal strip does not stop a vertical scroll |
+| either arrow pair, in a `radiogroup` | both move, as ARIA's radio group pattern has it: Down and Right forward, Up and Left back (Left forward under RTL), whatever the group's axis. `comps.ColorSwatchPicker` is a column of rows, where Right is the natural key |
 | `Home` / `End` | first and last member |
 | `Enter` / `Space` | runs the member's own `onClick` — but only for a member that is not already a control the browser activates for itself, since a `<button>` fires a real click on both keys and a synthesized one would run the handler twice |
 | anything else, `Tab` included | untouched. A listbox that swallowed `Tab` would trap a keyboard user inside it. |

@@ -2178,16 +2178,43 @@ const GrMob = (() => {
         // horizontal composite in a right-to-left layout is drawn with its
         // first member at the right, so there Left is next; see "Mirrored for
         // right-to-left" under the grid, which follows the same rule.
+        //
+        // # A radio group takes both pairs
+        //
+        // A listbox, tablist or toolbar answers one pair, the one its drawn
+        // axis names, and leaves the other to the page. ARIA's radio group
+        // pattern names both: Down and Right both go forward, Up and Left
+        // both go back, whatever the orientation. That matters for a group
+        // drawn as a column of rows, as comps.ColorSwatchPicker is. Right is
+        // the key a sighted keyboard user reaches for there, and it did
+        // nothing. The pair that is not the group's own axis is still claimed
+        // (prevented), because a radio group has nothing else for an arrow to
+        // do.
+        //
+        // Under RTL the horizontal pair mirrors in a radio group of either
+        // orientation: Left is forward on a right-to-left page even when the
+        // radios are stacked, so the key means the same thing in every
+        // radio group on that page. The vertical pair never mirrors.
+        //
+        //	role         vertical            horizontal (ltr / rtl)
+        //	listbox etc  Down / Up           Right / Left  or  Left / Right
+        //	radiogroup   Down, Right(ltr) or Left(rtl) / Up, Left(ltr) or Right(rtl)
         const vertical = compositeIsVertical(container);
-        const rtl = !vertical && isRightToLeft(container);
-        const nextKey = vertical ? "ArrowDown" : (rtl ? "ArrowLeft" : "ArrowRight");
-        const prevKey = vertical ? "ArrowUp" : (rtl ? "ArrowRight" : "ArrowLeft");
+        const bothAxes = container.getAttribute("role") === "radiogroup";
+        const rtl = (bothAxes || !vertical) && isRightToLeft(container);
+        const lineNext = rtl ? "ArrowLeft" : "ArrowRight";
+        const linePrev = rtl ? "ArrowRight" : "ArrowLeft";
+        const nextKeys = bothAxes ? ["ArrowDown", lineNext] : [vertical ? "ArrowDown" : lineNext];
+        const prevKeys = bothAxes ? ["ArrowUp", linePrev] : [vertical ? "ArrowUp" : linePrev];
         let to = -1;
-        switch (e.key) {
-            case nextKey:
+        // The arrow pairs are lists, so they are matched before the switch.
+        // The switch keeps the fixed keys.
+        const key = nextKeys.includes(e.key) ? "next" : prevKeys.includes(e.key) ? "prev" : e.key;
+        switch (key) {
+            case "next":
                 to = (at + 1) % members.length;
                 break;
-            case prevKey:
+            case "prev":
                 to = (at - 1 + members.length) % members.length;
                 break;
             case "Home":
