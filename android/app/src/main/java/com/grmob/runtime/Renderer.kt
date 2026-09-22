@@ -79,6 +79,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.animation.core.Animatable as FloatAnimatable
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
@@ -106,8 +107,12 @@ import androidx.compose.ui.platform.LocalView
 // The disclosure pair. Compose says "expanded" with actions rather than with a
 // property, which is why these land in gestureModifier and not in
 // GrMobStyle.boxModifier's semantics block — see grMobDisclosure.
+import androidx.compose.ui.semantics.CollectionInfo
+import androidx.compose.ui.semantics.CollectionItemInfo
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.collapse
+import androidx.compose.ui.semantics.collectionInfo
+import androidx.compose.ui.semantics.collectionItemInfo
 import androidx.compose.ui.semantics.expand
 import androidx.compose.ui.semantics.semantics
 import androidx.core.view.WindowCompat
@@ -315,6 +320,80 @@ internal fun spokenByLabel(node: GrMobNode): Set<String> {
 }
 
 /**
+ * Each radio's place in the nearest enclosing radiogroup, in document order,
+ * and the group's size: what TalkBack reads as "3 of 8". Null outside a group.
+ *
+ * # Why Compose's own count was wrong
+ *
+ * With no stated collection info, Compose numbers a `selectableGroup`'s
+ * members itself (setCollectionItemInfo in its accessibility delegate): an
+ * item's index is how many selectable siblings have a smaller
+ * `layoutNode.placeOrder`. placeOrder counts from zero *within each layout
+ * parent*, so it is only an index when every radio sits directly in one Row
+ * or Column. comps.ColorSwatchPicker lays its radios out as a grid, one Row
+ * per line, and TalkBack heard it on lesson 5.9 (emulator, 2026-09-22):
+ *
+ *	  grid       blue orange teal yellow pink green / purple red
+ *	  placeOrder  0    1     2     3     4    5    /   0     1
+ *	  heard       ·    3     5     6     7    8    /   1     3     "of 8"
+ *
+ * (blue, the selected swatch, was not reached). orange is "3" because blue
+ * *and* purple are at place 0, and so on down
+ * the line: every heard number is one plus the count of places lower than
+ * its own across both rows.
+ *
+ * # The repair
+ *
+ * The group states `collectionInfo` (n rows, one column) and each radio its
+ * `collectionItemInfo`, both computed here from the Go tree, and the group no
+ * longer writes selectableGroup(). Both halves are needed: Compose 1.10 sets
+ * an item's stated info and then, when the parent is a selectableGroup,
+ * derives one anyway and overwrites it (grMobRole's radiogroup arm has the
+ * detail). With no selectableGroup the stated info is final, and the layout
+ * that holds the radios stops mattering. Document order is the reading order on
+ * every target: the web's aria-posinset is derived from the DOM the same way,
+ * and under RTL a Row mirrors its drawing, not its order.
+ *
+ * The positions are keyed by node identity (GrMobNode does not override
+ * equals), which is exactly the scope wanted: a replaced node is a new
+ * instance and the walk that finds it again gives it its new place.
+ */
+val LocalGrMobRadioPositions = compositionLocalOf<RadioPositions?> { null }
+
+/** The members of one radiogroup, each with its zero-based place. */
+class RadioPositions(val index: Map<GrMobNode, Int>) {
+    val count: Int get() = index.size
+    // Structural, so derivedStateOf below only reports a new value, and the
+    // group only re-provides, when a radio was added, removed or reordered.
+    override fun equals(other: Any?) = other is RadioPositions && other.index == index
+    override fun hashCode() = index.hashCode()
+}
+
+/**
+ * The radios under [group], in document order. A radio is counted when it
+ * would be in the accessibility tree: not `display: none` (never composed),
+ * not under AccessibilityHidden (pruned by clearAndSetSemantics). The walk
+ * stops at a nested radiogroup, whose radios are its own set, as ARIA scopes
+ * aria-posinset to the nearest group.
+ */
+internal fun radioPositions(group: GrMobNode): RadioPositions {
+    val index = LinkedHashMap<GrMobNode, Int>()
+    fun walk(n: GrMobNode) {
+        for (child in n.children) {
+            val s = child.style
+            if (s?.display == "none" || s?.accessibilityHidden == true) continue
+            when (s?.accessibilityRole) {
+                "radio" -> index[child] = index.size
+                "radiogroup" -> {}
+                else -> walk(child)
+            }
+        }
+    }
+    walk(group)
+    return RadioPositions(index)
+}
+
+/**
  * Whether the Column being composed has no height of its own to divide among
  * FlexGrow children: true inside a vertical scroll's content, until something
  * on the way down gives a height back.
@@ -493,8 +572,8 @@ fun RenderNode(node: GrMobNode, extra: Modifier = Modifier) {
     // its own node before going quiet.
     //
     // The values that change are collected and provided in one call, rather
-    // than one `when` arm per combination: six independent values would be
-    // sixty-four arms. An unchanged tree still provides nothing.
+    // than one `when` arm per combination: seven independent values would be
+    // 128 arms. An unchanged tree still provides nothing.
     val disable = node.style?.disabled == true && !LocalGrMobDisabled.current
     val bound = LocalGrMobUnboundedHeight.current && hasPointsHeight(node.style)
     val boundWidth = LocalGrMobUnboundedWidth.current && hasPointsWidth(node.style)
@@ -511,7 +590,32 @@ fun RenderNode(node: GrMobNode, extra: Modifier = Modifier) {
     val inertHere = LocalGrMobInert.current || node.style?.inert == true
     val inert = inertHere && !LocalGrMobInert.current
     if (inertHere) mods = Modifier.focusProperties { canFocus = false }.then(mods)
-    if (!disable && !bound && !boundWidth && !named && !inert && !says) {
+    // A radiogroup's size and each radio's place in it; see
+    // LocalGrMobRadioPositions. Both are extra semantics modifiers on the
+    // node's own layout node, so they land in the same semantics node as
+    // boxModifier's role and label. The walk sits behind derivedStateOf so a
+    // selection, which changes a radio's style, re-runs it without
+    // re-providing an unchanged answer.
+    val role = node.style?.accessibilityRole
+    val positions = if (role == "radiogroup") {
+        remember(node) { derivedStateOf { radioPositions(node) } }.value
+    } else null
+    if (positions != null && positions.count > 0) {
+        val n = positions.count
+        mods = mods.semantics { collectionInfo = CollectionInfo(rowCount = n, columnCount = 1) }
+    }
+    if (role == "radio") {
+        val place = LocalGrMobRadioPositions.current?.index?.get(node)
+        if (place != null) {
+            mods = mods.semantics {
+                collectionItemInfo = CollectionItemInfo(
+                    rowIndex = place, rowSpan = 1, columnIndex = 0, columnSpan = 1,
+                )
+            }
+        }
+    }
+    val group = positions != null && positions != LocalGrMobRadioPositions.current
+    if (!disable && !bound && !boundWidth && !named && !inert && !says && !group) {
         RenderNodeContent(node, mods)
     } else {
         val provided = buildList<ProvidedValue<*>> {
@@ -521,6 +625,7 @@ fun RenderNode(node: GrMobNode, extra: Modifier = Modifier) {
             if (named) add(LocalGrMobNamedControl provides true)
             if (inert) add(LocalGrMobInert provides true)
             if (says) add(LocalGrMobGroupSaid provides said)
+            if (group) add(LocalGrMobRadioPositions provides positions)
         }
         CompositionLocalProvider(*provided.toTypedArray()) { RenderNodeContent(node, mods) }
     }
@@ -2686,10 +2791,18 @@ private class StripViewport {
 
 /**
  * A strip child's core.FlexGrow, carried to GrMobGrowStrip's measure policy,
- * and whether its subtree can be asked for an intrinsic width (see
- * [answersIntrinsicWidth]).
+ * whether its subtree can be asked for an intrinsic width (see
+ * [answersIntrinsicWidth]), and its points MinWidth in dp, or null (see
+ * "A grower with a floor" on GrMobGrowStrip).
  */
-private data class StripGrow(val factor: Float, val intrinsic: Boolean)
+private data class StripGrow(val factor: Float, val intrinsic: Boolean, val floorDp: Float? = null)
+
+/** A MinWidth that is a definite length: points, not "auto" or a percentage. */
+private fun pointsMinWidth(s: GrMobStyle?): Float? {
+    val w = s?.minWidth ?: return null
+    if (w.isEmpty() || w == "auto" || w.endsWith("%")) return null
+    return w.removeSuffix("px").toFloatOrNull()?.takeIf { it > 0f }
+}
 
 /**
  * Whether a subtree can be asked for its max intrinsic width without
@@ -2765,6 +2878,21 @@ private fun answersIntrinsicWidth(node: GrMobNode): Boolean {
  * narrower than its share. An overflowing strip (free ≤ 0) gives every grower
  * its content width, which is CSS's answer as well.
  *
+ * # A grower with a floor
+ *
+ * A grower that states a points MinWidth is measured at one definite width,
+ * `max(base + share, MinWidth)`, rather than with a minimum over an infinite
+ * maximum, and its subtree is told its width is bounded again
+ * (LocalGrMobUnboundedWidth false). That is CSS's answer: a flex item's used
+ * width is a length, and its content lays out inside it. The loose measure is
+ * right for a grower whose content decides its width, and wrong for one whose
+ * content divides its width. comps.EditableGrid is the second kind: a
+ * MinWidth(460) Column of rows whose cells are FlexGrow shares. Measured
+ * loose, the floor held but every row under it was unbounded, lost its
+ * weights and hugged its own cells (lesson 4.37 on the emulator, 2026-09-22:
+ * no two rows' columns lined up). The floor is what makes the fixed width
+ * safe when the viewport is itself unbounded: there is always a length.
+ *
  * Vertical placement follows the Row's AlignItems (top, centre, bottom), and a
  * stretched child fills the height as in RowChildren. JustifyContent is not
  * read: a strip with a grower has no leftover space for it to place.
@@ -2781,11 +2909,21 @@ private fun GrMobGrowStrip(node: GrMobNode, extra: Modifier) {
             CompositionLocalProvider(LocalGrMobUnboundedWidth provides true) {
                 node.children.forEachIndexed { i, child ->
                     key(child.key.ifEmpty { i }) {
+                        val grow = child.style?.flexGrow ?: 0f
+                        // See "A grower with a floor": only a grower that
+                        // states one is given a definite width.
+                        val floor = if (grow > 0f) pointsMinWidth(child.style) else null
                         var m: Modifier = Modifier.layoutId(
-                            StripGrow(child.style?.flexGrow ?: 0f, answersIntrinsicWidth(child)),
+                            StripGrow(grow, answersIntrinsicWidth(child), floor),
                         )
                         if (stretch) m = m.fillMaxHeight()
-                        RenderNode(child, m)
+                        if (floor != null) {
+                            CompositionLocalProvider(LocalGrMobUnboundedWidth provides false) {
+                                RenderNode(child, m)
+                            }
+                        } else {
+                            RenderNode(child, m)
+                        }
                     }
                 }
             }
@@ -2823,7 +2961,14 @@ private fun GrMobGrowStrip(node: GrMobNode, extra: Modifier) {
         measurables.forEachIndexed { i, m ->
             if (grows[i] > 0f) {
                 val share = if (free > 0) (free * grows[i] / totalGrow).roundToInt() else 0
-                placeables[i] = m.measure(loose.copy(minWidth = (bases[i] ?: 0) + share))
+                val want = (bases[i] ?: 0) + share
+                val floor = (m.layoutId as? StripGrow)?.floorDp?.dp?.roundToPx()
+                placeables[i] = if (floor != null) {
+                    val w = maxOf(want, floor)
+                    m.measure(loose.copy(minWidth = w, maxWidth = w))
+                } else {
+                    m.measure(loose.copy(minWidth = want))
+                }
             }
         }
         val laid = placeables.map { it!! }

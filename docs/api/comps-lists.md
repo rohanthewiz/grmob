@@ -684,7 +684,7 @@ Entering EDIT focuses the field (core.Focus). Ending it focuses a cell: the one 
 #### The structure
 
 	Column  (Style)
-	├─ Box core.Horizontal()        only when MinWidth is set
+	├─ Scroll core.Horizontal()     only when MinWidth is set
 	│  └─ Column RoleGrid, Label
 	│     ├─ Row RoleRow            header: RoleColumnHeader cells
 	│     └─ List RoleRowGroup      windowed body, keyed by Key(row)

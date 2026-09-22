@@ -38,7 +38,7 @@ import "strconv"
 //	img           | role="img"      | .isImage       | role = Role.Image
 //	tab           | role="tab"      | —              | role = Role.Tab
 //	tablist       | role="tablist"  | .isTabBar      | —
-//	radiogroup    | role=…          | —              | selectableGroup()
+//	radiogroup    | role=…          | —              | collectionInfo (n × 1)
 //	radio         | role="radio"    | —              | role = Role.RadioButton
 //	status        | role="status"   | —              | liveRegion = Polite
 //	alert         | role="alert"    | —              | liveRegion = Assertive
@@ -351,8 +351,11 @@ const (
 //	          runtime adds the keyboard (one tab stop on the checked radio,
 //	          the arrows move and check), htmlout writes no tabindex, as for
 //	          every composite
-//	Compose   radiogroup is selectableGroup(), radio is Role.RadioButton, and
-//	          the state is the `selected` property grMobSelected sets
+//	Compose   radio is Role.RadioButton and the state is the `selected`
+//	          property grMobSelected sets; the group states its size as a
+//	          collectionInfo and each radio its place, counted in document
+//	          order, as a collectionItemInfo (not selectableGroup(), whose
+//	          own count restarts in every Row of a grid)
 //	SwiftUI   no trait for either; the state arrives as .isSelected, the same
 //	          loss the listbox pair has on this platform
 const (

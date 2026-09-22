@@ -130,7 +130,7 @@ CompositeWalkStopsAt is CompositeWalkAt for a caller that only wants the bool, a
 
 It answers true for both non-descending values, which is exactly the conflation CompositeWalkAt exists to undo — so this is safe only for a caller that has already established both roles are composites, and every caller in this repository has (AuditTree tests hasKeyboard on both ends before it asks, and wasm/verify's pins iterate KeyboardComposites()). A caller that has not should ask CompositeWalkAt and handle the third value, because for a role with no walk this returns a confident \`true\` about a rotation that does not exist.
 
-<small>[core/role.go:983](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L983)</small>
+<small>[core/role.go:986](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L986)</small>
 
 ## Types
 
@@ -148,7 +148,7 @@ This started as CompositeWalkStopsAt alone, returning a bool. Two of its three a
 
 Making it a value rather than a doc note is the same move CompositeMemberRole made one function up when its two empty answers became (member, composite): the fact is put where the compiler and the caller can both see it, instead of in a sentence asking the caller to have already checked something.
 
-<small>[core/role.go:1006](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L1006)</small>
+<small>[core/role.go:1009](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L1009)</small>
 
 ```go
 const (
@@ -212,7 +212,7 @@ Member roles are unique per container, so the middle case is the same set of pai
 
 A descending pair is still two tab stops — both containers keep a roving tabindex either way, which is the part of the finding that never varies. What differs is the reach: where a stopping pair's outer arrows step over the inner widget whole, a descending pair's outer arrows can land \*inside\* it, on any element of the outer's member role buried in the inner's subtree. Neither is what ARIA describes for nested composites, and the framework's refusal to guess is documented at ConcernNestedComposite.
 
-<small>[core/role.go:947](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L947)</small>
+<small>[core/role.go:950](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L950)</small>
 
 #### func (CompositeWalk) String
 
@@ -222,7 +222,7 @@ func (w CompositeWalk) String() string
 
 String names the value for a message. The three spellings are the words the audit's finding and this file's docs already use, so a report built from a %v and a report written by hand read the same.
 
-<small>[core/role.go:1033](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L1033)</small>
+<small>[core/role.go:1036](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L1036)</small>
 
 ### type CurrentKind
 
@@ -535,7 +535,7 @@ The set has to be \*some\* vocabulary, and the four renderers do not share one. 
 	img           | role="img"      | .isImage       | role = Role.Image
 	tab           | role="tab"      | —              | role = Role.Tab
 	tablist       | role="tablist"  | .isTabBar      | —
-	radiogroup    | role=…          | —              | selectableGroup()
+	radiogroup    | role=…          | —              | collectionInfo (n × 1)
 	radio         | role="radio"    | —              | role = Role.RadioButton
 	status        | role="status"   | —              | liveRegion = Polite
 	alert         | role="alert"    | —              | liveRegion = Assertive
@@ -674,8 +674,11 @@ The state is Style.AccessibilitySelected, the field every other choice uses, and
 	          runtime adds the keyboard (one tab stop on the checked radio,
 	          the arrows move and check), htmlout writes no tabindex, as for
 	          every composite
-	Compose   radiogroup is selectableGroup(), radio is Role.RadioButton, and
-	          the state is the `selected` property grMobSelected sets
+	Compose   radio is Role.RadioButton and the state is the `selected`
+	          property grMobSelected sets; the group states its size as a
+	          collectionInfo and each radio its place, counted in document
+	          order, as a collectionItemInfo (not selectableGroup(), whose
+	          own count restarts in every Row of a grid)
 	SwiftUI   no trait for either; the state arrives as .isSelected, the same
 	          loss the listbox pair has on this platform
 
@@ -963,7 +966,7 @@ So the two cases are separated where they are made:
 
 \`composite\` is exactly membership of KeyboardComposites, and role\_control\_test.go holds the two to each other — a container added to that list and not here would report false for a role that has a keyboard, which is the same class of quiet wrong answer one table over.
 
-<small>[core/role.go:882](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L882)</small>
+<small>[core/role.go:885](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L885)</small>
 
 #### func KeyboardComposites
 
@@ -991,7 +994,7 @@ The runtime keeps the same five in two tables split by a different question (whe
 
 Container order matches Roles(); the members are not here, because being a member is a fact about a role's parent rather than about the role.
 
-<small>[core/role.go:836](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L836)</small>
+<small>[core/role.go:839](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L839)</small>
 
 #### func Roles
 
@@ -1007,7 +1010,7 @@ A fresh slice per call rather than a package-level var, which any importer could
 
 Pinned to the const blocks above by role\_enum\_test.go, which reads this file's syntax tree: adding a constant without adding it here should fail \`go test ./...\` rather than silently shrink the set every renderer's coverage check rests on.
 
-<small>[core/role.go:763](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L763)</small>
+<small>[core/role.go:766](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L766)</small>
 
 #### func TappableContainerRoles
 
@@ -1031,7 +1034,7 @@ The fact is here now, and role\_control\_test.go is what makes it a property rat
 
 Because the question is narrower than it looks: not "is this thing interactive" but "does putting this role on a plain container make it a control the browser should give a tab stop to". RoleOption and RoleTab are interactive and are \*not\* here — they are members of a composite, whose tab stop belongs to their container and not to them, and taking one as a toolbar's control would put a second keyboard on a widget that has one.
 
-<small>[core/role.go:1089](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L1089)</small>
+<small>[core/role.go:1092](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L1092)</small>
 
 ### type SelectedState
 

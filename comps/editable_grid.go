@@ -214,7 +214,7 @@ var gridBlurGrace = 150 * time.Millisecond
 // # The structure
 //
 //	Column  (Style)
-//	├─ Box core.Horizontal()        only when MinWidth is set
+//	├─ Scroll core.Horizontal()     only when MinWidth is set
 //	│  └─ Column RoleGrid, Label
 //	│     ├─ Row RoleRow            header: RoleColumnHeader cells
 //	│     └─ List RoleRowGroup      windowed body, keyed by Key(row)
@@ -419,7 +419,15 @@ func (g EditableGrid) Render(ctx *core.Context) *core.Node {
 	outer = append(outer, core.Padding(0), core.Gap(float64(t.Spacing.XS)))
 	outer = append(outer, asProps(g.Style)...)
 	if g.MinWidth > 0 {
-		outer = append(outer, core.Box(core.Horizontal(), core.Padding(0), core.FlexGrow(1),
+		// A Scroll, not a Box: Horizontal() on a Box is only a row with
+		// overflow:auto, which a browser scrolls and neither native does.
+		// Neither reads Overflow beyond "hidden", so on the simulator the
+		// Box handed its 460px content width up to the lesson page, which
+		// grew wider than the screen and cut every paragraph off at both
+		// edges. The grid Column is a grower, which is each native's strip
+		// with a grower (GrMobStripContentLayout, GrMobGrowStrip): proposed
+		// max(ideal, viewport), so a wide screen still fills.
+		outer = append(outer, core.Scroll(core.Horizontal(), core.Padding(0), core.FlexGrow(1),
 			core.Column(grid...)))
 	} else {
 		outer = append(outer, core.Column(grid...))

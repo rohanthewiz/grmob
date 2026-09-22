@@ -36,7 +36,6 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.role
-import androidx.compose.ui.semantics.selectableGroup
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -1219,12 +1218,24 @@ fun SemanticsPropertyReceiver.grMobRole(kind: String) {
         // not use the way a browser does.
         "listbox", "option" -> {}
         // A radio group and one radio in it — the one choice pair Compose can
-        // name at both ends. selectableGroup() is the container semantics
-        // Modifier.selectableGroup() writes, which TalkBack reads as "these
-        // are one set", and Role.RadioButton is the control. The checked
+        // name at both ends. Role.RadioButton is the control, and the checked
         // state is grMobSelected's `selected`, which is what Compose's own
         // RadioButton reports through Modifier.selectable.
-        "radiogroup" -> selectableGroup()
+        //
+        // The group's end is stated by RenderNode, not here: a
+        // `collectionInfo` on the group and a `collectionItemInfo` on each
+        // radio, counted from the Go tree (LocalGrMobRadioPositions). It used
+        // to be selectableGroup(), and that had to go, not merely be
+        // supplemented. SelectableGroup has one consumer in Compose (1.10),
+        // the accessibility delegate's collection info, which derives an
+        // item's index from `placeOrder` — per layout parent, so wrong for a
+        // grid of Rows (N-077) — and which *overwrites* a stated
+        // collectionItemInfo whenever the parent carries SelectableGroup
+        // (setCollectionItemInfo in CollectionInfo.android.kt sets the
+        // stated one and falls through). A stated collectionInfo on the group
+        // is what TalkBack's "In list, 8 items" was read from anyway, so
+        // nothing SelectableGroup said is lost.
+        "radiogroup" -> {}
         "radio" -> role = Role.RadioButton
         // An interactive grid and one cell in it. Compose has no container
         // semantics for a grid — collectionInfo describes row and column

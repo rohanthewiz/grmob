@@ -30,7 +30,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-078
+**Next ID:** N-080
 
 ## Open
 
@@ -83,10 +83,6 @@ with each item's `raised` traced back through all session docs.
 - **N-013** · raised `2026-0916-1157-next-list-charts-on-devices-tier-e-alarms-timezone` · value low (API decision)
   **`mobile.SetTimeZone` runs once at startup.** Fixing it needs core to hold
   the location. (was #16; lapsed@0917-1659)
-- **N-014** · raised `2026-0916-1157-next-list-charts-on-devices-tier-e-alarms-timezone` · value low
-  **The web's scheduled notification and its sweep are unseen in a real
-  browser.** Chrome is available; it needs the user to grant notification
-  permission. (was #17; lapsed@0917-1659)
 - **N-015** · raised `2026-0916-1229-next-list-exact-alarms-boot-rearm-and-sweeps` · value low (user's decision)
   **Compose Rows don't shrink children in proportion.** Seen on the Fold6's
   cover screen. (was #18; lapsed@0917-1659)
@@ -120,13 +116,13 @@ with each item's `raised` traced back through all session docs.
   and the missing term is `Origin.X` — the demo panel's own left padding, a
   layout constant no host reports. A correct `Origin` there would be a
   hard-coded guess; showing the documented `Origin{Y: insets.Top + bar}`
-  case honestly needs a non-scrolling demo. (was #36; lapsed@0917-1659)
+  case honestly needs a non-scrolling demo. Measured in the browser
+  (2026-09-22, browser check 23's setup): under a vertical hinge at x 390 the
+  seam lands at x 445, the demo panel's 55px of inset. (was #36;
+  lapsed@0917-1659)
 - **N-028** · raised `2026-0917-0227-foldables-window-record-and-two-pane` · value low
   **iOS `AppWindowReader` is type-checked only.** Not run in Split View or
   Stage Manager. (was #37; lapsed@0917-1659)
-- **N-029** · raised `2026-0917-0227-foldables-window-record-and-two-pane` · value low
-  **The browser's segments/posture path, two-segment half.** Needs DevTools'
-  foldable emulation toggled by a person. (was #38; lapsed@0917-1659)
 - **N-030** · raised `2026-0917-0227-foldables-window-record-and-two-pane` · value low
   **Folding shut onto the outer display** needs Samsung's "Continue apps on
   cover screen". Unseen. (was #39; lapsed@0917-1659)
@@ -207,6 +203,11 @@ with each item's `raised` traced back through all session docs.
   **TalkBack does not follow Tab onto 4.18's ☰.** Compose's focus is right
   (TalkBack off shows it), but TalkBack said "Showing Inbox" or stayed on the
   previous node. (was #80)
+  - Seen again on the emulator (2026-09-22): on 4.34 most Tabs spoke nothing
+    and Enter under TalkBack pressed a different node from the one just
+    spoken (a Copy button); on 4.16 TalkBack's Tab read prose and code that
+    Compose's own focus never visits. Controls were reachable by moving
+    Compose's focus with TalkBack off, turning TalkBack on and stepping once.
 - **N-061** · raised `2026-0919-2303-safe-insets-record-inert-codeeditor-sse-cleanup` · value low
   **The browser reports no safe-area insets.** `Window.Insets` is zero on the
   web, which is right for a page in a browser window but wrong for an
@@ -229,12 +230,15 @@ with each item's `raised` traced back through all session docs.
   - `TypingIndicator`'s `RoleStatus` appearing from `Display none`: heard on
     TalkBack? VoiceOver is expected to say nothing (the known live-region
     gap, core/role.go).
-  - `ReactionBar` chips: the selected state heard with the spelled-out name
-    ("thumbs up, 3 reactions, selected"), and emoji glyphs drawn in a `Button`
-    label on both natives. Heard on the emulator (2026-09-21), unselected
-    only: "Not selected, party popper, 1 reaction, Button".
+  - `ReactionBar` chips: emoji glyphs drawn in a `Button` label on both
+    natives. The selected state is done: heard on the emulator's TalkBack
+    (2026-09-22) as "Selected, thumbs up, 3 reactions, Button" and, after a
+    tap, "Selected, party popper, 2 reactions, Button"; on the iOS simulator
+    the tapped chip reads "party popper, 2 reactions" and isSelected
+    (`TutorialRoundFourUITests.testReactionChipReportsItsSelection`).
   - `Poll` results: one stop per option, with the hidden `ProgressBar` and
-    texts not reachable by swipe.
+    texts not reachable by swipe. Not reached by the emulator's Tab sweep of
+    4.34 (N-058's gap), so still unheard.
 
 - **N-064** · raised `2026-0921-0935-core-opacity-and-typing-indicator-fade` · value medium
   **`core.Opacity` is unrun on a device.** It
@@ -285,15 +289,22 @@ with each item's `raised` traced back through all session docs.
   - `NumberPad`: the haptic per key felt on a phone; the unpainted corner
     (`Opacity(0)`, `Disabled`, hidden) skipped by TalkBack and VoiceOver, and
     not a Tab stop with a hardware keyboard.
-  - `ColorSwatchPicker`: each radio heard with its name and "selected"; the
-    ring and check on SwiftUI; the hex field's return committing the short
-    form on both natives.
-  - `RangeSlider`: a drag past the other thumb on a touch screen, and that
-    the pushed thumb's native position follows Go's value when it was not
-    the one dragged.
-  - The lock-screen dots' `RoleStatus` line ("Passcode, 2 of 4 entered"):
-    heard on TalkBack per key? VoiceOver is expected to say nothing (the
-    known live-region gap, core/role.go).
+  - `ColorSwatchPicker`: the ring and check on SwiftUI (the simulator shots
+    caught the field, not the grid); VoiceOver. Done (2026-09-22): TalkBack
+    says "Selected, blue, Radio button, 1 of 8" and every position right
+    since N-077; the hex field's return commits the short form on both
+    natives ("#2a7" leaves Value at #2A78D6 while typed and commits #22AA77
+    on return: the emulator, and `testSwatchesHexShortFormAndTheRangeThatCannotCross`
+    on the simulator).
+  - `RangeSlider`: done on both simulators' input paths (2026-09-22): an
+    injected drag of Minimum from $20 to past $80 on the emulator left both
+    thumbs and readouts at $115; XCUITest's adjust on the simulator left the
+    two sliders' values equal. A real finger is untried. Its accessibility is
+    not what its doc says on either native: N-078 and N-079.
+  - The lock-screen dots' `RoleStatus` line: heard on the emulator's TalkBack
+    per key (2026-09-22), "Passcode, 1 of 4 entered", then 2 and 3.
+    VoiceOver is expected to say nothing (the known live-region gap,
+    core/role.go).
   - Heard on the emulator's TalkBack (2026-09-21, Tab sweep): pad keys as
     "2, Button" … "Delete, Button"; swatches as "Not selected, orange, Radio
     button" (the selected one was not reached). Compose's Tab order goes
@@ -308,8 +319,10 @@ with each item's `raised` traced back through all session docs.
     inert on both natives by design, does no harm there. On the web, a
     screen reader saying "level 2" (the DOM was not read for `aria-level`).
   - `TreeView` under RTL: seen mirrored in headless Chrome and on the Compose
-    emulator (per-app Arabic locale), 2026-09-21. SwiftUI unseen. On both
-    seen targets the collapsed chevron "▸" still points right, against the
+    emulator (per-app Arabic locale), 2026-09-21, and on the iOS simulator
+    (2026-09-22, `testTreeViewUnderArabic`; `-AppleLanguages (ar)` alone did
+    not flip the app, the two forced writing-direction defaults did). On all
+    three the collapsed chevron "▸" still points right, against the
     reading direction; a glyph has no way to mirror (an API decision: a
     mirror-under-RTL prop for Text, like `CanvasMirrorsRTL`).
   - Heard on the emulator's TalkBack: "expanded. docs. Expands or collapses
@@ -335,15 +348,17 @@ with each item's `raised` traced back through all session docs.
 - **N-070** · raised `2026-0921-1057-comps-round-four-phase-4-charts` · value medium
   **Phase 4's charts, unrun on a device.** Lesson 4.36 was looked at in
   headless Chrome only (all four demos; the look found two defects, fixed).
-  - `Waveform`: that a round-capped stroke `BarWidth` px thick really is
-    unscaled under `CanvasStretch` on Compose and SwiftUI, as core.Canvas's
-    doc says of every stroke. It is the widget's whole premise, and no
-    earlier chart stroked anything wider than 2 px, where a scaled stroke
-    would not have shown. Also the half-px silent bar drawn as a dot.
-  - `RadarChart`: rim labels placed by `core.Translate` px on a centred
-    ZStack layer, on both natives (Translate's only other consumer is
-    Drawer's "-100%"); the ring-value chips over a filled polygon.
-  - `CandlestickChart`: the 1px doji body at a native's pixel density.
+  - Seen on the emulator and the iOS simulator (2026-09-22,
+    `testRoundFourChartsDraw`): `Waveform`'s bars are round-capped and even
+    on both (the stroke is unscaled under `CanvasStretch`); the doji draws;
+    the funnel draws. The half-px silent bar as a dot was not looked for.
+  - `RadarChart` on SwiftUI is drawn 62pt left of centre: in the demo
+    panel (inner x 63…339 on a 402pt screen) the chart's centre and its
+    "Speed" label sit at x 139, and the left rim label reads "sion", cut at
+    the panel. Compose centres the same tree and shows every label. The
+    stack is 304pt (Size 180 + 2 × (56 + 6)) in a 276pt column, so it
+    overflows; a symmetric overflow would cut 14pt each side, not shift the
+    whole chart. Undiagnosed.
   - `AudioPlayer.Waveform` with a real stream: the strip filling as the
     status ticks, and under the finger while scrubbing.
   - Every chart's one spoken sentence on TalkBack and VoiceOver.
@@ -352,23 +367,29 @@ with each item's `raised` traced back through all session docs.
   in headless Chrome only (the look found two defects, fixed; the keyboard
   round trip was probed: arrows, Enter into a focused field, Space reaching
   the text, return landing on the cell below with the arrows live).
-  - The EDIT round trip on Compose and SwiftUI: a tap opens the field with
-    the keyboard up (a `core.Focus` on an Input created in the same pass),
-    return commits and the row below is *not* focused (no native acts on a
-    focus command on a box), and whether the keyboard then stays up or drops.
-  - The ✕ on a touch screen: that a tap on it does not blur the field first
-    on either native, and that the 150ms grace is long enough in a real
-    browser with a mouse (headless Chrome dispatches callbacks, not pointer
-    events, so the race the grace exists for was reasoned, not seen).
+  - Done on the emulator and the simulator (2026-09-22): a tap opens the
+    field with the keyboard up, return commits (Undo (1)), and the ✕ throws
+    a typed draft away without the blur committing it first (Undo stays
+    (1)). After return the keyboard drops on Compose and stays up on iOS.
+    `testGridEditRoundTripAndDiscard` holds the simulator half. The 150ms
+    grace in a real browser with a mouse is still reasoned, not seen.
+  - The horizontal box was a `core.Box(core.Horizontal())`, which neither
+    native scrolls (only a browser reads `overflow: auto`): on the simulator
+    the lesson page grew to 490pt on a 402pt screen with every paragraph cut
+    at both edges, and on the emulator the grid was squeezed with Amount
+    clipped. Now a `core.Scroll`, and Compose's strip gives a grower with a
+    points MinWidth a definite width (`GrMobGrowStrip`, pinned by
+    `TestComposeStripGrowerWithAFloorIsMeasuredAtAWidth`), so the rows keep
+    their weights: seen aligned and scrolling sideways on the emulator, the
+    simulator and in headless Chrome.
+  - The frameless `core.Select` in a cell keeps the row at the other cells'
+    height on both natives. On iOS, a row in EDIT draws its Category text
+    about 3pt left of the other rows'.
   - The soft keyboard covering the active cell near the bottom of the grid:
-    the cell is inside a `List` inside (with `MinWidth`) a horizontal scroll
-    box, and what each host scrolls to show a focused field there is unknown.
-  - A `List` inside a `core.Horizontal()` box on both natives: a lazy column
-    under an unbounded width. `MinWidth` is the only thing that builds it.
-  - A `core.Select` with its frame stripped (`BorderWidth(0)`, `Padding(0)`,
-    transparent fill) inside a cell on both natives: the web obeys; the
-    natives' pickers may keep their own chrome and make the row tall again.
-  - TalkBack and VoiceOver: a cell heard as "Amount, row 2, $310.50, button",
+    unjudged; the emulator shows only its floating stylus toolbar.
+  - On iOS the grid is one static text "Budget" to VoiceOver, and its text
+    cells are not in the accessibility tree at all: N-078.
+  - TalkBack and VoiceOver (VoiceOver now waits on N-078): a cell heard as "Amount, row 2, $310.50, button",
     the editor's name, the `RoleAlert` message heard on a refused commit
     (TalkBack; VoiceOver is expected to say nothing), and the row menu.
     Heard on the emulator (2026-09-21): "Amount, row 2, $310.50. Edits the
@@ -394,16 +415,36 @@ with each item's `raised` traced back through all session docs.
   `*OnLight` fields hold light inks. Promoting it means renaming or
   re-arguing those roles and adding it to `BundledThemes`. Its contrast
   figures were computed by hand, not by a census.
-- **N-077** · raised `2026-0922-0204-n076-logical-insets-hidden-fill-ios-carry-talkback-sweep` · value medium
-  **TalkBack says the wrong position for ColorSwatchPicker's radios.** Heard
-  on the emulator (lesson 5.9, Tab sweep): orange "3 of 8", teal 5, yellow
-  6, pink 7, green 8, purple 1, red 3, where the grid reads blue, orange,
-  teal, yellow, pink, green / purple, red (six columns, a padded second
-  row). The app sets no collection info; Compose derives it for a
-  `selectableGroup` from its Selected children, and here those are
-  grandchildren through semantics-less Rows with four hidden padding boxes
-  beside the last two. Undiagnosed: which of those confuses the count, and
-  whether a single-row RadioGroup is heard right.
+- **N-078** · raised `2026-0922-0440-next-list-radio-positions-browser-notify-fold-grid-scroll-ios-round-four` · value medium (API decision)
+  **SwiftUI's combine over a labelled container swallows its members.**
+  `grMobAccessibility` gives every labelled container
+  `accessibilityElement(children: .combine)`, which is right for a row or a
+  bubble that should read as one thing, and wrong for a named container of
+  separately operable members. Seen in XCUITest's tree on the iOS 26.5
+  simulator (2026-09-22):
+  - `RangeSlider` (RoleGroup "Price") is one Slider "Price" valued "10%,
+    40%", and its two inner sliders have no label.
+  - `EditableGrid` (RoleGrid "Budget") is one static text; its row headers
+    and text cells are absent, and only the Category menus (real Buttons)
+    survive. VoiceOver has no way to reach a cell.
+  - `ColorSwatchPicker`'s radiogroup reads as a Button "Label colour",
+    Selected: the children's traits were merged onto the group, though the
+    swatches survive as Buttons.
+  The likely shape is `.contain` (a named container whose members stay
+  elements) for the container roles that hold controls (group, radiogroup,
+  grid, toolbar, tablist), with `.combine` kept for a labelled node that is
+  one thing. But `Stepper`, `Drawer` and `MessageBubble` are labelled
+  RoleGroups that rely on the combine today, so the role alone cannot decide
+  it. VoiceOver itself cannot run on the simulator; Accessibility Inspector
+  or a device is the check.
+- **N-079** · raised `2026-0922-0440-next-list-radio-positions-browser-notify-fold-grid-scroll-ios-round-four` · value medium
+  **A slider's spoken value is a percentage, not its `Format`.** TalkBack
+  said "Maximum … Slider … 58 percent" on 5.9's RangeSlider, and XCUITest
+  reads the inner sliders' values as "10%" and "40%". `RangeSlider`'s doc
+  promises "Minimum, slider, 20", and `SliderRow` draws "$20" beside the
+  track but states no value text for the control. Undiagnosed: whether
+  `core.Slider` can carry an `AccessibilityValue` text through to Compose's
+  and SwiftUI's sliders.
 
 ## Non-goals
 
@@ -481,6 +522,39 @@ with each item's `raised` traced back through all session docs.
   path works. (was #76)
 
 ## Closed
+
+- **N-077** · raised `2026-0922-0204-n076-logical-insets-hidden-fill-ios-carry-talkback-sweep`
+  · closed 2026-09-22, `2026-0922-0440-next-list-radio-positions-browser-notify-fold-grid-scroll-ios-round-four` — Compose numbers a
+  `selectableGroup`'s members by `layoutNode.placeOrder`, which restarts in
+  every layout parent, so a grid of Rows was counted per Row (every heard
+  number was one plus the count of lower places across both rows). Compose
+  1.10's `setCollectionItemInfo` also overwrites a stated item info whenever
+  the parent is a `selectableGroup`, so the radiogroup role no longer writes
+  one: `RenderNode` states the group's `collectionInfo` and each radio's
+  `collectionItemInfo`, counted in document order from the Go tree
+  (`LocalGrMobRadioPositions`). Heard on the emulator: 5.9's swatches 1…8 of
+  8 in order, and 4.16's RadioGroup "2 of 3". Pinned by
+  `TestComposeStatesEachRadiosPlaceInItsGroup`.
+- **N-029** · raised `2026-0917-0227-foldables-window-record-and-two-pane`
+  · closed 2026-09-22, `2026-0922-0440-next-list-radio-positions-browser-notify-fold-grid-scroll-ios-round-four` — no person needed: CDP's
+  `setDeviceMetricsOverride` takes a `displayFeature` and
+  `setDevicePostureOverride` a posture, and browser check 23 drives lesson
+  4.21 through a vertical hinge, the book posture, a tabletop hinge and none.
+  It found that a segment change at an unchanged window size fires no
+  `resize`, so the fold reached Go only on the next posture change; the
+  runtime now also reports on the `(horizontal|vertical)-viewport-segments: 2`
+  media queries. Mutation-tested by removing those listeners.
+- **N-014** · raised `2026-0916-1157-next-list-charts-on-devices-tier-e-alarms-timezone`
+  · closed 2026-09-22, `2026-0922-0440-next-list-radio-positions-browser-notify-fold-grid-scroll-ios-round-four` — the permission is granted over
+  CDP (`Browser.grantPermissions`), so no person is needed. Browser check 22
+  posts four notifications through the real runtime in headless Chrome and
+  hears each real `Notification`'s "show": an immediate one at once, a
+  scheduled one at its time, a sweep answering with that id alone, a
+  swept timer never firing, another prefix's firing, and a second sweep
+  reporting nothing. Mutation-tested by removing the sweep's `clearTimer` (the
+  first version scheduled the swept post at +60s, which could never fire
+  inside the check, and passed the mutant; it is now due between the sweep
+  and the read).
 
 - **N-076** · raised `2026-0921-2318-next-list-radio-arrows-readme-counts-theme-check-canvas-rtl-mirror`
   · closed 2026-09-22, `2026-0922-0204-n076-logical-insets-hidden-fill-ios-carry-talkback-sweep` — Left

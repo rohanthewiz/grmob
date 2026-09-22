@@ -1,13 +1,14 @@
 // The facts a shimmed DOM cannot check, checked in a browser: seven about the
-// keyboard, five about paint, seven about layout, one about what a browser
-// does with an accessibility value nobody here resolves, and one about how it
-// reads a CSS shorthand back.
+// keyboard, five about paint, eight about layout, one about what a browser
+// does with an accessibility value nobody here resolves, one about how it
+// reads a CSS shorthand back, and one about when it shows a notification the
+// page scheduled.
 //
 // wasm/verify's other suites run the real grmob-runtime.js against dom.mjs — a
 // few hundred lines that model element trees, attributes, listeners and which
 // element holds focus. That is enough for almost everything, and its limits
 // are stated in its own header: there is no layout, no bubbling, and `focus()`
-// is an assignment, and nothing is ever painted. Twenty-one claims sit exactly in
+// is an assignment, and nothing is ever painted. Twenty-three claims sit exactly in
 // that blind spot, and no amount of widening the shim would settle them,
 // because each one is a claim about what a *browser* does:
 //
@@ -223,6 +224,34 @@
 //      (padding(start = left), EdgeInsets(leading: left)), and the runtime
 //      writes padding-inline for it; whether a browser resolves that pair by
 //      the inherited direction is layout, which dom.mjs does not have.
+//  22. a scheduled notification is shown when it is due, and a sweep stops
+//      the rest.
+//      notifications_test.mjs runs the runtime's timers against a stub
+//      Notification, which cannot say whether a browser shows a real one or
+//      what the permission gate does. With the permission granted over CDP
+//      (Browser.grantPermissions, the grant a person would give), four posts
+//      through the "notification" system event: one due in 1s, one in 2.8s
+//      and one immediate under "grmob.alarm.", and one in 2.5s under another
+//      prefix. Every Notification is the browser's own, subclassed only to
+//      hear its "show" event. The immediate one must show at once and the
+//      1s one not before its time; a sweep of "grmob.alarm." after it must
+//      answer "notification_swept" with that one id alone (the immediate post
+//      was not scheduled), stop the 2.8s timer so it never shows, and leave the
+//      other prefix's to show; and a second sweep must report nothing, since
+//      a fired id is reported once.
+//  23. a hinge DevTools emulates reaches Go as the fold, and a TwoPane splits
+//      on it. window_test.mjs holds foldFrom to rectangles and dom.mjs has
+//      no viewport segments at all, so whether a browser's segments and
+//      posture arrive, and when, was unseen (N-029). On the live build at
+//      800 × 600, routed to lesson 4.21: a vertical display feature at 390
+//      with a 20px mask, then the "folded" posture, then a horizontal
+//      feature at 300, then none, each through Emulation's own switches at
+//      an unchanged window size. After each, the lesson's Posture and Fold
+//      readout lines must name that state, and its TwoPane must hold a
+//      390px first pane and a 20px seam under the vertical hinge and
+//      neither under the horizontal one (4.21 sets IgnoreHorizontalFold).
+//      The unchanged size is the point: no resize fires, so every step is
+//      carried by the segment media queries or the posture event alone.
 //
 // The numbering is one sequence, and it is the order the checks run in rather
 // than the order they were written. It is also load-bearing: a dozen comments
@@ -10485,6 +10514,228 @@ async function main() {
             if (held) asked.canvasMirror = true;
         }
 
+        // ------------------------------------------------------------------
+        // 22. a scheduled notification is shown when it is due, and a sweep
+        //     stops the rest
+        // ------------------------------------------------------------------
+        //
+        // Still the plain page. The timeline, from the moment of the posts:
+        //
+        //	  0      post D (no "at")       shown at once
+        //	  0      post A  at +1000       shown at +1000, not before
+        //	  0      post C  at +2500       other prefix: shown at +2500
+        //	  0      post B  at +2800       never shown: swept
+        //	 ~1800   sweep "grmob.alarm."   answers [A]; B's timer stops
+        //	 ~3800   read                   shown: D, A, C
+        //	 ~3800   sweep again            answers []
+        //
+        // B is due after the sweep and before the read, so an unstopped
+        // timer is seen firing; due any later and "never shown" would hold
+        // whether or not the sweep stopped it (it did, with B at +60s, when
+        // the sweep's clearTimer was removed). The margins are wide on
+        // purpose, 800ms before the sweep and a second after B's time: what
+        // is asked is the order of events, not a timer's precision.
+        {
+            const plainLoaded = session.once("Page.loadEventFired");
+            await session.send("Page.navigate", { url: origin });
+            await plainLoaded;
+            const noteProblem = (msg) => problems.push(`check 22: ${msg}`);
+            let held = true;
+            try {
+                // The grant a person would give at the prompt. Page sessions
+                // take the Browser domain, so no second connection is needed.
+                await session.send("Browser.grantPermissions", { origin, permissions: ["notifications"] });
+                // The browser's own Notification, subclassed only to hear its
+                // "show" event: the runtime looks the global up at each post,
+                // so replacing it before the first post is enough. A
+                // GrMobWASM stand-in records the host events the runtime
+                // answers with; the plain page loads no Go.
+                const setup = await evaluate(`(() => {
+                    window.__notes = [];
+                    window.__swept = [];
+                    const Real = window.Notification;
+                    window.Notification = class extends Real {
+                        constructor(title, opts) {
+                            super(title, opts);
+                            const rec = { tag: opts && opts.tag, made: Date.now(), shown: null };
+                            window.__notes.push(rec);
+                            this.addEventListener("show", () => { rec.shown = Date.now(); });
+                        }
+                    };
+                    window.GrMobWASM = { HostEvent: (name, json) => {
+                        if (name === "notification_swept") window.__swept.push(JSON.parse(json));
+                    } };
+                    return { permission: Real.permission, now: Date.now() };
+                })()`);
+                if (setup.permission !== "granted") {
+                    noteProblem(`Notification.permission read ${JSON.stringify(setup.permission)} after ` +
+                        `Browser.grantPermissions; nothing below would mean anything`);
+                    held = false;
+                } else {
+                    const t0 = setup.now;
+                    const send = (payload) => evaluate(
+                        `GrMobSystemEvent("notification", ${JSON.stringify(JSON.stringify(payload))})`);
+                    const post = (id, at) => send({ command: "post", id, title: id, body: "check 22", at });
+                    await post("grmob.alarm.d.3", 0);
+                    await post("grmob.alarm.a.1", t0 + 1000);
+                    await post("grmob.alarm.b.2", t0 + 2800);
+                    await post("other.c", t0 + 2500);
+                    await sleep(1800);
+                    await send({ command: "sweep", prefix: "grmob.alarm.", request: "r1" });
+                    await sleep(2000);
+                    await send({ command: "sweep", prefix: "grmob.alarm.", request: "r2" });
+                    const got = await evaluate(`({ notes: window.__notes, swept: window.__swept })`);
+                    const at = (tag) => got.notes.find((n) => n.tag === tag);
+                    const when = (n) => n && n.shown !== null ? n.shown - t0 : null;
+                    const d = at("grmob.alarm.d.3"), a = at("grmob.alarm.a.1");
+                    const b = at("grmob.alarm.b.2"), c = at("other.c");
+                    if (!(when(d) !== null && when(d) < 500)) {
+                        noteProblem(`the immediate post showed at ${when(d)}ms, want at once`);
+                        held = false;
+                    }
+                    if (!(when(a) !== null && when(a) >= 1000 && when(a) < 1800)) {
+                        noteProblem(`the post due at +1000ms showed at ${when(a)}ms, want before the sweep`);
+                        held = false;
+                    }
+                    if (b) {
+                        noteProblem(`the post due at +2800ms was constructed at ${b.made - t0}ms, ` +
+                            `after a sweep of its prefix should have stopped its timer`);
+                        held = false;
+                    }
+                    if (!(when(c) !== null && when(c) >= 2500)) {
+                        noteProblem(`the other prefix's post, due at +2500ms, showed at ${when(c)}ms: ` +
+                            `a sweep of "grmob.alarm." must leave it scheduled`);
+                        held = false;
+                    }
+                    const want = JSON.stringify([
+                        { request: "r1", fired: ["grmob.alarm.a.1"] },
+                        { request: "r2", fired: [] },
+                    ]);
+                    if (JSON.stringify(got.swept) !== want) {
+                        noteProblem(`the sweeps answered ${JSON.stringify(got.swept)}, want ${want}`);
+                        held = false;
+                    }
+                }
+            } finally {
+                await session.send("Browser.resetPermissions");
+            }
+            if (held) asked.notifications = true;
+        }
+
+        // ------------------------------------------------------------------
+        // 23. a hinge DevTools emulates reaches Go as the fold, and a TwoPane
+        //     splits on it
+        // ------------------------------------------------------------------
+        //
+        // The steps, each at 800 × 600 so that no resize fires:
+        //
+        //	step              emulated                     Posture   Fold
+        //	none              no feature, posture default  normal    none
+        //	vertical          feature v@390 mask 20        normal    flat, vertical at x 390
+        //	book              + posture "folded"           book      half_opened, vertical at x 390
+        //	tabletop          feature h@300 mask 0         tabletop  half_opened, horizontal at y 300
+        //	gone              no feature, posture cleared  normal    none
+        //
+        // The TwoPane's hinge arrangement is a first pane with an inline
+        // width of the fold's x and an aria-hidden seam of its width; they
+        // are found by those two inline widths, which nothing else on the
+        // lesson has. Where the seam lands on screen is not asked: 4.21 sets
+        // no Origin, so it is offset by the demo panel's padding (N-027).
+        if (liveBuild) {
+            const foldProblem = (msg) => problems.push(`check 23: ${msg}`);
+            let held = true;
+            try {
+                const metrics = (feature) => session.send("Emulation.setDeviceMetricsOverride", {
+                    width: 800, height: 600, deviceScaleFactor: 1, mobile: false,
+                    ...(feature ? { displayFeature: feature } : {}),
+                });
+                await metrics(null);
+                const liveFold = session.once("Page.loadEventFired");
+                await session.send("Page.navigate", { url: `${origin}/live/` });
+                await liveFold;
+                const ready = await evaluate(`new Promise((done) => {
+                    const started = Date.now();
+                    const poll = () => {
+                        if (window.GrMobWASM && document.querySelector("#app [data-node-path]")) {
+                            window.GrMobWASM.HostEvent("route", JSON.stringify({ lesson: "4.21" }));
+                            return waitReadout();
+                        }
+                        if (Date.now() - started > 30000) return done(false);
+                        setTimeout(poll, 50);
+                    };
+                    const waitReadout = () => {
+                        const label = [...document.querySelectorAll("#app *")]
+                            .find((e) => e.childElementCount === 0 && e.textContent === "Posture");
+                        if (label) return done(true);
+                        if (Date.now() - started > 30000) return done(false);
+                        setTimeout(waitReadout, 50);
+                    };
+                    poll();
+                })`);
+                if (!ready) {
+                    foldProblem(`lesson 4.21's readout never came up in the live build`);
+                    held = false;
+                } else {
+                    // The readout's value is the label's next sibling in its
+                    // Row (lessonFoldables' readout helper).
+                    const read = () => evaluate(`(() => {
+                        const value = (label) => {
+                            const t = [...document.querySelectorAll("#app *")]
+                                .find((e) => e.childElementCount === 0 && e.textContent === label);
+                            return t && t.nextElementSibling ? t.nextElementSibling.textContent : null;
+                        };
+                        const all = [...document.querySelectorAll("#app *")];
+                        return {
+                            posture: value("Posture"),
+                            fold: value("Fold"),
+                            first: all.filter((e) => e.style.width === "390px")
+                                .map((e) => Math.round(e.getBoundingClientRect().width)),
+                            seam: all.filter((e) => e.getAttribute("aria-hidden") === "true" && e.style.width === "20px")
+                                .map((e) => Math.round(e.getBoundingClientRect().width)),
+                        };
+                    })()`);
+                    const steps = [
+                        ["none", async () => {}, "normal", "none", false],
+                        ["vertical", () => metrics({ orientation: "vertical", offset: 390, maskLength: 20 }),
+                            "normal", "flat, vertical at x 390, separating", true],
+                        ["book", () => session.send("Emulation.setDevicePostureOverride", { posture: { type: "folded" } }),
+                            "book", "half_opened, vertical at x 390, separating", true],
+                        ["tabletop", () => metrics({ orientation: "horizontal", offset: 300, maskLength: 0 }),
+                            "tabletop", "half_opened, horizontal at y 300, separating", false],
+                        ["gone", async () => {
+                            await metrics(null);
+                            await session.send("Emulation.clearDevicePostureOverride");
+                        }, "normal", "none", false],
+                    ];
+                    for (const [label, apply, posture, fold, split] of steps) {
+                        await apply();
+                        // Two frames and a margin: the media query's change,
+                        // Go's render and the patch are all in the next task
+                        // or two, and nothing here is about timing.
+                        await sleep(400);
+                        const got = await read();
+                        if (got.posture !== posture || got.fold !== fold) {
+                            foldProblem(`${label}: the readout said Posture ${JSON.stringify(got.posture)}, ` +
+                                `Fold ${JSON.stringify(got.fold)}; want ${JSON.stringify(posture)}, ` +
+                                `${JSON.stringify(fold)}. At an unchanged window size nothing fires resize, ` +
+                                `so a stale line here means the runtime missed the segment or posture change`);
+                            held = false;
+                        }
+                        const splitGot = got.first.includes(390) && got.seam.includes(20);
+                        if (splitGot !== split) {
+                            foldProblem(`${label}: the TwoPane ${split ? "did not split" : "split"} on the hinge ` +
+                                `(first panes at 390px: ${JSON.stringify(got.first)}, 20px seams: ${JSON.stringify(got.seam)})`);
+                            held = false;
+                        }
+                    }
+                }
+            } finally {
+                await session.send("Emulation.clearDevicePostureOverride");
+                await session.send("Emulation.clearDeviceMetricsOverride");
+            }
+            if (held) asked.fold = true;
+        }
+
     } finally {
         if (session) session.close();
         chrome.kill();
@@ -10496,7 +10747,7 @@ async function main() {
     // that only appears on the happy path is a skip that goes missing exactly
     // when the log is long.
     if (asked.liveSkip) {
-        console.log(`SKIP: checks 15 to 20, the live calendar, shortcuts, boot frame, mid-text typing, thread and theme switch (${asked.liveSkip})`);
+        console.log(`SKIP: checks 15 to 20 and 23, the live calendar, shortcuts, boot frame, mid-text typing, thread, theme switch and fold (${asked.liveSkip})`);
     }
     if (asked.inkFaceSkip) {
         console.log(`SKIP: the band grid's ink scan (${asked.inkFaceSkip})`);
@@ -10531,7 +10782,11 @@ async function main() {
         ? "the site page's panes and the app's palette switch scheme together, with no flash for a remembered pick,"
         : "the theme switch untried,"} ${asked.canvasMirror
         ? "a mirrored canvas reflects under dir=\"rtl\" and a plain one does not, and a Left inset lands on the leading side,"
-        : "the canvas mirror and the leading inset unmeasured,"} ${PALETTES.length} palette swatches paint the
+        : "the canvas mirror and the leading inset unmeasured,"} ${asked.notifications
+        ? "a scheduled notification shows when it is due and a sweep stops the rest of its prefix,"
+        : "the scheduled notification unseen,"} ${asked.fold
+        ? "an emulated hinge and posture reach lesson 4.21's readout and TwoPane at an unchanged window size,"
+        : "the emulated fold unread,"} ${PALETTES.length} palette swatches paint the
     hexes the contrast census measures, ${WIDGETS.length} real widgets draw
     their own boundary tones on both edges, a sticky band pins, ${VALUE_RANGES.length}
     value ranges resolve the way core.Progress says a browser resolves them,

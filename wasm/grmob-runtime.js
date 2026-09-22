@@ -9253,10 +9253,12 @@ const GrMob = (() => {
     // is a layout read per resize for a case this app does not have. Left
     // undone on purpose, not overlooked.
     //
-    // It reports on resize (a fold or unfold resizes the viewport, and a
-    // segment change fires resize too), on a posture change, and once when
-    // Go comes up (see waitForWasm), because the size a page loaded at is
-    // never a change and would otherwise never be sent. Go dedupes repeats.
+    // It reports on resize (a fold or unfold resizes the viewport), on a
+    // change in the segment count (see the matchMedia listeners below: a
+    // segment change alone does not fire resize), on a posture change, and
+    // once when Go comes up (see waitForWasm), because the size a page
+    // loaded at is never a change and would otherwise never be sent. Go
+    // dedupes repeats.
     const windowMetrics = (() => {
         // foldFrom turns two viewport segments into core's fold payload, or
         // null when they do not describe one. Pure, so it can be tested
@@ -9370,6 +9372,30 @@ const GrMob = (() => {
         if (typeof navigator !== "undefined" && navigator.devicePosture &&
             typeof navigator.devicePosture.addEventListener === "function") {
             navigator.devicePosture.addEventListener("change", report);
+        }
+        // A segment change at an unchanged window size fires no resize.
+        // Measured in Chrome 152 with DevTools' fold emulation (browser check
+        // 23): a hinge appearing across an 800 × 600 viewport, turning from
+        // vertical to horizontal, and going away each left innerWidth and
+        // innerHeight as they were, and the fold reached Go only on the next
+        // posture change. The Viewport Segments API's own change signal is the
+        // pair of media features, which flip whenever the segment count on
+        // either axis does:
+        //
+        //	  vertical hinge appears     horizontal-viewport-segments: 2  on
+        //	  vertical → horizontal      horizontal-… off, vertical-… on
+        //	  hinge goes away            vertical-viewport-segments: 2    off
+        //
+        // A hinge that moves without the count changing flips neither, and
+        // needs none: a physical hinge moves across a viewport only when the
+        // window itself resizes, which the listener above hears. The queries
+        // parse in any browser (an unknown feature is "not all" and never
+        // changes), so there is nothing to feature-test beyond matchMedia.
+        if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
+            for (const q of ["(horizontal-viewport-segments: 2)", "(vertical-viewport-segments: 2)"]) {
+                const mq = window.matchMedia(q);
+                if (mq && typeof mq.addEventListener === "function") mq.addEventListener("change", report);
+            }
         }
 
         // A named element resizes without the window resizing (the tutorial's

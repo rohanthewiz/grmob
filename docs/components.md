@@ -1214,9 +1214,9 @@ The choice is `AccessibilitySelected`, which the web writes as `aria-checked`
 on a radio, so a reader hears "radio button, checked". The browser runtime
 supplies the radio group keyboard: one tab stop on the checked radio, and the
 arrow keys move the check. `OnChange` therefore fires as a user arrows through
-the options. On Android the group and rows map to `selectableGroup()` and
-`Role.RadioButton`; iOS has no radio trait and announces the checked row as
-selected.
+the options. On Android the group states its size and each row its place
+(TalkBack says "2 of 3"), and the rows are `Role.RadioButton`. iOS has no
+radio trait and announces the checked row as selected.
 
 Other notes:
 

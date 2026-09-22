@@ -1415,7 +1415,7 @@ It shipped first as RoleListBox and RoleOption through ListRow.Selectable, becau
 
 The rows are ListRows with the role and state passed through Style rather than through Selectable, which would make them options. Selected stays false, so ListRow adds neither its ", selected" name suffix nor its tint.
 
-On the natives, Compose names both ends (selectableGroup() and Role.RadioButton) and SwiftUI names neither; the checked row is announced through .isSelected there, as the listbox rows were.
+On the natives, Compose names both ends (a stated collection, so TalkBack hears "2 of 3", and Role.RadioButton) and SwiftUI names neither; the checked row is announced through .isSelected there, as the listbox rows were.
 
 #### A closed composite: do not put it inside another
 
@@ -1436,7 +1436,7 @@ No row takes a background tint. ListRow's Surface tint is its selection cue for 
 	Ring, disabled   Colors.TextSecondary
 	Row text         everything ListRow reads
 
-<small>[comps/radio_group.go:78](https://github.com/rohanthewiz/grmob/blob/master/comps/radio_group.go#L78)</small>
+<small>[comps/radio_group.go:79](https://github.com/rohanthewiz/grmob/blob/master/comps/radio_group.go#L79)</small>
 
 #### func (RadioGroup) Render
 
@@ -1446,7 +1446,7 @@ func (g RadioGroup) Render(ctx *core.Context) *core.Node
 
 Render builds Column(radiogroup) > ListRow(radio)... as described in the type doc.
 
-<small>[comps/radio_group.go:125](https://github.com/rohanthewiz/grmob/blob/master/comps/radio_group.go#L125)</small>
+<small>[comps/radio_group.go:126](https://github.com/rohanthewiz/grmob/blob/master/comps/radio_group.go#L126)</small>
 
 ### type RadioOption
 
@@ -1469,7 +1469,7 @@ type RadioOption struct {
 
 RadioOption is one choice in a RadioGroup.
 
-<small>[comps/radio_group.go:103](https://github.com/rohanthewiz/grmob/blob/master/comps/radio_group.go#L103)</small>
+<small>[comps/radio_group.go:104](https://github.com/rohanthewiz/grmob/blob/master/comps/radio_group.go#L104)</small>
 
 ### type RangeSlider
 

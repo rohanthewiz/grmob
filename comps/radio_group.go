@@ -40,9 +40,10 @@ import "github.com/rohanthewiz/grmob/core"
 // than through Selectable, which would make them options. Selected stays
 // false, so ListRow adds neither its ", selected" name suffix nor its tint.
 //
-// On the natives, Compose names both ends (selectableGroup() and
-// Role.RadioButton) and SwiftUI names neither; the checked row is announced
-// through .isSelected there, as the listbox rows were.
+// On the natives, Compose names both ends (a stated collection, so TalkBack
+// hears "2 of 3", and Role.RadioButton) and SwiftUI names neither; the
+// checked row is announced through .isSelected there, as the listbox rows
+// were.
 //
 // # A closed composite: do not put it inside another
 //

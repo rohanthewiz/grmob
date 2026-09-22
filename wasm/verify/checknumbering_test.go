@@ -1918,12 +1918,12 @@ func isSequence(t *testing.T, what string, list []numbered) bool {
 
 // The two sentences that count the checks in prose.
 //
-// The fourth kind's own phrase is matched loosely (`[^,]+`) because it is a
-// clause rather than a noun — "what a browser does with an accessibility value
-// nobody here resolves" — and the count in front of it is the only part of it
-// this reads.
+// The fourth and fifth kinds' own phrases are matched loosely (`[^,]+`)
+// because each is a clause rather than a noun — "what a browser does with an
+// accessibility value nobody here resolves", "how it reads a CSS shorthand
+// back" — and the count in front of each is the only part of it this reads.
 var tallyByKind = regexp.MustCompile(
-	`(\w+) about the keyboard, (\w+) about paint, (\w+) about layout, (\w+) about [^,]+, and (\w+) about`)
+	`(\w+) about the keyboard, (\w+) about paint, (\w+) about layout, (\w+) about [^,]+, (\w+) about [^,]+, and (\w+) about`)
 
 // [\w-] rather than \w so a compound number word ("Twenty-one") is read whole
 // instead of as its last half.
@@ -1942,7 +1942,7 @@ func checkTallies(t *testing.T, src string, want int) {
 		"seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
 		"thirteen": 13, "fourteen": 14, "fifteen": 15, "sixteen": 16,
 		"seventeen": 17, "eighteen": 18, "nineteen": 19, "twenty": 20,
-		"twenty-one": 21,
+		"twenty-one": 21, "twenty-two": 22, "twenty-three": 23,
 	}
 
 	if m := tallyByKind.FindStringSubmatch(src); m == nil {

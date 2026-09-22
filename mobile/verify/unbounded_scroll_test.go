@@ -227,8 +227,10 @@ func TestComposeGrowChildrenKeepContentSizeWhereNothingIsBounded(t *testing.T) {
 			"a strip with a grower is laid out against its viewport, as CSS divides free space"},
 		{"private fun GrMobGrowStrip(", "viewport.width = if (constraints.hasBoundedWidth) constraints.maxWidth else Constraints.Infinity",
 			"the viewport width is captured outside the scroll, where it is still bounded"},
-		{"private fun GrMobGrowStrip(", "placeables[i] = m.measure(loose.copy(minWidth = (bases[i] ?: 0) + share))",
+		{"private fun GrMobGrowStrip(", "val want = (bases[i] ?: 0) + share",
 			"a grower takes its content width plus its share of the free space, as CSS grows from flex-basis: auto"},
+		{"private fun GrMobGrowStrip(", "m.measure(loose.copy(minWidth = want))",
+			"as a minimum, where the grower states no floor of its own"},
 		{"private fun answersIntrinsicWidth(", "return node.children.all { answersIntrinsicWidth(it) }",
 			"a grower is asked for an intrinsic width only when nothing anywhere in it would throw"},
 	} {
@@ -249,6 +251,33 @@ func TestComposeGrowChildrenKeepContentSizeWhereNothingIsBounded(t *testing.T) {
 		if !strings.Contains(intrinsic, refused.expr) {
 			t.Errorf("%s: answersIntrinsicWidth has no %q — %s, so a strip grower holding one "+
 				"would be asked for an intrinsic width and throw", kotlinRenderer, refused.expr, refused.why)
+		}
+	}
+}
+
+// A strip grower that states a points MinWidth is measured at one definite
+// width, and its subtree is told it is bounded again.
+//
+// comps.EditableGrid is a MinWidth(460) Column of rows whose cells are
+// FlexGrow shares, inside a horizontal Scroll. Measured with a minimum over an
+// infinite maximum, the floor held but every row under it was unbounded, lost
+// its weights and hugged its own cells: on the emulator no two rows' columns
+// lined up (lesson 4.37, 2026-09-22). CSS gives the item a used width and lays
+// its content out inside it.
+func TestComposeStripGrowerWithAFloorIsMeasuredAtAWidth(t *testing.T) {
+	strip := codeOf(t, kotlinRenderer, "private fun GrMobGrowStrip(")
+	for _, pin := range []struct{ expr, why string }{
+		{"val floor = if (grow > 0f) pointsMinWidth(child.style) else null",
+			"only a grower that states a floor is given a definite width"},
+		{"CompositionLocalProvider(LocalGrMobUnboundedWidth provides false)",
+			"its rows divide their weights again"},
+		{"val w = maxOf(want, floor)",
+			"base plus share, never under the floor"},
+		{"m.measure(loose.copy(minWidth = w, maxWidth = w))",
+			"one width, not a minimum over an infinite maximum"},
+	} {
+		if !strings.Contains(strip, pin.expr) {
+			t.Errorf("%s: GrMobGrowStrip has lost %q — %s", kotlinRenderer, pin.expr, pin.why)
 		}
 	}
 }
