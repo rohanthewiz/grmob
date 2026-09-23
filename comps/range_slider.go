@@ -68,8 +68,9 @@ const ConcernRangeSliderInverted = "range-slider-inverted"
 // # Accessibility
 //
 // The whole is a core.RoleGroup named by Title. Each slider is named by its
-// own label ("Minimum", "Maximum"; Labels replaces them), so a reader moving
-// through hears "Price, group; Minimum, slider, 20".
+// own label ("Minimum", "Maximum"; Labels replaces them) and valued by
+// Format (SliderRow states its readout as the control's spoken value), so a
+// reader moving through hears "Price, group; Minimum, slider, $20".
 //
 // # Theme roles read
 //

@@ -258,6 +258,30 @@ func checkStackLayoutRules() -> [String] {
               layers: [GreedyLayer(CGSize(width: 10, height: 10))], proposing: offered),
           CGSize(width: 100, height: 50), into: &problems)
 
+    // A stack whose own box is sized (a stated Width/Height, or a fill) takes
+    // the offer on that axis, so its layers are placed in the box rather than
+    // in their union: RadarChart's 304pt stack round a 180pt canvas was drawn
+    // 62pt off centre when this reported 180 (N-070). Per axis, and never
+    // below the content.
+    let canvas = RecordingLayer(CGSize(width: 180, height: 180))
+    check("a sized width fills the offer",
+          GrMobStackSolver.containerSize(layers: [canvas],
+              proposing: GrMobProposal(width: 304, height: 50), fills: (true, false)),
+          CGSize(width: 304, height: 180), into: &problems)
+    check("a sized axis never reports less than the content",
+          GrMobStackSolver.containerSize(layers: [canvas],
+              proposing: GrMobProposal(width: 100, height: 400), fills: (true, true)),
+          CGSize(width: 180, height: 400), into: &problems)
+    check("an unspecified offer on a sized axis is the content",
+          GrMobStackSolver.containerSize(layers: [canvas],
+              proposing: GrMobProposal(width: nil, height: nil), fills: (true, true)),
+          CGSize(width: 180, height: 180), into: &problems)
+    // And the placement that follows centres the canvas in the box.
+    let centred = GrMobStackSolver.placements(layers: [canvas],
+        in: CGRect(x: 0, y: 0, width: 304, height: 180))
+    check("a layer in a sized box is centred in the box", centred.first?.origin ?? .zero,
+          CGPoint(x: 62, y: 0), into: &problems)
+
     // --- Placement: the bounds are the offer -------------------------------
     let bounds = CGRect(x: 30, y: 45, width: 200, height: 120)
     let box = GrMobProposal(bounds.size)

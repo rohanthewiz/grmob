@@ -815,6 +815,22 @@ test("a bar that moves rewrites only the position", () => {
     assert.equal(at(0).getAttribute("aria-valuemax"), "100");
 });
 
+test("a Slider takes the words alone", () => {
+    // <input type="range"> states its own value, min and max; the words are
+    // the one part of the range it has no attribute for (N-079).
+    const { at } = mount([{
+        Type: "Slider",
+        Props: { value: 20, min: 0, max: 200 },
+        Style: { AccessibilityLabel: "Minimum",
+            AccessibilityValue: { Now: "20", Min: "0", Max: "200", Text: "$20" } },
+    }]);
+
+    assert.equal(at(0).getAttribute("aria-valuetext"), "$20");
+    for (const attr of ["aria-valuenow", "aria-valuemin", "aria-valuemax"]) {
+        assert.equal(at(0).getAttribute(attr), null, `${attr} written onto the input`);
+    }
+});
+
 test("aria-hidden beats the value too", () => {
     const { at } = mount([bar({ Now: "45", Min: "0", Max: "100" }, { AccessibilityHidden: true })]);
 

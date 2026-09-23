@@ -1546,13 +1546,13 @@ The caller's, both of them, as with SliderRow: the widget takes no hooks and may
 
 #### Accessibility
 
-The whole is a core.RoleGroup named by Title. Each slider is named by its own label ("Minimum", "Maximum"; Labels replaces them), so a reader moving through hears "Price, group; Minimum, slider, 20".
+The whole is a core.RoleGroup named by Title. Each slider is named by its own label ("Minimum", "Maximum"; Labels replaces them) and valued by Format (SliderRow states its readout as the control's spoken value), so a reader moving through hears "Price, group; Minimum, slider, $20".
 
 #### Theme roles read
 
 Everything SliderRow reads, for each of the two rows and the title line.
 
-<small>[comps/range_slider.go:77](https://github.com/rohanthewiz/grmob/blob/master/comps/range_slider.go#L77)</small>
+<small>[comps/range_slider.go:78](https://github.com/rohanthewiz/grmob/blob/master/comps/range_slider.go#L78)</small>
 
 #### func (RangeSlider) Render
 
@@ -1562,7 +1562,7 @@ func (r RangeSlider) Render(ctx *core.Context) *core.Node
 
 Render draws the title line and the two rows.
 
-<small>[comps/range_slider.go:113](https://github.com/rohanthewiz/grmob/blob/master/comps/range_slider.go#L113)</small>
+<small>[comps/range_slider.go:114](https://github.com/rohanthewiz/grmob/blob/master/comps/range_slider.go#L114)</small>
 
 ### type RichTextEditor
 

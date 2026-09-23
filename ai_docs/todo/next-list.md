@@ -208,6 +208,11 @@ with each item's `raised` traced back through all session docs.
     spoken (a Copy button); on 4.16 TalkBack's Tab read prose and code that
     Compose's own focus never visits. Controls were reachable by moving
     Compose's focus with TalkBack off, turning TalkBack on and stepping once.
+  - Blocked the Wizard check (2026-09-23, 4.35): with Compose's focus on the
+    wizard's Skip and TalkBack then turned on, Enter pressed the page's
+    "‹ Contents"; an earlier Enter on Next advanced the step with nothing
+    logged, so whether it was Next that Enter pressed is unknown. Injected
+    taps do not reach the emulator's touch explorer either.
 - **N-061** · raised `2026-0919-2303-safe-insets-record-inert-codeeditor-sse-cleanup` · value low
   **The browser reports no safe-area insets.** `Window.Insets` is zero on the
   web, which is right for a page in a browser window but wrong for an
@@ -219,14 +224,17 @@ with each item's `raised` traced back through all session docs.
 - **N-062** · raised `2026-0921-0912-comps-round-four-phase-1-chat-family` · value medium
   **Phase 1's chat widgets, unrun on a device.** Lesson 4.34 and
   `examples/chat` were looked at in headless Chrome only.
-  - `TypingIndicator` under Reduce Motion on all three live targets: the
-    hosts drop the `Transition` and Go still steps the phase, so the dots
-    change alpha without the ease. The widget's doc claims that is a quiet
-    blink (a 6pt dot, one grey to another) and nobody has seen it.
-  - That a `core.Opacity` `Transition` on a 6pt `Box` actually eases on
-    Compose and SwiftUI. It is the only thing that moves the dots (they were
-    a background-colour ease until the session that added `core.Opacity`;
-    see N-064).
+  - `TypingIndicator` under Reduce Motion: the hosts drop the `Transition`
+    and Go still steps the phase. Seen on Compose (2026-09-23, the emulator
+    with all three animation scales at 0): 30 raw screencaps of the three
+    dots' centres read exactly two values, one dark dot at a time, so the
+    quiet blink the doc claims is what draws. SwiftUI and the web unseen.
+  - That a `core.Opacity` `Transition` on a 6pt `Box` eases: seen on
+    Compose (2026-09-23): at normal scale the dots' centre pixels passed
+    through 34, 47, 59, 73, 87, 111… between rest (145) and full (4–9).
+    SwiftUI unseen. Lesson 4.34's prose still said the fade was the
+    background colour because "core.Style has no opacity"; it now names
+    `core.Opacity` and the reduced-motion blink.
   - `TypingIndicator`'s `RoleStatus` appearing from `Display none`: heard on
     TalkBack? VoiceOver is expected to say nothing (the known live-region
     gap, core/role.go).
@@ -248,7 +256,9 @@ with each item's `raised` traced back through all session docs.
     shadow mid-fade. An alpha below 1 composites the layer offscreen, and an
     offscreen layer may clip what is drawn outside the node's bounds.
   - Compose: `animatedStyle` easing the alpha, and snapping under "Remove
-    animations".
+    animations": both seen on the emulator (2026-09-23) through
+    TypingIndicator's dots; see N-062. The offscreen-layer shadow question
+    above is still open.
   - SwiftUI: the fade under the node's one `.animation`, and whether a view
     at exactly 0 still takes taps and VoiceOver focus (the doc says taps stop;
     that is from SwiftUI's known behaviour, not measured here).
@@ -287,8 +297,10 @@ with each item's `raised` traced back through all session docs.
   looked at in headless Chrome and on the Android emulator (pad and
   swatches drawn right; two pad keys tapped).
   - `NumberPad`: the haptic per key felt on a phone; the unpainted corner
-    (`Opacity(0)`, `Disabled`, hidden) skipped by TalkBack and VoiceOver, and
-    not a Tab stop with a hardware keyboard.
+    (`Opacity(0)`, `Disabled`, hidden) skipped by VoiceOver. On Compose it
+    is not a Tab stop (2026-09-21) and has no node at all in the
+    accessibility tree (2026-09-23, uiautomator: the bottom row holds 0 and
+    Delete only), so TalkBack cannot land on it.
   - `ColorSwatchPicker`: the ring and check on SwiftUI (the simulator shots
     caught the field, not the grid); VoiceOver. Done (2026-09-22): TalkBack
     says "Selected, blue, Radio button, 1 of 8" and every position right
@@ -299,8 +311,8 @@ with each item's `raised` traced back through all session docs.
   - `RangeSlider`: done on both simulators' input paths (2026-09-22): an
     injected drag of Minimum from $20 to past $80 on the emulator left both
     thumbs and readouts at $115; XCUITest's adjust on the simulator left the
-    two sliders' values equal. A real finger is untried. Its accessibility is
-    not what its doc says on either native: N-078 and N-079.
+    two sliders' values equal. A real finger is untried. Its values are now
+    the readouts (N-079, closed); the combine over its group is N-078.
   - The lock-screen dots' `RoleStatus` line: heard on the emulator's TalkBack
     per key (2026-09-22), "Passcode, 1 of 4 entered", then 2 and 3.
     VoiceOver is expected to say nothing (the known live-region gap,
@@ -316,8 +328,11 @@ with each item's `raised` traced back through all session docs.
   - `TreeView`: a branch heard as "docs, collapsed, button" and the chosen
     leaf as selected on TalkBack and VoiceOver; that a `listitem` Box holding
     a button and a nested list is walked in order by swipe; that the level,
-    inert on both natives by design, does no harm there. On the web, a
-    screen reader saying "level 2" (the DOM was not read for `aria-level`).
+    inert on both natives by design, does no harm there. On the web, done
+    as far as the browser (2026-09-23): headless Chrome's accessibility tree
+    on 4.35 gives guide.md and api `listitem` level 2 inside docs' level 1
+    (scratch CDP probe, not a browser check). A screen reader's speech is
+    unheard.
   - `TreeView` under RTL: seen mirrored in headless Chrome and on the Compose
     emulator (per-app Arabic locale), 2026-09-21, and on the iOS simulator
     (2026-09-22, `testTreeViewUnderArabic`; `-AppleLanguages (ar)` alone did
@@ -329,8 +344,9 @@ with each item's `raised` traced back through all session docs.
     the branch, Button", "Selected, guide.md, Button", "collapsed. api. …".
     TalkBack skipped src, assets and README.md on Tab although Compose's own
     focus visits all six rows (N-058's gap).
-  - `Wizard`: the `RoleStatus` line heard on a step change on TalkBack and
-    in a browser's screen reader; where TalkBack's focus lands after Next
+  - `Wizard`: the `RoleStatus` line heard on a step change on TalkBack (tried
+    on the emulator 2026-09-23 and blocked by N-058; the Fold6's HID harness
+    is the route) and in a browser's screen reader; where TalkBack's focus lands after Next
     replaces the body (the keyed body is a replacement, and Compose clears
     View focus when the focused node leaves: 2026-0919-1254 §2).
   - `Wizard.Footer()` in `Screen.Footer` above the keyboard is N-002's
@@ -352,13 +368,17 @@ with each item's `raised` traced back through all session docs.
     `testRoundFourChartsDraw`): `Waveform`'s bars are round-capped and even
     on both (the stroke is unscaled under `CanvasStretch`); the doji draws;
     the funnel draws. The half-px silent bar as a dot was not looked for.
-  - `RadarChart` on SwiftUI is drawn 62pt left of centre: in the demo
-    panel (inner x 63…339 on a 402pt screen) the chart's centre and its
-    "Speed" label sit at x 139, and the left rim label reads "sion", cut at
-    the panel. Compose centres the same tree and shows every label. The
-    stack is 304pt (Size 180 + 2 × (56 + 6)) in a 276pt column, so it
-    overflows; a symmetric overflow would cut 14pt each side, not shift the
-    whole chart. Undiagnosed.
+  - `RadarChart` on SwiftUI was drawn 62pt left of centre. Fixed
+    (2026-09-23): the iOS ZStack layout reported its largest layer (the
+    180pt canvas) and the `.frame(width: 304)` round it placed that at its
+    leading edge, 62pt = (304 − 180) / 2 short. `GrMobStackSolver.containerSize`
+    now takes `fills:` and reports the offer on an axis the box is sized on
+    (a stated Width/Height or a fill), as Compose and CSS size the box
+    first; checked by ios/verify's stack section and pinned by
+    `TestNativeZStackOverlaysItsChildren`. On the simulator the chart's
+    image is centred on the panel (x 82.8 + 236.7/2 = 201) and "Vision"
+    reads whole (`testRoundFourChartsDraw`'s shot). All 48 Tutorial UI
+    tests pass with it.
   - `AudioPlayer.Waveform` with a real stream: the strip filling as the
     status ticks, and under the finger while scrubbing.
   - Every chart's one spoken sentence on TalkBack and VoiceOver.
@@ -383,10 +403,17 @@ with each item's `raised` traced back through all session docs.
     their weights: seen aligned and scrolling sideways on the emulator, the
     simulator and in headless Chrome.
   - The frameless `core.Select` in a cell keeps the row at the other cells'
-    height on both natives. On iOS, a row in EDIT draws its Category text
-    about 3pt left of the other rows'.
+    height on both natives. The iOS row in EDIT that drew its Category text
+    about 3pt left is fixed (2026-09-23): a zero-basis child's base was its
+    padding alone (`zeroBasisPadding`), and the editing cell trades 2pt of
+    padding a side for its 2pt ring, so it started 4pt short and the weights
+    moved the rest of the row. It now reads `contentInsets` (padding plus a
+    drawn border, as CSS counts a basis); pinned in
+    `TestIOSFlexHonoursAZeroBasis`, and seen aligned on the simulator.
   - The soft keyboard covering the active cell near the bottom of the grid:
-    unjudged; the emulator shows only its floating stylus toolbar.
+    unjudged on Compose (the emulator shows only its floating stylus
+    toolbar). On the iOS simulator row 2's editor sits clear of the
+    keyboard; a bottom row was not tried.
   - On iOS the grid is one static text "Budget" to VoiceOver, and its text
     cells are not in the accessibility tree at all: N-078.
   - TalkBack and VoiceOver (VoiceOver now waits on N-078): a cell heard as "Amount, row 2, $310.50, button",
@@ -437,15 +464,6 @@ with each item's `raised` traced back through all session docs.
   RoleGroups that rely on the combine today, so the role alone cannot decide
   it. VoiceOver itself cannot run on the simulator; Accessibility Inspector
   or a device is the check.
-- **N-079** · raised `2026-0922-0440-next-list-radio-positions-browser-notify-fold-grid-scroll-ios-round-four` · value medium
-  **A slider's spoken value is a percentage, not its `Format`.** TalkBack
-  said "Maximum … Slider … 58 percent" on 5.9's RangeSlider, and XCUITest
-  reads the inner sliders' values as "10%" and "40%". `RangeSlider`'s doc
-  promises "Minimum, slider, 20", and `SliderRow` draws "$20" beside the
-  track but states no value text for the control. Undiagnosed: whether
-  `core.Slider` can carry an `AccessibilityValue` text through to Compose's
-  and SwiftUI's sliders.
-
 ## Non-goals
 
 - **N-001** · declined `2026-0912-1744-the-widget-library-answers-to-comps` —
@@ -522,6 +540,20 @@ with each item's `raised` traced back through all session docs.
   path works. (was #76)
 
 ## Closed
+
+- **N-079** · raised `2026-0922-0440-next-list-radio-positions-browser-notify-fold-grid-scroll-ios-round-four`
+  · closed 2026-09-23, `2026-0923-1149-next-list-slider-values-radar-centre-zero-basis-border-opacity-seen` — `comps.SliderRow` now states its readout as the
+  slider's `core.AccessibilityValue` text (Format, or the default precision;
+  nothing when Format returns ""). Both natives already honoured the text on
+  any node (Compose's stateDescription, SwiftUI's accessibilityValue); the
+  two web exporters' `ariaValue` gained a Slider arm that writes
+  `aria-valuetext` alone, the input keeping its own value/min/max. Heard on
+  the emulator's TalkBack: "$20, Minimum, Slider" and "$80, Maximum,
+  Slider". On the simulator the combined "Price" element reads "$20, $80"
+  and "$130, $130" after the push (`testSwatchesHexShortFormAndTheRangeThatCannotCross`
+  asserts both); the inner sliders XCUITest synthesizes under the combine
+  still say 10%/40%, which is N-078. Documented on `core.Slider`,
+  `core.Style.AccessibilityValue` and docs/components.md.
 
 - **N-077** · raised `2026-0922-0204-n076-logical-insets-hidden-fill-ios-carry-talkback-sweep`
   · closed 2026-09-22, `2026-0922-0440-next-list-radio-positions-browser-notify-fold-grid-scroll-ios-round-four` — Compose numbers a

@@ -254,10 +254,27 @@ public enum GrMobStackSolver {
     /// SwiftUI ZStack reports and what the other three targets do. Clamping
     /// would have been a second behaviour change riding along with the one
     /// this file exists for.
+    ///
+    /// **Except on an axis the stack's own box is sized on.** A stack stating
+    /// core.Width or core.Height (or growing to fill) has its box decided by
+    /// the frame grMobBox wraps round this layout, and that frame proposes
+    /// exactly the box. Reporting the content there instead left the layout
+    /// smaller than its own box, and the frame then placed it at the box's
+    /// alignment, which for a ZStack is leading and top: every layer landed
+    /// off the box's centre by half the slack. comps.RadarChart showed it, a
+    /// 304pt stack round a 180pt canvas drawn 62pt left of where Compose and
+    /// the browser centre it (N-070). Both of those size the box first and
+    /// place every layer in it, and filling the offer on a sized axis is that
+    /// rule here. An unspecified offer on a sized axis still reports the
+    /// content: there is no box yet to fill.
     public static func containerSize<Layer: GrMobStackLayer>(
-        layers: [Layer], proposing proposal: GrMobProposal
+        layers: [Layer], proposing proposal: GrMobProposal,
+        fills: (width: Bool, height: Bool) = (false, false)
     ) -> CGSize {
-        containerSize(children: layers.map { $0.size(proposing: proposal) })
+        let content = containerSize(children: layers.map { $0.size(proposing: proposal) })
+        return CGSize(
+            width: fills.width ? max(content.width, proposal.width ?? 0) : content.width,
+            height: fills.height ? max(content.height, proposal.height ?? 0) : content.height)
     }
 
     /// Where every layer goes inside bounds the parent has already chosen.

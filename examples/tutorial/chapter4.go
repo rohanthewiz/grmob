@@ -5630,8 +5630,9 @@ func lessonChatFamily() Lesson {
 					"Display none, and the interval is hooks.UseIntervalWhile, so a hidden indicator "+
 					"costs no render passes."),
 				prose("Go only picks which dot is dark. core.Transition declares the fade, and the "+
-					"platform draws every frame of it. The thing that fades is the background colour: "+
-					"core.Style has no opacity, and colour is what every target animates."),
+					"platform draws every frame of it. What fades is each dot's core.Opacity, between 0.4 "+
+					"and 1. With reduced motion on, the hosts drop the Transition and the dots step "+
+					"instead, which is still readable as a blink."),
 
 				codeBlock(`comps.ReactionBar{
     Reactions: []comps.Reaction{

@@ -416,11 +416,14 @@ func TestRuntimeSharesTheRoleAndIDSlotsWithTheTabWiring(t *testing.T) {
 func TestRuntimeGuardsTheValueTheSameWay(t *testing.T) {
 	src := runtimeSource(t)
 	for _, want := range []struct{ expr, why string }{
-		{`function ariaValue(style) {`,
+		{`function ariaValue(style, nodeType) {`,
 			"the function htmlout's ariaValue mirrors"},
+		{`if (nodeType === "Slider") {
+            return v.Text ? { Now: "", Min: "", Max: "", Text: v.Text } : EMPTY_VALUE;`,
+			"a Slider's words and nothing else, since the input states its own numbers"},
 		{`case "progressbar":`,
 			"the one role ARIA's value family and core.Role have in common"},
-		{`const value = hidden ? EMPTY_VALUE : ariaValue(style);`,
+		{`const value = hidden ? EMPTY_VALUE : ariaValue(style, nodeType);`,
 			"aria-hidden winning over the range, as it does over every other attribute here"},
 		{`setOrRemove(el, "aria-valuenow", value.Now);`, "the position"},
 		{`setOrRemove(el, "aria-valuemin", value.Min);`, "the lower bound"},

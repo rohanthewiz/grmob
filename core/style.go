@@ -612,7 +612,11 @@ type Style struct {
 	// miss and is deliberately outside it, because it exports as
 	// <input type="range">, which carries value/min/max natively; an ARIA
 	// range written on top would be a second claim about the same fact, free
-	// to contradict the first.
+	// to contradict the first. Its Text is the exception: the input has no
+	// attribute for the words, so both web exporters write a Slider's
+	// ValueRange.Text as aria-valuetext and nothing else. comps.SliderRow
+	// states its readout that way, so a reader says "$20" rather than a
+	// percentage of the track.
 	//
 	// This is the fourth accessibility state field and it guards like the
 	// other three and unlike them:

@@ -550,7 +550,11 @@ private struct GrMobZStack: View {
 
     var body: some View {
         let s = node.containerStyle
-        GrMobStackLayout {
+        // The axes whose extent the box decides rather than the layers: a
+        // stated Width or Height, or a fill from the parent. See "Except on
+        // an axis the stack's own box is sized on" in GrMobStackSolver.
+        GrMobStackLayout(fills: (width: grow.fillWidth || grMobStatesExtent(s?.width),
+                                 height: grow.fillHeight || grMobStatesExtent(s?.height))) {
             ForEach(node.children, id: \.viewID) { child in
                 RenderNode(node: child)
                     .layoutValue(key: GrMobStackPlacement.self,
@@ -561,6 +565,14 @@ private struct GrMobZStack: View {
                     onTap: node.stringProp("onClick"),
                     onLongPress: node.stringProp("onLongPress"))
     }
+}
+
+/// Whether a Width or Height value sizes the box: anything but unset and
+/// "auto", which leave the extent to the content. A percentage counts, since
+/// grMobBox resolves it into the frame that makes the offer.
+private func grMobStatesExtent(_ value: String?) -> Bool {
+    guard let v = value?.trimmingCharacters(in: .whitespaces) else { return false }
+    return !v.isEmpty && v != "auto"
 }
 
 /// One layer's placement, handed from GrMobZStack to GrMobStackLayout.
@@ -623,10 +635,15 @@ private struct GrMobStackSubview: GrMobStackLayer {
 /// is SwiftUI's behaviour rather than this framework's, and a simulator is the
 /// only thing that can say.
 private struct GrMobStackLayout: Layout {
+    /// Which axes the stack's box is sized on, so the layout reports the
+    /// frame's offer there rather than its largest layer.
+    let fills: (width: Bool, height: Bool)
+
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         GrMobStackSolver.containerSize(
             layers: subviews.map(GrMobStackSubview.init),
-            proposing: GrMobProposal(proposal))
+            proposing: GrMobProposal(proposal),
+            fills: fills)
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
@@ -737,11 +754,20 @@ private struct FlexChildren: View {
     /// stack's axis when it declares a zero flex-basis, -1 otherwise. A
     /// function rather than inline, where the conditional arithmetic took the
     /// type-checker past its time limit.
+    ///
+    /// The insets are contentInsets, padding *and* a drawn border, because
+    /// that is what grMobBox actually reserves and what CSS counts in a zero
+    /// basis (an item's base can be no less than its padding plus border).
+    /// Padding alone undercounted a bordered cell: comps.EditableGrid's
+    /// editing cell trades 2pt of padding a side for a 2pt ring, so it came
+    /// out 4pt short of basis, the weights handed the 4pt round the row, and
+    /// every later cell in the EDIT row drew about 3pt left of its column
+    /// (N-072, the iOS simulator).
     private func zeroBasisPadding(_ style: GrMobStyle?) -> CGFloat {
         guard let style, style.zeroBasis else { return -1 }
-        let edges = axis == .horizontal ? style.padding.left + style.padding.right
-                                        : style.padding.top + style.padding.bottom
-        return CGFloat(edges)
+        let insets = style.contentInsets
+        return axis == .horizontal ? insets.leading + insets.trailing
+                                   : insets.top + insets.bottom
     }
 
     /// `floored` is a percentage floor on the main axis: like a grower, such a

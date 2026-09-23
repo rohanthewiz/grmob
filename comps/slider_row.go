@@ -196,6 +196,20 @@ func (r SliderRow) track(min, max, value float64) core.View {
 	// else. examples/mobileapp's seek bar states it for the same reason.
 	props := []core.PropsAndChildren{core.Width("100%")}
 	props = append(props, controlProps(r.Title, r.Subtitle, r.Disabled)...)
+	// The readout is also the control's spoken value. Without it each host
+	// announces a number of its own making: TalkBack and VoiceOver both said
+	// a percentage of the track ("58 percent", "10%") for RangeSlider's
+	// "$115" (N-079), and a browser says the input's raw value. Text only,
+	// never the numbers: the slider states its range natively on every host,
+	// and a second numeric claim could only disagree with it. See
+	// "A Slider takes the words and nothing else" in htmlout's ariaValue.
+	//
+	// It is Go's value, so like the readout it lags a drag and lands when the
+	// finger lifts; a reader's adjust gesture commits per step, so what it
+	// hears after each is current.
+	if text := r.format(value); text != "" {
+		props = append(props, core.AccessibilityValue(core.ValueRange{Text: text}))
+	}
 	if r.Step > 0 {
 		props = append(props, core.SliderStep(r.Step))
 	}

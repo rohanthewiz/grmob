@@ -214,6 +214,36 @@ func TestSliderRowFormatCanDrawNoReadoutAtAll(t *testing.T) {
 	}
 }
 
+// The readout is the control's spoken value, as words only: each host
+// otherwise announces a number of its own (a percentage of the track on both
+// natives, N-079), and the numbers stay off because the slider states its
+// range natively everywhere.
+func TestSliderRowSaysItsReadoutAsTheSlidersValue(t *testing.T) {
+	_, n := renderDebug(t, SliderRow{
+		Title: "Maximum", Value: 80, Max: 200, Step: 5, OnChange: func(float64) {},
+		Format: func(v float64) string { return fmt.Sprintf("$%.0f", v) },
+	})
+	if got, want := sliderOf(t, n).Style.AccessibilityValue, (core.ValueRange{Text: "$80"}); got != want {
+		t.Errorf("slider value = %+v, want %+v", got, want)
+	}
+
+	// The default readout is said too: "0.4" is right where "40 percent"
+	// would be a different claim about a 0..1 track.
+	_, n = renderDebug(t, SliderRow{Title: "Contrast", Value: 0.4, Max: 1, OnChange: func(float64) {}})
+	if got := sliderOf(t, n).Style.AccessibilityValue.Text; got != "0.40" {
+		t.Errorf("default spoken value = %q, want the readout 0.40", got)
+	}
+
+	// No readout, no words: the host's own announcement is all there is.
+	_, n = renderDebug(t, SliderRow{
+		Title: "Contrast", Value: 0.4, Max: 1, OnChange: func(float64) {},
+		Format: func(float64) string { return "" },
+	})
+	if v := sliderOf(t, n).Style.AccessibilityValue; v.Stated() {
+		t.Errorf("an empty Format stated a value: %+v", v)
+	}
+}
+
 // A degenerate range is resolved the same way in the readout and in the
 // control, so the number beside the title cannot disagree with the thumb.
 func TestSliderRowZeroValueIsAPinnedUnitRange(t *testing.T) {

@@ -35,6 +35,19 @@ import (
 // renderers show the finger's value *while dragging* and Go's value
 // otherwise (the same compromise the text fields make). A seek bar fed by
 // a status tick therefore never snaps the thumb back under the finger.
+//
+// # What a reader says for the value
+//
+// Left alone, each host announces a number of its own: TalkBack and VoiceOver
+// a percentage of the track, a browser the raw value. To say the value the way
+// the screen draws it, state the words:
+//
+//	core.Slider(price, 0, 200, set,
+//	    core.AccessibilityValue(core.ValueRange{Text: "$20"}))
+//
+// Only Text is read on a Slider. It becomes Compose's stateDescription,
+// SwiftUI's accessibilityValue and aria-valuetext; the numbers are the
+// control's own on every host. comps.SliderRow does this with its Format.
 func Slider(value, min, max float64, onChange func(float64), props ...PropsAndChildren) View {
 	return ComponentFunc(func(ctx *Context) *Node {
 		if max <= min {

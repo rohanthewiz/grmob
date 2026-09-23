@@ -2066,6 +2066,25 @@ func TestTheValueRangeBecomesTheAriaValueFamily(t *testing.T) {
 	}
 }
 
+// A Slider takes aria-valuetext and nothing else: <input type="range"> states
+// its own value, min and max, and has no attribute for the words.
+func TestASliderTakesTheWordsAlone(t *testing.T) {
+	n := &core.Node{Type: "Slider", Props: map[string]any{"value": 20.0, "min": 0.0, "max": 200.0},
+		Style: &core.Style{
+			AccessibilityLabel: "Minimum",
+			AccessibilityValue: core.ValueOf(20, 0, 200).WithText("$20"),
+		}}
+	out := ExportHTML(n)
+	if !strings.Contains(out, `aria-valuetext="$20"`) {
+		t.Errorf("aria-valuetext missing:\n%s", out)
+	}
+	for _, not := range []string{"aria-valuenow", "aria-valuemin", "aria-valuemax"} {
+		if strings.Contains(out, not) {
+			t.Errorf("%s written onto a Slider, which states it natively:\n%s", not, out)
+		}
+	}
+}
+
 // ARIA spells an *indeterminate* progress bar by leaving aria-valuenow off, so
 // a stated role with an unstated range is a real state rather than an omission
 // — and defaulting a 0 in would pin every one of them at the start.

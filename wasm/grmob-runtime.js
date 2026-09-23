@@ -2895,7 +2895,7 @@ const GrMob = (() => {
         // All four of the value family on every call, for the reason both
         // selection attributes are written: the role can change between passes,
         // and a bar that stops being a progressbar must not keep a range.
-        const value = hidden ? EMPTY_VALUE : ariaValue(style);
+        const value = hidden ? EMPTY_VALUE : ariaValue(style, nodeType);
         setOrRemove(el, "aria-valuenow", value.Now);
         setOrRemove(el, "aria-valuemin", value.Min);
         setOrRemove(el, "aria-valuemax", value.Max);
@@ -2922,9 +2922,18 @@ const GrMob = (() => {
     // *indeterminate* progress bar by leaving aria-valuenow off, so a bar that
     // is running with no idea how far is exactly this role and an unstated
     // range — and defaulting a 0 in would pin every one of them at the start.
-    function ariaValue(style) {
+    //
+    // A Slider takes the words alone, ahead of the role switch: the input
+    // states its value, min and max natively and a second numeric claim could
+    // contradict them, but it has no attribute for the words, and without them
+    // a reader announces the raw number rather than comps.SliderRow's readout
+    // (N-079). See "A Slider takes the words and nothing else" in export.go.
+    function ariaValue(style, nodeType) {
         const v = style.AccessibilityValue;
         if (!v) return EMPTY_VALUE;
+        if (nodeType === "Slider") {
+            return v.Text ? { Now: "", Min: "", Max: "", Text: v.Text } : EMPTY_VALUE;
+        }
         switch (style.AccessibilityRole) {
             case "progressbar":
                 return {

@@ -397,6 +397,12 @@ func TestIOSFlexHonoursAZeroBasis(t *testing.T) {
 			t.Errorf("Renderer.swift: missing %q", want)
 		}
 	}
+	// The basis is the box's whole inset, a drawn border included, as CSS
+	// counts it; padding alone left EditableGrid's ringed editing cell 4pt
+	// short and shifted the rest of its row (N-072).
+	if !strings.Contains(renderer, "let insets = style.contentInsets") {
+		t.Errorf("Renderer.swift: zeroBasisPadding no longer reads contentInsets, so a bordered zero-basis box starts short of its border")
+	}
 	if strings.Contains(renderer, "return max(padding, automatic, floors[i])") {
 		t.Errorf("Renderer.swift: a zero-basis base folds in its minimum again, which re-biases a weighted row by content")
 	}

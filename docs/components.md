@@ -832,6 +832,11 @@ Other notes:
   row-sized target can reach; a slider's "other value" is the one under the
   tap, and Go sees no coordinates. The slider is the control a reader is
   looking for, and it is named by `Title` and hinted by `Subtitle`.
+- The reading is also the slider's **spoken value**: "Brightness, slider,
+  72%", not a percentage of the track the host worked out for itself. It is
+  stated as `core.AccessibilityValue` text (TalkBack's state description,
+  VoiceOver's value, `aria-valuetext`) and follows `Format`, so a `Format`
+  that returns "" leaves the host's own announcement.
 - `Max` at or below `Min` becomes `Min..Min+1` with the value pinned to the
   start — `core.Slider`'s own rule, repeated here so the reading and the
   thumb cannot disagree.

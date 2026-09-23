@@ -121,6 +121,13 @@ final class TutorialRoundFourUITests: XCTestCase {
         scroll(app, to: group)
         lift(app)
         XCTAssertTrue(text(app, beginningWith: "$20 – $80").exists, "the range did not open on $20 – $80")
+        dump(app, "r4-5.9-range-open")
+        // Each slider's value is its row's readout, not a percentage of the
+        // track (N-079: SliderRow states Format as the control's value). Read
+        // off the combined group, the one element VoiceOver has here: the
+        // inner two XCUITest synthesizes under the combine still report
+        // UIKit's percentage, and VoiceOver does not visit them (N-078).
+        XCTAssertEqual(group.value as? String, "$20, $80", "the sliders' values are not their readouts")
         low.adjust(toNormalizedSliderPosition: 0.6)
         sleep(1)
         shot("r4-5.9-range-pushed")
@@ -128,6 +135,9 @@ final class TutorialRoundFourUITests: XCTestCase {
         let lowValue = low.value as? String ?? ""
         let highValue = high.value as? String ?? ""
         XCTAssertEqual(lowValue, highValue, "the pushed Maximum (\(highValue)) did not follow the Minimum (\(lowValue))")
+        let pair = (group.value as? String ?? "").components(separatedBy: ", ")
+        XCTAssertTrue(pair.count == 2 && pair[0] == pair[1] && pair[0].hasPrefix("$"),
+                      "the group's value (\(pair)) is not two equal readouts")
         XCTAssertFalse(text(app, beginningWith: "$20 – $80").exists, "the range line did not move")
     }
 
@@ -216,11 +226,14 @@ final class TutorialRoundFourUITests: XCTestCase {
         let app = XCUIApplication()
         open(app, lesson: "4.36")
         for (target, name) in [("Green rises", "candles"), ("Show rates", "funnel"),
-                               ("Compare with Bo", "radar"), ("Forward", "waveform")] {
+                               ("Player:", "radar"), ("Forward", "waveform")] {
             let el = any(app, beginningWith: target)
             scroll(app, to: el)
-            lift(app)
+            // The radar is tall enough that lift's swipe carries it off the
+            // top, and its centring is what the shot is for (N-070).
+            if name != "radar" { lift(app) }
             shot("r4-4.36-\(name)")
+            dump(app, "r4-4.36-\(name)")
         }
         dump(app, "r4-4.36-end")
     }

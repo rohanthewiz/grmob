@@ -161,8 +161,14 @@ func TestNativeZStackOverlaysItsChildren(t *testing.T) {
 		// target alone (see GrMobStack.swift). GrMobStackLayout is what
 		// replaced it, so the construct to look for is the layout, and the
 		// centring is the `?? .center` every unplaced layer takes.
+		//
+		// The layout is built with `fills:`, and the pin names it: without
+		// it a stack stating a Width reports its largest layer, and the
+		// frame round it puts that at the box's leading edge, so every layer
+		// sits off the centre the contract states (N-070, a RadarChart 62pt
+		// left of centre).
 		{swiftRenderer, "private struct GrMobZStack", swiftCompositeStart,
-			"GrMobStackLayout {", "GrMobStackPlacement.self"},
+			"GrMobStackLayout(fills:", "GrMobStackPlacement.self"},
 		{kotlinRenderer, "private fun GrMobZStack", kotlinCompositeStart, "Box(", "contentAlignment = Alignment.Center"},
 	} {
 		body := dispatchArm(t, pin.file, pin.marker, pin.next)

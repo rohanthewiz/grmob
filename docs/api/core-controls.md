@@ -331,7 +331,7 @@ func OnSliderChangeEnd(fn func(float64)) BehaviorProp
 
 OnSliderChangeEnd fires once when the drag ends, with the final value — see Slider for why a seek bar wants this rather than onChange.
 
-<small>[core/slider.go:67](https://github.com/rohanthewiz/grmob/blob/master/core/slider.go#L67)</small>
+<small>[core/slider.go:80](https://github.com/rohanthewiz/grmob/blob/master/core/slider.go#L80)</small>
 
 ### func Select
 
@@ -399,7 +399,16 @@ Both cross the bridge as text callbacks carrying the number formatted with strco
 
 Like every leaf, the value shown is the one Go rendered — but a drag has to feel immediate, and the Go round trip is asynchronous, so the native renderers show the finger's value \*while dragging\* and Go's value otherwise (the same compromise the text fields make). A seek bar fed by a status tick therefore never snaps the thumb back under the finger.
 
-<small>[core/slider.go:38](https://github.com/rohanthewiz/grmob/blob/master/core/slider.go#L38)</small>
+#### What a reader says for the value
+
+Left alone, each host announces a number of its own: TalkBack and VoiceOver a percentage of the track, a browser the raw value. To say the value the way the screen draws it, state the words:
+
+	core.Slider(price, 0, 200, set,
+	    core.AccessibilityValue(core.ValueRange{Text: "$20"}))
+
+Only Text is read on a Slider. It becomes Compose's stateDescription, SwiftUI's accessibilityValue and aria-valuetext; the numbers are the control's own on every host. comps.SliderRow does this with its Format.
+
+<small>[core/slider.go:51](https://github.com/rohanthewiz/grmob/blob/master/core/slider.go#L51)</small>
 
 ### func SliderStep
 
@@ -409,7 +418,7 @@ func SliderStep(step float64) BehaviorProp
 
 SliderStep snaps the thumb to multiples of step from min. 0 (the default) is continuous.
 
-<small>[core/slider.go:81](https://github.com/rohanthewiz/grmob/blob/master/core/slider.go#L81)</small>
+<small>[core/slider.go:94](https://github.com/rohanthewiz/grmob/blob/master/core/slider.go#L94)</small>
 
 ### func Switch
 

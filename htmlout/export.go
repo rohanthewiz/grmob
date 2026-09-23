@@ -1335,7 +1335,7 @@ func accessibilityAttrs(s *core.Style, nodeType string, roleImposed bool) []stri
 	if s.AccessibilityCurrent != core.CurrentNone {
 		attrs = append(attrs, "aria-current", string(s.AccessibilityCurrent))
 	}
-	attrs = append(attrs, ariaValue(s)...)
+	attrs = append(attrs, ariaValue(s, nodeType)...)
 	if s.AccessibilityID != "" {
 		attrs = append(attrs, "id", s.AccessibilityID)
 	}
@@ -2300,10 +2300,30 @@ func formatNumber(v any) string {
 // ARIA's strictness rather than the framework's: each platform says the truest
 // thing it can.
 //
+// # A Slider takes the words and nothing else
+//
+// The numbers stay off a Slider for the reason above: <input type="range">
+// states them natively. The words do not collide with anything, because the
+// input has no attribute for them, and without them a reader announces the
+// raw number — "20" for a price the row draws as "$20", or a percentage in
+// some readers. aria-valuetext is defined for the implicit slider role, and it
+// is what comps.SliderRow writes its Format into so that all three live
+// targets say the readout (N-079): Compose's stateDescription and SwiftUI's
+// accessibilityValue already took it on any node.
+//
+// The arm is on the node type and comes before the role switch, because a
+// Slider's role is the input's own and no core.Role is written onto it.
+//
 // grmob-runtime.js restates this as ariaValue and the two must agree;
 // TestRuntimeGuardsTheValueTheSameWay holds them together.
-func ariaValue(s *core.Style) []string {
+func ariaValue(s *core.Style, nodeType string) []string {
 	if !s.AccessibilityValue.Stated() {
+		return nil
+	}
+	if nodeType == "Slider" {
+		if t := s.AccessibilityValue.Text; t != "" {
+			return []string{"aria-valuetext", t}
+		}
 		return nil
 	}
 	// A switch with one arm rather than an equality test, for the shape the
