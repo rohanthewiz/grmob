@@ -103,6 +103,11 @@ const (
 	guideNoteID = "tutorial-guide-note"
 )
 
+// paneStack takes a pane container off the theme's stack padding, so the
+// page's stylesheet sizes it (see splitView). A shared value is safe: a
+// StyleProp is a pure function of the Style it is applied to.
+var paneStack = core.Padding(0)
+
 // bootLayout is the layout the page asked for before the app's first render.
 //
 // # Why there is a boot value at all
@@ -290,13 +295,30 @@ func (t *tutorial) splitLesson(ctx *core.Context, n *core.Node) *core.Node {
 // half it has entered — the visual bezel says the same to a sighted reader.
 //
 // The panes carry only identity and semantics here; their sizes and looks
-// are the page's (wasm/index.html), which is why there are no style props.
+// are the page's (wasm/index.html), which is why there are no style props
+// other than Padding(0).
+//
+// # Why Padding(0), when the page owns the look
+//
+// core.Row and core.Column are not blank: they start from the theme's
+// Components.Row (8/16) and Components.Column (12/16) padding. The runtime
+// writes that as an inline style, and an inline declaration beats the page's
+// stylesheet. So #tutorial-split's 1.2rem and the bezel's 12px never applied.
+// The panes drew the theme's insets instead, nested four deep on the phone:
+// the glass was 368px, not the 376px the toast rule assumes, and the demos
+// had 336px. An all-zero EdgeInsets is omitted from the payload (see the
+// runtime's style pass), so Padding(0) writes no declaration at all, and the
+// stylesheet's padding is the one that applies.
+//
+// paneStack is that zero, stated once for every pane container here and in
+// phoneScreen and phoneHeader.
 //
 // guideTail goes into the guide pane AFTER the guide, never before it: the
 // reconciler matches children by position, and anything in front of the guide
 // would move it to another slot and rebuild it, scroll position and all.
 func splitView(ctx *core.Context, guide *core.Node, phone core.View, guideTail ...core.View) *core.Node {
 	pane := []core.PropsAndChildren{
+		paneStack,
 		core.AccessibilityID(guideID),
 		core.AccessibilityRole(core.RoleGroup),
 		core.AccessibilityLabel("Lesson guide"),
@@ -306,9 +328,11 @@ func splitView(ctx *core.Context, guide *core.Node, phone core.View, guideTail .
 		pane = append(pane, v)
 	}
 	return core.Row(
+		paneStack,
 		core.AccessibilityID(splitID),
 		core.Column(pane...),
 		core.Column(
+			paneStack,
 			core.AccessibilityID(phoneID),
 			core.AccessibilityRole(core.RoleGroup),
 			core.AccessibilityLabel("Live demo"),
@@ -336,11 +360,14 @@ func splitView(ctx *core.Context, guide *core.Node, phone core.View, guideTail .
 // lessons in a row share the glass and swap only the content, whose own key
 // changes with the frame.
 func phoneScreen(kind string, header, content core.View, overlays []*core.Node) core.View {
-	items := []core.PropsAndChildren{core.AccessibilityID(phoneScreenID)}
+	// paneStack on both: the glass and the content slot are frames, and the
+	// theme's Column padding on them inset the phone header off the glass's
+	// edges and every demo by a further 16px a side (see splitView).
+	items := []core.PropsAndChildren{paneStack, core.AccessibilityID(phoneScreenID)}
 	if header != nil {
 		items = append(items, header)
 	}
-	items = append(items, core.Column(core.AccessibilityID(phoneContentID), content))
+	items = append(items, core.Column(paneStack, core.AccessibilityID(phoneContentID), content))
 	for _, o := range overlays {
 		items = append(items, nodeView{o})
 	}
@@ -444,7 +471,12 @@ func phoneHeader(id string) core.View {
 		}
 		// A Separator under the bar rather than a bottom border: core.Style
 		// has one border for all four sides.
+		//
+		// paneStack on the Column: its theme padding held the bar and its
+		// separator 16px in from the glass's sides, so the bar read as a
+		// floating strip rather than the top of the screen.
 		return core.Column(
+			paneStack,
 			core.Row(
 				core.Gap(8),
 				core.AlignItemsProp(core.AlignItemsCenter),

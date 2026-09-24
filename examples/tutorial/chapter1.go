@@ -111,12 +111,28 @@ func checkRow(label string, s core.State[bool]) core.View {
 	return comps.CheckboxRow{Title: label, Checked: s.Get(), OnToggle: s.Set}
 }
 
+// The profile card's pieces sit inside a Card, whose own 16px padding is the
+// card's one inset. So every stack here states Padding(0): the theme's Row
+// base (8/16) and Column base (12/16) apply to *every* plain stack, and
+// inside the card they nest.
+//
+// Before the zeros, the stats row carried 16+16 of its own inline padding and
+// each stat another 16+16. That was 128px of padding and 36px of gap before
+// any text, against a card about 200px wide on the split layout's 376px glass.
+// "Following" ran off the card's right edge. The header lost 32px the same
+// way, which squeezed the avatar into an oval and wrapped the name.
 func helloHeader() core.View {
 	return core.Row(
+		core.Padding(0),
 		core.Gap(10),
 		core.AlignItemsProp(core.AlignItemsCenter),
-		comps.Avatar{Name: "Gopher McGrMob"},
+		// FlexShrink(0): the avatar is a fixed-size circle, and a flex item
+		// shrinks by default. The text column is what should give up width
+		// (by wrapping) when the card is narrow, as demoPanel's badge does
+		// beside its hint.
+		comps.Avatar{Name: "Gopher McGrMob", Style: []core.StyleProp{core.FlexShrink(0)}},
 		core.Column(
+			core.Padding(0),
 			core.Text("Gopher McGrMob", core.FontWeight(core.Bold)),
 			caption("Wrote this profile in pure Go"),
 		),
@@ -126,12 +142,19 @@ func helloHeader() core.View {
 func helloStats() core.View {
 	stat := func(value, label string) core.View {
 		return core.Column(
+			core.Padding(0),
 			core.Text(value, core.FontWeight(core.Bold)),
 			caption(label),
 		)
 	}
 	return core.Row(
+		core.Padding(0),
 		core.Gap(18),
+		// Wrap rather than overflow. With the zeros above the three stats need
+		// about 186px, which fits the narrowest card the tutorial draws with
+		// little to spare. A larger text size, or a longer label, should move
+		// the last stat onto a second line inside the card, not past its edge.
+		core.FlexWrap(true),
 		stat("128", "Posts"),
 		stat("1.2k", "Followers"),
 		stat("180", "Following"),
