@@ -27,6 +27,7 @@ Package htmlout exports a rendered core.Node tree as a standalone HTML document.
 - [`func EdgeCSS`](#func-edgecss)
 - [`func EdgeLogicalCSS`](#func-edgelogicalcss)
 - [`func ExportHTML`](#func-exporthtml)
+- [`func FieldFloorTypes`](#func-fieldfloortypes)
 - [`func GenericTags`](#func-generictags)
 - [`func InputModeFor`](#func-inputmodefor)
 - [`func InputTypeFor`](#func-inputtypefor)
@@ -51,6 +52,7 @@ Package htmlout exports a rendered core.Node tree as a standalone HTML document.
 - [`func TextAlignFor`](#func-textalignfor)
 - [`func TextAligns`](#func-textaligns)
 - [`func TransparentTypes`](#func-transparenttypes)
+- [`func ZeroesFieldFloor`](#func-zeroesfieldfloor)
 
 ## Constants
 
@@ -135,7 +137,7 @@ func BorderResetTypes() []string
 
 BorderResetTypes returns those node types, sorted so that a test looping over them reports in a stable order. Exported for the reason GenericTags is: the WASM conformance test has to compare set against set.
 
-<small>[htmlout/tag.go:412](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L412)</small>
+<small>[htmlout/tag.go:459](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L459)</small>
 
 ### func CanvasGradient
 
@@ -296,6 +298,16 @@ Output is built on the element library rather than hand-assembled strings so tha
 
 <small>[htmlout/export.go:26](https://github.com/rohanthewiz/grmob/blob/master/htmlout/export.go#L26)</small>
 
+### func FieldFloorTypes
+
+```go
+func FieldFloorTypes() []string
+```
+
+FieldFloorTypes returns those node types, sorted, for the WASM conformance test to compare set against set (BorderResetTypes' reason).
+
+<small>[htmlout/tag.go:441](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L441)</small>
+
 ### func GenericTags
 
 ```go
@@ -314,7 +326,7 @@ func InputModeFor(kind string) string
 
 InputModeFor maps a core.KeyboardKind to HTML's inputmode: the attribute a mobile browser reads to choose its software keyboard. "" is no attribute, the browser's text keyboard. Exported for the WASM runtime's table to be checked against, as InputTypeFor is.
 
-<small>[htmlout/export.go:856](https://github.com/rohanthewiz/grmob/blob/master/htmlout/export.go#L856)</small>
+<small>[htmlout/export.go:887](https://github.com/rohanthewiz/grmob/blob/master/htmlout/export.go#L887)</small>
 
 ### func InputTypeFor
 
@@ -382,7 +394,7 @@ display and background are deliberately not in it. Both are prop-driven, and the
 
 A copy, not the slice itself, for the reason StackAxes returns one: a package-level slice is reachable and writable by any importer.
 
-<small>[htmlout/export.go:1202](https://github.com/rohanthewiz/grmob/blob/master/htmlout/export.go#L1202)</small>
+<small>[htmlout/export.go:1233](https://github.com/rohanthewiz/grmob/blob/master/htmlout/export.go#L1233)</small>
 
 ### func ObjectFitFor
 
@@ -448,7 +460,7 @@ func ResetsUABorder(nodeType string) bool
 
 ResetsUABorder reports whether a node type needs an explicit "no border" written for it when the style declares none. See borderResetTypes.
 
-<small>[htmlout/tag.go:405](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L405)</small>
+<small>[htmlout/tag.go:452](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L452)</small>
 
 ### func StackAxes
 
@@ -563,4 +575,14 @@ func TransparentTypes() []string
 TransparentTypes returns the transparent node types, sorted so that a test looping over them reports in a stable order. Exported for the same reason Tags is: the WASM conformance test has to know which types are excluded from the tag comparison, and a hand-written list there would be exactly the untracked second copy this file exists to remove.
 
 <small>[htmlout/tag.go:255](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L255)</small>
+
+### func ZeroesFieldFloor
+
+```go
+func ZeroesFieldFloor(nodeType string) bool
+```
+
+ZeroesFieldFloor reports whether a node type gets min-width:0 when its style states no MinWidth. See fieldFloorTypes.
+
+<small>[htmlout/tag.go:435](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L435)</small>
 

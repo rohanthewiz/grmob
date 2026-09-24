@@ -1464,8 +1464,13 @@ type ListRow struct {
 	// slot's width is not negotiable at all, and a leading slot whose width
 	// is meant to be read at a glance wants it on every host.
 	//
-	// A fixed-size control — a Checkbox, an icon with a Width — is unaffected,
-	// which is why this is a note on the field rather than a wrapper around it:
+	// A control the platform draws at its own size (a Checkbox) is unaffected.
+	// A box whose size is only a stated Width is not, on the web: a flex item
+	// shrinks below its width down to its min-content, so a 36px initials
+	// Avatar drew 34 wide on a 360pt phone until Avatar pinned itself. Pin
+	// such a box with FlexShrink(0) too.
+	//
+	// This is a note on the field rather than a wrapper around it because
 	// ListRow cannot add a style prop to a View a caller handed it, and
 	// wrapping every slot in a pinned Box would be two extra nodes per row of
 	// every list to fix the case where the caller passes text.
@@ -1706,7 +1711,7 @@ Both are opt-in, and that is the ownership rule rather than caution: a \`listite
 func (r ListRow) Render(ctx *core.Context) *core.Node
 ```
 
-<small>[comps/list_row.go:309](https://github.com/rohanthewiz/grmob/blob/master/comps/list_row.go#L309)</small>
+<small>[comps/list_row.go:314](https://github.com/rohanthewiz/grmob/blob/master/comps/list_row.go#L314)</small>
 
 ### type LoadMore
 

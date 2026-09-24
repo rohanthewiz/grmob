@@ -126,11 +126,10 @@ func helloHeader() core.View {
 		core.Padding(0),
 		core.Gap(10),
 		core.AlignItemsProp(core.AlignItemsCenter),
-		// FlexShrink(0): the avatar is a fixed-size circle, and a flex item
-		// shrinks by default. The text column is what should give up width
-		// (by wrapping) when the card is narrow, as demoPanel's badge does
-		// beside its hint.
-		comps.Avatar{Name: "Gopher McGrMob", Style: []core.StyleProp{core.FlexShrink(0)}},
+		// The avatar pins its own size (comps.Avatar states FlexShrink(0)),
+		// so the text column is what gives up width, by wrapping, when the
+		// card is narrow.
+		comps.Avatar{Name: "Gopher McGrMob"},
 		core.Column(
 			core.Padding(0),
 			core.Text("Gopher McGrMob", core.FontWeight(core.Bold)),

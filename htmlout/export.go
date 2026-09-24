@@ -28,7 +28,7 @@ func ExportHTML(node *core.Node) string {
 	// b.Html writes the <!DOCTYPE html> declaration itself.
 	b.Html("lang", "en").R(
 		motionStylesheet(b, node),
-		b.Body().R(
+		b.Body("style", bodyStyle).R(
 			// "root" is the node path of the tree's root, the same name Go's
 			// reconciler gives it (reconcile.Patch's TargetIDs are "root/1/0")
 			// and the same one the WASM runtime mounts with. Nothing in the
@@ -44,6 +44,21 @@ func ExportHTML(node *core.Node) string {
 	// Escaped content is inert entities by this point, so re-parsing is safe.
 	return b.Pretty()
 }
+
+// bodyStyle is the one declaration every export's <body> carries: a word too
+// long for its line breaks instead of spilling past its box. Both natives
+// break such a word (Compose's and SwiftUI's text layout fall back to a break
+// inside it), and a browser's default is to let it overflow, so a URL or a
+// long identifier in prose ran past its column on a phone-width page.
+//
+// break-word rather than anywhere: it acts only on a word that would
+// overflow, and leaves min-content sizing alone, so no flex item lays out
+// differently for it. On <body> because the property is inherited and so
+// reaches every Text. Unconditional, unlike the head's rules: it is one
+// attribute rather than a stylesheet, and whether a tree holds a long word is
+// a question about the viewer's width, not about the tree. The WASM runtime
+// sets the same declaration on its mount point (mount in grmob-runtime.js).
+const bodyStyle = "overflow-wrap:break-word"
 
 // motionStylesheet writes a <head> holding the rules the tree's motion needs:
 // core.SpinKeyframes when any node spins, core.ReducedMotionCSS when any node
@@ -335,6 +350,11 @@ func renderNode(b *element.Builder, node *core.Node, from imposed, path string) 
 	}
 	if node.Type == "GridRow" {
 		sv = addDecl(gridRowChassis, sv)
+	}
+	// The slider chassis, ahead of the author's style for the same reason.
+	// See sliderChassis.
+	if node.Type == "Slider" {
+		sv = addDecl(sliderChassis, sv)
 	}
 	// The canvas chassis: core's sizing rule for a drawing, ahead of the
 	// author's style so a stated Width or Height wins. See canvas.go.
@@ -726,6 +746,17 @@ const (
 	textGridChassis = "margin:0; line-height:1.2; white-space:normal; overflow-x:auto"
 	gridRowChassis  = "min-height:1.2em; white-space:nowrap"
 )
+
+// sliderChassis takes away the margin a browser gives <input type="range">
+// (2px a side in Chrome's user-agent stylesheet). Neither native draws one,
+// and on the web it made a slider stated at Width("100%"), as
+// comps.SliderRow's track is, 4px wider than its row, so the track ended 2px
+// past the trailing edge of everything beside it. core.Margin(0) cannot say
+// this, since an all-zero EdgeInsets is omitted and omission leaves the user
+// agent in charge. Logical properties, like the author's margin that follows
+// it and wins. The WASM runtime's slider chassis in styleFromGrMob is the
+// same rule.
+const sliderChassis = "margin-block:0; margin-inline:0"
 
 // renderGridRow writes one row of a core.TextGrid: a <div> of <span> runs,
 // each span carrying the run's white-space rule plus only the declarations
@@ -2117,8 +2148,13 @@ func styleValue(s *core.Style, nodeType string) string {
 	// dimension strings ("40px", "45%", "auto") are already CSS lengths, and
 	// the enums (Position, AlignItems, FlexWrap, Overflow, WhiteSpace) hold
 	// the CSS keywords themselves.
+	// The else arm: a text field's element has an intrinsic width that a
+	// flex row would treat as a floor, and no native has one. See
+	// fieldFloorTypes in tag.go.
 	if s.MinWidth != "" {
 		styles = append(styles, "min-width:"+s.MinWidth)
+	} else if ZeroesFieldFloor(nodeType) {
+		styles = append(styles, "min-width:0")
 	}
 	if s.MinHeight != "" {
 		styles = append(styles, "min-height:"+s.MinHeight)

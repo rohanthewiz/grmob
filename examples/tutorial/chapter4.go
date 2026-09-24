@@ -2408,6 +2408,11 @@ func lessonLiveMap() Lesson {
 						region.Get().Lat, region.Get().Lng, region.Get().Zoom,
 						len(pins.Get()), selectedNote(selected.Get()))),
 					core.Row(
+						// Padding(0) for the theme Row base's 16 a side, and
+						// FlexWrap because three buttons are wider than a 360pt
+						// phone's demo column: "Reset pins" ran 4pt past it.
+						core.Padding(0),
+						core.FlexWrap(true),
 						core.Gap(8),
 						comps.Button{Label: "Back to the centre", OnTap: func() {
 							region.Set(core.Region{Lat: 38.7139, Lng: -9.1394, Zoom: 13})
@@ -3672,6 +3677,14 @@ comps.DigitalClock{Time: now, ShowSeconds: true, ShowDate: true}`),
 				demoPanel("The live time, twice.",
 					comps.SwitchRow{Title: "24-hour clock", On: hour24.Get(), OnToggle: hour24.Set},
 					core.Row(
+						// Padding(0): the theme's Row base insets 16 a side,
+						// inside a panel that already insets 14. FlexWrap: the
+						// dial and the readout need about 330pt side by side,
+						// and a 360pt phone's demo column has 266. Wrapped,
+						// the readout sits centred under the dial rather than
+						// past the panel's edge.
+						core.Padding(0),
+						core.FlexWrap(true),
 						core.Gap(20),
 						core.AlignItemsProp(core.AlignItemsCenter),
 						core.Justify(core.JustifyCenter),
@@ -6079,6 +6092,17 @@ func lessonFourMoreCharts() Lesson {
 						Series:  profiles,
 						Max:     10,
 						Filled:  !rival.Get(),
+						// Stated to fit a 360pt phone. The widget is the drawing
+						// plus a label box and a gap either side, all in exact
+						// px (its labels are placed by Translate), so it cannot
+						// shrink to its column. The defaults (180 and 56) made
+						// it 304pt wide, over the demo column on any phone
+						// narrower than about 400pt: 4pt at 390 and 19pt at 360.
+						// These give 150 + 2×(50+6) = 262pt. The longest label,
+						// "Stamina", is about 40pt at the label size, so 50
+						// still holds it whole.
+						Size:       150,
+						LabelWidth: 50,
 					},
 				),
 				prose("The grid is polygons, not circles, so a gridline between two spokes is straight, "+

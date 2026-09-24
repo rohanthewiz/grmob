@@ -160,3 +160,20 @@ func TestAvatarStyleAppliesToBothBranches(t *testing.T) {
 		}
 	}
 }
+
+// A disc of a stated diameter keeps it in a short flex row: both branches pin
+// FlexShrink(0), since on the web a stated Width alone still shrinks and an
+// initials disc squeezed to its two letters draws as an oval. A caller's Style
+// can take the pin back.
+func TestAvatarKeepsItsDiameterInAShortRow(t *testing.T) {
+	ctx := core.NewContext()
+	for _, a := range []Avatar{{Name: "Jo Grey", Size: 36}, {Src: "a.jpg", Name: "Jo Grey", Size: 36}} {
+		if n := a.Render(ctx); n.Style.FlexShrink != core.ShrinkNone {
+			t.Errorf("%s avatar FlexShrink = %v, want pinned (core.ShrinkNone)", n.Type, n.Style.FlexShrink)
+		}
+	}
+	a := Avatar{Name: "Jo Grey", Style: []core.StyleProp{core.FlexShrink(1)}}
+	if n := a.Render(ctx); n.Style.FlexShrink != 1 {
+		t.Errorf("a caller's FlexShrink should win; got %v", n.Style.FlexShrink)
+	}
+}

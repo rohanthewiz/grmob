@@ -89,3 +89,53 @@ func TestRuntimeResetsTheUserAgentBorder(t *testing.T) {
 			"comps.Button's EmphasisGhost exposed", expr)
 	}
 }
+
+// The set of node types whose element's intrinsic width has to be taken away
+// as a flex floor (min-width: 0 unless the style states a MinWidth).
+//
+// Go is the authority (fieldFloorTypes in htmlout/tag.go) and the runtime
+// restates it, so the two are compared here, as BORDER_RESET_TYPES is. A
+// drift is silent: the exported document and the live app would lay the same
+// composer row out with the button inside the row on one and past its edge on
+// the other.
+func TestRuntimeFieldFloorTypesMatchGo(t *testing.T) {
+	src := runtimeSource(t)
+
+	m := regexp.MustCompile(`const FIELD_FLOOR_TYPES = new Set\(\[([^\]]*)\]\);`).FindStringSubmatch(src)
+	if m == nil {
+		t.Fatalf("grmob-runtime.js: no `const FIELD_FLOOR_TYPES = new Set([...])` found — if it " +
+			"was renamed or spread over several lines, update this test rather than deleting it")
+	}
+	var got []string
+	for _, q := range regexp.MustCompile(`"([^"]*)"`).FindAllStringSubmatch(m[1], -1) {
+		got = append(got, q[1])
+	}
+	sort.Strings(got)
+
+	if want := htmlout.FieldFloorTypes(); !reflect.DeepEqual(got, want) {
+		t.Errorf("FIELD_FLOOR_TYPES is %v; htmlout.FieldFloorTypes() is %v — a text field that "+
+			"shrinks in a crowded row on one web target and overflows it on the other", got, want)
+	}
+}
+
+// Every member is a node type the tag table knows, and every one of them is a
+// text field: an <input> of a text-entry type or a <textarea>. A checkbox, a
+// switch and a slider have an intrinsic size that *is* the control, so taking
+// it away would let a row crush them.
+func TestFieldFloorTypesAreTextFields(t *testing.T) {
+	tags := htmlout.Tags()
+	for _, nodeType := range htmlout.FieldFloorTypes() {
+		tag, ok := tags[nodeType]
+		if !ok {
+			t.Errorf("fieldFloorTypes has %q, which is not a node type in htmlout.Tags()", nodeType)
+			continue
+		}
+		switch {
+		case tag == "textarea":
+		case tag == "input" && map[string]bool{"text": true, "password": true, "number": true}[htmlout.InputTypeFor(nodeType)]:
+		default:
+			t.Errorf("fieldFloorTypes has %q (<%s type=%q>), which is not a text field",
+				nodeType, tag, htmlout.InputTypeFor(nodeType))
+		}
+	}
+}

@@ -1365,6 +1365,11 @@ comps.Avatar{Name: "Ada Lovelace", Size: 64}
 - Both branches are the same square with `BorderRadius = Size/2`, so `Size`
   is the single knob. (An oversized fixed radius would also give a circle,
   but would silently keep the old geometry when `Size` changed.)
+- It pins itself with `core.FlexShrink(0)`. A stated width alone does not
+  hold in a short flex row on the web, where an initials disc gave up width
+  down to its two letters and drew as an oval (a 36px disc in a `ListRow`
+  drew 34 wide on a 360pt phone). Pass `core.FlexShrink(1)` in `Style` to let
+  it shrink.
 - Initials derive from the **first and last** words of `Name` — "Ada King
   Lovelace" is AL, not AK — uppercased, rune-based so non-Latin names keep
   whole characters. `Initials` overrides when the rule gets it wrong.
@@ -4226,6 +4231,13 @@ Whether it can be spent is the provider's business — Google's API has a `scale
 parameter (1 or 2, so a 3x device gets the 2x image); a provider without one
 ignores the field, which is why this is not a multiply applied to `Width`
 before the provider sees it.
+
+**`Width` is a ceiling on screen, not a floor.** The frame and the image both
+carry `MaxWidth("100%")`, so in a column narrower than `Width` the map takes the
+column's width and keeps its `Height`. The image fills the frame, so an even
+sliver is cropped from each side and the point stays centred. The request is
+unchanged. The default 320 used to spill 24pt past the tutorial's lesson column
+on a 390pt phone. Pass `core.MaxWidth("none")` in `Style` for a fixed box.
 
 **One hand-off URL for three platforms.** Nothing in this framework knows which
 platform it is on — `core.OpenURL` promises only the portable part — so the

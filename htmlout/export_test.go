@@ -88,7 +88,9 @@ func TestDocumentWrapper(t *testing.T) {
 	if !strings.HasPrefix(out, "<!DOCTYPE html>") {
 		t.Fatalf("missing doctype:\n%s", out)
 	}
-	for _, want := range []string{`<html lang="en">`, "<body>", "</body>", "</html>"} {
+	// The body carries bodyStyle: a long word breaks rather than spilling,
+	// as it does on both natives.
+	for _, want := range []string{`<html lang="en">`, `<body style="overflow-wrap:break-word">`, "</body>", "</html>"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("missing %q in:\n%s", want, out)
 		}
@@ -458,7 +460,14 @@ func TestContentModeJoinsTheExistingStyleAttribute(t *testing.T) {
 		Style: &core.Style{Width: "80px", Height: "80px"},
 	}
 	out := ExportHTML(n)
-	if strings.Count(out, `style=`) != 1 {
+	// Counted on the <img> tag alone: the <body> carries a style attribute of
+	// its own (bodyStyle), which is not the element under test.
+	start := strings.Index(out, "<img")
+	if start < 0 {
+		t.Fatalf("no <img> in:\n%s", out)
+	}
+	img := out[start : start+strings.Index(out[start:], ">")+1]
+	if strings.Count(img, `style=`) != 1 {
 		t.Fatalf("expected exactly one style attribute:\n%s", out)
 	}
 	for _, want := range []string{"width:80px", "height:80px", "object-fit:cover"} {
@@ -2436,5 +2445,44 @@ func TestAnUnsetOpacityEmitsNoDeclaration(t *testing.T) {
 	})
 	if strings.Contains(out, "opacity") {
 		t.Fatalf("a Style with no Opacity emitted one:\n%s", out)
+	}
+}
+
+// A slider starts from no margin, as it does on both natives, rather than the
+// 2px a side a browser gives <input type="range">. That margin made a slider
+// stated at Width("100%") wider than its row. An author's margin is written
+// after the chassis, so it still wins.
+func TestASliderDropsTheUserAgentMargin(t *testing.T) {
+	bare := ExportHTML(&core.Node{Type: "Slider", Props: map[string]any{"value": 1.0, "min": 0.0, "max": 2.0},
+		Style: &core.Style{Width: "100%"}})
+	if !strings.Contains(bare, `style="margin-block:0; margin-inline:0; width:100%`) {
+		t.Errorf("a Slider with no Margin should lead with the zero-margin chassis:\n%s", bare)
+	}
+
+	set := ExportHTML(&core.Node{Type: "Slider", Props: map[string]any{"value": 1.0, "min": 0.0, "max": 2.0},
+		Style: &core.Style{Margin: core.EdgeInsets{Left: 6, Right: 6}}})
+	chassis := strings.Index(set, "margin-inline:0")
+	author := strings.Index(set, "margin-inline:6px 6px")
+	if chassis < 0 || author < 0 || author < chassis {
+		t.Errorf("the author's margin must follow the chassis so it wins:\n%s", set)
+	}
+}
+
+// A text field's intrinsic width is not a floor: min-width:0 unless the style
+// states one, so a growing field in a crowded row shrinks rather than pushing
+// its neighbour past the edge. A checkbox keeps the user agent's size.
+func TestATextFieldGivesUpItsIntrinsicWidth(t *testing.T) {
+	for _, typ := range []string{"Input", "InputPassword", "NumericInput", "TextArea"} {
+		out := ExportHTML(&core.Node{Type: typ, Props: map[string]any{"value": ""}, Style: &core.Style{FlexGrow: 1}})
+		if !strings.Contains(out, "min-width:0") {
+			t.Errorf("%s exports without min-width:0:\n%s", typ, out)
+		}
+	}
+	stated := ExportHTML(&core.Node{Type: "Input", Props: map[string]any{"value": ""}, Style: &core.Style{MinWidth: "120px"}})
+	if !strings.Contains(stated, "min-width:120px") || strings.Contains(stated, "min-width:0") {
+		t.Errorf("a stated MinWidth should be the only floor:\n%s", stated)
+	}
+	if box := ExportHTML(&core.Node{Type: "Checkbox", Props: map[string]any{"checked": false}}); strings.Contains(box, "min-width") {
+		t.Errorf("a checkbox's size is the control; no floor should be taken away:\n%s", box)
 	}
 }

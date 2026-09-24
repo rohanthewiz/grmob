@@ -61,7 +61,10 @@ func TestAFixedSizeBoxExportsTheDeclarationsTheBrowserMeasured(t *testing.T) {
 	// And nothing that would change the answer. See the header: either of these
 	// makes this target behave differently from the one that was measured,
 	// silently.
-	for _, unwanted := range []string{"overflow", "min-width", "min-height"} {
+	// The clipping declarations by name rather than the "overflow" prefix:
+	// the <body>'s overflow-wrap (bodyStyle) decides where a word breaks and
+	// clips nothing.
+	for _, unwanted := range []string{"overflow:", "overflow-x", "overflow-y", "min-width", "min-height"} {
 		if strings.Contains(out, unwanted) {
 			t.Errorf("a fixed-size core.Box exports a %s declaration:\n%s\n\n"+
 				"The browser check's per-axis answer rests on the child being a flex "+

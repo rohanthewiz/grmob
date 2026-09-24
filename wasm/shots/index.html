@@ -81,6 +81,19 @@
   #app [style*="flex-direction: row"] > [data-node-type="Scroll"][style*="flex-direction: row"] {
     flex: 1 1 0; min-width: 0;
   }
+  /* A vertical Scroll inside another Scroll keeps its own height. The viewport
+     rule above gives every Scroll a zero basis, which is right for a screen's
+     own Scroll and wrong for one nested in a scrolled page: that column has no
+     height to share out, the zero basis replaces the Scroll's stated Height,
+     and min-height: 0 lets it collapse. Lesson 1.5's "short Scroll of twelve
+     rows" (Height 160px) drew as its 2px border. core.Scroll's doc gives the
+     rule this restates: a nested Scroll is its Height when it states one and
+     its content's height when it does not, as a SwiftUI ScrollView is. The
+     List rule above makes the same exception. A Scroll whose parent is a row
+     keeps the fill-the-row basis, like the horizontal pair above. */
+  #app [data-node-type="Scroll"] [data-node-type="Scroll"]:not([style*="flex-direction: row"]):not([style*="flex-direction: row"] > *) {
+    flex: 0 0 auto;
+  }
   .boot {
     position: absolute; inset: 0; display: flex;
     align-items: center; justify-content: center;

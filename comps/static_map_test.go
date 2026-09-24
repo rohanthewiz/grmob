@@ -367,3 +367,27 @@ func TestOSMStaticMapIgnoresScale(t *testing.T) {
 		t.Errorf("scale changed a URL that has no scale parameter:\n%s\n%s", one, two)
 	}
 }
+
+// The requested width is a ceiling, not a floor: frame and image both carry
+// MaxWidth("100%"), so a column narrower than the request narrows the map and
+// the Fill crops its sides, rather than the map spilling past the column. The
+// request itself is unchanged. A caller's Style still wins.
+func TestAMapNeverSpillsItsColumn(t *testing.T) {
+	n := renderStaticMap(t, StaticMap{Lat: 1, Lng: 2, Provider: GoogleStaticMap("k")})
+	if n.Style.MaxWidth != "100%" {
+		t.Errorf("frame max-width = %q, want 100%%", n.Style.MaxWidth)
+	}
+	img := mapImage(t, n)
+	if img.Style == nil || img.Style.MaxWidth != "100%" {
+		t.Errorf("image max-width = %+v, want 100%% so it narrows with the frame", img.Style)
+	}
+	if src, _ := img.Props["src"].(string); !strings.Contains(src, "size=320x180") {
+		t.Errorf("the request should stay at the stated size:\n%s", src)
+	}
+
+	fixed := renderStaticMap(t, StaticMap{Lat: 1, Lng: 2, Provider: GoogleStaticMap("k"),
+		Style: []core.StyleProp{core.MaxWidth("none")}})
+	if fixed.Style.MaxWidth != "none" {
+		t.Errorf("a caller's MaxWidth should win; got %q", fixed.Style.MaxWidth)
+	}
+}

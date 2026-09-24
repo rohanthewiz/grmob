@@ -289,12 +289,21 @@ func insetBox(props []core.StyleProp) core.View {
 // Border role — without it the inspected Surface swatch (near-white on a
 // white page) would be invisible, which is itself the Border-vs-Surface
 // lesson from the docs, drawn.
+//
+// Padding(0) on the row, and on the column of rows (lessonThemeAnatomy), because
+// the theme's Row and Column bases inset 16 a side each, inside a demo panel
+// that already insets 14. On a 360pt phone those two insets left the row
+// 202pt for about 230pt of content, and the chip, the one child with nothing
+// holding its size, gave the difference up: TextSecondary's chip drew 2pt
+// wide. FlexShrink(0) on the chip says what its 22px already meant.
 func swatchRow(role, hex string) core.View {
 	return core.ComponentFunc(func(ctx *core.Context) *core.Node {
 		return core.Row(
+			core.Padding(0),
 			core.Gap(10),
 			core.AlignItemsProp(core.AlignItemsCenter),
 			core.Box(
+				core.FlexShrink(0),
 				core.Width("22px"),
 				core.Height("22px"),
 				core.BackgroundColor(hex),
@@ -379,7 +388,8 @@ func lessonThemeAnatomy() Lesson {
 				{"Border", th.Colors.BorderColor()},
 				{"ControlBorder", th.Colors.ControlBorderColor()},
 			}
-			swatches := []core.PropsAndChildren{core.Gap(6)}
+			// Padding(0): see swatchRow.
+			swatches := []core.PropsAndChildren{core.Padding(0), core.Gap(6)}
 			for _, r := range roles {
 				swatches = append(swatches, swatchRow(r.name, r.hex))
 			}

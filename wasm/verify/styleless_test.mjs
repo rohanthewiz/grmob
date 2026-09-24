@@ -113,6 +113,28 @@ test("a styleless grid still gets the grid chassis", () => {
     assert.equal(at(0).style.overflowX, "auto");
 });
 
+test("a slider drops the user agent's margin unless the author sets one", () => {
+    // A browser gives <input type="range"> 2px a side, which made a slider at
+    // Width("100%") (comps.SliderRow's track) 4px wider than its row. The
+    // chassis pins it to 0, and a stated Margin still wins. Same rule as
+    // htmlout's sliderChassis.
+    const bare = mount([{ Type: "Slider", Props: { value: 1, min: 0, max: 2 }, Style: { Width: "100%" } }]);
+    assert.equal(bare.at(0).style.marginBlock, "0");
+    assert.equal(bare.at(0).style.marginInline, "0");
+
+    const set = mount([{ Type: "Slider", Props: { value: 1, min: 0, max: 2 },
+        Style: { Margin: { Left: 6, Right: 6 } } }]);
+    assert.equal(set.at(0).style.marginInline, "6px 6px");
+});
+
+test("the mount point breaks a word too long for its line", () => {
+    // Inherited, so set once where the runtime mounts rather than on every
+    // Text: a URL or a long identifier in prose wraps inside its column, as
+    // it does on both natives. htmlout's <body> carries the same declaration.
+    const { rt } = mount([{ Type: "Text", Props: { text: "comps.ConcernSelectRowValueNotAnOption" } }]);
+    assert.equal(rt.document.getElementById("app").style.overflowWrap, "break-word");
+});
+
 // The Modal is where the totality rule meets its one exemption. Its chassis —
 // the fixed inset-0 box, the centred flex column, the z-index — is a set of
 // node-type defaults like the grid's, so it lives in styleFromGrMob and
@@ -233,3 +255,20 @@ for (const changes of [null, {}]) {
         assert.equal(nodeAt(rt.document, "root/1").textContent, "after", "the batch must not stop at the style patch");
     });
 }
+
+test("a text field gives up its intrinsic width unless a floor is stated", () => {
+    // An <input>'s ~20-character intrinsic width is a flex floor, so a
+    // growing field in a phone-width row pushed its button off the edge.
+    // FIELD_FLOOR_TYPES writes min-width: 0 for the text fields and nothing
+    // for the rest; a stated MinWidth still wins.
+    const { at } = mount([
+        { Type: "Input", Props: { value: "" } },
+        { Type: "TextArea", Props: { value: "" } },
+        { Type: "Checkbox", Props: { checked: false } },
+        { Type: "Input", Props: { value: "" }, Style: { MinWidth: "120px" } },
+    ]);
+    assert.equal(at(0).style.minWidth, "0");
+    assert.equal(at(1).style.minWidth, "0");
+    assert.equal(at(2).style.minWidth, "");
+    assert.equal(at(3).style.minWidth, "120px");
+});

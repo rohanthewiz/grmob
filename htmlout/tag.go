@@ -400,6 +400,53 @@ var borderResetTypes = map[string]bool{
 	"Select":        true,
 }
 
+// fieldFloorTypes are the node types whose element has an intrinsic width of
+// its own that a flex layout would otherwise treat as a floor. They get
+// min-width:0 written for them when the style states no MinWidth.
+//
+// An <input> is about twenty characters wide before anyone sizes it (212px at
+// Body size), and a <textarea> is its cols. A flex item's automatic minimum
+// width is its content size, which for these elements is that intrinsic
+// width, so a field that FlexGrow(1) lets grow could never shrink. In a row
+// narrower than field plus button the field held its 212px and pushed the
+// button off the row's edge: comps.InputRow's Send and comps.PasswordField's
+// Show both ran 12–25px past a phone-width row. FlexBasis("0") does not help,
+// since the floor is min-width, not the basis.
+//
+// Neither native has the floor: a Compose text field with a weight and a
+// SwiftUI TextField both shrink to what the row can give. min-width:0 matches
+// them and is inert everywhere else. It only matters where the row cannot fit
+// the field's intrinsic width, which is exactly where the old answer was an
+// overflow. An author's MinWidth is written instead, so a stated floor still
+// holds.
+//
+// The WASM runtime restates this as FIELD_FLOOR_TYPES in grmob-runtime.js, and
+// TestRuntimeFieldFloorTypesMatchGo in wasm/verify compares the two, as it
+// does for borderResetTypes.
+var fieldFloorTypes = map[string]bool{
+	"Input":         true,
+	"InputPassword": true,
+	"NumericInput":  true,
+	"TextArea":      true,
+}
+
+// ZeroesFieldFloor reports whether a node type gets min-width:0 when its style
+// states no MinWidth. See fieldFloorTypes.
+func ZeroesFieldFloor(nodeType string) bool {
+	return fieldFloorTypes[nodeType]
+}
+
+// FieldFloorTypes returns those node types, sorted, for the WASM conformance
+// test to compare set against set (BorderResetTypes' reason).
+func FieldFloorTypes() []string {
+	out := make([]string, 0, len(fieldFloorTypes))
+	for t := range fieldFloorTypes {
+		out = append(out, t)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // ResetsUABorder reports whether a node type needs an explicit "no border"
 // written for it when the style declares none. See borderResetTypes.
 func ResetsUABorder(nodeType string) bool {

@@ -30,7 +30,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-080
+**Next ID:** N-084
 
 ## Open
 
@@ -464,6 +464,37 @@ with each item's `raised` traced back through all session docs.
   RoleGroups that rely on the combine today, so the role alone cannot decide
   it. VoiceOver itself cannot run on the simulator; Accessibility Inspector
   or a device is the check.
+- **N-080** · raised `2026-0924-1211-tutorial-overflow-sweep-web-floors-nested-scroll` · value low
+  **This session's Go-level layout changes are unseen on the natives.**
+  `comps.Avatar` now states `FlexShrink(0)`, and `comps.StaticMap` puts
+  `MaxWidth("100%")` on its frame and its image. Both use props the natives
+  already honour (the pin census, MaxWidth's doc), so no change is expected.
+  But a StaticMap narrower than its request, cropping evenly under
+  ContentModeFill, has not been looked at on Compose or SwiftUI. The same goes
+  for lesson 1.5's nested 160pt Scroll.
+- **N-081** · raised `2026-0924-1211-tutorial-overflow-sweep-web-floors-nested-scroll` · value medium
+  **The tutorial overflow sweep is a scratch probe, not a check.** It walked
+  all 80 lessons in headless Chrome (at 360 and 390 phone widths, plus the
+  split view) and flagged boxes that escape their parent or the screen, and
+  fixed-size boxes drawn smaller than stated. It found everything this
+  session fixed. It lived in the scratchpad, so nothing guards against a
+  regression. As a browser check in `wasm/verify/browser.mjs` it would need
+  three skips: code editors (they scroll sideways by design), rotated
+  layers (the clock's hands and the compass rose) and their descendants. It
+  sees only each demo's first state, not after a toggle or typed text.
+- **N-082** · raised `2026-0924-1211-tutorial-overflow-sweep-web-floors-nested-scroll` · value low
+  **`docs/images/tutorial-lesson.png` predates lesson 1.1's card fix.** The
+  profile card shown there is the old layout. Retake it with
+  `wasm/shots/shoot.sh tutorial-lesson`.
+- **N-083** · raised `2026-0924-1211-tutorial-overflow-sweep-web-floors-nested-scroll` · value low (API decision)
+  **The theme's Row (8/16) and Column (12/16) padding lands on every plain
+  stack.** It is right for a screen's outer column and wrong for nearly every
+  nested one. The tutorial states `core.Padding(0)` in about 25 places, and
+  this session added seven more after the base overflowed four demos and the
+  split's panes, where it also beat the host page's CSS. An API that gave
+  only the screen-level stack its inset (or a paddingless stack
+  constructor) would retire the idiom, but it changes every app's layout.
+
 ## Non-goals
 
 - **N-001** · declined `2026-0912-1744-the-widget-library-answers-to-comps` —

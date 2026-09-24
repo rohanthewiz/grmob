@@ -104,6 +104,21 @@ import (
 // *map*, and asking at zoom+1 returns the same ground drawn for a deeper
 // zoom, whose labels then land at half the physical size they were drawn for.
 //
+// # Narrower than the request
+//
+// The box is Width logical pixels wide only while its parent has that much
+// room. It carries MaxWidth("100%"), which wins over a wider Width on all
+// four targets, so in a narrower column it takes the column's width and keeps
+// its Height. The image fills it (ContentModeFill), so the map loses an even
+// sliver from each side, and the point, which is the image's centre, stays in
+// the middle. The default 320px used to spill past a 390pt phone's lesson
+// column (296pt wide) by 24pt. The request is unchanged: the provider is still
+// asked for Width by Height, because the column's width is not known when the
+// URL is built.
+//
+// A caller's Style comes after, so a caller who wants the old fixed box
+// states MaxWidth("none").
+//
 // # The hand-off is one URL for three platforms
 //
 // Each platform has a scheme of its own — `geo:` on Android, `maps://` on iOS
@@ -616,8 +631,13 @@ func (m StaticMap) Render(ctx *core.Context) *core.Node {
 		}
 	}
 
+	// The requested size, capped at the width the parent offers. See
+	// "Narrower than the request" on the type. On both the frame and the
+	// image: the image's cap is a percentage of the frame, so the two narrow
+	// together and the Fill below crops the sides evenly.
 	size := []core.StyleProp{
 		core.Width(fmt.Sprintf("%dpx", a.Width)),
+		core.MaxWidth("100%"),
 		core.Height(fmt.Sprintf("%dpx", a.Height)),
 	}
 

@@ -94,6 +94,14 @@ func (a Avatar) Render(ctx *core.Context) *core.Node {
 		core.Width(dim),
 		core.Height(dim),
 		core.BorderRadius(size/2),
+		// Pinned, because a stated Width is not a fixed size to a flex row on
+		// the web: an item shrinks below its width when the row is short, down
+		// to its min-content, which for an initials disc is the width of two
+		// letters. A 36px disc in a ListRow on a 360pt phone drew 34 wide, and
+		// lesson 1.1's 40px disc drew 30, both ovals. A disc of a stated
+		// diameter is never meant to give up width, so it says so. The
+		// caller's Style follows and can take it back.
+		core.FlexShrink(0),
 	)
 	if label := a.label(); label != "" {
 		shared = append(shared, core.AccessibilityLabel(label))

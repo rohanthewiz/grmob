@@ -509,6 +509,24 @@ const GrMob = (() => {
     // textually, so keep it a flat array of string literals on one line.
     const BORDER_RESET_TYPES = new Set(["Button", "Input", "InputPassword", "NumericInput", "TextArea", "Select"]);
 
+    // The node types whose element has an intrinsic width a flex layout would
+    // otherwise treat as a floor, and which therefore get min-width: 0 when
+    // the Go style states no MinWidth.
+    //
+    // An <input> is about twenty characters wide before anyone sizes it, and a
+    // flex item's automatic minimum width is its content size, so a field that
+    // FlexGrow(1) lets grow could never shrink: in a phone-width row it held
+    // its width and pushed the trailing button (comps.InputRow's Send,
+    // comps.PasswordField's Show) past the row's edge. Compose and SwiftUI
+    // text fields both shrink to what the row gives them. The zero floor only
+    // matters where the row cannot fit the field, which is exactly where the
+    // old answer was an overflow.
+    //
+    // Go states this set once, in fieldFloorTypes (htmlout/tag.go), and
+    // TestRuntimeFieldFloorTypesMatchGo in wasm/verify compares the two. It
+    // reads this literal textually, so keep it a flat array on one line.
+    const FIELD_FLOOR_TYPES = new Set(["Input", "InputPassword", "NumericInput", "TextArea"]);
+
     // The node types whose children are drawn on top of one another rather
     // than along an axis — core.ZStack, the framework's one z-axis container.
     //
@@ -6999,7 +7017,12 @@ const GrMob = (() => {
         // strings ("40px", "45%", "auto") are already CSS lengths, and the
         // enums (Position, AlignItems, FlexWrap, Overflow, WhiteSpace) hold
         // the CSS keywords themselves.
-        out.minWidth = style.MinWidth || "";
+        // The false arm is "0", not "", for a text field: an <input> or a
+        // <textarea> has an intrinsic width (about twenty characters) that a
+        // flex row treats as a floor, so a growing field could never shrink
+        // and pushed its row's button off the edge. Neither native has the
+        // floor. See FIELD_FLOOR_TYPES above.
+        out.minWidth = style.MinWidth || (FIELD_FLOOR_TYPES.has(nodeType) ? "0" : "");
         out.minHeight = style.MinHeight || "";
         out.maxWidth = style.MaxWidth || "";
         out.maxHeight = style.MaxHeight || "";
@@ -7076,6 +7099,17 @@ const GrMob = (() => {
         if (nodeType === "GridRow") {
             out.minHeight = out.minHeight || "1.2em";
             out.whiteSpace = out.whiteSpace || "nowrap";
+        }
+        // The slider chassis (core.Slider): no margin unless the author set
+        // one. Chrome's stylesheet gives <input type="range"> a 2px margin on
+        // every side, which neither native has, and a slider told to fill its
+        // row (comps.SliderRow states Width("100%")) then pokes 2px past the
+        // row's trailing edge: 100% plus a margin is wider than 100%. Go cannot
+        // clear it, because Margin(0) is omitted from the payload, and an
+        // omitted margin hands the element back to the user agent. Same as
+        // htmlout's sliderChassis.
+        if (nodeType === "Slider") {
+            zeroMarginUnlessSet(out);
         }
         // The canvas chassis (core.Canvas): fill the width and let the
         // viewBox's aspect ratio decide the height, unless the author sized
@@ -8009,6 +8043,19 @@ const GrMob = (() => {
         const root = renderNode(tree, "root");
         rootElement = document.getElementById(mountPointId);
         rootElement.innerHTML = "";
+        // A word too long for its line breaks rather than spilling past the
+        // box, as it does on both natives: Compose and SwiftUI both break a
+        // word that cannot fit a line on its own, and a browser by default
+        // lets it overflow. A URL or a long identifier in prose ran 20px past
+        // its column on a 390px phone. break-word, not anywhere: it only
+        // acts on a word that would otherwise overflow, and leaves min-content
+        // sizing alone, so no flex item lays out differently because of it.
+        // Set once on the mount point, which the runtime owns (it just emptied
+        // it), because the property is inherited and so reaches every Text.
+        // White-space pre/nowrap text (code rows, a one-line ellipsis) has no
+        // soft wraps for it to act on. htmlout writes the same declaration on
+        // its <body> (bodyStyle in export.go).
+        rootElement.style.overflowWrap = "break-word";
         rootElement.appendChild(root);
         // The initial render has no patch batch, so the composite pass runs
         // over the whole tree once. After the append, because the pass reads
