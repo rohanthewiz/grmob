@@ -451,6 +451,11 @@ with each item's `raised` traced back through all session docs.
   identity-keyed IDs (a keyed node's callbacks named by its key path). Until
   then the grid could pad each cell to a fixed number of registrations, which
   was judged too ugly to do on the way past.
+  - 2026-09-28: the hazard fired once, on the web. Chrome's blur on a focused
+    field's removal re-entered Go inside the batch with the removed field's
+    ID; the runtime now drops every element event fired during its own mount
+    or patch (`applyingTree`, closing N-084). Events that arrive after a batch
+    from a tree it replaced remain possible.
 - **N-074** · raised `2026-0921-1419-tutorial-light-dark-theme` · value low (API decision)
   **No bundled `core.DarkTheme`.** The tutorial's `darkTheme` lives in
   examples/tutorial because core's palette censuses (the `*OnLight` tones,
@@ -490,27 +495,6 @@ with each item's `raised` traced back through all session docs.
   any form in examples/tutorial. An API that gave
   only the screen-level stack its inset (or a paddingless stack
   constructor) would retire the idiom, but it changes every app's layout.
-- **N-084** · raised `2026-0928-1917-next-list-overflow-check-ios-width-cap-sparkline-fade-reduce-motion` · value medium (API decision)
-  **`EditableGrid`'s ✕ commits the draft on a press longer than
-  `gridBlurGrace`.** A press on the ✕ blurs the field at pointer-down, and the
-  click only arrives at pointer-up, so a press held past 150ms lets the blur's
-  timer commit first; the ✕ then leaves the tree under the pointer and the
-  click lands on nothing. Measured in headless Chrome on lesson 4.37 with
-  CDP's real mouse path: "Groceries" typed to "GroceriesZ", ✕ held 300ms and
-  600ms → the cell reads GroceriesZ and Undo (1); held 60ms and 120ms → the
-  draft is discarded, Undo (0). A slow tap on a touch screen is the same
-  press. Raising the grace moves the threshold and delays every blur-away
-  commit. The fixes that close it are runtime or API changes, so not made on
-  the way past:
-  - a press that keeps focus: `preventDefault` on the ✕'s pointer-down (a
-    core prop, since the ✕ is a plain Go Button), so the field never blurs;
-  - a blur that says where focus went (the event's `relatedTarget` as a node
-    path in the payload), so the widget can tell "moving to my own ✕" from
-    "leaving".
-  The natives are unaffected as far as is known: neither blurs a field on a
-  button press the same way, and `testGridEditRoundTripAndDiscard` passes on
-  the simulator with XCUITest's taps.
-
 ## Non-goals
 
 - **N-001** · declined `2026-0912-1744-the-widget-library-answers-to-comps` —
@@ -591,6 +575,26 @@ with each item's `raised` traced back through all session docs.
   path works. (was #76)
 
 ## Closed
+
+- **N-084** · raised `2026-0928-1917-next-list-overflow-check-ios-width-cap-sparkline-fade-reduce-motion`
+  · closed 2026-09-28, `SESSION` — the ✕ carries a new
+  `core.PressKeepsFocus()`, a no-arg prop (`pressKeepsFocus: true` on the
+  wire) that the web runtime turns into a `mousedown` preventDefault, so a
+  press never blurs the field; the natives need nothing. Picked over a blur
+  payload naming where focus went, which would put a node path in every blur
+  for one widget. The ✕ also reports its own focus and blur as the field's, so
+  Tab onto it is not a blur and Enter there discards. The fix exposed a second
+  defect: the field was now focused when the discard removed it, and Chrome
+  fires `blur` synchronously inside the removal, which re-entered Go with the
+  removed field's positional ID (N-073's hazard, now firing): the next tap on
+  the cell opened nothing. The runtime now drops any element event fired while
+  it is mounting or applying a batch (`applyingTree`). Measured in headless
+  Chrome with CDP's real mouse path on 4.37: 60, 120, 300 and 600ms holds all
+  discard (before: 300 and 600 committed); Tab onto the ✕ outlasts the grace
+  and Enter discards; return commits and lands on row 2; a 300ms tap on
+  another cell commits and opens it. Pinned by
+  `TestEditableGridDiscardIsOneFocusUnitWithTheField` and three runtime tests
+  (the guard's mutation-tested).
 
 - **N-081** · raised `2026-0924-1211-tutorial-overflow-sweep-web-floors-nested-scroll`
   · closed 2026-09-28, `2026-0928-1917-next-list-overflow-check-ios-width-cap-sparkline-fade-reduce-motion` — browser check 24. `wasm/verify/overflow.mjs` holds the

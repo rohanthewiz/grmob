@@ -320,6 +320,60 @@ test("a changed callback ID reuses the one listener", () => {
 });
 
 // --------------------------------------------------------------------------
+// core.PressKeepsFocus: a press that leaves the focus where it is
+// --------------------------------------------------------------------------
+
+test("a press on a pressKeepsFocus node prevents mousedown's focus move, and still clicks", () => {
+    // mousedown's default action is the focus move; preventing it is the whole
+    // mechanism. That the browser then keeps the field focused, and still
+    // delivers the click, is Chrome's to say and not this shim's; what this
+    // pins is that the runtime asks.
+    const { rt, at } = mount([
+        { Type: "Row", Props: { pressKeepsFocus: true, onClick: "cb_1" } },
+        { Type: "Row", Props: { onClick: "cb_2" } },
+    ]);
+    assert.equal(at(0).dispatch("mousedown").defaultPrevented, true);
+    assert.equal(at(1).dispatch("mousedown").defaultPrevented, false, "a plain node lets focus move");
+    at(0).dispatch("click");
+    assert.deepEqual(rt.dispatched, [{ id: "cb_1", payload: {} }]);
+});
+
+test("pressKeepsFocus follows the prop through patches, on one listener", () => {
+    const { rt, at } = mount([{ Type: "Row", Props: { onClick: "cb_1" } }]);
+    const setProps = (Changes) =>
+        rt.GrMob.patch(JSON.stringify([{ Type: "update-props", TargetID: "root/0", Changes }]));
+
+    setProps({ onClick: "cb_1", pressKeepsFocus: true });
+    assert.equal(at(0).dispatch("mousedown").defaultPrevented, true, "gained by a patch");
+    setProps({ onClick: "cb_1" });
+    assert.equal(at(0).dispatch("mousedown").defaultPrevented, false, "a patch without it drops it");
+    setProps({ onClick: "cb_1", pressKeepsFocus: true });
+    assert.equal(at(0).listeners.get("mousedown").length, 1, "a second listener was attached");
+});
+
+test("an event the runtime's own patch causes is not dispatched", () => {
+    // Chrome fires blur on a focused element synchronously from inside its
+    // removal, while it is still connected. dom.mjs does not, so this element
+    // is taught to, and the test holds what the runtime does with it: the
+    // blur carries the removed field's ID, which the new pass has already
+    // given to some other node, so it must not reach Go (applyingTree).
+    const { rt, at } = mount([input({ value: "", onBlur: "cb_4" }), { Type: "Row", Props: { onClick: "cb_5" } }]);
+    const field = at(0);
+    const remove = field.remove.bind(field);
+    field.remove = () => {
+        field.dispatch("blur");
+        remove();
+    };
+    rt.GrMob.patch(JSON.stringify([{ Type: "remove", TargetID: "root/0" }]));
+    assert.deepEqual(rt.dispatched, [], "the removal's blur reached Go");
+
+    // The same listener, outside a batch, is the reader's and goes through.
+    const { rt: rt2, at: at2 } = mount([input({ value: "", onBlur: "cb_4" })]);
+    at2(0).dispatch("blur");
+    assert.deepEqual(rt2.dispatched, [{ id: "cb_4", payload: {} }]);
+});
+
+// --------------------------------------------------------------------------
 // Style, the other thing a patch can put on the wrong element
 // --------------------------------------------------------------------------
 

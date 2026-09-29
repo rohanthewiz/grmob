@@ -677,6 +677,8 @@ Cancel has no key. Key events do not reach Go (the PINInput finding), so Escape 
 
 A blur commits after gridBlurGrace, not at once. In a browser a press on the ✕ blurs the field before the click is delivered, and a commit in between would remove the ✕ from under the pointer: the click would never arrive and the discard would have committed. So the blur only marks the editor, and the ✕, a tap on another cell, the return key or the field taking focus again each settle it first. If none does, the timer commits. That one commit reaches OnChange from a timer goroutine and not from an event handler; State.Set is safe from either.
 
+The grace alone was not enough for the ✕: a press held longer than it (a slow click, a deliberate one) let the timer commit before the click, and the discard was lost (N-084, measured with real mouse events: 60ms and 120ms presses discarded, 300ms and 600ms committed). So the ✕ also carries core.PressKeepsFocus, and a press on it never blurs the field in the first place; the grace is left for the moves that do blur it, a tap on another cell among them. The ✕ reports its own focus and blur as the field's, so Tab from the field onto the ✕ is not a blur either, and Enter there discards.
+
 #### Focus
 
 Entering EDIT focuses the field (core.Focus). Ending it focuses a cell: the one below after the return key, the same one after ✕. Only the web acts on the second, where it is what hands the arrow keys back to the grid; both natives ignore a focus command on a box, and neither has arrow keys to give back.
@@ -741,7 +743,7 @@ Two FocusRefs, the editor, the landing cell, the open menu and the blur timer. S
 	Editing    Colors.Primary border; Colors.Error after a refused commit
 	Read only  Colors.Surface fill, TextSecondary ink
 
-<small>[comps/editable_grid.go:303](https://github.com/rohanthewiz/grmob/blob/master/comps/editable_grid.go#L303)</small>
+<small>[comps/editable_grid.go:313](https://github.com/rohanthewiz/grmob/blob/master/comps/editable_grid.go#L313)</small>
 
 #### func (EditableGrid) Render
 
@@ -751,7 +753,7 @@ func (g EditableGrid) Render(ctx *core.Context) *core.Node
 
 Render builds the grid as drawn in the type doc.
 
-<small>[comps/editable_grid.go:349](https://github.com/rohanthewiz/grmob/blob/master/comps/editable_grid.go#L349)</small>
+<small>[comps/editable_grid.go:359](https://github.com/rohanthewiz/grmob/blob/master/comps/editable_grid.go#L359)</small>
 
 ### type GridCellKind
 

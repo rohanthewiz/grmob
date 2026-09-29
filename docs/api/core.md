@@ -52,7 +52,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
 | [Theming](core-theme.md) | Themes, palettes, typography and spacing scales, and per-component defaults. | 5 types, 17 functions and methods |
 | [Controls](core-controls.md) | Buttons, text inputs, switches, sliders, selects, images, tab views, text grids and vector canvases. | 20 types, 48 functions and methods |
 | [Editors](core-editors.md) | The code editor and the rich text editor, and the refs and commands that drive them. | 2 types, 15 functions and methods |
-| [Events & focus](core-events.md) | Event props, host and system events, focus refs and focus order, and scrolling a node into view. | 2 types, 21 functions and methods |
+| [Events & focus](core-events.md) | Event props, host and system events, focus refs and focus order, and scrolling a node into view. | 2 types, 22 functions and methods |
 | [Navigation & overlays](core-navigation.md) | The navigator stack, modals, toasts, deep links and opening URLs. | 4 types, 19 functions and methods |
 | [Accessibility](core-accessibility.md) | Roles, selected, expanded and current states, value ranges and the accessibility audit. | 9 types, 19 functions and methods |
 | [Device services](core-device.md) | Audio, camera, clipboard, haptics, local notifications, compass heading, location, maps, the app lifecycle, and the window's size and fold. | 20 types, 70 functions and methods |
@@ -343,6 +343,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
         - [`func OnFocus`](core-events.md#func-onfocus)
         - [`func OnLongPress`](core-events.md#func-onlongpress)
         - [`func OnTouch`](core-events.md#func-ontouch)
+        - [`func PressKeepsFocus`](core-events.md#func-presskeepsfocus)
         - [`func ScrollTarget`](core-events.md#func-scrolltarget)
     - [`type FocusRef`](core-events.md#type-focusref)
         - [`func UseFocusRef`](core-events.md#func-usefocusref)

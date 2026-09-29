@@ -166,3 +166,49 @@ func OnFocus(handler func()) BehaviorProp {
 func OnBlur(handler func()) BehaviorProp {
 	return On("Blur", handler)
 }
+
+// PressKeepsFocus makes a press on the node leave the input focus where it
+// is: the field being typed into stays focused, and does not blur, while the
+// node's OnClick runs. It is for a control that acts *on* a field from beside
+// it: a clear or discard ✕, a toolbar's Bold, a "show password" eye.
+//
+//	core.Box(core.PressKeepsFocus(), core.OnClick(discard), core.Text("✕"))
+//
+// # Why a prop and not a blur payload
+//
+// A browser moves focus on mousedown and delivers the click on mouseup, so a
+// press on a button beside a field blurs the field before the click arrives.
+// A widget that commits on blur (comps.EditableGrid) then commits under a
+// press meant to discard, and the ✕ leaves the tree under the pointer, so the
+// click lands on nothing. The two ways out were a blur that says where focus
+// went, so the widget could tell "moving to my own ✕" from "leaving", or a
+// press that never moves focus. The second is one flag on the node that
+// knows it is an accessory, needs no payload on OnBlur, and is the idiom the
+// platform itself uses (preventDefault on mousedown is how every rich-text
+// toolbar keeps its selection). The first would put a node path in every
+// blur for the one widget that asks.
+//
+// # Hosts
+//
+//	Web      a mousedown listener that calls preventDefault, which is what
+//	         stops the browser moving focus. mousedown and not pointerdown:
+//	         preventDefault on pointerdown does not stop Chrome focusing, and
+//	         a touch tap reaches the page as a compatibility mousedown after
+//	         the finger lifts, which the same listener catches. The node can
+//	         still be reached with Tab and pressed with Enter or Space: this
+//	         changes what a pointer does, not the keyboard.
+//	Android  nothing to do. A press on a clickable node does not take the
+//	         focus from a text field.
+//	iOS      nothing to do, for the same reason.
+//	htmlout  not exported; a static page has no fields to keep.
+//
+// A no-arg flag, like StartAtEnd: a widget that wants the default writes no
+// prop.
+func PressKeepsFocus() BehaviorProp {
+	return behaviorFunc(func(ctx *Context, n *Node) {
+		if n.Props == nil {
+			n.Props = map[string]any{}
+		}
+		n.Props["pressKeepsFocus"] = true
+	})
+}

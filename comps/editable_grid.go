@@ -203,6 +203,16 @@ var gridBlurGrace = 150 * time.Millisecond
 // That one commit reaches OnChange from a timer goroutine and not from an
 // event handler; State.Set is safe from either.
 //
+// The grace alone was not enough for the ✕: a press held longer than it (a
+// slow click, a deliberate one) let the timer commit before the click, and the
+// discard was lost (N-084, measured with real mouse events: 60ms and 120ms
+// presses discarded, 300ms and 600ms committed). So the ✕ also carries
+// core.PressKeepsFocus, and a press on it never blurs the field in the first
+// place; the grace is left for the moves that do blur it, a tap on another
+// cell among them. The ✕ reports its own focus and blur as the field's, so
+// Tab from the field onto the ✕ is not a blur either, and Enter there
+// discards.
+//
 // # Focus
 //
 // Entering EDIT focuses the field (core.Focus). Ending it focuses a cell: the
@@ -849,8 +859,19 @@ func (s gridSession) editorCell(r, c int, edit gridEdit) core.View {
 
 	// A Box and not a core.Button: Compose gives a Button a 48dp minimum,
 	// which would make the editing row half again as tall as its neighbours.
+	//
+	// PressKeepsFocus so the press does not blur the field: without it a
+	// press held past gridBlurGrace let the blur's timer commit the draft
+	// before the click arrived (see "Why a blur waits").
 	items = append(items, core.Box(
 		core.Padding(0), core.PaddingHorizontal(t.Spacing.XS),
+		core.PressKeepsFocus(),
+		// The field and the ✕ are one focus unit: Tab from the field onto
+		// the ✕ is not leaving the edit, so the ✕'s own focus settles the
+		// field's blur and its blur arms the timer again. Only the web
+		// wires these on a Box; there the keyboard is the one way in.
+		core.OnFocus(func() { s.blurred(false) }),
+		core.OnBlur(func() { s.blurred(true) }),
 		core.OnClick(func() { s.discard() }),
 		core.AccessibilityRole(core.RoleButton),
 		core.AccessibilityLabel("Discard edit"),

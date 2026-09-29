@@ -147,6 +147,10 @@ const GrMob = (() => {
         // Unconditional, and it answers for its own node types: a node that is
         // neither a MapView nor a Marker leaves with nothing written.
         if (node.Props) {
+            // core.PressKeepsFocus. Total, like the map's dataset: the update
+            // path repeats the call with the whole new map, so a node that
+            // drops the prop drops the behaviour.
+            applyPressKeepsFocus(el, node.Props);
             applyMapProps(el, node.Props, node.Type);
             // The canvas nodes' SVG attributes. Same shape as the map call:
             // total, gated on its own node types, and repeated on the
@@ -3288,6 +3292,34 @@ const GrMob = (() => {
         }
     }
 
+    // Wires core.PressKeepsFocus: a press on this element leaves the focus
+    // where it is (see the Go doc for the widget that needed it).
+    //
+    // The browser moves focus as mousedown's default action, so preventing
+    // that default is the whole mechanism. mousedown rather than pointerdown:
+    // Chrome still focuses after a prevented pointerdown, and a touch tap
+    // arrives as a compatibility mousedown after the finger lifts, which this
+    // same listener catches. The click still fires; only the focus move is
+    // suppressed.
+    //
+    // One listener for the element's lifetime, gated on a dataset flag that
+    // every create and update-props pass rewrites, the same arrangement the
+    // on* listeners use with their listener_ slots: a prop that comes and
+    // goes toggles the flag, never the listener.
+    function applyPressKeepsFocus(el, props) {
+        if (props.pressKeepsFocus === true) {
+            el.dataset.pressKeepsFocus = "true";
+        } else {
+            delete el.dataset.pressKeepsFocus;
+            return;
+        }
+        if (el.dataset.has_listener_pressKeepsFocus) return;
+        el.dataset.has_listener_pressKeepsFocus = "true";
+        el.addEventListener("mousedown", (e) => {
+            if (el.dataset.pressKeepsFocus) e.preventDefault();
+        });
+    }
+
     // --- End reached (core.OnEndReached) -------------------------------------
     //
     // The DOM has no "you are near the bottom of this list" event, so this is
@@ -4822,6 +4854,9 @@ const GrMob = (() => {
     // fact), so an accepted keystroke has already moved __grmobValue to the
     // new text by the time it is compared.
     function dispatchFromElement(el, key, cbId, payload) {
+        // An event the runtime's own mount or patch caused, not the reader:
+        // see applyingTree. Its ID belongs to the tree before the batch.
+        if (applyingTree > 0) return;
         window.GoInvokeCallback(cbId, payload);
         if (key !== "onChange" || typeof el.__grmobValue !== "string") return;
         if (!CONTROLLED_TEXT_TYPES.has(el.dataset.nodeType)) return;
@@ -8036,7 +8071,46 @@ const GrMob = (() => {
         syncBrowserBack();
     }
 
+    // How deep the runtime is in its own DOM surgery: a mount, or a patch
+    // batch. An element event fired while this is non-zero was caused by that
+    // surgery and not by the reader, and dispatchFromElement drops it.
+    //
+    // # The one that happens
+    //
+    // Removing the focused element makes Chrome fire `blur` on it
+    // synchronously, from inside removeChild, while it is still connected. A
+    // batch is applied inside the GoInvokeCallback of the event that caused
+    // it, so that blur re-entered Go carrying the removed field's callback ID,
+    // and IDs are positional (core/event.go, beginPass): by then the new pass
+    // had given that ID to another node's handler. Measured on lesson 4.37: a
+    // press on EditableGrid's ✕ discarded the edit, the field's removal blurred
+    // it, its cb_4 ran the handler cb_4 now named, and the next tap on the
+    // cell opened nothing. Before core.PressKeepsFocus the ✕ took focus at
+    // mousedown, so the field was never focused when it went, and the same
+    // path was only reachable by the return key's commit.
+    //
+    // A counter and not isConnected: the element is still connected when the
+    // blur fires. A counter and not a flag: mount and patch do not nest today,
+    // but a flag would be cleared by an inner call's finally.
+    let applyingTree = 0;
+    function withTreeApplied(fn) {
+        applyingTree++;
+        try {
+            return fn();
+        } finally {
+            applyingTree--;
+        }
+    }
+
     function mount(jsonTree, mountPointId = "app") {
+        return withTreeApplied(() => mountTree(jsonTree, mountPointId));
+    }
+
+    function patch(patchList) {
+        return withTreeApplied(() => applyBatch(patchList));
+    }
+
+    function mountTree(jsonTree, mountPointId) {
         const tree = typeof jsonTree === "string" ? JSON.parse(jsonTree) : jsonTree;
         // A fresh app: its scroll commands count from 1 (applyScrollCommand).
         scrollEpochApplied = 0;
@@ -8071,7 +8145,7 @@ const GrMob = (() => {
         windowMetrics.track();
     }
 
-    function patch(patchList) {
+    function applyBatch(patchList) {
         const patches = typeof patchList === "string" ? JSON.parse(patchList) : patchList;
         // Before anything moves: where each thread's reader is. See "Start
         // reached, and a thread's place".
@@ -8141,6 +8215,8 @@ const GrMob = (() => {
                     // so an unrelated node never gains an inputmode it would
                     // not have been created with.
                     applyInputMode(el, p.Changes);
+                    // core.PressKeepsFocus, total as on the create path.
+                    applyPressKeepsFocus(el, p.Changes);
                     // The map nodes' dataset, before the per-key loop and for
                     // the same reason the hint is: the sync pass reads lat, lng
                     // and zoom together, and the patch carries the whole new

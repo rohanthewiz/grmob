@@ -365,6 +365,63 @@ func TestEditableGridBlurCommitsAfterTheGrace(t *testing.T) {
 	}
 }
 
+// The ✕ never lets the blur's timer win (N-084). A press on it keeps the
+// field's focus on the web (core.PressKeepsFocus), so no blur happens however
+// long the press; and Tab from the field onto it is not a blur either,
+// because the ✕'s own focus settles the field's. Leaving the ✕ for somewhere
+// else is a blur like any other, and commits after the grace.
+func TestEditableGridDiscardIsOneFocusUnitWithTheField(t *testing.T) {
+	old := gridBlurGrace
+	gridBlurGrace = 20 * time.Millisecond
+	t.Cleanup(func() { gridBlurGrace = old })
+
+	g := newGridHarness(t, nil)
+	discard := func() *core.Node {
+		return findFirst(g.node, func(n *core.Node) bool { return n.Style.AccessibilityLabel == "Discard edit" })
+	}
+	fireOn := func(n *core.Node, prop string) {
+		t.Helper()
+		id, ok := n.Props[prop].(string)
+		if !ok {
+			t.Fatalf("%q has no %s", n.Style.AccessibilityLabel, prop)
+		}
+		g.ctx.TriggerCallback(id)
+		g.render()
+	}
+
+	g.tap(g.cell("Item, row 1"))
+	if got := discard().Props["pressKeepsFocus"]; got != true {
+		t.Fatalf("the ✕ keeps the field's focus on a press, got pressKeepsFocus = %v", got)
+	}
+
+	// Tab: the field blurs, the ✕ focuses, the grace passes, nothing commits.
+	g.typeText("Rent!")
+	g.fire("onBlur")
+	fireOn(discard(), "onFocus")
+	time.Sleep(80 * time.Millisecond)
+	g.render()
+	if len(g.changes) != 0 || g.editor() == nil {
+		t.Fatalf("Tab onto the ✕ committed: changes %+v, editor %v", g.changes, g.editor() != nil)
+	}
+	// Enter on the ✕ is its click.
+	g.tap(discard())
+	if len(g.changes) != 0 || g.editor() != nil {
+		t.Fatalf("Enter on the ✕ did not discard: %+v", g.changes)
+	}
+
+	// Tab past the ✕: its blur arms the timer as the field's would.
+	g.tap(g.cell("Item, row 1"))
+	g.typeText("Rent!")
+	g.fire("onBlur")
+	fireOn(discard(), "onFocus")
+	fireOn(discard(), "onBlur")
+	time.Sleep(80 * time.Millisecond)
+	g.render()
+	if len(g.changes) != 1 || g.changes[0] != (gridChange{0, 0, "Rent!"}) {
+		t.Fatalf("leaving the ✕ did not commit after the grace: %+v", g.changes)
+	}
+}
+
 // Tapping another cell commits the open one and edits the new one, in one
 // dispatch.
 func TestEditableGridTapAnotherCellCommitsFirst(t *testing.T) {
