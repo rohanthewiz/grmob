@@ -94,6 +94,20 @@ func tickTerms(t *testing.T, mgr *render.Manager, on bool) {
 	mgr.DispatchBoolCallback(n.Props["onToggle"].(string), on)
 }
 
+// enterCode types a whole code into the verification step's PINInput, as a
+// paste or an SMS autofill arrives: one change carrying every digit. The
+// field is found by the name PINInput gives it, "<Label>, N of M entered".
+func enterCode(t *testing.T, mgr *render.Manager, code string) string {
+	t.Helper()
+	n := findNode(tree(t, mgr), func(n *node) bool {
+		return n.Type == "Input" && n.Props["keyboard"] == "digits"
+	})
+	if n == nil {
+		t.Fatal("no code field in the current tree")
+	}
+	return mgr.DispatchTextCallback(n.Props["onChange"].(string), code)
+}
+
 func tap(t *testing.T, mgr *render.Manager, label string) string {
 	t.Helper()
 	n := findNode(tree(t, mgr), func(n *node) bool {
@@ -278,7 +292,11 @@ func TestSuccessfulSubmitAndReset(t *testing.T) {
 	mgr := newApp(t)
 	fill(t, mgr, "  New@Example.com  ")
 
-	after := tap(t, mgr, "Create account")
+	sent := tap(t, mgr, "Create account")
+	if !strings.Contains(sent, "Check your inbox") || !strings.Contains(sent, "code to New@Example.com.") {
+		t.Fatalf("expected the verification step, addressed to the trimmed address:\n%s", sent)
+	}
+	after := enterCode(t, mgr, demoCode)
 	if !strings.Contains(after, "Account created") {
 		t.Fatalf("expected the confirmation screen:\n%s", after)
 	}
@@ -391,6 +409,7 @@ func TestResetClearsTheBlurMarks(t *testing.T) {
 	blur(t, mgr, "you@example.com")
 	fill(t, mgr, "new@example.com")
 	tap(t, mgr, "Create account")
+	enterCode(t, mgr, demoCode)
 
 	after := tap(t, mgr, "Create another")
 	for _, msg := range []string{
@@ -449,8 +468,8 @@ func TestSuccessfulSubmitIssuesNoFocusCommand(t *testing.T) {
 	fill(t, mgr, "fresh@example.com")
 
 	after := tap(t, mgr, "Create account")
-	if !strings.Contains(after, "Account created") {
-		t.Fatalf("expected the confirmation screen:\n%s", after)
+	if !strings.Contains(after, "Check your inbox") {
+		t.Fatalf("expected the verification step:\n%s", after)
 	}
 	if strings.Contains(after, "focusEpoch") {
 		t.Errorf("a successful submit issued a focus command:\n%s", after)
@@ -532,6 +551,46 @@ func TestTheLastFieldHasNoNextToPress(t *testing.T) {
 	mgr := newApp(t)
 	if _, ok := secondPasswordField(t, mgr).Props["onSubmit"]; ok {
 		t.Error("the confirmation field was wired a submit it has nothing to do with")
+	}
+	assertNoConcerns(t)
+}
+
+// The verification step: a wrong code is refused with a message and cleared,
+// so the reader types again rather than deleting six digits; typing again
+// clears the message; the right one creates the account. And "Use a different
+// address" goes back to the form with its values kept.
+func TestTheCodeStepRefusesAWrongCodeAndGoesBack(t *testing.T) {
+	mgr := newApp(t)
+	fill(t, mgr, "fresh@example.com")
+	tap(t, mgr, "Create account")
+
+	wrong := enterCode(t, mgr, "111111")
+	if !strings.Contains(wrong, "That code is not the one we sent") {
+		t.Fatalf("a wrong code said nothing:\n%s", wrong)
+	}
+	field := findNode(tree(t, mgr), func(n *node) bool { return n.Type == "Input" && n.Props["keyboard"] == "digits" })
+	if field.Props["value"] != "" {
+		t.Errorf("the wrong code was left in the field: %v", field.Props["value"])
+	}
+	if again := enterCode(t, mgr, "2"); strings.Contains(again, "That code is not the one we sent") {
+		t.Error("typing again kept the message")
+	}
+
+	back := tap(t, mgr, "Use a different address")
+	if !strings.Contains(back, "Create your account") {
+		t.Fatalf("expected the form again:\n%s", back)
+	}
+	email := findNode(tree(t, mgr), func(n *node) bool { return n.Props["placeholder"] == "you@example.com" })
+	if email.Props["value"] != "fresh@example.com" {
+		t.Errorf("the form lost its address: %v", email.Props["value"])
+	}
+	// And a second submit starts the step clean.
+	tap(t, mgr, "Create account")
+	if strings.Contains(mgr.RenderInitial(), "That code is not the one we sent") {
+		t.Error("the second visit to the step inherited the first one's message")
+	}
+	if got := enterCode(t, mgr, demoCode); !strings.Contains(got, "Account created") {
+		t.Fatalf("the right code did not create the account:\n%s", got)
 	}
 	assertNoConcerns(t)
 }

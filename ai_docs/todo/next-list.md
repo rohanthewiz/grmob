@@ -125,13 +125,6 @@ with each item's `raised` traced back through all session docs.
   - New: the Fold6's Samsung TalkBack now has READ_PHONE_STATE granted (was
     denied), kept for the harness; "Display speech output" is still on. (was
     #40; lapsed@0917-1659)
-- **N-034** · raised `2026-0917-1935-pin-input-and-a-code-with-no-gaps` · value medium (user's decision)
-  **Examples should adopt the shipped widgets.**
-  - `examples/chat` → `comps.MessageThread`: the example teaches `core.For` +
-    `core.Keyed`, which MessageThread hides, and MessageThread can't grow to
-    fill (needs a Grow/Fill option).
-  - `examples/signup` → `PINInput`: needs a verification step and a re-taken
-    `docs/images/signup.png`. (was #43)
 - **N-040** · raised `2026-0918-0910-next-list-copy-strip-edit-epochs-accent-and-the-lost-first-key` · value medium
   **The first hardware key after launch is lost on the iOS 26.5 simulator.**
   Worked around by `primeKeyboard`. Unchecked on a real iPad. (was #50)
@@ -575,6 +568,24 @@ with each item's `raised` traced back through all session docs.
   path works. (was #76)
 
 ## Closed
+
+- **N-034** · raised `2026-0917-1935-pin-input-and-a-code-with-no-gaps`
+  · closed 2026-09-29, `SESSION` — half done, half declined on the session's
+  recommendation (the user's decision; reopen to overrule).
+  - `examples/signup` → `PINInput`: done. A passing submit now sends a code
+    (the example states it, 246810, having no mail server) and a verification
+    step takes six digits in `comps.PINInput` before "Account created". A
+    wrong code is cleared with "That code is not the one we sent"; "Use a
+    different address" returns to the form with its values kept. The step
+    renders in `ctx.Scope("verify")` because PINInput holds hooks.
+    `TestTheCodeStepRefusesAWrongCodeAndGoesBack`, and three tests now pass
+    through the step. `docs/images/signup.png` is the form's mismatch error,
+    which the step does not touch, so it was not retaken (its claims test
+    passes).
+  - `examples/chat` → `comps.MessageThread`: declined. The example exists to
+    teach `core.For` and `core.Keyed`, which MessageThread hides, and the
+    widget is taught by lessons 4.33 and 4.34 already; it also cannot grow to
+    fill yet.
 
 - **N-084** · raised `2026-0928-1917-next-list-overflow-check-ios-width-cap-sparkline-fade-reduce-motion`
   · closed 2026-09-28, `SESSION` — the ✕ carries a new

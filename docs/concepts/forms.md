@@ -34,7 +34,8 @@ comps.Button{
 ```
 
 The complete worked example is `examples/signup` — rules, cross-field checks,
-a checkbox, a server error, the reveal-on-blur policy, and the reset.
+a checkbox, a server error, the reveal-on-blur policy, a verification code
+typed into `comps.PINInput`, and the reset.
 
 ## Errors are derived, never stored
 

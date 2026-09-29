@@ -7,6 +7,8 @@
 //	server errors    a uniqueness check only the back end can make
 //	the widget       comps.FormField, whose Error slot has been waiting
 //	                 for something to fill it since it was written
+//	verification     a six-digit code in comps.PINInput, the step a real
+//	                 sign-up takes between "submitted" and "created"
 //
 // Every field is declared once, in the Spec, and rendered through a bound
 // builder — so the name that reads the value is the same name that writes it,
@@ -35,6 +37,12 @@ var registered = map[string]bool{
 func App(ctx *core.Context) core.View {
 	// The address of the account just created, or "" while the form is up.
 	created := core.NewState(ctx, "")
+	// The address a code was sent to, while the verification step is up; ""
+	// otherwise. The code typed so far and the message a wrong one earned
+	// live beside it, up here with the other hooks.
+	pending := core.NewState(ctx, "")
+	code := core.NewState(ctx, "")
+	codeErr := core.NewState(ctx, "")
 
 	// Names the email field so the server-error path below can put the cursor
 	// back in it. A hook, and therefore unconditional and up here with the
@@ -109,6 +117,27 @@ func App(ctx *core.Context) core.View {
 			return nil
 		},
 	})
+
+	if addr := pending.Get(); addr != "" {
+		// A scope of its own: PINInput holds hooks (its focus state), and a
+		// hook inside a branch would shift every slot after it on the passes
+		// where the branch is not taken. The scope owns its slots, so the
+		// step can come and go.
+		return core.ComponentFunc(func(c *core.Context) *core.Node {
+			return verification(addr, code, codeErr, func() {
+				// The right code: the account exists now.
+				pending.Set("")
+				code.Set("")
+				created.Set(addr)
+			}, func() {
+				// A different address: back to the form, which kept its
+				// values, with nothing left of this attempt.
+				pending.Set("")
+				code.Set("")
+				codeErr.Set("")
+			}).Render(c.Scope("verify"))
+		})
+	}
 
 	if addr := created.Get(); addr != "" {
 		return confirmation(addr, func() {
@@ -200,7 +229,7 @@ func App(ctx *core.Context) core.View {
 				// button is disabled, so the user gets a form that refuses to
 				// work and refuses to say why. Let the submit run and fail —
 				// failing is what turns the explanations on.
-				OnTap: form.OnSubmit(func(v forms.Values) { submit(form, created, emailField, v) }),
+				OnTap: form.OnSubmit(func(v forms.Values) { submit(form, pending, emailField, v) }),
 			},
 		},
 	}
@@ -222,7 +251,10 @@ func App(ctx *core.Context) core.View {
 //
 // The values handed in are already a private copy, so the goroutine may
 // outlive the render pass that started it.
-func submit(form *forms.Form, created core.State[string], emailField *core.FocusRef, v forms.Values) {
+//
+// Success does not create the account yet: it sends a code (see
+// verification), so what it sets is the pending address.
+func submit(form *forms.Form, pending core.State[string], emailField *core.FocusRef, v forms.Values) {
 	// Trimmed, not raw: Required trims before deciding a field is empty, so a
 	// value that passed validation may still be padded.
 	email := v.Trimmed("email")
@@ -250,7 +282,65 @@ func submit(form *forms.Form, created core.State[string], emailField *core.Focus
 		return
 	}
 
-	created.Set(email)
+	pending.Set(email)
+}
+
+// demoCode is the code this example "sends". There is no mail server, so the
+// step says what it is; a real app compares against what its back end
+// issued, and does it on the server.
+const demoCode = "246810"
+
+// verification is the step between a submit that passed and an account that
+// exists: the code sent to the address, typed into comps.PINInput.
+//
+// OnComplete checks the code the moment the sixth digit lands, so there is no
+// Verify button to reach for. A wrong code is cleared with a message rather
+// than left for the reader to delete six digits of: the field is controlled,
+// so emptying code empties the boxes.
+//
+// Hook-free itself; the PINInput inside it holds hooks, which is why App
+// renders this in a scope of its own.
+func verification(addr string, code, codeErr core.State[string], verified, restart func()) core.View {
+	return comps.Screen{
+		Gap: 16,
+		Children: []core.View{
+			comps.Card{
+				Title: "Check your inbox",
+				Body: core.Text("We sent a six-digit code to " + addr + ". " +
+					"This example has no mail server, so here it is: " + demoCode + "."),
+			},
+			comps.FormField{
+				Label: "Verification code",
+				Error: codeErr.Get(),
+				Input: comps.PINInput{
+					Length: 6,
+					Label:  "Verification code",
+					Value:  code.Get(),
+					OnChange: func(v string) {
+						code.Set(v)
+						// The reader is answering the message.
+						if v != "" {
+							codeErr.Set("")
+						}
+					},
+					OnComplete: func(v string) {
+						if v == demoCode {
+							codeErr.Set("")
+							verified()
+							return
+						}
+						code.Set("")
+						codeErr.Set("That code is not the one we sent")
+					},
+				},
+			},
+			comps.Button{
+				Label:    "Use a different address",
+				Emphasis: comps.EmphasisOutlined,
+				OnTap:    restart,
+			},
+		},
+	}
 }
 
 // confirmation is the post-submit screen. Hook-free by construction: it is
