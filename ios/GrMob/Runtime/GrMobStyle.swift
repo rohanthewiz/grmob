@@ -209,6 +209,11 @@ struct GrMobStyle: Equatable {
     /// it has none). See GrMobNode.containerStyle for why it is computed from
     /// the live children, and grMobAccessibility for what it changes.
     var labelOnly: Bool = false
+    /// Set at render time, never parsed, like labelOnly: two or more operable
+    /// members sit below this labelled container, so it keeps them as
+    /// elements rather than merging them into itself. See
+    /// GrMobNode.holdsControls.
+    var holdsControls: Bool = false
     /// Go's core.Role, verbatim; mapped to traits by grMobTraitsFor below.
     var accessibilityRole: String = ""
     /// Go's core.Style.AccessibilityHeadingLevel: 1-6, or 0 for a heading that
@@ -968,13 +973,29 @@ extension View {
             // Link, one Text, did not. Chosen by argument, not
             // by a branch, so no _ConditionalContent layer is added to
             // grMobBox's opaque-type tower (see grMobTransition).
-            accessibilityElement(children: s.labelOnly ? .ignore : .combine)
+            //
+            // `.contain` for a container of two or more operable members
+            // (N-078): see GrMobNode.holdsControls, and grMobChildBehavior for
+            // the precedence.
+            accessibilityElement(children: grMobChildBehavior(s))
                 .accessibilityLabel(grMobCurrentLabel(s.accessibilityLabel, kind: s.accessibilityCurrent))
                 .grMobA11yHint(s.accessibilityHint)
         } else if let s, !s.accessibilityHint.isEmpty {
             grMobA11yHint(s.accessibilityHint)
         } else {
             self
+        }
+    }
+
+    /// Which of SwiftUI's three child behaviours a labelled container takes.
+    /// Nothing to merge wins over members to keep: a container whose children
+    /// are all hidden has no members either, and `.ignore` is the one that
+    /// still makes its element.
+    fileprivate func grMobChildBehavior(_ s: GrMobStyle) -> AccessibilityChildBehavior {
+        switch grMobChildMode(s) {
+        case .ignore: .ignore
+        case .contain: .contain
+        case .combine: .combine
         }
     }
 

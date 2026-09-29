@@ -75,6 +75,10 @@ type transcript struct {
 	// opcodes decode into. canvas.swift runs GrMobCanvasGeometry.swift
 	// against them. See internal/canvasfixture.
 	CanvasCases []canvasCase `json:"canvasCases"`
+
+	// Bundled widgets and the VoiceOver shape each labelled container in
+	// them takes (childmode.go, N-078).
+	ChildModeCases []childModeCase `json:"childModeCases"`
 }
 
 // canvasCase is internal/canvasfixture's case and its answer, flattened into
@@ -245,6 +249,8 @@ func main() {
 		PinCases:    pinfixture.Cases(),
 
 		CanvasCases: canvasCases(),
+
+		ChildModeCases: childModeCases(),
 	})
 	if err != nil {
 		fatal("marshal transcript: %v", err)

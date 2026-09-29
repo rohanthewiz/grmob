@@ -31,6 +31,9 @@ struct Transcript: Decodable {
     /// The canvas geometry cases: viewBox mapping and path decoding, with Go's
     /// answers. See canvas.swift and internal/canvasfixture.
     let canvasCases: [CanvasCase]
+    /// Bundled widgets rendered by Go, with the VoiceOver shape Go lists for
+    /// each labelled container in them. See childmode.swift.
+    let childModeCases: [ChildModeCase]
 }
 
 /// One unweighted child of a pinned Row. `pinned` is core.FlexShrink(0),
@@ -282,6 +285,18 @@ func run() -> Int32 {
     } else {
         print("FAIL: \(canvasProblems.count) canvas geometry difference(s)")
         for p in canvasProblems { print("  " + p) }
+        return 1
+    }
+
+    // The labelled containers' VoiceOver shapes, before the replay for the
+    // same reason again: a pure function of the transcript's own table.
+    let childProblems = checkChildModes(transcript.childModeCases)
+    if childProblems.isEmpty {
+        print("OK: \(transcript.childModeCases.count) bundled widgets give each labelled "
+            + "container the VoiceOver shape Go lists for it")
+    } else {
+        print("FAIL: \(childProblems.count) labelled-container shape difference(s)")
+        for p in childProblems { print("  " + p) }
         return 1
     }
 

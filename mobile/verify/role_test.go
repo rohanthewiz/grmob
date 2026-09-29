@@ -162,7 +162,9 @@ func sortedRoles(m map[string]bool) []string {
 // twice, and the grid's touch exploration had two targets per square.
 //
 // SwiftUI has said the same thing since the feed-row pattern landed
-// (`accessibilityElement(children: .combine)` in grMobAccessibility), and on
+// (`accessibilityElement(children: .combine)` in grMobAccessibility; since
+// N-078 a labelled container holding two or more members keeps them with
+// `.contain` instead, which is Compose's merge boundary per control), and on
 // the web an accessible name replaces an element's contents rather than
 // joining them. Compose was the target reading a label as an annotation on a
 // container instead of as a name for one thing.

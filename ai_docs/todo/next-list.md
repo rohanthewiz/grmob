@@ -456,28 +456,6 @@ with each item's `raised` traced back through all session docs.
   `*OnLight` fields hold light inks. Promoting it means renaming or
   re-arguing those roles and adding it to `BundledThemes`. Its contrast
   figures were computed by hand, not by a census.
-- **N-078** · raised `2026-0922-0440-next-list-radio-positions-browser-notify-fold-grid-scroll-ios-round-four` · value medium (API decision)
-  **SwiftUI's combine over a labelled container swallows its members.**
-  `grMobAccessibility` gives every labelled container
-  `accessibilityElement(children: .combine)`, which is right for a row or a
-  bubble that should read as one thing, and wrong for a named container of
-  separately operable members. Seen in XCUITest's tree on the iOS 26.5
-  simulator (2026-09-22):
-  - `RangeSlider` (RoleGroup "Price") is one Slider "Price" valued "10%,
-    40%", and its two inner sliders have no label.
-  - `EditableGrid` (RoleGrid "Budget") is one static text; its row headers
-    and text cells are absent, and only the Category menus (real Buttons)
-    survive. VoiceOver has no way to reach a cell.
-  - `ColorSwatchPicker`'s radiogroup reads as a Button "Label colour",
-    Selected: the children's traits were merged onto the group, though the
-    swatches survive as Buttons.
-  The likely shape is `.contain` (a named container whose members stay
-  elements) for the container roles that hold controls (group, radiogroup,
-  grid, toolbar, tablist), with `.combine` kept for a labelled node that is
-  one thing. But `Stepper`, `Drawer` and `MessageBubble` are labelled
-  RoleGroups that rely on the combine today, so the role alone cannot decide
-  it. VoiceOver itself cannot run on the simulator; Accessibility Inspector
-  or a device is the check.
 - **N-083** · raised `2026-0924-1211-tutorial-overflow-sweep-web-floors-nested-scroll` · value low (API decision)
   **The theme's Row (8/16) and Column (12/16) padding lands on every plain
   stack.** It is right for a screen's outer column and wrong for nearly every
@@ -568,6 +546,34 @@ with each item's `raised` traced back through all session docs.
   path works. (was #76)
 
 ## Closed
+
+- **N-078** · raised `2026-0922-0440-next-list-radio-positions-browser-notify-fold-grid-scroll-ios-round-four`
+  · closed 2026-09-29, `SESSION` — decided by content, not role. A labelled
+  container is `.ignore` when every child is hidden (as before), `.contain`
+  when two or more *members* sit below it, and `.combine` otherwise. A member
+  is a control type, a pressable node with something to announce (a label or
+  a child not hidden), or a nested labelled container, which is Compose's
+  merge boundary per clickable and per labelled node; the walk does not
+  enter a member and stops at the second (`GrMobNode.holdsControls`,
+  `grMobChildMode`). Nested named containers count so that Poll's results
+  (named rows, no controls) are one stop per option and Wizard (one Next,
+  a step's body) does not merge its step. PINInput's tap-catching row
+  (unnamed, all children hidden) is not a member, so it still combines.
+  `ios/verify`'s new census renders 21 bundled widgets in Go and holds every
+  labelled container's shape to a table (`childmode.go` /
+  `childmode.swift`; mutation-tested by removing the contain arm).
+  On the simulator (iOS 26.5): "Budget" is a container whose every cell is
+  a Button named "Amount, row 1, $1200.00" etc.; "Price" holds Slider
+  "Minimum" $20 and "Maximum" $80; "Label colour" is not itself Selected,
+  "blue" is. The round-four tests now reach cells, sliders and the ✕ by
+  name; the range test drags the thumb, because XCUITest's
+  `adjust(toNormalizedSliderPosition:)` reads the value as a percentage and
+  did nothing on "$20". All 51 Tutorial UI tests pass (`testAudioPlayer`,
+  which streams, failed once in the full run and passed alone). VoiceOver
+  itself is still unheard: Accessibility Inspector or a device. Open
+  questions left with it: Stepper's value is now read as its visible number
+  between the buttons, the web's reading; a SliderRow's title Text and its
+  slider both say "Minimum".
 
 - **N-034** · raised `2026-0917-1935-pin-input-and-a-code-with-no-gaps`
   · closed 2026-09-29, `SESSION` — half done, half declined on the session's

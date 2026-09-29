@@ -39,6 +39,7 @@ swiftc -o "$out/harness" -target arm64-apple-macos14.0 \
   selectmenu.swift \
   canvas.swift \
   rebase.swift \
+  childmode.swift \
   ../GrMob/Runtime/GrMobSelectMenu.swift \
   ../GrMob/Runtime/GrMobTextEdits.swift \
   ../GrMob/Runtime/GrMobCanvasGeometry.swift \

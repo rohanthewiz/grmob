@@ -18,6 +18,8 @@ import XCTest
 ///   N-072  a tap on a cell opens the field with the keyboard up, return
 ///          commits and ends EDIT; the ✕ throws a typed draft away rather
 ///          than the blur committing it first
+///   N-078  the grid, the range and the swatches are named containers whose
+///          cells, sliders and swatches are elements of their own
 ///   N-062  a chip the reader tapped reports itself selected
 ///   N-070  the four demos drawn by SwiftUI (screenshots)
 ///   N-068  TreeView's indent under Arabic (screenshot)
@@ -93,6 +95,16 @@ final class TutorialRoundFourUITests: XCTestCase {
         shot("r4-5.9-swatches")
         XCTAssertTrue(text(app, beginningWith: "Value = #2A78D6").exists, "the demo did not open on its blue")
 
+        // The picker is a named container of swatches, not one element: the
+        // group used to take the selected swatch's trait onto itself under
+        // SwiftUI's combine (N-078).
+        let swatches = app.otherElements.matching(NSPredicate(format: "label == 'Label colour'")).firstMatch
+        XCTAssertTrue(swatches.exists, "the swatch group is not a container named Label colour")
+        XCTAssertFalse(swatches.isSelected, "the group took a swatch's selection onto itself")
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label == 'blue'")).firstMatch.isSelected,
+                      "the blue swatch is not reported selected")
+
+
         // Every six-digit colour passes through a valid three-digit one, so
         // "#2a7" must not commit while it is being typed.
         hex.tap()
@@ -111,33 +123,53 @@ final class TutorialRoundFourUITests: XCTestCase {
         // Minimum past Maximum. The demo opens on $20 – $80 of 0…200, so
         // 0.6 of the track is $120: the Maximum is carried, and the pushed
         // native slider has to follow Go's value, not keep its own.
-        // Found by position inside the group, not by name: SwiftUI's combine
-        // over the labelled group folds the two into one "Price" slider
-        // valued "10%, 40%", and the inner two are left with no label of
-        // their own (N-078). The queries are what XCUITest can still reach.
-        let group = app.sliders.matching(NSPredicate(format: "label == 'Price'")).firstMatch
-        let low = group.sliders.element(boundBy: 0)
-        let high = group.sliders.element(boundBy: 1)
-        scroll(app, to: group)
-        lift(app)
+        // Found by name: the group is a container named "Price" and each
+        // slider is its own element with its own label (N-078). Before, the
+        // combine folded the two into one "Price" slider valued "10%, 40%".
+        let group = app.otherElements.matching(NSPredicate(format: "label == 'Price'")).firstMatch
+        let low = app.sliders.matching(NSPredicate(format: "label == 'Minimum'")).firstMatch
+        let high = app.sliders.matching(NSPredicate(format: "label == 'Maximum'")).firstMatch
+        scroll(app, to: high)
+        // Back down if the swipes carried the pair off the top: a slider under
+        // the status bar still reports itself hittable, and a drag there lands
+        // on the page.
+        let screen = app.windows.firstMatch.frame
+        var back = 0
+        while low.frame.minY < screen.minY + 120 && back < 8 {
+            app.swipeDown(velocity: .slow)
+            back += 1
+            sleep(1)
+        }
+        print("r4-5.9: Minimum at \(low.frame), Maximum at \(high.frame), screen \(screen)")
+        XCTAssertTrue(group.exists, "the range is not a container named Price")
         XCTAssertTrue(text(app, beginningWith: "$20 – $80").exists, "the range did not open on $20 – $80")
         dump(app, "r4-5.9-range-open")
         // Each slider's value is its row's readout, not a percentage of the
-        // track (N-079: SliderRow states Format as the control's value). Read
-        // off the combined group, the one element VoiceOver has here: the
-        // inner two XCUITest synthesizes under the combine still report
-        // UIKit's percentage, and VoiceOver does not visit them (N-078).
-        XCTAssertEqual(group.value as? String, "$20, $80", "the sliders' values are not their readouts")
-        low.adjust(toNormalizedSliderPosition: 0.6)
+        // track (N-079: SliderRow states Format as the control's value).
+        XCTAssertEqual(low.value as? String, "$20", "Minimum's value is not its readout")
+        XCTAssertEqual(high.value as? String, "$80", "Maximum's value is not its readout")
+        shot("r4-5.9-range-open")
+        // A drag of the thumb from where it sits. Not
+        // adjust(toNormalizedSliderPosition:), which finds the thumb by
+        // reading the value as a percentage: this value is the readout
+        // ("$20"), so it did nothing once Minimum was an element of its own.
+        // UISlider insets its track by half a thumb, so the thumb's centre
+        // is inset + fraction × (width − 2 × inset); a press that misses it
+        // goes to the scroll view and moves the page instead.
+        let inset = 14.0 / Double(low.frame.width)
+        let thumb = inset + 0.1 * (1 - 2 * inset)
+        low.coordinate(withNormalizedOffset: CGVector(dx: thumb, dy: 0.5))
+            .press(forDuration: 0.3,
+                   thenDragTo: low.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.5)),
+                   withVelocity: .slow, thenHoldForDuration: 0.2)
+        print("r4-5.9: after the drag Minimum is \(low.value as? String ?? "?")")
         sleep(1)
         shot("r4-5.9-range-pushed")
         dump(app, "r4-5.9-range-pushed")
         let lowValue = low.value as? String ?? ""
         let highValue = high.value as? String ?? ""
-        XCTAssertEqual(lowValue, highValue, "the pushed Maximum (\(highValue)) did not follow the Minimum (\(lowValue))")
-        let pair = (group.value as? String ?? "").components(separatedBy: ", ")
-        XCTAssertTrue(pair.count == 2 && pair[0] == pair[1] && pair[0].hasPrefix("$"),
-                      "the group's value (\(pair)) is not two equal readouts")
+        XCTAssertTrue(lowValue == highValue && lowValue.hasPrefix("$"),
+                      "the pushed Maximum (\(highValue)) did not follow the Minimum (\(lowValue))")
         XCTAssertFalse(text(app, beginningWith: "$20 – $80").exists, "the range line did not move")
     }
 
@@ -147,24 +179,22 @@ final class TutorialRoundFourUITests: XCTestCase {
         let app = XCUIApplication()
         open(app, lesson: "4.37")
 
-        // The cells are reached by coordinate inside the grid, not by name:
-        // SwiftUI's combine over the labelled grid ("Budget") takes every
-        // text cell out of the accessibility tree, leaving only the header
-        // texts and the Category menus (N-078). The grid element itself is
-        // still there, and its frame is the grid's.
-        let grid = app.staticTexts.matching(NSPredicate(format: "label == 'Budget'")).firstMatch
-        scroll(app, to: grid)
+        // The cells are reached by name. The grid is a container named
+        // "Budget" and every cell is its own element (N-078); SwiftUI's
+        // combine used to fold the whole grid into one static text, and this
+        // test tapped coordinates off its frame.
+        let grid = app.otherElements.matching(NSPredicate(format: "label == 'Budget'")).firstMatch
+        let item2 = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Item, row 2, '")).firstMatch
+        scroll(app, to: item2)
         lift(app)
         shot("r4-4.37-start")
         dump(app, "r4-4.37-start")
+        XCTAssertTrue(grid.exists, "the grid is not a container named Budget")
+        XCTAssertEqual(item2.label, "Item, row 2, Groceries", "row 2's Item cell is not its own element")
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label == 'Amount, row 2, $310.50'")).firstMatch.exists,
+                      "row 2's Amount cell is not its own element")
         let undo = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Undo'")).firstMatch
         XCTAssertEqual(undo.label, "Undo (0)", "the sheet did not open unedited")
-
-        // Row 2's Item cell: the header row is 24pt and each body row about
-        // 34pt, and Item starts 46pt in, after the row header.
-        let frame = grid.frame
-        let item2 = app.coordinate(withNormalizedOffset: .zero)
-            .withOffset(CGVector(dx: frame.minX + 100, dy: frame.minY + 24 + 34 + 17))
 
         item2.tap()
         sleep(1)
@@ -176,30 +206,28 @@ final class TutorialRoundFourUITests: XCTestCase {
         shot("r4-4.37-committed")
         dump(app, "r4-4.37-committed")
         XCTAssertEqual(undo.label, "Undo (1)", "return did not commit the draft")
+        let edited = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Item, row 2, '")).firstMatch
+        XCTAssertEqual(edited.label, "Item, row 2, GroceriesXY", "the cell does not say its new value")
         // Recorded, not asserted: whether the keyboard stays up once no
         // native acts on the focus command for the row below.
         print("r4-4.37: keyboards after return: \(app.keyboards.count)")
 
         // The ✕: a tap on it must throw the typed draft away. If the tap blurs
         // the field first and the blur commits, the undo stack grows to two.
-        item2.tap()
+        edited.tap()
         sleep(1)
         XCTAssertEqual(app.keyboards.count, 1, "the second tap raised no keyboard")
         app.typeText("ZZ")
         sleep(1)
         shot("r4-4.37-draft")
-        let discard = app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Discard edit'")).firstMatch
-        if discard.exists {
-            discard.tap()
-        } else {
-            // Inside the combined grid too: the ✕ sits at the Item cell's
-            // trailing edge (a 145pt column from 46pt in).
-            app.coordinate(withNormalizedOffset: .zero)
-                .withOffset(CGVector(dx: frame.minX + 46 + 145 - 14, dy: frame.minY + 24 + 34 + 17)).tap()
-        }
+        let discard = app.buttons.matching(NSPredicate(format: "label == 'Discard edit'")).firstMatch
+        XCTAssertTrue(discard.exists, "the ✕ is not its own element")
+        discard.tap()
         sleep(1)
         shot("r4-4.37-discarded")
         XCTAssertEqual(undo.label, "Undo (1)", "the ✕ committed the draft instead of throwing it away")
+        XCTAssertEqual(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Item, row 2, '")).firstMatch.label,
+                       "Item, row 2, GroceriesXY", "the discarded draft reached the cell")
     }
 
     // MARK: 4.34 — a ReactionBar chip the reader tapped
