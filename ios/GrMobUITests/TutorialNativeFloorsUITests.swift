@@ -20,6 +20,13 @@ import XCTest
 /// - core.MinWidth("40%"): lesson 1.4's box A, floored at 40% of its row. A
 ///   Row resolves that floor itself (GrMobFlexSolver.percentFloors): before
 ///   it did, A kept its content width on this simulator.
+/// - core.MaxWidth("100%") over a points Width: lesson 4.11's
+///   comps.StaticMap takes its 306pt column rather than drawing its 320pt
+///   request past it (grMobDimension's `relativeCap`).
+/// - A nested Scroll with a Height: lesson 1.5's short Scroll keeps its
+///   160pt, which the web once collapsed to its border.
+/// - comps.Avatar's FlexShrink(0): lessons 4.3 and 1.1 draw their discs at
+///   the stated size beside text that wraps.
 ///
 /// Screenshots are attached to the result, and also written to
 /// GRMOB_SHOT_DIR when the runner is given one
@@ -155,5 +162,82 @@ final class TutorialNativeFloorsUITests: XCTestCase {
         // anything under 240pt means the floor did not bind.
         XCTAssertGreaterThanOrEqual(field.frame.width, 240,
                                     "the link prompt is narrower than its 280pt MinWidth allows")
+    }
+
+    /// comps.StaticMap states Width 320px with MaxWidth 100%, so in a
+    /// narrower column it takes the column (comps/static_map.go, "Narrower
+    /// than the request"). Lesson 4.11's demo column on a 402pt iPhone is
+    /// 306pt, 48pt in from each side. Before grMobDimension's `relativeCap`
+    /// the map's frame was a rigid 320 at x 47, 13pt past the column's
+    /// right edge; the web and Compose already took the column.
+    func testAWidthUnderAPercentageCapTakesTheColumn() throws {
+        let app = XCUIApplication()
+        app.launch()
+        app.open(URL(string: "grmob://lesson/4.11")!)
+        XCTAssertTrue(text(app, beginningWith: "4.11").waitForExistence(timeout: 10), "lesson 4.11 did not open")
+
+        let map = app.links["Map of Lisbon"]
+        scroll(app, to: map)
+        XCTAssertTrue(map.exists, "lesson 4.11 has no \"Map of Lisbon\" link")
+        shot(app, "i_4.11_map")
+        let window = app.windows.firstMatch.frame
+        // The lesson column (32pt a side) and the demo panel's own 16pt.
+        let column = (minX: window.minX + 48, maxX: window.maxX - 48)
+        XCTAssertLessThan(column.maxX - column.minX, 320,
+                          "the column is \(column.maxX - column.minX)pt, which does not bind the 320pt request; run this on a phone")
+        XCTAssertLessThanOrEqual(map.frame.maxX, column.maxX + 1,
+                                 "the map ends at x \(map.frame.maxX), past the column's \(column.maxX): MaxWidth(100%) did not cap its Width")
+        XCTAssertEqual(map.frame.width, column.maxX - column.minX, accuracy: 2,
+                       "the map is \(map.frame.width)pt wide in a \(column.maxX - column.minX)pt column")
+        // The request is unchanged, and so is the height: CSS's max-width
+        // narrows the box and leaves its Height alone.
+        XCTAssertEqual(map.frame.height, 180, accuracy: 1, "the map's Height moved with its width")
+    }
+
+    /// Lesson 1.5's "short Scroll of twelve rows" states Height 160 with a
+    /// 1pt border, so its viewport is 158pt. The web drew it as its 2px
+    /// border until a host-page rule gave a nested Scroll its own height
+    /// (session 2026-0924-1211); this holds the native half, which never had
+    /// the web's zero basis but had never been measured either (N-080).
+    func testANestedScrollKeepsItsStatedHeight() throws {
+        let app = XCUIApplication()
+        app.launch()
+        app.open(URL(string: "grmob://lesson/1.5")!)
+        XCTAssertTrue(text(app, beginningWith: "1.5").waitForExistence(timeout: 10), "lesson 1.5 did not open")
+
+        let first = app.staticTexts["Row 1"]
+        scroll(app, to: first)
+        XCTAssertTrue(first.exists, "the short Scroll's Row 1 never came on screen")
+        shot(app, "i_1.5_short_scroll")
+        let window = app.windows.firstMatch.frame
+        let inner = app.scrollViews.allElementsBoundByIndex.filter {
+            $0.frame.height < window.height / 2 && $0.frame.minY <= first.frame.minY && $0.frame.maxY >= first.frame.maxY
+        }
+        XCTAssertEqual(inner.count, 1, "expected one short scroll view round Row 1, found \(inner.count)")
+        if let box = inner.first {
+            XCTAssertEqual(box.frame.height, 158, accuracy: 1,
+                           "the short Scroll's viewport is \(box.frame.height)pt, not its 160pt Height less a 1pt border a side")
+        }
+    }
+
+    /// comps.Avatar pins FlexShrink(0), so a disc beside a text column that
+    /// wraps keeps its stated size (4.3's list rows at 36, 1.1's profile
+    /// card at the default 40). A browser shrank 4.3's to 34 before the pin;
+    /// the pin is a prop both natives already honoured, so this is the check
+    /// that nothing changed there (N-080). The disc is its initials' Text,
+    /// labelled with the name, which is the first element named so.
+    func testAnAvatarBesideWrappingTextKeepsItsSize() throws {
+        let app = XCUIApplication()
+        app.launch()
+        for (lesson, name, size) in [("4.3", "June Gopher", CGFloat(36)), ("1.1", "Gopher McGrMob", CGFloat(40))] {
+            app.open(URL(string: "grmob://lesson/\(lesson)")!)
+            XCTAssertTrue(text(app, beginningWith: lesson).waitForExistence(timeout: 10), "lesson \(lesson) did not open")
+            let disc = app.staticTexts.matching(NSPredicate(format: "label == %@", name)).firstMatch
+            scroll(app, to: disc)
+            XCTAssertTrue(disc.exists, "lesson \(lesson) has no element named \(name)")
+            shot(app, "i_\(lesson)_avatar")
+            XCTAssertEqual(disc.frame.width, size, accuracy: 0.5, "\(lesson)'s avatar is \(disc.frame.width)pt wide, not \(size)")
+            XCTAssertEqual(disc.frame.height, size, accuracy: 0.5, "\(lesson)'s avatar is \(disc.frame.height)pt tall, not \(size)")
+        }
     }
 }

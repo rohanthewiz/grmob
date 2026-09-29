@@ -1,5 +1,5 @@
 // The facts a shimmed DOM cannot check, checked in a browser: seven about the
-// keyboard, five about paint, eight about layout, one about what a browser
+// keyboard, five about paint, nine about layout, one about what a browser
 // does with an accessibility value nobody here resolves, one about how it
 // reads a CSS shorthand back, and one about when it shows a notification the
 // page scheduled.
@@ -8,7 +8,7 @@
 // few hundred lines that model element trees, attributes, listeners and which
 // element holds focus. That is enough for almost everything, and its limits
 // are stated in its own header: there is no layout, no bubbling, and `focus()`
-// is an assignment, and nothing is ever painted. Twenty-three claims sit exactly in
+// is an assignment, and nothing is ever painted. Twenty-four claims sit exactly in
 // that blind spot, and no amount of widening the shim would settle them,
 // because each one is a claim about what a *browser* does:
 //
@@ -252,6 +252,19 @@
 //      neither under the horizontal one (4.21 sets IgnoreHorizontalFold).
 //      The unchanged size is the point: no resize fires, so every step is
 //      carried by the segment media queries or the posture event alone.
+//  24. no lesson spills, clips or squeezes a box at a phone's width or in
+//      the split. Layout is what dom.mjs does not have at all, and the
+//      tutorial is eighty lessons of real widgets in real columns. The site
+//      page (the real wasm/index.html, whose own CSS decides the panes and a
+//      nested Scroll's height) opens every lesson gen.go numbers from
+//      tutorial.Chapters, through its hash deep link, in the split at 1280px
+//      and in the phone layout at 390 and 360, and overflow.mjs judges one
+//      reading of each: a box outside a parent that does not clip, cut off by
+//      one that hides rather than scrolls, past the screen's side, holding a
+//      word wider than itself, or drawn smaller than its stated px size.
+//      Session 2026-0924-1211 found and fixed everything this names with a
+//      scratch copy of it (N-081); this keeps the fixes. It sees each
+//      lesson's first state only, not a demo after a toggle or typed text.
 //
 // The numbering is one sequence, and it is the order the checks run in rather
 // than the order they were written. It is also load-bearing: a dozen comments
@@ -297,6 +310,7 @@ import { foldVerdict } from "./fold.mjs";
 import { bandTargetCensus, bandTargetRead } from "./bandtarget.mjs";
 import { CSSOM_READS } from "./cssstyle.mjs";
 import { writeInkFaceOverride } from "./inkface.mjs";
+import { OVERFLOW_READ_JS, overflowFindings, overflowLine } from "./overflow.mjs";
 
 // The widget swatches come from the transcript rather than from a .mjs table,
 // because they are real components rendered by Go: gen.go builds the trees and
@@ -337,6 +351,9 @@ const INK_LIGATURES = TRANSCRIPT_JSON.inkLigatures || [];
 // with the answer a Compose Row gives already computed — the same table
 // ios/verify solves through GrMobFlexSolver. Here it is laid out by a browser.
 const PINS = TRANSCRIPT_JSON.pins || [];
+// Every tutorial lesson ID in reading order, for check 24 (gen.go's
+// lessonIDs, derived from tutorial.Chapters).
+const LESSONS = TRANSCRIPT_JSON.lessons || [];
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const RUNTIME = join(HERE, "..", "grmob-runtime.js");
@@ -10736,6 +10753,120 @@ async function main() {
             if (held) asked.fold = true;
         }
 
+        // ------------------------------------------------------------------
+        // 24. no lesson spills, clips or squeezes a box at a phone's width or
+        //     in the split
+        // ------------------------------------------------------------------
+        //
+        //	view    window       layout the page picks
+        //	split   1280 × 900   the two panes (check 17's threshold)
+        //	390     390 × 844    the phone
+        //	360     360 × 780    the phone, at the narrowest common Android width
+        //
+        // Emulation rather than --window-size: headless Chrome will not size a
+        // window below 500, and the page's own matchMedia has to see the width
+        // for it to pick the phone layout. Each view is a fresh load of the
+        // site page, so the layout is chosen at boot the way a visitor's is;
+        // a lesson after that is a hash change, which is the page's own
+        // deep-link path (a "route" host event, no reload).
+        //
+        // A lesson is read once its tree has gone quiet: 200ms with no
+        // mutation under #app, capped at 3s for the lessons that never do (a
+        // ticking clock, a typing indicator). The cap is not a failure. What
+        // a clock redraws each second is its hands, which are skipped as
+        // rotated anyway.
+        //
+        // What is judged and what is skipped is overflow.mjs's, where
+        // overflow_test.mjs reaches every rule. Findings are capped per view
+        // so a regression in a shared widget reads as a handful of lines and
+        // a count, not four hundred.
+        if (liveBuild && LESSONS.length) {
+            const sweepProblem = (msg) => problems.push(`check 24: ${msg}`);
+            const VIEWS = [
+                { name: "split", width: 1280, height: 900, split: true },
+                { name: "390", width: 390, height: 844, split: false },
+                { name: "360", width: 360, height: 780, split: false },
+            ];
+            const SWEEP_SHOWN = 12;
+            const QUIET = `new Promise((done) => {
+                const app = document.getElementById("app");
+                const started = Date.now();
+                let last = started;
+                const watch = new MutationObserver(() => { last = Date.now(); });
+                watch.observe(app, { subtree: true, childList: true, attributes: true, characterData: true });
+                const poll = () => {
+                    const now = Date.now();
+                    if (now - last < 200 && now - started < 3000) return setTimeout(poll, 50);
+                    watch.disconnect();
+                    requestAnimationFrame(() => requestAnimationFrame(() => done(true)));
+                };
+                setTimeout(poll, 100);
+            })`;
+            let held = true;
+            let swept = 0;
+            try {
+                for (const view of VIEWS) {
+                    await session.send("Emulation.setDeviceMetricsOverride", {
+                        width: view.width, height: view.height, deviceScaleFactor: 1, mobile: false,
+                    });
+                    // The first view comes from check 23's /live/ page, so a
+                    // navigation loads; after that the URL differs only in
+                    // its hash, which would be a same-document navigation
+                    // with no load event, so it is a reload instead.
+                    const viewLoaded = session.once("Page.loadEventFired");
+                    if (view === VIEWS[0]) {
+                        await session.send("Page.navigate", { url: `${origin}/site/#${LESSONS[0]}` });
+                    } else {
+                        await session.send("Page.reload");
+                    }
+                    await viewLoaded;
+                    const booted = await evaluate(`new Promise((done) => {
+                        const started = Date.now();
+                        const poll = () => {
+                            if (document.querySelector("#app [data-node-path]")) return done(true);
+                            if (Date.now() - started > 30000) return done(false);
+                            setTimeout(poll, 50);
+                        };
+                        poll();
+                    })`);
+                    if (!booted) {
+                        sweepProblem(`${view.name}: the site page never mounted a tree within 30s`);
+                        held = false;
+                        continue;
+                    }
+                    const split = await evaluate(`!!document.getElementById("tutorial-split")`);
+                    if (split !== view.split) {
+                        sweepProblem(`${view.name}: at ${view.width}px the page drew the ` +
+                            `${split ? "split" : "phone layout"}, so this view swept the wrong layout`);
+                        held = false;
+                        continue;
+                    }
+                    const found = [];
+                    for (const lesson of LESSONS) {
+                        await evaluate(`location.hash = ${JSON.stringify("#" + lesson)}`);
+                        await evaluate(QUIET);
+                        const reading = await evaluate(OVERFLOW_READ_JS("#app"));
+                        if (!reading) {
+                            found.push(`${view.name} ${lesson}: #app is gone`);
+                            continue;
+                        }
+                        for (const f of overflowFindings(reading)) {
+                            found.push(overflowLine(`${view.name} ${lesson}`, f));
+                        }
+                        swept++;
+                    }
+                    for (const line of found.slice(0, SWEEP_SHOWN)) sweepProblem(line);
+                    if (found.length > SWEEP_SHOWN) {
+                        sweepProblem(`${view.name}: … and ${found.length - SWEEP_SHOWN} more`);
+                    }
+                    if (found.length) held = false;
+                }
+            } finally {
+                await session.send("Emulation.clearDeviceMetricsOverride");
+            }
+            if (held) asked.overflow = swept;
+        }
+
     } finally {
         if (session) session.close();
         chrome.kill();
@@ -10747,7 +10878,7 @@ async function main() {
     // that only appears on the happy path is a skip that goes missing exactly
     // when the log is long.
     if (asked.liveSkip) {
-        console.log(`SKIP: checks 15 to 20 and 23, the live calendar, shortcuts, boot frame, mid-text typing, thread, theme switch and fold (${asked.liveSkip})`);
+        console.log(`SKIP: checks 15 to 20, 23 and 24, the live calendar, shortcuts, boot frame, mid-text typing, thread, theme switch, fold and overflow sweep (${asked.liveSkip})`);
     }
     if (asked.inkFaceSkip) {
         console.log(`SKIP: the band grid's ink scan (${asked.inkFaceSkip})`);
@@ -10786,7 +10917,9 @@ async function main() {
         ? "a scheduled notification shows when it is due and a sweep stops the rest of its prefix,"
         : "the scheduled notification unseen,"} ${asked.fold
         ? "an emulated hinge and posture reach lesson 4.21's readout and TwoPane at an unchanged window size,"
-        : "the emulated fold unread,"} ${PALETTES.length} palette swatches paint the
+        : "the emulated fold unread,"} ${asked.overflow
+        ? `${asked.overflow} lesson views (${LESSONS.length} lessons in the split, at 390px and at 360px) spill, clip and squeeze nothing,`
+        : "the tutorial's overflow unswept,"} ${PALETTES.length} palette swatches paint the
     hexes the contrast census measures, ${WIDGETS.length} real widgets draw
     their own boundary tones on both edges, a sticky band pins, ${VALUE_RANGES.length}
     value ranges resolve the way core.Progress says a browser resolves them,

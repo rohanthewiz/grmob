@@ -555,6 +555,36 @@ func TestSparklineStaysInsideItsBox(t *testing.T) {
 	}
 }
 
+func TestSparklineAreaFadesTowardItsBottomEdge(t *testing.T) {
+	// The area closes at the bottom edge (y = chartView), not at zero, so the
+	// fade runs from the highest drawn point — the smallest y — down to it.
+	values := []float64{3, 9, math.NaN(), 1, 7}
+	n := renderView(t, Sparkline{Values: values, Area: true, Color: "#2A78D6", Height: 30})
+	area := n.Children[0]
+	if _, flat := area.Props["fill"]; flat {
+		t.Errorf("a sparkline area with a hex colour should fade, not carry a flat fill: %v", area.Props)
+	}
+	scale := sparkScale(1, 9, 30, 1.5)
+	got := areaFadeTo(core.NewPath(), "#2A78D6", values, scale, chartView).FillGradient
+	if got == nil || got.Y1 != scale.y(9) || got.Y2 != chartView || got.X1 != got.X2 {
+		t.Fatalf("fade = %+v, want vertical from the high point y %v to the bottom edge %v",
+			got, scale.y(9), chartView)
+	}
+	if len(got.Stops) != 2 || got.Stops[0].Color != "#2A78D64D" || got.Stops[1].Color != "#2A78D60A" {
+		t.Errorf("stops = %+v, want the line's hue at 4D then 0A, as AreaChart's", got.Stops)
+	}
+
+	// The fallbacks are areaShape's: a colour withAlpha cannot extend, and no
+	// finite value off the base.
+	flat := renderView(t, Sparkline{Values: values, Area: true, Color: "rebeccapurple"}).Children[0]
+	if flat.Props["fill"] == nil {
+		t.Errorf("a named colour should keep the flat tint: %v", flat.Props)
+	}
+	if s := areaFadeTo(core.NewPath(), "#2A78D6", []float64{math.NaN()}, scale, chartView); s.FillGradient != nil {
+		t.Errorf("no finite value should keep the flat tint: %+v", s)
+	}
+}
+
 // bezierAt evaluates one cubic segment at u.
 func bezierAt(p0, c1, c2, p1, u float64) float64 {
 	v := 1 - u

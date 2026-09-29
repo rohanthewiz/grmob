@@ -631,7 +631,9 @@ enum GrMobMaxWidth {
     /// whatever it is proposed, so the Layout further out could narrow the
     /// proposal and the box would still draw at the declared width, spilling
     /// out of the space its parent reserved. A percentage cap has no length
-    /// at that point in the chain and is left to the Layout alone.
+    /// at that point in the chain and is left to the Layout, with the Width
+    /// frame made flexible so the Layout's narrowed proposal binds it
+    /// (grMobDimension's `relativeCap`).
     static func fixedLimit(_ value: String) -> CGFloat? {
         value.hasSuffix("%") ? nil : limit(value, available: nil)
     }

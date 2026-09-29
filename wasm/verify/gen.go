@@ -61,6 +61,7 @@ import (
 	"github.com/rohanthewiz/grmob/core"
 	"github.com/rohanthewiz/grmob/examples/mobileapp"
 	"github.com/rohanthewiz/grmob/examples/signup"
+	"github.com/rohanthewiz/grmob/examples/tutorial"
 	"github.com/rohanthewiz/grmob/htmlout"
 	"github.com/rohanthewiz/grmob/internal/bandfixture"
 	"github.com/rohanthewiz/grmob/internal/menufixture"
@@ -142,6 +143,15 @@ type transcript struct {
 	// which canvas_test.mjs holds the runtime's canvas section to. See
 	// canvasCases.
 	Canvases []canvasCase `json:"canvases"`
+
+	// Lessons are the tutorial's lesson IDs ("1.1" … "8.5") in reading
+	// order, for browser check 24's overflow sweep. Derived here from
+	// tutorial.Chapters, the way the app itself derives them, rather than
+	// read off the contents screen or written into browser.mjs: a lesson
+	// added to a chapter is swept on the next run with no edit anywhere
+	// else, and a list the check kept by hand is how a lesson goes
+	// unswept.
+	Lessons []string `json:"lessons"`
 }
 
 // node mirrors just enough of core.Node's JSON to hunt down callback IDs.
@@ -371,11 +381,26 @@ func main() {
 		InkLigatures: ligatures,
 		Pins:         pinfixture.Cases(),
 		Canvases:     canvasCases(),
+		Lessons:      lessonIDs(),
 	})
 	if err != nil {
 		fatal("marshal transcript: %v", err)
 	}
 	os.Stdout.Write(out)
+}
+
+// lessonIDs numbers tutorial.Chapters the way examples/tutorial's lessonEntry
+// does: chapter and lesson ordinals, 1-based, joined by a dot. That numbering
+// is also the site's hash deep link (#4.21), which is how check 24 opens each
+// one.
+func lessonIDs() []string {
+	var ids []string
+	for ci, ch := range tutorial.Chapters {
+		for li := range ch.Lessons {
+			ids = append(ids, fmt.Sprintf("%d.%d", ci+1, li+1))
+		}
+	}
+	return ids
 }
 
 // --- Canvases ---------------------------------------------------------------

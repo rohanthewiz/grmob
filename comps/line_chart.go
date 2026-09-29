@@ -253,12 +253,20 @@ const (
 // fade), or a series with no finite value off the base line (no length to
 // fade along).
 func areaShape(area *core.Path, color string, values []float64, scale valueScale) core.Shape {
+	return areaFadeTo(area, color, values, scale, scale.y(scale.base()))
+}
+
+// areaFadeTo is areaShape with the base line given as a viewBox y rather than
+// read off the scale's zero. Sparkline's area closes at the canvas's bottom
+// edge, not at zero (see Sparkline.Area), so the same fade runs from its
+// highest point down to that edge — the drawn point furthest from the base is
+// the highest one when the base is the bottom.
+func areaFadeTo(area *core.Path, color string, values []float64, scale valueScale, base float64) core.Shape {
 	top, faint := withAlpha(color, areaFadeTop), withAlpha(color, areaFadeBase)
 	flat := core.Shape{Path: area, Fill: withAlpha(color, "33")}
 	if top == color {
 		return flat
 	}
-	base := scale.y(scale.base())
 	extreme, far := base, 0.0
 	for _, v := range values {
 		if math.IsNaN(v) || math.IsInf(v, 0) {

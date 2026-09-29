@@ -161,7 +161,7 @@ const (
 )
 ```
 
-<small>[comps/static_map.go:250](https://github.com/rohanthewiz/grmob/blob/master/comps/static_map.go#L250)</small>
+<small>[comps/static_map.go:253](https://github.com/rohanthewiz/grmob/blob/master/comps/static_map.go#L253)</small>
 
 ConcernAudioPlayerNoTrack is raised, in debug builds only, when an AudioPlayer has no Track.URL. Play would load nothing, so the widget disables it — and a player whose only button is dimmed looks exactly like one waiting for its stream to buffer.
 
@@ -185,7 +185,7 @@ ConcernNoMapProvider: a StaticMap rendered with no Provider, which draws an empt
 const ConcernNoMapProvider = "no-map-provider"
 ```
 
-<small>[comps/static_map.go:333](https://github.com/rohanthewiz/grmob/blob/master/comps/static_map.go#L333)</small>
+<small>[comps/static_map.go:336](https://github.com/rohanthewiz/grmob/blob/master/comps/static_map.go#L336)</small>
 
 ConcernPollInert is raised, in debug builds only, when a Poll is still asking — no option is Mine and ShowResults is off — and has no OnVote. It draws buttons that record nothing.
 
@@ -271,7 +271,7 @@ The label is deliberately not in it, and the reason is worth stating because the
 
 A caller who wants the name \*and\* the point has to pick a platform to say it to — \`geo:lat,lng?q=lat,lng(Label)\` on Android, \`[https://maps.apple.com/?ll=lat,lng&q=Label](https://maps.apple.com/?ll=lat,lng&q=Label)\` on iOS — which is what the label parameter on this signature is for.
 
-<small>[comps/static_map.go:437](https://github.com/rohanthewiz/grmob/blob/master/comps/static_map.go#L437)</small>
+<small>[comps/static_map.go:440](https://github.com/rohanthewiz/grmob/blob/master/comps/static_map.go#L440)</small>
 
 ### func OSMStaticMap
 
@@ -291,7 +291,7 @@ Scale is ignored. The service had no scale parameter while it was up.
 
 The marker style name ("ol-marker") is the service's own vocabulary rather than anything this package defines, which is the general shape of a provider function — it translates a StaticMapArea into one service's dialect and nothing more.
 
-<small>[comps/static_map.go:372](https://github.com/rohanthewiz/grmob/blob/master/comps/static_map.go#L372)</small>
+<small>[comps/static_map.go:375](https://github.com/rohanthewiz/grmob/blob/master/comps/static_map.go#L375)</small>
 
 ### func OpenStreetMapHandoff
 
@@ -303,7 +303,7 @@ OpenStreetMapHandoff opens the point on openstreetmap.org, for an app that would
 
 It opens a browser on every platform, including the two with a maps app installed — OSM has no app with a URL scheme to claim the link. That is the trade, and it is the reason this is not the default: directions are what a person taps a map for, and a browser is a worse place to get them.
 
-<small>[comps/static_map.go:451](https://github.com/rohanthewiz/grmob/blob/master/comps/static_map.go#L451)</small>
+<small>[comps/static_map.go:454](https://github.com/rohanthewiz/grmob/blob/master/comps/static_map.go#L454)</small>
 
 ### func PlaceCount
 
@@ -1092,7 +1092,7 @@ type MapHandoff func(lat, lng float64, label string) string
 
 MapHandoff turns a point and its name into a URL for core.OpenURL. See StaticMap.Handoff.
 
-<small>[comps/static_map.go:346](https://github.com/rohanthewiz/grmob/blob/master/comps/static_map.go#L346)</small>
+<small>[comps/static_map.go:349](https://github.com/rohanthewiz/grmob/blob/master/comps/static_map.go#L349)</small>
 
 ### type MapPanel
 
@@ -1902,7 +1902,7 @@ Whether the number can be spent is the provider's business. Google's API has a s
 
 #### Narrower than the request
 
-The box is Width logical pixels wide only while its parent has that much room. It carries MaxWidth("100%"), which wins over a wider Width on all four targets, so in a narrower column it takes the column's width and keeps its Height. The image fills it (ContentModeFill), so the map loses an even sliver from each side, and the point, which is the image's centre, stays in the middle. The default 320px used to spill past a 390pt phone's lesson column (296pt wide) by 24pt. The request is unchanged: the provider is still asked for Width by Height, because the column's width is not known when the URL is built.
+The box is Width logical pixels wide only while its parent has that much room. It carries MaxWidth("100%"), which wins over a wider Width on all four targets, so in a narrower column it takes the column's width and keeps its Height. On SwiftUI that took a flexible Width frame under a percentage cap (grMobDimension's relativeCap): the rigid frame it had drew the full 320pt from the column's leading edge, 13pt past lesson 4.11's column on a 402pt iPhone, until the simulator was measured. The image fills it (ContentModeFill), so the map loses an even sliver from each side, and the point, which is the image's centre, stays in the middle. The default 320px used to spill past a 390pt phone's lesson column (296pt wide) by 24pt. The request is unchanged: the provider is still asked for Width by Height, because the column's width is not known when the URL is built.
 
 A caller's Style comes after, so a caller who wants the old fixed box states MaxWidth("none").
 
@@ -1922,7 +1922,7 @@ When it is tappable the role is core.RoleLink rather than RoleButton, and the di
 
 Lat 0, Lng 0 is the Gulf of Guinea, and this widget draws it. There is no "unset" coordinate to detect — a float64 pair has no third state — so a caller whose location has not loaded yet must not render the widget at all, exactly as they would not render an EmptyState's action with no handler. comps.Skeleton is the placeholder for that gap.
 
-<small>[comps/static_map.go:157](https://github.com/rohanthewiz/grmob/blob/master/comps/static_map.go#L157)</small>
+<small>[comps/static_map.go:160](https://github.com/rohanthewiz/grmob/blob/master/comps/static_map.go#L160)</small>
 
 #### func (StaticMap) Area
 
@@ -1934,7 +1934,7 @@ Area resolves the caller's fields into the view a provider is handed: the defaul
 
 Exported because the answer is worth asking for from outside. A caller who wants to know what URL this widget will request — to log it, to pre-warm a cache, to show it in a tutorial — can ask the provider about this rather than re-deriving the defaults, which is the one way to get a second answer that disagrees.
 
-<small>[comps/static_map.go:493](https://github.com/rohanthewiz/grmob/blob/master/comps/static_map.go#L493)</small>
+<small>[comps/static_map.go:496](https://github.com/rohanthewiz/grmob/blob/master/comps/static_map.go#L496)</small>
 
 #### func (StaticMap) Render
 
@@ -1942,7 +1942,7 @@ Exported because the answer is worth asking for from outside. A caller who wants
 func (m StaticMap) Render(ctx *core.Context) *core.Node
 ```
 
-<small>[comps/static_map.go:598](https://github.com/rohanthewiz/grmob/blob/master/comps/static_map.go#L598)</small>
+<small>[comps/static_map.go:601](https://github.com/rohanthewiz/grmob/blob/master/comps/static_map.go#L601)</small>
 
 ### type StaticMapArea
 
@@ -1969,7 +1969,7 @@ A struct rather than five arguments because a provider is a function a caller wr
 
 The values arrive already defaulted and already clamped — a provider never sees a zero Zoom, a 4000px Width or a latitude off the end of Mercator — so every provider is spared the same four lines and none of them can disagree about what a zero means.
 
-<small>[comps/static_map.go:313](https://github.com/rohanthewiz/grmob/blob/master/comps/static_map.go#L313)</small>
+<small>[comps/static_map.go:316](https://github.com/rohanthewiz/grmob/blob/master/comps/static_map.go#L316)</small>
 
 ### type StaticMapProvider
 
@@ -1979,7 +1979,7 @@ type StaticMapProvider func(StaticMapArea) string
 
 StaticMapProvider turns a view into an image URL. See StaticMap.Provider.
 
-<small>[comps/static_map.go:336](https://github.com/rohanthewiz/grmob/blob/master/comps/static_map.go#L336)</small>
+<small>[comps/static_map.go:339](https://github.com/rohanthewiz/grmob/blob/master/comps/static_map.go#L339)</small>
 
 #### func GoogleStaticMap
 
@@ -1993,7 +1993,7 @@ A constructor rather than a bare provider because the key is the caller's: it is
 
 An empty key yields a provider that returns "", which renders the widget as a box with no image in it rather than as a map of Google's "this request is not authorized" error tile. A misconfigured build should look unfinished, not broken.
 
-<small>[comps/static_map.go:395](https://github.com/rohanthewiz/grmob/blob/master/comps/static_map.go#L395)</small>
+<small>[comps/static_map.go:398](https://github.com/rohanthewiz/grmob/blob/master/comps/static_map.go#L398)</small>
 
 ### type Stopwatch
 

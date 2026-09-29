@@ -39,7 +39,10 @@
 # from the end. The fourth paint fact switches the site page's colour scheme
 # and checks the panes' CSS and the app's palette move together, with no
 # flash for a remembered pick. The fifth measures a core.CanvasMirrorsRTL
-# canvas reflecting under dir="rtl" and a plain one staying put.
+# canvas reflecting under dir="rtl" and a plain one staying put. The last
+# check opens all eighty tutorial lessons through the site page, in the split
+# and at 390 and 360px, and fails on any box that spills, is cut off, runs off
+# the screen or is drawn smaller than its stated size (overflow.mjs).
 # It skips when there is no Chrome to launch, which keeps the promise above
 # intact — see that file for the claims and why no amount of widening dom.mjs
 # would settle them.

@@ -782,7 +782,8 @@ struct GrMobBoxModifier: ViewModifier {
             // own size whatever it is proposed, so only folding the cap into
             // the frame itself gives CSS's min(width, max-width).
             .grMobDimension(s?.width ?? "", axis: .horizontal, alignment: alignment,
-                            cap: GrMobMaxWidth.fixedLimit(s?.maxWidth ?? ""))
+                            cap: GrMobMaxWidth.fixedLimit(s?.maxWidth ?? ""),
+                            relativeCap: (s?.maxWidth ?? "").hasSuffix("%"))
             .grMobDimension(s?.height ?? "", axis: .vertical, alignment: alignment)
             // core.MinWidth and core.MinHeight, right outside the declared
             // size and inside the background, so the fill, the border and the
@@ -1136,8 +1137,31 @@ extension View {
     /// only, and it clamps the two rigid arms. "100%" is left alone: it is a
     /// flexible frame, it takes what it is proposed, and GrMobMaxWidthLayout
     /// has already narrowed that proposal.
+    ///
+    /// `relativeCap` says the node's MaxWidth is a percentage, which `cap`
+    /// cannot carry: it has no length until a parent offers one. A points
+    /// Width under such a cap is then a flexible frame, not a rigid one —
+    /// `frame(minWidth: 0, idealWidth: w, maxWidth: w)` — so the proposal
+    /// GrMobMaxWidthLayout has already narrowed to the cap is what it takes:
+    ///
+    /// ```
+    ///   proposed    rigid frame(width: 320)    flexible (0, ideal 320, max 320)
+    ///   ────────    ───────────────────────    ────────────────────────────────
+    ///   nil         320                        320 (the ideal)
+    ///   400         320                        320
+    ///   306         320, drawn 14pt past the   306 — CSS's min(width, max-width)
+    ///               slot the Layout reported
+    /// ```
+    ///
+    /// comps.StaticMap is the case that showed it (Width 320px with
+    /// MaxWidth 100%): in lesson 4.11's 306pt column on a 402pt iPhone the
+    /// map's frame drew 320 wide from the column's leading edge, where the
+    /// web and Compose both take the column. Minimum-content floors do not
+    /// move, because GrMobMinContent reads the declared Width off the tree
+    /// rather than probing this frame.
     @ViewBuilder fileprivate func grMobDimension(
-        _ value: String, axis: Axis, alignment: Alignment = .topLeading, cap: CGFloat? = nil
+        _ value: String, axis: Axis, alignment: Alignment = .topLeading, cap: CGFloat? = nil,
+        relativeCap: Bool = false
     ) -> some View {
         if value.isEmpty || value == "auto" {
             self
@@ -1161,6 +1185,9 @@ extension View {
             // middle. comps.Spinner showed it — the dot that orbits the rim
             // sat at the ring's centre, where turning it moves nothing.
             switch axis {
+            case .horizontal where relativeCap:
+                frame(minWidth: 0, idealWidth: CGFloat(number), maxWidth: CGFloat(number),
+                      alignment: alignment)
             case .horizontal: frame(width: GrMobMaxWidth.clamp(CGFloat(number), to: cap),
                                     alignment: alignment)
             case .vertical: frame(height: CGFloat(number), alignment: alignment)

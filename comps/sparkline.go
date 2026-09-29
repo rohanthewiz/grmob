@@ -40,6 +40,12 @@ type Sparkline struct {
 	// Area fills under the line with a tint of Color, down to the bottom edge.
 	// Not down to zero, as AreaChart's does: a sparkline's domain rarely
 	// includes zero, and with no axis the tint is texture, not a measurement.
+	//
+	// The tint fades as AreaChart's does (areaShape): 30% under the line's
+	// highest point, 4% at the bottom edge, so the ink gathers under the line
+	// where the eye reads the trend. It stays the flat 20% it always was for a
+	// Color that is not "#rrggbb" or "#rgb", and for a line with no finite
+	// value above the bottom edge.
 	Area bool
 
 	// ShowLast draws a dot on the last value.
@@ -80,7 +86,7 @@ func (s Sparkline) Render(ctx *core.Context) *core.Node {
 	// than shifting the ones after it.
 	areaShape := core.Shape{}
 	if s.Area {
-		areaShape = core.Shape{Path: area, Fill: withAlpha(color, "33")}
+		areaShape = areaFadeTo(area, color, s.Values, scale, chartView)
 	}
 	last := core.NewPath()
 	if s.ShowLast {

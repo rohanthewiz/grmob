@@ -30,7 +30,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-084
+**Next ID:** N-085
 
 ## Open
 
@@ -77,39 +77,28 @@ with each item's `raised` traced back through all session docs.
 - **N-010** · raised `2026-0916-1129-charts-on-canvas` · value low (API decision)
   **A chart's hidden data table** needs a screen-reader-only primitive. (was
   #12; lapsed@0917-1659)
-- **N-011** · raised `2026-0916-1129-charts-on-canvas` · value low (non-goal?, proposed)
-  **Chart summaries are English.** Every chart's `AccessibilityLabel` already
-  replaces the summary. Proposed as a non-goal. (was #13)
 - **N-013** · raised `2026-0916-1157-next-list-charts-on-devices-tier-e-alarms-timezone` · value low (API decision)
   **`mobile.SetTimeZone` runs once at startup.** Fixing it needs core to hold
   the location. (was #16; lapsed@0917-1659)
 - **N-015** · raised `2026-0916-1229-next-list-exact-alarms-boot-rearm-and-sweeps` · value low (user's decision)
   **Compose Rows don't shrink children in proportion.** Seen on the Fold6's
   cover screen. (was #18; lapsed@0917-1659)
-- **N-016** · raised `2026-0916-1331-next-list-sweep-maxlines-chart-types-evenodd` · value low (delete?)
-  **The double-post claim is unreproduced.** Carried thirteen times; proposed
-  for deletion. (was #20)
 - **N-018** · raised `2026-0916-1410-chart-palette-and-canvas-gradients` · value low
   **`DefaultDarkChartColors` has no bundled consumer.** A real dark theme
   (N-050) would be it. The tutorial's own `darkTheme`
   (examples/tutorial/theme.go, 2026-0921-1419) now spends it and
   `DefaultDarkSequentialColors`, but no core theme does (see N-074).
   (was #22; lapsed@0917-1659)
-- **N-019** · raised `2026-0916-1410-chart-palette-and-canvas-gradients` · value low (delete?)
-  **`TutorialChartsUITests` failed once, reason not captured.** Proposed for
-  deletion. (was #23)
 - **N-021** · raised `2026-0916-1557-small-fixes-stroke-gradients-bar-values-alarm-groups` · value medium (blocked)
   **The iOS Image floor runs high for a narrow image.** Needs a px-width box
   that can shrink (`grMobDimension`). (was #26; lapsed@0917-1659)
-- **N-022** · raised `2026-0916-1557-small-fixes-stroke-gradients-bar-values-alarm-groups` · value low → non-goal?
+- **N-022** · raised `2026-0916-1557-small-fixes-stroke-gradients-bar-values-alarm-groups` · value low
   **A zero basis is honoured on iOS only with a definite main extent.**
-  Proposed as a non-goal. (was #27; lapsed@0917-1659)
+  Proposed as a non-goal; kept open by the user 2026-09-25. (was #27;
+  lapsed@0917-1659)
 - **N-024** · raised `2026-0916-1557-small-fixes-stroke-gradients-bar-values-alarm-groups` · value low
   **`barValueRoom` is still an estimate.** Exact needs host measurement of the
   plot. (was #30)
-- **N-025** · raised `2026-0916-1643-zero-basis-floor-area-fades-scatter-squares-android-look` · value low → non-goal?
-  **Sparkline's `Area` is a flat tint.** Proposed as a non-goal. (was #34;
-  lapsed@0917-1659)
 - **N-027** · raised `2026-0917-0227-foldables-window-record-and-two-pane` · value low
   **Lesson 4.21's TwoPane sets no `Origin`.** No longer waits on N-026:
   4.21 sets `IgnoreHorizontalFold`, so its live axis is the vertical hinge
@@ -143,9 +132,6 @@ with each item's `raised` traced back through all session docs.
     fill (needs a Grow/Fill option).
   - `examples/signup` → `PINInput`: needs a verification step and a re-taken
     `docs/images/signup.png`. (was #43)
-- **N-036** · raised `2026-0918-0130-round-three-eight-widgets-and-what-a-text-node-cannot-do` · value low (delete?)
-  **A sixth low-hanging-fruit round.** No candidates; proposed for deletion.
-  (was #46)
 - **N-040** · raised `2026-0918-0910-next-list-copy-strip-edit-epochs-accent-and-the-lost-first-key` · value medium
   **The first hardware key after launch is lost on the iOS 26.5 simulator.**
   Worked around by `primeKeyboard`. Unchecked on a real iPad. (was #50)
@@ -167,6 +153,13 @@ with each item's `raised` traced back through all session docs.
     (2026-0919-1254 §2);
   - whether it still splits a merged node's label into a fake child
     (2026-0919-1254 §4). (was #59)
+  - whether `setCollectionItemInfo` still overwrites a stated
+    `collectionItemInfo` under a `selectableGroup` (N-077's second defect).
+  - Re-checked 2026-09-25: BOM `2024.12.01` resolves foundation and ui to
+    **1.7.6** (`gradlew :app:dependencies`, debugRuntimeClasspath), so the
+    premise holds. N-077's closure and the comment at `Renderer.kt:349`
+    call the overwrite a "Compose 1.10" defect, but it was heard on the app's
+    1.7.6. The 1.10.0 jars in the Gradle cache are not on the classpath.
 - **N-049** · raised `2026-0918-2310-mi-max-3-android-10-force-dark-theme-sweep` · value low
   **A below-the-fold sweep on Android 10.** Needs the Mi Max 3 unlocked, or a
   person scrolling (or an API 29 emulator image). The HID keyboard
@@ -199,7 +192,10 @@ with each item's `raised` traced back through all session docs.
   (`onBackPressedDispatcher`, the web's `innermostBackClaim()`) — no Go API,
   but it would also pop a Navigator route and fire an AppBar back arrow — or
   a layer-only `core.OnEscape` beside `OnBack`. (was #79)
-- **N-058** · raised `2026-0919-1254-fold6-talkback-hid-harness-focus-after-navigation-inert-named-controls` · value low
+- **N-058** · raised `2026-0919-1254-fold6-talkback-hid-harness-focus-after-navigation-inert-named-controls` · value medium
+  (Raised from low 2026-09-25: it now blocks the emulator half of N-062's
+  Poll, N-068's TreeView and Wizard checks, and N-072's TalkBack pass. The
+  Fold6's HID harness is the known route round it.)
   **TalkBack does not follow Tab onto 4.18's ☰.** Compose's focus is right
   (TalkBack off shows it), but TalkBack said "Showing Inbox" or stayed on the
   previous node. (was #80)
@@ -228,7 +224,16 @@ with each item's `raised` traced back through all session docs.
     and Go still steps the phase. Seen on Compose (2026-09-23, the emulator
     with all three animation scales at 0): 30 raw screencaps of the three
     dots' centres read exactly two values, one dark dot at a time, so the
-    quiet blink the doc claims is what draws. SwiftUI and the web unseen.
+    quiet blink the doc claims is what draws. The web, seen 2026-09-28 in
+    headless Chrome on 4.34 (a scratch CDP probe, per-frame computed opacity
+    for 3s): each dot passed through about 20 values with a 0.3s transition,
+    and exactly two, 0.4 and 1.0, with the transition at 0s under an emulated
+    `prefers-reduced-motion: reduce`. SwiftUI, seen 2026-09-28 on the iPhone
+    17 Pro simulator (a scratch XCUITest taking about 75 screenshots in 6s,
+    the dots' centre pixels read offline): 17–18 luminance values between
+    rest (145) and full (0) normally, and exactly two, 145 and 0, with
+    `com.apple.Accessibility ReduceMotionEnabled` set in the simulator
+    (turned back off after). All three hosts now draw the quiet blink.
   - That a `core.Opacity` `Transition` on a 6pt `Box` eases: seen on
     Compose (2026-09-23): at normal scale the dots' centre pixels passed
     through 34, 47, 59, 73, 87, 111… between rest (145) and full (4–9).
@@ -259,9 +264,11 @@ with each item's `raised` traced back through all session docs.
     animations": both seen on the emulator (2026-09-23) through
     TypingIndicator's dots; see N-062. The offscreen-layer shadow question
     above is still open.
-  - SwiftUI: the fade under the node's one `.animation`, and whether a view
-    at exactly 0 still takes taps and VoiceOver focus (the doc says taps stop;
-    that is from SwiftUI's known behaviour, not measured here).
+  - SwiftUI: the fade under the node's one `.animation` is seen
+    (2026-09-28): TypingIndicator's dots pass through 17–18 values on the
+    simulator, and snap under Reduce Motion (see N-062). Whether a view at
+    exactly 0 still takes taps and VoiceOver focus is still unmeasured (the
+    doc says taps stop; that is from SwiftUI's known behaviour).
   - Fixed (2026-09-21): Compose's `DisplayHidden` alpha used to sit at the
     foot of `boxModifier`, inside the background and border, so a hidden node
     with a fill still drew the fill. It now shares the Opacity layer
@@ -301,8 +308,10 @@ with each item's `raised` traced back through all session docs.
     is not a Tab stop (2026-09-21) and has no node at all in the
     accessibility tree (2026-09-23, uiautomator: the bottom row holds 0 and
     Delete only), so TalkBack cannot land on it.
-  - `ColorSwatchPicker`: the ring and check on SwiftUI (the simulator shots
-    caught the field, not the grid); VoiceOver. Done (2026-09-22): TalkBack
+  - `ColorSwatchPicker`: the ring and check on SwiftUI, seen 2026-09-28 on
+    the simulator (the selected blue swatch ringed with a gap and a white
+    check, the other seven plain, the custom well and hex field below);
+    VoiceOver still unheard. Done (2026-09-22): TalkBack
     says "Selected, blue, Radio button, 1 of 8" and every position right
     since N-077; the hex field's return commits the short form on both
     natives ("#2a7" leaves Value at #2A78D6 while typed and commits #22AA77
@@ -392,7 +401,9 @@ with each item's `raised` traced back through all session docs.
     a typed draft away without the blur committing it first (Undo stays
     (1)). After return the keyboard drops on Compose and stays up on iOS.
     `testGridEditRoundTripAndDiscard` holds the simulator half. The 150ms
-    grace in a real browser with a mouse is still reasoned, not seen.
+    grace, seen in headless Chrome with CDP's real mouse events (2026-09-28):
+    a 60ms and a 120ms press on the ✕ discard the draft; a 300ms and a 600ms
+    press commit it. That is N-084.
   - The horizontal box was a `core.Box(core.Horizontal())`, which neither
     native scrolls (only a browser reads `overflow: auto`): on the simulator
     the lesson page grew to 490pt on a 402pt screen with every paragraph cut
@@ -411,9 +422,14 @@ with each item's `raised` traced back through all session docs.
     drawn border, as CSS counts a basis); pinned in
     `TestIOSFlexHonoursAZeroBasis`, and seen aligned on the simulator.
   - The soft keyboard covering the active cell near the bottom of the grid:
-    unjudged on Compose (the emulator shows only its floating stylus
-    toolbar). On the iOS simulator row 2's editor sits clear of the
-    keyboard; a bottom row was not tried.
+    judged on Compose (2026-09-28, the emulator with
+    `show_ime_with_hard_keyboard` 1, restored to 0 after): a tap on row 4's
+    Item cell, 1870–1967px on a 2400px screen, brought the editor up to sit
+    just above Gboard's suggestion strip, text and ✕ whole. On the iOS
+    simulator row 2's editor sits clear of the keyboard. Row 4 (the last) was
+    tried 2026-09-28 and opens its editor, but that simulator had a hardware
+    keyboard connected, so the soft keyboard was off screen (its frame at y
+    952 of 874) and covered nothing: still unjudged on iOS.
   - On iOS the grid is one static text "Budget" to VoiceOver, and its text
     cells are not in the accessibility tree at all: N-078.
   - TalkBack and VoiceOver (VoiceOver now waits on N-078): a cell heard as "Amount, row 2, $310.50, button",
@@ -464,36 +480,36 @@ with each item's `raised` traced back through all session docs.
   RoleGroups that rely on the combine today, so the role alone cannot decide
   it. VoiceOver itself cannot run on the simulator; Accessibility Inspector
   or a device is the check.
-- **N-080** · raised `2026-0924-1211-tutorial-overflow-sweep-web-floors-nested-scroll` · value low
-  **This session's Go-level layout changes are unseen on the natives.**
-  `comps.Avatar` now states `FlexShrink(0)`, and `comps.StaticMap` puts
-  `MaxWidth("100%")` on its frame and its image. Both use props the natives
-  already honour (the pin census, MaxWidth's doc), so no change is expected.
-  But a StaticMap narrower than its request, cropping evenly under
-  ContentModeFill, has not been looked at on Compose or SwiftUI. The same goes
-  for lesson 1.5's nested 160pt Scroll.
-- **N-081** · raised `2026-0924-1211-tutorial-overflow-sweep-web-floors-nested-scroll` · value medium
-  **The tutorial overflow sweep is a scratch probe, not a check.** It walked
-  all 80 lessons in headless Chrome (at 360 and 390 phone widths, plus the
-  split view) and flagged boxes that escape their parent or the screen, and
-  fixed-size boxes drawn smaller than stated. It found everything this
-  session fixed. It lived in the scratchpad, so nothing guards against a
-  regression. As a browser check in `wasm/verify/browser.mjs` it would need
-  three skips: code editors (they scroll sideways by design), rotated
-  layers (the clock's hands and the compass rose) and their descendants. It
-  sees only each demo's first state, not after a toggle or typed text.
-- **N-082** · raised `2026-0924-1211-tutorial-overflow-sweep-web-floors-nested-scroll` · value low
-  **`docs/images/tutorial-lesson.png` predates lesson 1.1's card fix.** The
-  profile card shown there is the old layout. Retake it with
-  `wasm/shots/shoot.sh tutorial-lesson`.
 - **N-083** · raised `2026-0924-1211-tutorial-overflow-sweep-web-floors-nested-scroll` · value low (API decision)
   **The theme's Row (8/16) and Column (12/16) padding lands on every plain
   stack.** It is right for a screen's outer column and wrong for nearly every
   nested one. The tutorial states `core.Padding(0)` in about 25 places, and
-  this session added seven more after the base overflowed four demos and the
-  split's panes, where it also beat the host page's CSS. An API that gave
+  `2026-0924-1211` added seven more after the base overflowed four demos and
+  the split's panes, where it also beat the host page's CSS. Counted
+  2026-09-25: 28 lines with `core.Padding(0)` and 38 with `Padding(0)` in
+  any form in examples/tutorial. An API that gave
   only the screen-level stack its inset (or a paddingless stack
   constructor) would retire the idiom, but it changes every app's layout.
+- **N-084** · raised `2026-0928-1917-next-list-overflow-check-ios-width-cap-sparkline-fade-reduce-motion` · value medium (API decision)
+  **`EditableGrid`'s ✕ commits the draft on a press longer than
+  `gridBlurGrace`.** A press on the ✕ blurs the field at pointer-down, and the
+  click only arrives at pointer-up, so a press held past 150ms lets the blur's
+  timer commit first; the ✕ then leaves the tree under the pointer and the
+  click lands on nothing. Measured in headless Chrome on lesson 4.37 with
+  CDP's real mouse path: "Groceries" typed to "GroceriesZ", ✕ held 300ms and
+  600ms → the cell reads GroceriesZ and Undo (1); held 60ms and 120ms → the
+  draft is discarded, Undo (0). A slow tap on a touch screen is the same
+  press. Raising the grace moves the threshold and delays every blur-away
+  commit. The fixes that close it are runtime or API changes, so not made on
+  the way past:
+  - a press that keeps focus: `preventDefault` on the ✕'s pointer-down (a
+    core prop, since the ✕ is a plain Go Button), so the field never blurs;
+  - a blur that says where focus went (the event's `relatedTarget` as a node
+    path in the payload), so the widget can tell "moving to my own ✕" from
+    "leaving".
+  The natives are unaffected as far as is known: neither blurs a field on a
+  button press the same way, and `testGridEditRoundTripAndDiscard` passes on
+  the simulator with XCUITest's taps.
 
 ## Non-goals
 
@@ -516,6 +532,10 @@ with each item's `raised` traced back through all session docs.
 - **N-008** · declined `2026-0916-1032-clocks-canvas-alarm` — `DigitalClock`
   digits shifting by a pixel; `AnalogClock{Smooth}` spinning back when the
   midnight tick is skipped. (was #11; lapsed@0917-1659)
+- **N-011** · declined `2026-0916-1129-charts-on-canvas` — Chart summaries
+  are English. Every chart's `AccessibilityLabel` already replaces the
+  summary, so an app that needs another language states its own. Declined by
+  the user 2026-09-25. (was #13)
 - **N-012** · declined `2026-0916-1129-charts-on-canvas` — A 180° `Gauge`
   leaves its bottom half empty. (was #14; lapsed@0917-1659)
 - **N-017** · declined
@@ -571,6 +591,68 @@ with each item's `raised` traced back through all session docs.
   path works. (was #76)
 
 ## Closed
+
+- **N-081** · raised `2026-0924-1211-tutorial-overflow-sweep-web-floors-nested-scroll`
+  · closed 2026-09-28, `2026-0928-1917-next-list-overflow-check-ios-width-cap-sparkline-fade-reduce-motion` — browser check 24. `wasm/verify/overflow.mjs` holds the
+  sweep's reading (in the page) and its judgement (a pure function), and
+  `overflow_test.mjs` reaches every rule with hand-built boxes. The check opens
+  every lesson gen.go numbers from `tutorial.Chapters` (a new `lessons` field in
+  the transcript) through the real site page's hash deep link, in the split at
+  1280px and in the phone layout at 390 and 360, and fails on a box that
+  escapes a parent that shows overflow, is cut off by one that hides it, runs
+  past the screen's side, holds a word wider than itself, or is drawn smaller
+  than its stated px size. Skipped: code editors, rotated layers, SVG
+  internals, and inert subtrees (4.18's shut Drawer panel was the only finding
+  on today's tree). 240 views in about a minute. Mutation-tested by reverting
+  each fix of `2026-0924-1211` in turn: 1.1's stats row (escape), Avatar's
+  FlexShrink(0) (squeezed 34 of 36 at 360), the field floors (Send and Show
+  escape), the mount's overflow-wrap (6.8's and 4.11's text) and the nested
+  Scroll rule (1.5 squeezed to 2px at all three views). Still first state only.
+- **N-082** · raised `2026-0924-1211-tutorial-overflow-sweep-web-floors-nested-scroll`
+  · closed 2026-09-28, `2026-0928-1917-next-list-overflow-check-ios-width-cap-sparkline-fade-reduce-motion` — `docs/images/tutorial-lesson.png` retaken with
+  `wasm/shots/shoot.sh tutorial-lesson`; the card shows "Following" whole.
+- **N-080** · raised `2026-0924-1211-tutorial-overflow-sweep-web-floors-nested-scroll`
+  · closed 2026-09-28, `2026-0928-1917-next-list-overflow-check-ios-width-cap-sparkline-fade-reduce-motion` — seen on both natives, and SwiftUI had a defect.
+  - Compose (the emulator at 411dp and, via `wm density 480`, at 360dp, reset
+    after): 4.11's StaticMap frame takes a 318dp and a 266dp column and keeps
+    its 180dp height; 1.1's avatar is round and the three stats sit inside
+    the card; 1.5's short Scroll is 474px (158dp) inside its 1dp border; 4.3's
+    avatars are round beside rows whose subtitle wraps.
+  - SwiftUI (iPhone 17 Pro simulator, 402pt): 1.5's viewport is 158pt, 1.1's
+    avatar 40×40, 4.3's 36×36. 4.11's map was **320pt wide at x 47, 13pt past
+    its 306pt column** — `grMobDimension` drew a points Width as a rigid
+    `frame(width:)`, which `GrMobMaxWidthLayout`'s narrowed proposal cannot
+    shrink, and a percentage cap has no length to fold in. A points Width
+    under a percentage cap is now a flexible frame (`minWidth: 0,
+    idealWidth: w, maxWidth: w`, the `relativeCap` argument): 306pt, even
+    margins. StaticMap is the only bundled node with that pair. Pinned in
+    `TestSwiftCapsOutsideTheGrowFrame`; three new tests in
+    `TutorialNativeFloorsUITests` (the map, the nested Scroll, the avatars),
+    the map one seen failing on the old Swift at x 367 against 354.
+  - The even crop under ContentModeFill is still unseen with a real picture:
+    4.11's provider host is gone, which is the lesson's own subject.
+- **N-025** · raised `2026-0916-1643-zero-basis-floor-area-fades-scatter-squares-android-look`
+  · closed 2026-09-28, `2026-0928-1917-next-list-overflow-check-ios-width-cap-sparkline-fade-reduce-motion` — Sparkline's `Area` fades as AreaChart's does, 4D under
+  the line's highest point to 0A at the bottom edge its area closes on
+  (`areaFadeTo`, which `areaShape` now calls with the scale's zero), and keeps
+  the flat 33 tint for a non-hex colour or no finite value.
+  `TestSparklineAreaFadesTowardItsBottomEdge`; seen in headless Chrome on
+  4.20. The natives already draw `LinearGradientFill` for AreaChart. (was #34)
+
+- **N-016** · raised `2026-0916-1331-next-list-sweep-maxlines-chart-types-evenodd`
+  · closed 2026-09-26 by the user, not done — the double-post claim was never
+  reproduced in forty sessions of carrying it. A recurrence is a new item.
+  (was #20)
+- **N-036** · raised `2026-0918-0130-round-three-eight-widgets-and-what-a-text-node-cannot-do`
+  · closed 2026-09-26 by the user, not done — a sixth low-hanging-fruit round
+  with no candidates behind it. (was #46)
+
+- **N-019** · raised `2026-0916-1410-chart-palette-and-canvas-gradients`
+  · closed 2026-09-25, `/next-list` re-check. The one failure never came
+  back: `2026-0923-1149` ran all Tutorial* classes, 48 tests with 0 failures,
+  and that includes `TutorialChartsUITests.testChartsAreOneElementEachAndRedrawOnUpdate`
+  (48 is the count of `func test` in ios/GrMobUITests/Tutorial*.swift). The
+  original failure's reason was never captured, so a recurrence is a new item.
 
 - **N-079** · raised `2026-0922-0440-next-list-radio-positions-browser-notify-fold-grid-scroll-ios-round-four`
   · closed 2026-09-23, `2026-0923-1149-next-list-slider-values-radar-centre-zero-basis-border-opacity-seen` — `comps.SliderRow` now states its readout as the

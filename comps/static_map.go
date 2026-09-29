@@ -109,7 +109,10 @@ import (
 // The box is Width logical pixels wide only while its parent has that much
 // room. It carries MaxWidth("100%"), which wins over a wider Width on all
 // four targets, so in a narrower column it takes the column's width and keeps
-// its Height. The image fills it (ContentModeFill), so the map loses an even
+// its Height. On SwiftUI that took a flexible Width frame under a percentage
+// cap (grMobDimension's relativeCap): the rigid frame it had drew the full
+// 320pt from the column's leading edge, 13pt past lesson 4.11's column on a
+// 402pt iPhone, until the simulator was measured. The image fills it (ContentModeFill), so the map loses an even
 // sliver from each side, and the point, which is the image's centre, stays in
 // the middle. The default 320px used to spill past a 390pt phone's lesson
 // column (296pt wide) by 24pt. The request is unchanged: the provider is still

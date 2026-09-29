@@ -111,7 +111,9 @@ func TestComposeResolvesWidthAndMaxWidthTogether(t *testing.T) {
 // extent and draws its capped content somewhere within. A Layout, not a
 // `.frame(maxWidth:)`, because a flexible frame with only a maximum is greedy
 // and grows a hugging box to the cap. Folded into grMobDimension because a
-// rigid frame ignores the narrowed proposal and would spill past it.
+// rigid frame ignores the narrowed proposal and would spill past it — and for
+// the same reason a points Width under a percentage cap, which cannot be
+// folded in as a length, is a flexible frame bounded by the Width instead.
 func TestSwiftCapsOutsideTheGrowFrame(t *testing.T) {
 	swift := codeIn(t, swiftStyle)
 	grow := strings.Index(swift, ".grMobGrow(grow, alignment: alignment)")
@@ -135,6 +137,12 @@ func TestSwiftCapsOutsideTheGrowFrame(t *testing.T) {
 		{"struct GrMobMaxWidthLayout: Layout", "the cap must be a Layout, not a greedy flexible frame"},
 		{"min(size.width, bound)", "the layout must report what the child took, never more than the cap"},
 		{"cap: GrMobMaxWidth.fixedLimit(", "a rigid Width frame must be clamped by a points cap"},
+		{"relativeCap: (s?.maxWidth ?? ",
+			"a percentage cap must reach grMobDimension, which cannot resolve it into a length"},
+		{"case .horizontal where relativeCap:\n                frame(minWidth: 0, idealWidth: CGFloat(number), maxWidth: CGFloat(number),",
+			"a points Width under a percentage cap must be a flexible frame, or it ignores the proposal " +
+				"GrMobMaxWidthLayout narrowed and draws past its slot (comps.StaticMap in lesson 4.11 " +
+				"drew 320pt in a 306pt column)"},
 		{"GrMobMaxWidthLayout(value: value, margin: margin) {\n                content.environment(\\.grMobPercentCapResolved, false)",
 			"the modifier must wrap its concrete content in the layout (see its doc for why it is a modifier), " +
 				"resetting the resolved-cap flag for the subtree"},
