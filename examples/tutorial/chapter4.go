@@ -5770,6 +5770,9 @@ func lessonTreeAndWizard() Lesson {
 			name := core.NewState(ctx, "")
 			note := core.NewState(ctx, "")
 			placed := core.NewState(ctx, false)
+			// Names the step's title, so a step change moves focus there
+			// (Wizard.TitleRef). A hook, so up here with the state.
+			stepTitle := core.UseFocusRef(ctx)
 
 			// Copy, flip, Set: the map in the slot is never written to.
 			toggle := func(id string) {
@@ -5885,6 +5888,7 @@ comps.Wizard{
     Current:  step.Get(),
     OnChange: step.Set,
     OnFinish: placeOrder,
+    TitleRef: stepTitle, // core.UseFocusRef(ctx): focus follows the step
 }`),
 				demoPanel("Next is disabled until there is a name. The note is optional, so its Next reads Skip while it is empty.",
 					core.IfElse(placed.Get(),
@@ -5905,6 +5909,7 @@ comps.Wizard{
 							Current:  step.Get(),
 							OnChange: step.Set,
 							OnFinish: func() { placed.Set(true) },
+							TitleRef: stepTitle,
 						},
 					),
 				),
@@ -5927,6 +5932,7 @@ comps.Wizard{
 					"A branch toggles, a leaf selects; TreeNode.Branch keeps an empty folder a folder.",
 					"Hold every Wizard step's state above the Wizard; Blocked disables Next, Optional turns it into Skip.",
 					"Wizard.Footer() with DetachFooter lifts the buttons into Screen.Footer.",
+					"TitleRef moves focus to the new step's title on every change, as a page navigation does.",
 				),
 			)
 		},

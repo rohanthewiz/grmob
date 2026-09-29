@@ -127,10 +127,11 @@ type WizardStep struct {
 // about something else. The title is a heading, so the new content is one
 // heading-jump away.
 //
-// What this does not do is move focus to the heading, which is what a
-// page-style navigation does. core.Focus reaches fields and Buttons; no
-// target focuses a Text. VoiceOver announces no live region (core/role.go),
-// so on iOS a step change is silent until the reader moves.
+// With TitleRef set it also moves focus to the new title on every step
+// change, which is what a page-style navigation does, and on iOS it is what
+// makes a step change heard at all: VoiceOver announces no live region
+// (core/role.go). Compose cannot move TalkBack's focus to a node, so there
+// the status line is still the announcement.
 //
 // # Theme roles read
 //
@@ -170,12 +171,56 @@ type Wizard struct {
 	// step 2 of 3: Gift note").
 	Label string
 
+	// TitleRef, when set, names the step's title, and every step change
+	// (Next, Back, a tap on a done step) moves focus to it after OnChange:
+	// the focus-after-navigation rule a page-style flow follows, so a reader
+	// who pressed Next lands on the new step rather than on a button that is
+	// now about something else. A ref is a hook and the Wizard holds none, so
+	// the caller makes it (core.UseFocusRef), as Drawer's CloseRef is made.
+	// On the web the title takes focus; on iOS VoiceOver's focus moves to it;
+	// Compose has no way for a node to take TalkBack's focus, so there it does
+	// nothing and the status line is what speaks.
+	TitleRef *core.FocusRef
+
 	// DetachFooter leaves the footer out of the wizard's column, for a caller
 	// that places Footer() elsewhere. See "Where the footer goes".
 	DetachFooter bool
 
 	// Style is applied to the outer column after the widget's own props.
 	Style []core.StyleProp
+}
+
+// title is the step's heading, named by TitleRef when there is one.
+//
+// core.Text takes style props only, and FocusTarget is a behaviour, so the
+// prop is applied to the node the Text renders: a BehaviorProp's Apply is
+// exactly what a container's argument list would have done with it. A nil
+// ref leaves the node as it was.
+func (w Wizard) title(text string, t *core.Theme) core.View {
+	heading := core.Text(text, append(
+		[]core.StyleProp{core.UseStyle(t.Typography.Title)},
+		headingProps(0, headingLevelSection)...,
+	)...)
+	if w.TitleRef == nil {
+		return heading
+	}
+	return core.ComponentFunc(func(ctx *core.Context) *core.Node {
+		n := heading.Render(ctx)
+		core.FocusTarget(w.TitleRef).Apply(ctx, n)
+		return n
+	})
+}
+
+// change reports a move and, when TitleRef names the title, puts focus on
+// it. The command is issued after OnChange so it lands on the pass that draws
+// the new step: the title node keeps its place and its ref, and only its text
+// changes. A nil OnChange is a reported concern, never a panic.
+func (w Wizard) change(to int) {
+	if w.OnChange == nil {
+		return
+	}
+	w.OnChange(to)
+	core.Focus(w.TitleRef)
 }
 
 // current is Current clamped into range; zero when there are no steps. Render
@@ -235,9 +280,9 @@ func (w Wizard) Render(ctx *core.Context) *core.Node {
 	}
 	indicator := StepIndicator{Steps: titles, Current: cur, Label: w.Label}
 	if w.OnChange != nil {
-		// Passed through as it is: StepIndicator already offers done steps
-		// only, which is the wizard's rule too.
-		indicator.OnTap = w.OnChange
+		// Through change, for TitleRef: StepIndicator already offers done
+		// steps only, which is the wizard's rule too.
+		indicator.OnTap = w.change
 	}
 
 	var position string
@@ -262,10 +307,7 @@ func (w Wizard) Render(ctx *core.Context) *core.Node {
 				core.TextColor(t.Colors.TextSecondary),
 				core.AccessibilityRole(core.RoleStatus),
 			),
-			core.Text(step.Title, append(
-				[]core.StyleProp{core.UseStyle(t.Typography.Title)},
-				headingProps(0, headingLevelSection)...,
-			)...),
+			w.title(step.Title, t),
 		),
 	)
 	if step.Body != nil {
@@ -307,11 +349,7 @@ func (w Wizard) Footer() core.View {
 		// move guards OnChange once for both directions. A nil OnChange is a
 		// reported concern and must not be a panic in a release build.
 		move := func(to int) func() {
-			return func() {
-				if w.OnChange != nil {
-					w.OnChange(to)
-				}
-			}
+			return func() { w.change(to) }
 		}
 
 		if cur > 0 {

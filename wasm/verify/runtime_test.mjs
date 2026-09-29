@@ -183,6 +183,26 @@ test("focus is deferred one frame", () => {
     assert.equal(rt.document.activeElement, nodeAt(rt.document, "root/0"));
 });
 
+test("a focus command on a plain node makes it a programmatic target first", () => {
+    // A heading named by core.FocusTarget (Wizard's step title): focus() on a
+    // <div> with no tabindex does nothing in a browser, so the runtime gives
+    // it tabindex -1, which takes focus and stays out of the Tab order. A
+    // field is left as it is.
+    const rt = loadRuntime();
+    rt.GrMob.mount(JSON.stringify({
+        Type: "Column",
+        Children: [
+            { Type: "Text", Props: { content: "Gift note", focusEpoch: 3, focusAction: "focus" } },
+            input({ value: "", focusEpoch: 3, focusAction: "" }),
+        ],
+    }));
+    rt.drainFrames();
+    const title = nodeAt(rt.document, "root/0");
+    assert.equal(title.getAttribute("tabindex"), "-1");
+    assert.equal(rt.document.activeElement, title);
+    assert.equal(nodeAt(rt.document, "root/1").getAttribute("tabindex"), null, "a field needs no tabindex");
+});
+
 test("epoch 0 is not a command", () => {
     // Zero is the sentinel for "nothing has ever been issued". Both props
     // always travel together, so a 0 must never be read as an instruction.

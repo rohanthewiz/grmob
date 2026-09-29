@@ -179,8 +179,20 @@ func UseFocusRef(ctx *Context) *FocusRef {
 // `core.FocusTarget(maybeRef)` degrades to an unnamed field instead of
 // crashing a render pass.
 //
-// Applying it to a node the platform never focuses (a Row, a Checkbox) is
-// harmless but pointless: the stamp lands and no renderer reads it.
+// On a node the platform does not give input focus to, what a Focus does
+// depends on the host:
+//
+//	Web      the element is made a programmatic target (tabindex -1, out of
+//	         the Tab order) and focused, so a screen reader moves with it.
+//	         This is how a heading takes focus after a page-style change
+//	         (comps.Wizard's TitleRef).
+//	iOS      a Text moves VoiceOver's focus (AccessibilityFocusState); other
+//	         node types read nothing.
+//	Android  nothing: Compose offers no way for a node to take TalkBack's
+//	         focus, so the stamp lands and no renderer reads it.
+//
+// core.Text takes style props only, so a Text is named by applying the prop
+// to the node it renders: FocusTarget(ref).Apply(ctx, core.Text(…).Render(ctx)).
 func FocusTarget(ref *FocusRef) BehaviorProp {
 	if ref == nil {
 		return nil

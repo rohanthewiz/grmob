@@ -326,21 +326,12 @@ with each item's `raised` traced back through all session docs.
     focus visits all six rows (N-058's gap).
   - `Wizard`: the `RoleStatus` line heard on a step change on TalkBack (tried
     on the emulator 2026-09-23 and blocked by N-058; the Fold6's HID harness
-    is the route) and in a browser's screen reader; where TalkBack's focus lands after Next
+    is the route) and in a browser's screen reader; where TalkBack's focus lands after Next (on the web and iOS it is
+  now the title, N-069; Compose cannot move it)
     replaces the body (the keyed body is a replacement, and Compose clears
     View focus when the focused node leaves: 2026-0919-1254 §2).
   - `Wizard.Footer()` in `Screen.Footer` above the keyboard is N-002's
     pinning check with a consumer now; no bundled screen does it yet.
-- **N-069** · raised `2026-0921-1035-comps-round-four-phase-3-structure` · value low (API decision)
-  **Nothing can move focus to a heading.** `Wizard` wanted the
-  focus-after-navigation rule for a step change and could not have it:
-  `core.FocusTarget` is read by fields and by a Compose Button, and no
-  target focuses a Text. The web half is `tabindex="-1"` plus `focus()` in
-  `applyFocusCommand`; the natives need an accessibility-focus request
-  (`requestFocus` on a semantics node, `AccessibilityFocusState`), which is
-  a different thing from input focus and may deserve its own prop. Until
-  then `Wizard` announces the step through a `RoleStatus` line, which iOS
-  does not speak.
 - **N-070** · raised `2026-0921-1057-comps-round-four-phase-4-charts` · value medium
   **Phase 4's charts, unrun on a device.** Lesson 4.36 was looked at in
   headless Chrome only (all four demos; the look found two defects, fixed).
@@ -542,6 +533,22 @@ with each item's `raised` traced back through all session docs.
   path works. (was #76)
 
 ## Closed
+
+- **N-069** · raised `2026-0921-1035-comps-round-four-phase-3-structure`
+  · closed 2026-09-29, `SESSION` — `core.Focus` now reaches a node that
+  takes no input focus, per host, with no new core API: the web makes it a
+  programmatic target (`tabindex="-1"`, out of the Tab order) and focuses it;
+  iOS moves VoiceOver's focus to a stamped Text (`AccessibilityFocusState`,
+  once per epoch, attached only to Texts that carry a stamp); Compose has no
+  way for a node to take TalkBack's focus, so it reads nothing. A Text takes
+  style props only, so it is named by applying `FocusTarget` to the node it
+  renders. `comps.Wizard` gained `TitleRef` (the caller's ref, as Drawer's
+  CloseRef is) and focuses the title after every step change; lesson 4.35
+  passes one. Seen in headless Chrome on 4.35: after Next the focused
+  element is the "Gift note" heading and after Back "Your name"; without the
+  tabindex it is the page body. iOS builds and is unheard (no VoiceOver on
+  the simulator). Tests: `TestWizardTitleRefTakesFocusOnEveryChange`, a
+  runtime test for the programmatic target.
 
 - **N-057** · raised `2026-0919-1254-fold6-talkback-hid-harness-focus-after-navigation-inert-named-controls`
   · closed 2026-09-29, `SESSION` — the layer-only shape: `core.OnEscape`, a

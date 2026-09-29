@@ -282,3 +282,49 @@ func TestWizardStepChangeMovesNoHookSlot(t *testing.T) {
 		t.Errorf("concerns raised:\n%s", dump)
 	}
 }
+
+// TitleRef moves focus to the new step's title on every change (N-069): the
+// title carries the ref's stamp, and after Next, Back or a tap on a done step
+// the stamp says "focus" on the pass that draws the new title. Without a ref
+// the title is stamped with nothing.
+func TestWizardTitleRefTakesFocusOnEveryChange(t *testing.T) {
+	var step core.State[int]
+	h := newRowHarness(t, func() core.View {
+		return core.ComponentFunc(func(ctx *core.Context) *core.Node {
+			step = core.NewState(ctx, 0)
+			ref := core.UseFocusRef(ctx)
+			return Wizard{
+				Steps: checkout(false, false), Current: step.Get(),
+				OnChange: step.Set, OnFinish: func() {}, TitleRef: ref,
+			}.Render(ctx)
+		})
+	})
+	title := func(text string) *core.Node {
+		return findFirst(h.node, func(n *core.Node) bool {
+			return n.Type == "Text" && n.Props["content"] == text && n.Style.AccessibilityRole == core.RoleHeading
+		})
+	}
+	if _, ok := title("Address").Props["focusAction"]; ok {
+		t.Fatal("the title was stamped before any change")
+	}
+
+	press := func(label string) {
+		t.Helper()
+		h.ctx.TriggerCallback(wizardButton(h.node, label).Props["onClick"].(string))
+		h.render()
+	}
+	press("Next")
+	if got := title("Gift note").Props["focusAction"]; got != "focus" {
+		t.Fatalf("after Next the new title's focusAction = %v, want focus", got)
+	}
+	first := title("Gift note").Props["focusEpoch"]
+	press("Back")
+	if got := title("Address"); got.Props["focusAction"] != "focus" || got.Props["focusEpoch"] == first {
+		t.Errorf("Back did not issue a new focus command: %v", got.Props)
+	}
+
+	plain := renderView(t, Wizard{Steps: checkout(false, false), OnChange: func(int) {}})
+	if n := findFirst(plain, func(n *core.Node) bool { return n.Props["content"] == "Address" }); n == nil || n.Props["focusEpoch"] != nil {
+		t.Errorf("a Wizard with no TitleRef stamped its title: %+v", n)
+	}
+}

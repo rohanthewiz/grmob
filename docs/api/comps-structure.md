@@ -1506,6 +1506,17 @@ type Wizard struct {
 	// step 2 of 3: Gift note").
 	Label string
 
+	// TitleRef, when set, names the step's title, and every step change
+	// (Next, Back, a tap on a done step) moves focus to it after OnChange:
+	// the focus-after-navigation rule a page-style flow follows, so a reader
+	// who pressed Next lands on the new step rather than on a button that is
+	// now about something else. A ref is a hook and the Wizard holds none, so
+	// the caller makes it (core.UseFocusRef), as Drawer's CloseRef is made.
+	// On the web the title takes focus; on iOS VoiceOver's focus moves to it;
+	// Compose has no way for a node to take TalkBack's focus, so there it does
+	// nothing and the status line is what speaks.
+	TitleRef *core.FocusRef
+
 	// DetachFooter leaves the footer out of the wizard's column, for a caller
 	// that places Footer() elsewhere. See "Where the footer goes".
 	DetachFooter bool
@@ -1584,7 +1595,7 @@ Inline is the default because it depends on nothing but a Column.
 
 The column is a RoleGroup named by Label. The indicator states the position for a reader who goes looking ("Step 2 of 3: Gift note"). The line under it says the same in fewer words and is a RoleStatus, so that a step change is announced where live regions are: a Next that replaced the screen's content and said nothing would leave a reader on a button that is now about something else. The title is a heading, so the new content is one heading-jump away.
 
-What this does not do is move focus to the heading, which is what a page-style navigation does. core.Focus reaches fields and Buttons; no target focuses a Text. VoiceOver announces no live region (core/role.go), so on iOS a step change is silent until the reader moves.
+With TitleRef set it also moves focus to the new title on every step change, which is what a page-style navigation does, and on iOS it is what makes a step change heard at all: VoiceOver announces no live region (core/role.go). Compose cannot move TalkBack's focus to a node, so there the status line is still the announcement.
 
 #### Theme roles read
 
@@ -1593,7 +1604,7 @@ What this does not do is move focus to the heading, which is what a page-style n
 	Buttons         comps.Button: Back outlined, Next filled
 	Gaps            Spacing.MD between parts, Spacing.SM in the footer
 
-<small>[comps/wizard.go:141](https://github.com/rohanthewiz/grmob/blob/master/comps/wizard.go#L141)</small>
+<small>[comps/wizard.go:142](https://github.com/rohanthewiz/grmob/blob/master/comps/wizard.go#L142)</small>
 
 #### func (Wizard) Footer
 
@@ -1607,7 +1618,7 @@ Footer is the Back / Next row, for a caller that places it outside the wizard (w
 	middle step    [ Back ]                  [ Next ]   or [ Skip ]
 	last step      [ Back ]                  [ Finish ]
 
-<small>[comps/wizard.go:291](https://github.com/rohanthewiz/grmob/blob/master/comps/wizard.go#L291)</small>
+<small>[comps/wizard.go:333](https://github.com/rohanthewiz/grmob/blob/master/comps/wizard.go#L333)</small>
 
 #### func (Wizard) Render
 
@@ -1617,7 +1628,7 @@ func (w Wizard) Render(ctx *core.Context) *core.Node
 
 Render builds the column. It takes no hook slot.
 
-<small>[comps/wizard.go:200](https://github.com/rohanthewiz/grmob/blob/master/comps/wizard.go#L200)</small>
+<small>[comps/wizard.go:245](https://github.com/rohanthewiz/grmob/blob/master/comps/wizard.go#L245)</small>
 
 ### type WizardStep
 

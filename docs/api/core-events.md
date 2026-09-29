@@ -57,7 +57,7 @@ It takes a Context where Focus does not because a dismiss names no node, and the
 
 Unlike Focus this reaches every focusable leaf, because the field the user tapped into is one Go was never told about — the framework does not wire OnFocus unless an app asks for it. Each leaf stamps "blur" and each renderer releases focus only if that leaf actually holds it, so exactly one of them does anything.
 
-<small>[core/focus.go:274](https://github.com/rohanthewiz/grmob/blob/master/core/focus.go#L274)</small>
+<small>[core/focus.go:286](https://github.com/rohanthewiz/grmob/blob/master/core/focus.go#L286)</small>
 
 ### func Focus
 
@@ -75,7 +75,7 @@ Calling it for a ref whose node is not currently in the tree does nothing visibl
 
 A nil ref is a no-op rather than a panic, matching FocusTarget.
 
-<small>[core/focus.go:236](https://github.com/rohanthewiz/grmob/blob/master/core/focus.go#L236)</small>
+<small>[core/focus.go:248](https://github.com/rohanthewiz/grmob/blob/master/core/focus.go#L248)</small>
 
 ### func FocusNext
 
@@ -229,9 +229,20 @@ It is an ordinary BehaviorProp, so it composes with OnFocus, OnBlur and everythi
 
 A nil ref returns a nil prop rather than panicking — leafNode and containerNode both skip a nil item (MaybeProp's contract), so \`core.FocusTarget(maybeRef)\` degrades to an unnamed field instead of crashing a render pass.
 
-Applying it to a node the platform never focuses (a Row, a Checkbox) is harmless but pointless: the stamp lands and no renderer reads it.
+On a node the platform does not give input focus to, what a Focus does depends on the host:
 
-<small>[core/focus.go:184](https://github.com/rohanthewiz/grmob/blob/master/core/focus.go#L184)</small>
+	Web      the element is made a programmatic target (tabindex -1, out of
+	         the Tab order) and focused, so a screen reader moves with it.
+	         This is how a heading takes focus after a page-style change
+	         (comps.Wizard's TitleRef).
+	iOS      a Text moves VoiceOver's focus (AccessibilityFocusState); other
+	         node types read nothing.
+	Android  nothing: Compose offers no way for a node to take TalkBack's
+	         focus, so the stamp lands and no renderer reads it.
+
+core.Text takes style props only, so a Text is named by applying the prop to the node it renders: FocusTarget(ref).Apply(ctx, core.Text(…).Render(ctx)).
+
+<small>[core/focus.go:196](https://github.com/rohanthewiz/grmob/blob/master/core/focus.go#L196)</small>
 
 #### func On
 

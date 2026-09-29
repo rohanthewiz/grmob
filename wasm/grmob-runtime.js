@@ -6507,6 +6507,16 @@ const GrMob = (() => {
             const target = focusTargetOf(el);
             if (!target) return;
             if (action === "focus") {
+                // A node the browser does not focus (a heading, any plain
+                // box named by core.FocusTarget) is made a programmatic
+                // target first: tabindex -1 takes focus() and stays out of
+                // the Tab order. Without it focus() on a <div> does nothing
+                // and the command is lost, which is why Wizard could not move
+                // a reader to the new step's title (N-069).
+                if (!FOCUSABLE_TAGS.has(target.tagName) && !target.hasAttribute("tabindex") &&
+                    target.getAttribute("contenteditable") !== "true") {
+                    target.setAttribute("tabindex", "-1");
+                }
                 target.focus();
             } else if (document.activeElement === target && !keptByComboboxPick(target)) {
                 target.blur();

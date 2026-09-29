@@ -1895,6 +1895,66 @@ private struct GrMobText: View {
             .grMobBox(node.style, grow: grow,
                         onTap: node.stringProp("onClick"),
                         onLongPress: node.stringProp("onLongPress"))
+            // core.Focus on a Text (comps.Wizard's TitleRef): VoiceOver's
+            // focus, the one a Text can have; see
+            // GrMobAccessibilityFocusCommand.
+            .modifier(GrMobFocusIfStamped(epoch: node.intProp("focusEpoch"),
+                                          action: node.stringProp("focusAction")))
+    }
+}
+
+/// Only a Text named by core.FocusTarget ever carries a focus stamp (a Text is
+/// not in core's focusableLeafTypes), so the stateful modifier below is
+/// attached to those alone rather than holding two pieces of state on every
+/// Text in the app. The branch flips once, when the first command is issued,
+/// and the Text is rebuilt then, which a heading about to take focus can
+/// afford.
+private struct GrMobFocusIfStamped: ViewModifier {
+    let epoch: Int
+    let action: String
+
+    func body(content: Content) -> some View {
+        if epoch == 0 {
+            content
+        } else {
+            content.modifier(GrMobAccessibilityFocusCommand(epoch: epoch, action: action))
+        }
+    }
+}
+
+/// core.Focus aimed at a node that takes no input focus (a heading): moves
+/// VoiceOver's focus to it instead, through AccessibilityFocusState. A Text
+/// is not a responder, so this is the only focus it has, and it is the one
+/// that matters after a step change: VoiceOver speaks no live region, so
+/// without it a reader who pressed Next hears nothing until they move
+/// (N-069).
+///
+/// Once per epoch, on the rule GrMobEditorFocus states for the fields: a
+/// focus stamp stays on the node for good, and an unmemoised command would
+/// pull the reader back on every later pass. It does fire on first sight,
+/// because the title that is named may be drawn by the very pass that
+/// carries the command. One runloop hop, so the element exists when the
+/// state flips.
+///
+/// Unverified with VoiceOver itself, which the simulator cannot run.
+private struct GrMobAccessibilityFocusCommand: ViewModifier {
+    let epoch: Int
+    let action: String
+    @AccessibilityFocusState private var focused: Bool
+    @State private var applied = 0
+
+    func body(content: Content) -> some View {
+        content
+            .accessibilityFocused($focused)
+            .onAppear { apply() }
+            .onChange(of: epoch) { apply() }
+    }
+
+    private func apply() {
+        guard epoch != 0, epoch != applied else { return }
+        applied = epoch
+        guard action == "focus" else { return }
+        DispatchQueue.main.async { focused = true }
     }
 }
 
