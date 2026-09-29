@@ -483,7 +483,7 @@ with each item's `raised` traced back through all session docs.
     default moves every app's layout, and a second paddingless constructor
     doubles the stack API; `core.Padding(0)` is explicit and greppable
     (38 lines in examples/tutorial today).
-- **N-085** · raised `SESSION` · value medium
+- **N-085** · raised `2026-0929-0058-next-list-escape-heading-focus-dark-mode-ios-contain-grid-discard` · value medium
   **A shell's surface and system bars follow the system's dark mode; a light
   Go theme does not.** iOS: SwiftUI's window background is systemBackground,
   so a light app on a dark iPhone draws its theme's dark ink on black. Seen
@@ -580,7 +580,7 @@ with each item's `raised` traced back through all session docs.
 ## Closed
 
 - **N-069** · raised `2026-0921-1035-comps-round-four-phase-3-structure`
-  · closed 2026-09-29, `SESSION` — `core.Focus` now reaches a node that
+  · closed 2026-09-29, `2026-0929-0058-next-list-escape-heading-focus-dark-mode-ios-contain-grid-discard` — `core.Focus` now reaches a node that
   takes no input focus, per host, with no new core API: the web makes it a
   programmatic target (`tabindex="-1"`, out of the Tab order) and focuses it;
   iOS moves VoiceOver's focus to a stamped Text (`AccessibilityFocusState`,
@@ -596,7 +596,7 @@ with each item's `raised` traced back through all session docs.
   runtime test for the programmatic target.
 
 - **N-057** · raised `2026-0919-1254-fold6-talkback-hid-harness-focus-after-navigation-inert-named-controls`
-  · closed 2026-09-29, `SESSION` — the layer-only shape: `core.OnEscape`, a
+  · closed 2026-09-29, `2026-0929-0058-next-list-escape-heading-focus-dark-mode-ios-contain-grid-discard` — the layer-only shape: `core.OnEscape`, a
   claim of its own beside OnBack (Escape closes what is open over a screen
   and does not navigate, so a Navigator route and an AppBar's back arrow
   claim back and not Escape), with an open Modal's OnDismiss counting as a
@@ -624,7 +624,7 @@ with each item's `raised` traced back through all session docs.
     yet. Carried by N-004's real-iPad-keyboard check.
 
 - **N-050** · raised `2026-0918-2310-mi-max-3-android-10-force-dark-theme-sweep`
-  · closed 2026-09-29, `SESSION` — the hosts report the system's scheme and
+  · closed 2026-09-29, `2026-0929-0058-next-list-escape-heading-focus-dark-mode-ios-contain-grid-discard` — the hosts report the system's scheme and
   the app picks. `core.Window` gained `ColorScheme` ("light", "dark", or
   empty when no host said) and `Dark()`, carried as `scheme` on the existing
   "window" report and deduped with it: Android reads the configuration's
@@ -649,7 +649,7 @@ with each item's `raised` traced back through all session docs.
   The surfaces behind apps that do not follow the scheme are N-085.
 
 - **N-078** · raised `2026-0922-0440-next-list-radio-positions-browser-notify-fold-grid-scroll-ios-round-four`
-  · closed 2026-09-29, `SESSION` — decided by content, not role. A labelled
+  · closed 2026-09-29, `2026-0929-0058-next-list-escape-heading-focus-dark-mode-ios-contain-grid-discard` — decided by content, not role. A labelled
   container is `.ignore` when every child is hidden (as before), `.contain`
   when two or more *members* sit below it, and `.combine` otherwise. A member
   is a control type, a pressable node with something to announce (a label or
@@ -677,7 +677,7 @@ with each item's `raised` traced back through all session docs.
   slider both say "Minimum".
 
 - **N-034** · raised `2026-0917-1935-pin-input-and-a-code-with-no-gaps`
-  · closed 2026-09-29, `SESSION` — half done, half declined on the session's
+  · closed 2026-09-29, `2026-0929-0058-next-list-escape-heading-focus-dark-mode-ios-contain-grid-discard` — half done, half declined on the session's
   recommendation (the user's decision; reopen to overrule).
   - `examples/signup` → `PINInput`: done. A passing submit now sends a code
     (the example states it, 246810, having no mail server) and a verification
@@ -695,7 +695,7 @@ with each item's `raised` traced back through all session docs.
     fill yet.
 
 - **N-084** · raised `2026-0928-1917-next-list-overflow-check-ios-width-cap-sparkline-fade-reduce-motion`
-  · closed 2026-09-28, `SESSION` — the ✕ carries a new
+  · closed 2026-09-28, `2026-0929-0058-next-list-escape-heading-focus-dark-mode-ios-contain-grid-discard` — the ✕ carries a new
   `core.PressKeepsFocus()`, a no-arg prop (`pressKeepsFocus: true` on the
   wire) that the web runtime turns into a `mousedown` preventDefault, so a
   press never blurs the field; the natives need nothing. Picked over a blur
