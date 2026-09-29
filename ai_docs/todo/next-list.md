@@ -80,12 +80,30 @@ with each item's `raised` traced back through all session docs.
 - **N-010** · raised `2026-0916-1129-charts-on-canvas` · value low (API decision)
   **A chart's hidden data table** needs a screen-reader-only primitive. (was
   #12; lapsed@0917-1659)
+  - Recommendation (2026-09-29, not acted on): no generic
+    screen-reader-only primitive. A visually hidden node is a web idea
+    (`clip`, 1px); what either native reader does with a zero-size or
+    transparent node is unmeasured, and cannot be measured without
+    Accessibility Inspector or a device. Per host instead: a
+    visually hidden `<table>` on the two web targets, `AXChartDescriptor`
+    (Audio Graphs, the platform's own chart data API) on iOS, and the
+    summary sentence alone on Android, which has no equivalent.
 - **N-013** · raised `2026-0916-1157-next-list-charts-on-devices-tier-e-alarms-timezone` · value low (API decision)
   **`mobile.SetTimeZone` runs once at startup.** Fixing it needs core to hold
   the location. (was #16; lapsed@0917-1659)
+  - Recommendation (2026-09-29, not acted on): leave it. The fix is a zone
+    core holds (`core.Local()`, set from a "timezone" host event) and every
+    widget reading it instead of `time.Local`, but app code calling
+    `time.Now()` would still see the launch zone, so the result is two clocks
+    that can disagree. A zone change mid-run is rare; relaunch picks it up.
+    Propose as a non-goal.
 - **N-015** · raised `2026-0916-1229-next-list-exact-alarms-boot-rearm-and-sweeps` · value low (user's decision)
   **Compose Rows don't shrink children in proportion.** Seen on the Fold6's
   cover screen. (was #18; lapsed@0917-1659)
+  - Recommendation (2026-09-29, not acted on): leave Compose as it is.
+    Proportional shrink needs a custom Row measure policy (the flex solver
+    iOS already has), a large change for one cover-screen look; comps that
+    must fit already pin with `FlexShrink(0)` or wrap.
 - **N-018** · raised `2026-0916-1410-chart-palette-and-canvas-gradients` · value low
   **`DefaultDarkChartColors` has no bundled consumer.** A real dark theme
   (N-050) would be it. The tutorial's own `darkTheme`
@@ -99,6 +117,9 @@ with each item's `raised` traced back through all session docs.
   **A zero basis is honoured on iOS only with a definite main extent.**
   Proposed as a non-goal; kept open by the user 2026-09-25. (was #27;
   lapsed@0917-1659)
+  - Recommendation (2026-09-29, not acted on): keep open but low; the
+    workaround (state an extent) is one prop, and the proper fix is a
+    two-pass measure in `GrMobFlexZeroBasis` that no bundled screen needs.
 - **N-024** · raised `2026-0916-1557-small-fixes-stroke-gradients-bar-values-alarm-groups` · value low
   **`barValueRoom` is still an estimate.** Exact needs host measurement of the
   plot. (was #30)
@@ -112,6 +133,8 @@ with each item's `raised` traced back through all session docs.
   (2026-09-22, browser check 23's setup): under a vertical hinge at x 390 the
   seam lands at x 445, the demo panel's 55px of inset. (was #36;
   lapsed@0917-1659)
+  - Recommendation (2026-09-29, not acted on): decline. The lesson's prose
+    already names the missing term; a hard-coded Origin.X would teach a guess.
 - **N-028** · raised `2026-0917-0227-foldables-window-record-and-two-pane` · value low
   **iOS `AppWindowReader` is type-checked only.** Not run in Split View or
   Stage Manager. (was #37; lapsed@0917-1659)
@@ -187,6 +210,8 @@ with each item's `raised` traced back through all session docs.
   `env(safe-area-inset-*)`; reading them means a probe element and a
   `getComputedStyle` per report. Left undone on purpose (the reason is in
   `wasm/grmob-runtime.js`'s windowMetrics comment), not overlooked.
+  - Recommendation (2026-09-29): make it a non-goal; the reason is already
+    in the runtime's windowMetrics comment, and no bundled page is a PWA.
 
 - **N-062** · raised `2026-0921-0912-comps-round-four-phase-1-chat-family` · value medium
   **Phase 1's chat widgets, unrun on a device.** Lesson 4.34 and
@@ -275,7 +300,13 @@ with each item's `raised` traced back through all session docs.
   looked at in headless Chrome and on the Android emulator (pad and
   swatches drawn right; two pad keys tapped).
   - `NumberPad`: the haptic per key felt on a phone; the unpainted corner
-    (`Opacity(0)`, `Disabled`, hidden) skipped by VoiceOver. On Compose it
+    (`Opacity(0)`, `Disabled`, hidden) skipped by VoiceOver. XCUITest's tree on
+    the iOS 26.5 simulator (2026-09-29) lists that corner as a disabled
+    Button labelled " " despite Go sending `AccessibilityHidden` (and the
+    Button's box keeps the flag through `marginAndSizeOnly`); XCUITest's tree
+    is not VoiceOver's order (it also lists the lock screen's hidden dots),
+    so whether VoiceOver stops there is still Accessibility Inspector's
+    question. On Compose it
     is not a Tab stop (2026-09-21) and has no node at all in the
     accessibility tree (2026-09-23, uiautomator: the bottom row holds 0 and
     Delete only), so TalkBack cannot land on it.
@@ -418,6 +449,11 @@ with each item's `raised` traced back through all session docs.
     ID; the runtime now drops every element event fired during its own mount
     or patch (`applyingTree`, closing N-084). Events that arrive after a batch
     from a tree it replaced remain possible.
+  - Recommendation (2026-09-29, not acted on): do it, but as its own
+    session. The synchronous half of the hazard is closed on the web
+    (N-084's `applyingTree`); what remains is an event from a replaced tree
+    arriving after its batch. Keyed IDs change every wire ID, and with them
+    the transcripts and census tests that pin them.
 - **N-074** · raised `2026-0921-1419-tutorial-light-dark-theme` · value low (API decision)
   **No bundled `core.DarkTheme`.** The tutorial's `darkTheme` lives in
   examples/tutorial because core's palette censuses (the `*OnLight` tones,
@@ -428,6 +464,11 @@ with each item's `raised` traced back through all session docs.
   - 2026-09-29: the tutorial's darkTheme now also serves the natives, which
     follow the system scheme through `core.Window.ColorScheme` (N-050), so a
     bundled dark theme would have a consumer on every host.
+  - Recommendation (2026-09-29, not acted on): promote it now that the
+    natives follow the system scheme (N-050) and N-085 wants a palette to
+    paint shells from. Rename the four `*OnLight` fields to role names
+    (`*Ink`) with deprecated aliases, then add `DarkTheme` to
+    `BundledThemes` and let the census compute its contrast.
 - **N-083** · raised `2026-0924-1211-tutorial-overflow-sweep-web-floors-nested-scroll` · value low (API decision)
   **The theme's Row (8/16) and Column (12/16) padding lands on every plain
   stack.** It is right for a screen's outer column and wrong for nearly every
@@ -438,6 +479,10 @@ with each item's `raised` traced back through all session docs.
   any form in examples/tutorial. An API that gave
   only the screen-level stack its inset (or a paddingless stack
   constructor) would retire the idiom, but it changes every app's layout.
+  - Recommendation (2026-09-29, not acted on): decline. Changing the theme
+    default moves every app's layout, and a second paddingless constructor
+    doubles the stack API; `core.Padding(0)` is explicit and greppable
+    (38 lines in examples/tutorial today).
 - **N-085** · raised `SESSION` · value medium
   **A shell's surface and system bars follow the system's dark mode; a light
   Go theme does not.** iOS: SwiftUI's window background is systemBackground,
