@@ -177,6 +177,36 @@ type SafeInsets struct {
 	Top, Bottom, Left, Right float64
 }
 
+// ColorScheme is the appearance the platform is drawing its own chrome in:
+// the system's light or dark mode, as the window currently has it.
+//
+// # Why the record carries it
+//
+// Following the system's dark mode needs two things: the host saying which
+// mode is on, and the app picking a palette for it. The second is the app's
+// (core bundles no dark theme), so what the framework owes is the first, and
+// the window record is where a host already reports a fact about its window
+// whenever the platform says it changed. On Android a dark-mode switch is a
+// configuration change that recreates the Activity and re-reports the
+// window; on iOS it is a trait of the window's scene; in a browser it is a
+// media query. Riding the record means one payload, one dedupe and
+// hooks.UseWindow, rather than a second event and a second subscription API
+// for one string.
+//
+//	app ◀──"window" {…, scheme: "dark"}── host
+//	w := hooks.UseWindow(ctx)
+//	if w.Dark() { ctx = ctx.WithTheme(myDark) }
+//
+// The empty value means no host has said: a headless run, a shell older than
+// the field. Treat it as light, which is what every palette core bundles
+// assumes.
+type ColorScheme string
+
+const (
+	ColorSchemeLight ColorScheme = "light"
+	ColorSchemeDark  ColorScheme = "dark"
+)
+
 // Fold is one hinge or seam crossing the window.
 type Fold struct {
 	State       FoldState
@@ -227,6 +257,10 @@ type Window struct {
 	// comparable with ==, which is what lets the record dedupe repeats.
 	Insets SafeInsets
 
+	// ColorScheme is the system's light or dark mode, or empty from a host
+	// that does not report one. See ColorScheme.
+	ColorScheme ColorScheme
+
 	// Received is true once any host has reported. Before that the size is
 	// unknown rather than zero, and WidthClass answers compact — a phone is
 	// the safest layout to draw into a window of unknown size.
@@ -268,6 +302,12 @@ func (w Window) Posture() Posture {
 		return PostureTabletop
 	}
 	return PostureBook
+}
+
+// Dark reports whether the host says the system is in dark mode. False
+// before a report and from a host that sends no scheme.
+func (w Window) Dark() bool {
+	return w.ColorScheme == ColorSchemeDark
 }
 
 // SeparatingFold returns the fold when content should be laid out around it,
@@ -417,6 +457,8 @@ func validFold(f Fold) bool {
 //	  x, y, width, height   number   the fold's bounds, window coordinates
 //	insets  object   absent from a host with no system bars, else:
 //	  top, bottom, left, right   number   layout units
+//	scheme  string   "light" | "dark"; absent, or any other value, leaves
+//	                 ColorScheme empty
 //
 // A report with no width or height is dropped: a host that measured nothing
 // has nothing to say, and a zero default would read as a zero-sized window.
@@ -455,6 +497,11 @@ func receiveWindow(data map[string]any) {
 		left, _ := numberProp(in, "left")
 		right, _ := numberProp(in, "right")
 		w.Insets = SafeInsets{Top: top, Bottom: bottom, Left: left, Right: right}
+	}
+	// Only the two words: an unknown value is from a host this core does not
+	// understand, and "not reported" is the honest reading of it.
+	if scheme, _ := data["scheme"].(string); scheme == string(ColorSchemeLight) || scheme == string(ColorSchemeDark) {
+		w.ColorScheme = ColorScheme(scheme)
 	}
 	ReceiveWindow(w)
 }

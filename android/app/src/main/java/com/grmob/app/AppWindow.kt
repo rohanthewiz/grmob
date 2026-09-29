@@ -1,5 +1,6 @@
 package com.grmob.app
 
+import android.content.res.Configuration
 import androidx.activity.ComponentActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -23,6 +24,7 @@ import org.json.JSONObject
  *   FoldingFeature          ──▶ fold { state, orientation, separating,
  *                                      occluding, x, y, width, height }
  *   root WindowInsetsCompat ──▶ insets { top, bottom, left, right }
+ *   Configuration.uiMode    ──▶ scheme "light" | "dark"
  *
  * # Why Jetpack WindowManager
  *
@@ -65,6 +67,14 @@ import org.json.JSONObject
  * the numbers Go reads describe the edge its own SafeArea keeps content
  * off. The keyboard is deliberately not in them: it is a transient overlay
  * with its own story (core/keyboard.go), not an edge of the window.
+ *
+ * # The colour scheme
+ *
+ * The system's dark mode is the night bit of the Activity's configuration.
+ * Switching it is a configuration change the manifest does not claim
+ * (no uiMode in configChanges), so the Activity is recreated, [attach] runs
+ * on the new instance, and its first report carries the new scheme, the same
+ * path a fold takes. Nothing has to watch for it.
  *
  * # Units and coordinates
  *
@@ -129,6 +139,12 @@ object AppWindow {
         )
     }
 
+    /** core.Window.ColorScheme: the night bit of the configuration. See "The colour scheme". */
+    private fun scheme(activity: ComponentActivity): String {
+        val night = activity.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
+        return if (night == Configuration.UI_MODE_NIGHT_YES) "dark" else "light"
+    }
+
     /**
      * One report's insets, in dp. A data class so the "did they change?"
      * test above is a value comparison, which is the same thing core's
@@ -165,6 +181,7 @@ object AppWindow {
                     .put("left", insets.left)
                     .put("right", insets.right),
             )
+            .put("scheme", scheme(activity))
 
         // At most one fold is reported. Every shipping foldable has one
         // hinge, and core's record has room for one; a device that someday

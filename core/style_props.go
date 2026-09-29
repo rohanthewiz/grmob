@@ -147,6 +147,20 @@ func FontSize(size float64) StyleProp {
 	})
 }
 
+// TextColor sets the ink of a Text. On a container it is also the ink of
+// every Text inside it that states none, on every target, the way CSS's
+// `color` is inherited:
+//
+//	Web      the `color` property, which the browser inherits
+//	Android  LocalContentColor for the subtree, which Material's Text falls
+//	         back to (RenderNode)
+//	iOS      the subtree's foreground style, which a Text's `.primary`
+//	         resolves against (grMobInk)
+//
+// The natives used to leave an unstyled Text in their own default ink
+// (Material's black, SwiftUI's system primary) whatever its container said,
+// so a page that set its ink once at the root read on the web and not on a
+// phone.
 func TextColor(hex string) StyleProp {
 	return styleFunc(func(s *Style) {
 		s.TextColor = hex

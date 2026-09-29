@@ -55,7 +55,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
 | [Events & focus](core-events.md) | Event props, host and system events, focus refs and focus order, and scrolling a node into view. | 2 types, 22 functions and methods |
 | [Navigation & overlays](core-navigation.md) | The navigator stack, modals, toasts, deep links and opening URLs. | 4 types, 19 functions and methods |
 | [Accessibility](core-accessibility.md) | Roles, selected, expanded and current states, value ranges and the accessibility audit. | 9 types, 19 functions and methods |
-| [Device services](core-device.md) | Audio, camera, clipboard, haptics, local notifications, compass heading, location, maps, the app lifecycle, and the window's size and fold. | 20 types, 70 functions and methods |
+| [Device services](core-device.md) | Audio, camera, clipboard, haptics, local notifications, compass heading, location, maps, the app lifecycle, and the window's size and fold. | 21 types, 71 functions and methods |
 
 ## Index
 
@@ -461,6 +461,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
         - [`func WithFlash`](core-device.md#func-withflash)
         - [`func WithOverlay`](core-device.md#func-withoverlay)
         - [`func WithStyle`](core-device.md#func-withstyle)
+    - [`type ColorScheme`](core-device.md#type-colorscheme)
     - [`type Fold`](core-device.md#type-fold)
     - [`type FoldOrientation`](core-device.md#type-foldorientation)
     - [`type FoldState`](core-device.md#type-foldstate)

@@ -158,3 +158,32 @@ test("track reports when the element changes, and only then", () => {
     h.wm.track();
     assert.deepEqual(h.reports, [{ width: 376, height: 812 }, { width: 1400, height: 900 }]);
 });
+
+// --- The system's colour scheme ----------------------------------------------
+//
+// core.Window.ColorScheme is prefers-color-scheme, read at every report, for
+// the browser's window and a named element alike. The minimal DOM has no
+// matchMedia, which is why every report above carries no scheme: absent is
+// "not reported", and Go leaves the field empty.
+
+const prefersDark = (dark) => (q) => ({ matches: q === "(prefers-color-scheme: dark)" ? dark : false });
+
+test("the report carries the system's scheme, read at the time of the report", () => {
+    const h = harness({ width: 1280, height: 800, segments: null });
+    h.rt.window.matchMedia = prefersDark(true);
+    h.wm.report();
+    h.rt.window.matchMedia = prefersDark(false);
+    h.wm.report();
+    assert.deepEqual(h.reports, [
+        { width: 1280, height: 800, scheme: "dark" },
+        { width: 1280, height: 800, scheme: "light" },
+    ]);
+});
+
+test("a named element's report carries the scheme too", () => {
+    const h = harness({ width: 1400, height: 900 });
+    h.rt.window.matchMedia = prefersDark(true);
+    h.rt.window.GrMobViewport = () => box(376, 812);
+    h.wm.report();
+    assert.deepEqual(h.reports, [{ width: 376, height: 812, scheme: "dark" }]);
+});

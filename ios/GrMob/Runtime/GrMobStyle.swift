@@ -2251,6 +2251,34 @@ struct GrMobVisibleChord: ViewModifier {
     }
 }
 
+extension View {
+    /// core.TextColor on a container, inherited by every Text under it that
+    /// states none, as CSS's `color` is on the web: the container sets the
+    /// foreground style, and a Text's `.primary` (grMobTextStyle) resolves
+    /// against it. Before this a plain core.Text drew the system's primary
+    /// whatever its container said.
+    ///
+    /// Applied by the container views after grMobBox rather than inside
+    /// GrMobBoxModifier, whose chain is at the height where one more layer
+    /// crashes the compiler; a ViewModifier whose branch is inside its own
+    /// body keeps the caller's type one layer deep.
+    func grMobInk(_ s: GrMobStyle?) -> some View {
+        modifier(GrMobInkModifier(color: s?.textColor))
+    }
+}
+
+private struct GrMobInkModifier: ViewModifier {
+    let color: Color?
+
+    func body(content: Content) -> some View {
+        if let color {
+            content.foregroundStyle(color)
+        } else {
+            content
+        }
+    }
+}
+
 /// grMobValueText's modifier: a stated value, or nothing at all. See there
 /// for why nothing is not `accessibilityValue("")`.
 private struct GrMobValueTextModifier: ViewModifier {

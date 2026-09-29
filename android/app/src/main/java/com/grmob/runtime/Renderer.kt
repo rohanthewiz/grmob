@@ -61,6 +61,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -572,8 +573,8 @@ fun RenderNode(node: GrMobNode, extra: Modifier = Modifier) {
     // its own node before going quiet.
     //
     // The values that change are collected and provided in one call, rather
-    // than one `when` arm per combination: seven independent values would be
-    // 128 arms. An unchanged tree still provides nothing.
+    // than one `when` arm per combination: eight independent values would be
+    // 256 arms. An unchanged tree still provides nothing.
     val disable = node.style?.disabled == true && !LocalGrMobDisabled.current
     val bound = LocalGrMobUnboundedHeight.current && hasPointsHeight(node.style)
     val boundWidth = LocalGrMobUnboundedWidth.current && hasPointsWidth(node.style)
@@ -615,7 +616,17 @@ fun RenderNode(node: GrMobNode, extra: Modifier = Modifier) {
         }
     }
     val group = positions != null && positions != LocalGrMobRadioPositions.current
-    if (!disable && !bound && !boundWidth && !named && !inert && !says && !group) {
+    // core.TextColor on a container is inherited by every Text under it that
+    // states none, as CSS's `color` is on the web. Material's Text already
+    // falls back to LocalContentColor when its style has no colour, so the
+    // container provides it. Without this a plain core.Text drew Material's
+    // default black whatever its container said: the tutorial's dark page
+    // on the emulator had black names and numbers on a dark card, where the
+    // browser drew them in the page's ink. Only where it changes, like the
+    // flags above.
+    val ink = node.style?.textColor
+    val inks = ink != null && node.children.isNotEmpty() && ink != LocalContentColor.current
+    if (!disable && !bound && !boundWidth && !named && !inert && !says && !group && !inks) {
         RenderNodeContent(node, mods)
     } else {
         val provided = buildList<ProvidedValue<*>> {
@@ -626,6 +637,7 @@ fun RenderNode(node: GrMobNode, extra: Modifier = Modifier) {
             if (inert) add(LocalGrMobInert provides true)
             if (says) add(LocalGrMobGroupSaid provides said)
             if (group) add(LocalGrMobRadioPositions provides positions)
+            if (inks) add(LocalContentColor provides ink!!)
         }
         CompositionLocalProvider(*provided.toTypedArray()) { RenderNodeContent(node, mods) }
     }

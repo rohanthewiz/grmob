@@ -5,6 +5,7 @@ import SwiftUI
 ///
 ///     GeometryReader size          ──▶ { width, height }   (points)
 ///     GeometryReader safeAreaInsets ──▶ { insets: {…} }
+///     Environment colorScheme       ──▶ { scheme: "light" | "dark" }
 ///
 /// No fold is ever reported. No iPhone or iPad has a hinge, so the payload
 /// omits the "fold" key, which is exactly what core reads as "no fold". What
@@ -32,6 +33,13 @@ import SwiftUI
 /// keeps ordinary content clear of the bars is still the SafeArea node, and
 /// SwiftUI's own insetting behind it, not these numbers.
 ///
+/// # The colour scheme
+///
+/// core.Window.ColorScheme is the reader's `colorScheme` environment value,
+/// which is the window's trait: nothing in this app sets a preferred scheme,
+/// so it is the system's light or dark mode. It is watched like the insets,
+/// because a switch in Control Centre changes it with no resize.
+///
 /// Go dedupes a size it already has, so SwiftUI re-offering the same size (it
 /// does around scene connection) costs a bridge call and nothing more. The
 /// insets ride in the same report and are deduped with it.
@@ -39,7 +47,7 @@ enum AppWindow {
     /// Main-actor because `GrMobRuntime.hostEvent` is, and because the
     /// callers — onAppear and onChange on the reader — already run there.
     @MainActor
-    static func report(_ size: CGSize, insets: EdgeInsets, to runtime: GrMobRuntime) {
+    static func report(_ size: CGSize, insets: EdgeInsets, scheme: ColorScheme, to runtime: GrMobRuntime) {
         // A zero size is the reader before layout, not a window; Go would
         // drop a zero-height report as meaningless anyway, but sending it
         // would briefly publish a zero-sized window to subscribers.
@@ -62,6 +70,10 @@ enum AppWindow {
                 "left": Double(insets.leading),
                 "right": Double(insets.trailing),
             ],
+            // Two words, spelled as core.ColorSchemeLight and Dark are. A
+            // scheme SwiftUI adds later reads as light rather than as a word
+            // core would drop.
+            "scheme": scheme == .dark ? "dark" : "light",
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: fields),
               let payload = String(data: data, encoding: .utf8)
@@ -73,6 +85,7 @@ enum AppWindow {
 /// The measuring view: a clear GeometryReader for GrMobRoot's background.
 struct AppWindowReader: View {
     let runtime: GrMobRuntime
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         GeometryReader { geo in
@@ -80,16 +93,20 @@ struct AppWindowReader: View {
                 // onAppear for the first measurement, onChange for every
                 // resize after it; onChange does not fire for the initial
                 // value.
-                .onAppear { AppWindow.report(geo.size, insets: geo.safeAreaInsets, to: runtime) }
+                .onAppear { AppWindow.report(geo.size, insets: geo.safeAreaInsets, scheme: scheme, to: runtime) }
                 .onChange(of: geo.size) { _, size in
-                    AppWindow.report(size, insets: geo.safeAreaInsets, to: runtime)
+                    AppWindow.report(size, insets: geo.safeAreaInsets, scheme: scheme, to: runtime)
                 }
                 // The bars can move without the window resizing: a rotation
                 // that puts the sensor housing on the other edge, a keyboard
                 // that changes the bottom inset. onChange(of: size) alone
                 // would miss those, so the insets are watched too.
                 .onChange(of: geo.safeAreaInsets) { _, insets in
-                    AppWindow.report(geo.size, insets: insets, to: runtime)
+                    AppWindow.report(geo.size, insets: insets, scheme: scheme, to: runtime)
+                }
+                // Dark mode switched with no resize. See "The colour scheme".
+                .onChange(of: scheme) { _, now in
+                    AppWindow.report(geo.size, insets: geo.safeAreaInsets, scheme: now, to: runtime)
                 }
         }
         .ignoresSafeArea()

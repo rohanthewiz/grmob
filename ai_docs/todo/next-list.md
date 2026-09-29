@@ -30,7 +30,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-085
+**Next ID:** N-086
 
 ## Open
 
@@ -157,13 +157,6 @@ with each item's `raised` traced back through all session docs.
   **A below-the-fold sweep on Android 10.** Needs the Mi Max 3 unlocked, or a
   person scrolling (or an API 29 emulator image). The HID keyboard
   (2026-0919-1254 §1) may drive it. (was #65)
-- **N-050** · raised `2026-0918-2310-mi-max-3-android-10-force-dark-theme-sweep` · value low (API decision)
-  **The Android app never follows the system's dark mode.** Needs the host to
-  send `uiMode` night and core to pick a theme. iOS is unchecked. The web
-  tutorial does follow it now: the page resolves System/Light/Dark and sends
-  a `theme` host event, and the app swaps to a tutorial-local `darkTheme`
-  (2026-0921-1419). The same event is the shape a native host could send.
-  (was #67)
 - **N-051** · raised `2026-0918-2310-mi-max-3-android-10-force-dark-theme-sweep` · value low
   **Why the decor-view force-dark flag stopped holding after an AndroidView
   attached is undiagnosed.** Moot for this app. (was #68)
@@ -456,6 +449,9 @@ with each item's `raised` traced back through all session docs.
   `*OnLight` fields hold light inks. Promoting it means renaming or
   re-arguing those roles and adding it to `BundledThemes`. Its contrast
   figures were computed by hand, not by a census.
+  - 2026-09-29: the tutorial's darkTheme now also serves the natives, which
+    follow the system scheme through `core.Window.ColorScheme` (N-050), so a
+    bundled dark theme would have a consumer on every host.
 - **N-083** · raised `2026-0924-1211-tutorial-overflow-sweep-web-floors-nested-scroll` · value low (API decision)
   **The theme's Row (8/16) and Column (12/16) padding lands on every plain
   stack.** It is right for a screen's outer column and wrong for nearly every
@@ -466,6 +462,21 @@ with each item's `raised` traced back through all session docs.
   any form in examples/tutorial. An API that gave
   only the screen-level stack its inset (or a paddingless stack
   constructor) would retire the idiom, but it changes every app's layout.
+- **N-085** · raised `SESSION` · value medium
+  **A shell's surface and system bars follow the system's dark mode; a light
+  Go theme does not.** iOS: SwiftUI's window background is systemBackground,
+  so a light app on a dark iPhone draws its theme's dark ink on black. Seen
+  on the simulator (iOS 26.5, appearance dark) with the tutorial built before
+  N-050: 1.1's title was black on black, its prose dark grey on black.
+  Android: the window is always light (Theme.Material.Light), but
+  `enableEdgeToEdge`'s automatic bar style turns the status-bar icons white
+  in night mode, over that light window (seen on the emulator). Any app that
+  does not follow `Window.ColorScheme` has these. Candidates: the shells
+  paint the root in the Go theme's Background and pick the bar style from it
+  rather than from the system; or iOS pins the surface light as Android's is
+  (while still reading the system scheme for the record, which a
+  `preferredColorScheme` override would hide).
+
 ## Non-goals
 
 - **N-001** · declined `2026-0912-1744-the-widget-library-answers-to-comps` —
@@ -546,6 +557,31 @@ with each item's `raised` traced back through all session docs.
   path works. (was #76)
 
 ## Closed
+
+- **N-050** · raised `2026-0918-2310-mi-max-3-android-10-force-dark-theme-sweep`
+  · closed 2026-09-29, `SESSION` — the hosts report the system's scheme and
+  the app picks. `core.Window` gained `ColorScheme` ("light", "dark", or
+  empty when no host said) and `Dark()`, carried as `scheme` on the existing
+  "window" report and deduped with it: Android reads the configuration's
+  night bit (a switch recreates the Activity, which reports again), iOS the
+  reader's `colorScheme` environment (watched, so a switch re-reports), the
+  web `prefers-color-scheme` (with a change listener). Core still bundles no
+  dark theme (N-074). The tutorial follows the window's scheme until a page
+  sends its own "theme" choice, so the web's Light/Dark/System switch still
+  wins there; on a native it paints the root in darkTheme's Background and
+  ink, the colours the web page's CSS supplies. That exposed a real
+  divergence: a container's TextColor was inherited on the web (CSS `color`)
+  and not on the natives, so lesson 1.1's plain `core.Text` name and numbers
+  drew Compose's black on the dark card. Now Compose provides
+  `LocalContentColor` below a container with TextColor and SwiftUI sets the
+  container's foreground style (`grMobInk`), documented on `core.TextColor`.
+  Seen: the emulator (`cmd uimode night yes`) draws 1.1, 4.37 and 5.9
+  readable dark and returns to light on `no`; the iOS simulator
+  (`simctl ui appearance dark`) draws 1.1 dark and comes back live to light.
+  Tests: `TestWindowHostEventDecodesTheColorScheme`,
+  `TestTheSystemSchemeRulesUntilAPageSays` (mutation-tested), two
+  window_test.mjs cases, and the four-shell spelling census gained the key.
+  The surfaces behind apps that do not follow the scheme are N-085.
 
 - **N-078** · raised `2026-0922-0440-next-list-radio-positions-browser-notify-fold-grid-scroll-ios-round-four`
   · closed 2026-09-29, `SESSION` — decided by content, not role. A labelled

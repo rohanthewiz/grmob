@@ -9475,16 +9475,33 @@ const GrMob = (() => {
                 const w = Math.round(box.width), h = Math.round(box.height);
                 // A frame not laid out yet (display: none, not attached) is
                 // no window at all; the browser's is the better answer.
-                if (w > 0 && h > 0) return { width: w, height: h };
+                if (w > 0 && h > 0) return withScheme({ width: w, height: h });
             }
             const width = window.innerWidth, height = window.innerHeight;
             if (typeof width !== "number" || typeof height !== "number") return null;
-            const payload = { width, height };
+            const payload = withScheme({ width, height });
             const segments = window.viewport && window.viewport.segments;
             const posture = typeof navigator !== "undefined" && navigator.devicePosture
                 ? navigator.devicePosture.type : undefined;
             const fold = foldFrom(segments, posture);
             if (fold) payload.fold = fold;
+            return payload;
+        }
+
+        // core.Window.ColorScheme: the OS's light or dark mode, which in a
+        // browser is the prefers-color-scheme media feature. A named element
+        // gets it too; a frame inside the page is drawn under the same
+        // system setting as the page. Left out where matchMedia is missing
+        // (the verify harness's DOM), which Go reads as "not reported".
+        //
+        // This is the system's answer, not a page's choice: a page with its
+        // own Light/Dark switch (the tutorial's) tells its app that through
+        // an event of its own and wins over this.
+        const DARK_QUERY = "(prefers-color-scheme: dark)";
+        function withScheme(payload) {
+            if (typeof window.matchMedia !== "function") return payload;
+            const mq = window.matchMedia(DARK_QUERY);
+            if (mq && typeof mq.matches === "boolean") payload.scheme = mq.matches ? "dark" : "light";
             return payload;
         }
 
@@ -9524,7 +9541,9 @@ const GrMob = (() => {
         // parse in any browser (an unknown feature is "not all" and never
         // changes), so there is nothing to feature-test beyond matchMedia.
         if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
-            for (const q of ["(horizontal-viewport-segments: 2)", "(vertical-viewport-segments: 2)"]) {
+            // The colour scheme's query as well: a dark-mode switch resizes
+            // nothing either.
+            for (const q of ["(horizontal-viewport-segments: 2)", "(vertical-viewport-segments: 2)", DARK_QUERY]) {
                 const mq = window.matchMedia(q);
                 if (mq && typeof mq.addEventListener === "function") mq.addEventListener("change", report);
             }

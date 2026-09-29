@@ -20,7 +20,10 @@ import (
 // iOS reports no fold (nothing Apple ships folds), so only the size keys are
 // required of it.
 func TestWindowEventSpellingsAgree(t *testing.T) {
-	sizeKeys := []string{`"window"`, `"width"`, `"height"`}
+	// The colour scheme rides every shell's report (core.Window.ColorScheme),
+	// so its key and both words are part of the size set.
+	sizeKeys := []string{`"window"`, `"width"`, `"height"`, `"scheme"`,
+		`"` + string(core.ColorSchemeLight) + `"`, `"` + string(core.ColorSchemeDark) + `"`}
 	foldWords := []string{
 		`"fold"`, `"state"`, `"orientation"`, `"separating"`, `"occluding"`, `"x"`, `"y"`,
 		`"` + string(core.FoldFlat) + `"`,

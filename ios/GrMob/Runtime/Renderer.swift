@@ -394,6 +394,7 @@ private struct GrMobRow: View {
                         onTap: node.stringProp("onClick"),
                         onLongPress: node.stringProp("onLongPress"),
                         axis: .horizontal)
+            .grMobInk(s)
         } else {
             GrMobFlexStack(axis: .horizontal, style: s) {
                 FlexChildren(node: node, axis: .horizontal)
@@ -402,6 +403,7 @@ private struct GrMobRow: View {
                         onTap: node.stringProp("onClick"),
                         onLongPress: node.stringProp("onLongPress"),
                         axis: .horizontal)
+            .grMobInk(s)
         }
     }
 }
@@ -503,6 +505,7 @@ private struct GrMobColumn: View {
                     onTap: node.stringProp("onClick"),
                     onLongPress: node.stringProp("onLongPress"),
                     axis: .vertical)
+        .grMobInk(s)
     }
 }
 
@@ -564,6 +567,7 @@ private struct GrMobZStack: View {
         .grMobBox(s, grow: grow,
                     onTap: node.stringProp("onClick"),
                     onLongPress: node.stringProp("onLongPress"))
+        .grMobInk(s)
     }
 }
 
@@ -1392,6 +1396,7 @@ private struct GrMobScroll: View {
         }
         .grMobKeyboardAware(node.boolProp("keyboardAware"))
         .grMobBox(node.style, grow: grow)
+        .grMobInk(node.style)
     }
 
     private var vertical: some View {
@@ -1420,6 +1425,7 @@ private struct GrMobScroll: View {
         .onPreferenceChange(GrMobViewportHeight.self) { viewport = $0 }
         .grMobKeyboardAware(node.boolProp("keyboardAware"))
         .grMobBox(node.style, grow: grow)
+        .grMobInk(node.style)
     }
 }
 
@@ -1591,6 +1597,7 @@ private struct GrMobList: View {
                     onTap: node.stringProp("onClick"),
                     onLongPress: node.stringProp("onLongPress"),
                     axis: .vertical)
+        .grMobInk(s)
     }
 
     /// core.OnStartReached: the row at the top edge is one of the first

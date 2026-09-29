@@ -1,6 +1,7 @@
 package tutorial
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -141,4 +142,54 @@ func TestDarkThemeLeavesDefaultThemeAlone(t *testing.T) {
 	if darkTheme.Colors.Background == d.Colors.Background {
 		t.Fatal("darkTheme should not share DefaultTheme's page colour")
 	}
+}
+
+// Before any page sends a scheme, the tutorial follows the system's, from the
+// window record every native host reports (core.Window.ColorScheme). Once a
+// page has said, the page wins, so its Light holds on a dark OS.
+func TestTheSystemSchemeRulesUntilAPageSays(t *testing.T) {
+	setSystem := func(scheme string) {
+		core.ReceiveHostEvent("window", map[string]any{"width": 390, "height": 844, "scheme": scheme})
+	}
+	// The record is process-wide: leave it with no scheme, which every other
+	// test reads as light, as they always have.
+	t.Cleanup(func() { setSystem("") })
+
+	mgr := newApp(t)
+	openLesson(t, mgr, "Hello, GrMob")
+	setSystem("dark")
+	if wire := mgr.RenderInitial(); !strings.Contains(wire, darkCaption) {
+		t.Fatalf("a dark system with no page drew no darkTheme caption ink %s", darkCaption)
+	}
+	// And the page colour with it: a native's surface is light, and nothing
+	// but the root's own background would put darkTheme's ink on dark.
+	if root := rootOf(t, mgr.RenderInitial()); root.Style == nil || root.Style.Background != darkTheme.Colors.Background {
+		t.Fatalf("the dark root is not painted %s: %+v", darkTheme.Colors.Background, root.Style)
+	}
+	setSystem("light")
+	if wire := mgr.RenderInitial(); strings.Contains(wire, darkCaption) {
+		t.Fatal("the system went light and the tree stayed dark")
+	}
+
+	setSystem("dark")
+	setScheme("light")
+	if wire := mgr.RenderInitial(); strings.Contains(wire, darkCaption) {
+		t.Fatal("the page chose light on a dark system and the tree followed the system")
+	}
+	// A page paints its own panes, so a page's dark leaves the root alone.
+	setScheme("dark")
+	if root := rootOf(t, mgr.RenderInitial()); root.Style != nil && root.Style.Background == darkTheme.Colors.Background {
+		t.Error("a page's dark painted the root, which is the page's to paint")
+	}
+	assertNoConcerns(t)
+}
+
+// rootOf decodes a rendered tree's root, as a host receives it.
+func rootOf(t *testing.T, wire string) core.Node {
+	t.Helper()
+	var n core.Node
+	if err := json.Unmarshal([]byte(wire), &n); err != nil {
+		t.Fatalf("decoding the tree: %v", err)
+	}
+	return n
 }

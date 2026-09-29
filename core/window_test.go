@@ -253,3 +253,29 @@ func TestWindowSubscriberMayReadAndCancel(t *testing.T) {
 		t.Errorf("handler read %+v", seen)
 	}
 }
+
+// The system's colour scheme rides the window report: decoded from "scheme",
+// a change on its own is a change (a dark-mode switch resizes nothing), and a
+// value that is neither word leaves the field empty rather than guessing.
+func TestWindowHostEventDecodesTheColorScheme(t *testing.T) {
+	freshWindow(t)
+	var heard int
+	cancel := OnWindow(func(Window) { heard++ })
+	defer cancel()
+
+	ReceiveHostEvent("window", map[string]any{"width": 411, "height": 891, "scheme": "dark"})
+	if w := CurrentWindow(); w.ColorScheme != ColorSchemeDark || !w.Dark() {
+		t.Fatalf("scheme = %q, Dark() = %v", w.ColorScheme, w.Dark())
+	}
+	ReceiveHostEvent("window", map[string]any{"width": 411, "height": 891, "scheme": "light"})
+	if w := CurrentWindow(); w.ColorScheme != ColorSchemeLight || w.Dark() {
+		t.Errorf("scheme = %q, Dark() = %v", w.ColorScheme, w.Dark())
+	}
+	if heard != 2 {
+		t.Errorf("heard %d reports for two schemes at one size, want 2", heard)
+	}
+	ReceiveHostEvent("window", map[string]any{"width": 411, "height": 891, "scheme": "sepia"})
+	if w := CurrentWindow(); w.ColorScheme != "" || w.Dark() {
+		t.Errorf("an unknown scheme was kept as %q", w.ColorScheme)
+	}
+}

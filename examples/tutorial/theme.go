@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	"github.com/rohanthewiz/grmob/core"
+	"github.com/rohanthewiz/grmob/hooks"
 )
 
 // Light and dark: the tutorial's colour scheme, chosen by the host page.
@@ -18,8 +19,22 @@ import (
 //	page ──HostEvent("theme", {scheme: "dark" | "light"})──▶ app
 //
 // The page resolves "follow the system" itself and sends only the answer, so
-// the app has two states and no media queries. No other host sends the event,
-// so the natives, the headless tests and the screenshot host all keep
+// the app has two states and no media queries.
+//
+// # Until a page says, the system does
+//
+// No other host sends the event. The natives, which have no page, follow the
+// system's own dark mode instead: every host reports it on the window record
+// (core.Window.ColorScheme), and the scheme is the window's until the first
+// "theme" event arrives. After that the page's choice wins for the rest of
+// the session, which is what lets its Light button hold on a dark OS.
+//
+//	page sent "theme"?   scheme
+//	──────────────────   ───────────────────────────────
+//	yes                  the page's (Light, Dark, or the OS as it resolved it)
+//	no                   hooks.UseWindow's ColorScheme; light when unreported
+//
+// The headless tests and the screenshot host report neither, so they keep
 // DefaultTheme by construction.
 //
 // # How the palette is swapped
@@ -58,6 +73,7 @@ var bootTheme struct {
 	mu    sync.Mutex
 	trees int // live useColorScheme subscriptions
 	dark  bool
+	said  bool // a "theme" event arrived; the page's choice, not the window's
 }
 
 func init() {
@@ -67,6 +83,7 @@ func init() {
 		defer bootTheme.mu.Unlock()
 		if bootTheme.trees == 0 {
 			bootTheme.dark = scheme == "dark"
+			bootTheme.said = true
 		}
 	})
 }
@@ -77,6 +94,14 @@ func bootDark() bool {
 	bootTheme.mu.Lock()
 	defer bootTheme.mu.Unlock()
 	return bootTheme.dark
+}
+
+// bootSaid is whether that scheme came from a page at all, rather than being
+// the default. See "Until a page says, the system does".
+func bootSaid() bool {
+	bootTheme.mu.Lock()
+	defer bootTheme.mu.Unlock()
+	return bootTheme.said
 }
 
 // themeRecord is useColorScheme's hook-slot memory: layoutRecord's shape, for
@@ -113,6 +138,9 @@ func (t *tutorial) useColorScheme(ctx *core.Context) {
 		if t.dark.Get() != dark {
 			t.dark.Set(dark)
 		}
+		if !t.pageSaid.Get() {
+			t.pageSaid.Set(true)
+		}
 	})
 	ctx.OnClose(func() {
 		cancel()
@@ -123,21 +151,74 @@ func (t *tutorial) useColorScheme(ctx *core.Context) {
 		bootTheme.trees--
 		if bootTheme.trees == 0 {
 			bootTheme.dark = false
+			bootTheme.said = false
 		}
 		bootTheme.mu.Unlock()
 	})
 }
 
-// withScheme renders v under darkTheme while the page has asked for it, and
-// unchanged otherwise. See the file comment for why this swaps the context
-// rather than wrapping the tree in core.WithTheme.
+// withScheme renders v under darkTheme while the page has asked for it, or,
+// before any page has, while the system is dark; unchanged otherwise. See the
+// file comment for why this swaps the context rather than wrapping the tree
+// in core.WithTheme.
+//
+// hooks.UseWindow is called on every pass whichever source wins, so the hook
+// slot never moves, and a dark-mode switch on a native re-renders through it.
+// On Android the switch recreates the Activity and the first frame after it
+// is drawn before the new report lands, so it can show the old scheme for a
+// frame; the Go app outlives the Activity, so that is a repaint, not a
+// restart.
 func (t *tutorial) withScheme(v core.View) core.View {
 	return core.ComponentFunc(func(ctx *core.Context) *core.Node {
-		if t.dark.Get() {
-			ctx = ctx.WithTheme(darkTheme)
+		fromPage := t.pageSaid.Get()
+		dark := hooks.UseWindow(ctx).Dark()
+		if fromPage {
+			dark = t.dark.Get()
 		}
-		return v.Render(ctx)
+		if !dark {
+			return v.Render(ctx)
+		}
+		n := v.Render(ctx.WithTheme(darkTheme))
+		if fromPage {
+			return n
+		}
+		return paintPage(n, darkTheme.Colors.Background, darkTheme.Colors.TextPrimary)
 	})
+}
+
+// paintPage gives a native's root the dark page colour and ink the web page
+// sets in CSS. The screens paint no background of their own (the file comment), so
+// on a native the shell's surface shows through, and the shells' surfaces are
+// light: a dark-mode Android drew darkTheme's white ink on a near-white
+// window (seen on the emulator). A style on the root the tree already has,
+// not a wrapper node, for withScheme's reason: a wrapper present only while
+// dark would move the whole tree down a level on every switch.
+//
+// Only for the window's scheme. A page that sends "theme" paints its own
+// panes (--screen-bg), and the split's root is not a page, so the web's tree
+// stays what it was. A copy, because withLayout remembers the lesson node it
+// was handed and a shared Style would be painted in the light tree too.
+func paintPage(n *core.Node, color, ink string) *core.Node {
+	if n == nil {
+		return nil
+	}
+	var st core.Style
+	if n.Style != nil {
+		st = *n.Style
+	}
+	if st.Background != "" {
+		return n
+	}
+	st.Background = color
+	// The page's ink too, which every Text that states none inherits
+	// (core.TextColor): the web page's --screen-fg. Without it a lesson's
+	// plain core.Text drew Compose's default black on the dark page.
+	if st.TextColor == "" {
+		st.TextColor = ink
+	}
+	painted := *n
+	painted.Style = &st
+	return &painted
 }
 
 // darkTheme is DefaultTheme's dark counterpart: the same type scale, spacing

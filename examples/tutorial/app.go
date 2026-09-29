@@ -94,6 +94,9 @@ type tutorial struct {
 	// theme.go). False until a "theme" host event says otherwise, so every
 	// host that never sends one keeps DefaultTheme.
 	dark core.State[bool]
+	// pageSaid is whether a "theme" event has arrived at all. Until one has,
+	// the scheme is the system's, from the window record (theme.go).
+	pageSaid core.State[bool]
 }
 
 // App is the root view: a Navigator whose initial route is the table of
@@ -122,7 +125,8 @@ func App(ctx *core.Context) core.View {
 		// Seeded from a scheme the page sent before this first render, for
 		// the split's reason: a dark boot draws dark from its first frame
 		// (theme.go, bootTheme).
-		dark: core.NewState(sctx, bootDark()),
+		dark:     core.NewState(sctx, bootDark()),
+		pageSaid: core.NewState(sctx, bootSaid()),
 	}
 	// Same scope, for the same reason: the route handler moves frames, so
 	// it must outlive them. The layout mode likewise outlives every frame.
