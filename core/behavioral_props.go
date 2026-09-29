@@ -132,6 +132,54 @@ func OnBack(handler func()) BehaviorProp {
 	})
 }
 
+// OnEscape claims the Escape key for as long as the node is on screen: a
+// press on a hardware keyboard runs the innermost claimant's handler. It is
+// for a layer that closes (comps.Drawer's open panel carries it beside
+// OnBack), and an open core.Modal with an OnDismiss is a claimant without it,
+// so every Dialog, ActionSheet, Menu and Lightbox closes on Escape too.
+//
+// # Not OnBack
+//
+// Back is claimed by more than layers: core.Navigator claims it for a pushed
+// route and comps.AppBar for its back arrow. Escape on a desktop page, or on
+// an iPad keyboard, closes what is open over the screen and does not
+// navigate, which is what every platform's own sheets and popovers do. So
+// Escape reads its own claims, and a layer that wants both carries both.
+//
+// Its callback IDs come from OnBack's sequence ("back_cb_N"), for OnBack's
+// reason: a second quick press is dispatched with the ID from before the
+// first press's patches landed.
+//
+// # Hosts
+//
+//	Web      one window keydown listener; the innermost claimant (onEscape,
+//	         or an open Modal's onDismiss) in document order wins. A handler
+//	         under focus that owns the key and calls preventDefault (a
+//	         combobox clearing its active option) goes first. A modified
+//	         Escape is left alone. htmlout does not export the prop.
+//	Android  the Activity walks the tree for a bare KEYCODE_ESCAPE and runs
+//	         the last claimant in tree order that is on screen, the web's
+//	         rule (GrMobRuntime.handleKeyEvent). An open Modal is a Dialog
+//	         window, which takes the keys while it is up, so its content
+//	         wraps that window's callback and runs onDismiss (DialogEscape):
+//	         the platform maps Escape to back only with predictive back off,
+//	         and this shell opts in to it.
+//	iOS      a node carrying the prop gets an Escape keyboard shortcut on a
+//	         hidden button while it is on screen. Unverified: XCUITest's
+//	         Escape reached neither it nor SwiftUI's .cancelAction on the
+//	         simulator, though the same claim bound to a chord worked (see
+//	         TutorialKeyShortcutsUITests). A Modal has no claim of its own
+//	         there yet; whether a real iPad keyboard's Escape closes one
+//	         through SwiftUI's own dismissal is unchecked.
+func OnEscape(handler func()) BehaviorProp {
+	return behaviorFunc(func(ctx *Context, n *Node) {
+		if n.Props == nil {
+			n.Props = map[string]any{}
+		}
+		n.Props["onEscape"] = ctx.registerBackCallback(handler)
+	})
+}
+
 // OnFocus fires when the node becomes the input focus — a text field the user
 // has tapped into, with the software keyboard on its way up.
 //

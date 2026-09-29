@@ -1,5 +1,8 @@
 package com.grmob.runtime
 
+import androidx.compose.runtime.DisposableEffect
+import android.view.KeyEvent
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.Animatable
 import androidx.compose.foundation.BorderStroke
@@ -640,6 +643,49 @@ fun RenderNode(node: GrMobNode, extra: Modifier = Modifier) {
             if (inks) add(LocalContentColor provides ink!!)
         }
         CompositionLocalProvider(*provided.toTypedArray()) { RenderNodeContent(node, mods) }
+    }
+}
+
+/**
+ * A hardware Escape in the Dialog this is composed in runs [dismiss]: an open
+ * Modal is an Escape claim on every host (core.OnEscape).
+ *
+ * # Why the dialog's window, and not the Activity
+ *
+ * While a Dialog is showing its window has the key focus, so a key never
+ * reaches MainActivity.dispatchKeyEvent, where the other claims are found.
+ * And the platform does not map Escape to back for us here: Dialog.onKeyUp
+ * turns KEYCODE_ESCAPE into onBackPressed only when predictive back is off,
+ * and this app's manifest opts in to it. Seen on the emulator: lesson 6.6's
+ * dialog stayed open under `input keyevent KEYCODE_ESCAPE`.
+ *
+ * So the dialog window's callback is wrapped for as long as the content is
+ * composed: an unmodified Escape is taken on key up (the down is consumed
+ * too, so no one else starts tracking it), and every other event goes to the
+ * callback that was there. The original is put back on dispose, before the
+ * window goes.
+ */
+@Composable
+private fun DialogEscape(dismiss: () -> Unit) {
+    val view = LocalView.current
+    val current by rememberUpdatedState(dismiss)
+    DisposableEffect(view) {
+        val window = (view.parent as? DialogWindowProvider)?.window
+        val original = window?.callback
+        if (window != null && original != null) {
+            window.callback = object : android.view.Window.Callback by original {
+                override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+                    if (event.keyCode == KeyEvent.KEYCODE_ESCAPE && event.hasNoModifiers()) {
+                        if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) current()
+                        return true
+                    }
+                    return original.dispatchKeyEvent(event)
+                }
+            }
+        }
+        onDispose {
+            if (window != null && original != null) window.callback = original
+        }
     }
 }
 
@@ -3741,6 +3787,8 @@ private fun GrMobModal(node: GrMobNode) {
         onDismissRequest = { if (onDismiss.isNotEmpty()) runtime.click(onDismiss) },
         properties = DialogProperties(usePlatformDefaultWidth = !sizesItself),
     ) {
+        // Escape closes the Modal as back does (core.OnEscape).
+        DialogEscape { if (onDismiss.isNotEmpty()) runtime.click(onDismiss) }
         // The dialog window already scrims with the backdrop; the content gets
         // a card-like surface unless the app styled its children explicitly.
         //

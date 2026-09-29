@@ -78,6 +78,9 @@ struct RenderNode: View {
         // between them rebuilds the subtree, a text field's focus with it).
         // An unstamped node pays one Int comparison. See GrMobBringIntoView.
         content.modifier(GrMobBringIntoView(epoch: node.intProp("scrollEpoch"), id: node.viewID))
+            // core.OnEscape, for any node type, in the same unconditional
+            // shape: a node with no claim gets its content back.
+            .modifier(GrMobEscapeClaim(id: node.stringProp("onEscape")))
     }
 
     @ViewBuilder private var content: some View {
@@ -211,6 +214,33 @@ struct RenderNode: View {
             // Unknown node type (newer Go core than this runtime): render the
             // children so the subtree isn't a dead end.
             default: VStack(alignment: .leading, spacing: 0) { PlainChildren(node: node) }.grMobBox(node.style, grow: grow)
+            }
+        }
+    }
+}
+
+/// core.OnEscape: a bare Escape from a hardware keyboard runs the claim while
+/// the node is on screen.
+///
+/// An invisible Button behind the node with Escape as its keyboard shortcut,
+/// the route a tappable box's chords take (GrMobShortcutButtons), which also
+/// keeps it dead inside a hidden subtree. A keyboardShortcut is SwiftUI's own
+/// window-wide matching, so it fires wherever focus is; GrMob's chord gate
+/// (which drops bare keys) is not in its path.
+///
+/// Two claims on screen at once (a Drawer inside another layer that claims)
+/// leave the choice to SwiftUI, which core.OnEscape does not promise to be
+/// the innermost here. No bundled screen has two.
+private struct GrMobEscapeClaim: ViewModifier {
+    let id: String
+    @Environment(\.grMobDispatch) private var dispatch
+
+    func body(content: Content) -> some View {
+        if id.isEmpty {
+            content
+        } else {
+            content.background {
+                GrMobShortcutButtons(chords: [(key: .escape, modifiers: [])]) { dispatch?(id) }
             }
         }
     }

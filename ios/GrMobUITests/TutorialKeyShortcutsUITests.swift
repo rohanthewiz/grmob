@@ -110,4 +110,41 @@ final class TutorialKeyShortcutsUITests: XCTestCase {
         XCTAssertTrue(text(app, beginningWith: "1 · tap").waitForExistence(timeout: 5),
                       "Control+Option+J did not press the gesture card")
     }
+
+    /// core.OnEscape: a bare Escape from the hardware keyboard should close
+    /// lesson 4.18's open Drawer (the panel's claim, an invisible Button with
+    /// Escape as its shortcut) and lesson 6.6's Dialog.
+    ///
+    /// A known failure, like F6 above. On the iOS 26.5 simulator
+    /// (2026-09-29) XCUITest's Escape closed neither, pressed twice after a
+    /// priming chord, and neither did a claim rebound to SwiftUI's
+    /// `.cancelAction`; the same claim rebound to Control+Option+E closed the
+    /// drawer at once. So the claim, the dispatch and the Drawer's
+    /// OnDismiss are wired, and what is unknown is whether a bare Escape
+    /// reaches a SwiftUI keyboardShortcut at all, from XCUITest or from a real
+    /// iPad keyboard. The Mac's own Escape could not be sent to the simulator
+    /// (osascript is not allowed keystrokes on the machine this ran on).
+    /// XCTExpectFailure is strict: the day Escape lands this fails, and the
+    /// wrapper should come off.
+    func testEscapeClosesTheDrawerAndTheDialog() throws {
+        let app = XCUIApplication()
+        app.launch()
+        app.open(URL(string: "grmob://lesson/4.18")!)
+        XCTAssertTrue(text(app, beginningWith: "4.18").waitForExistence(timeout: 10), "lesson 4.18 did not open")
+        let menu = app.buttons["Open navigation"]
+        var swipes = 0
+        while !(menu.exists && menu.isHittable) && swipes < 20 {
+            app.swipeUp(velocity: .slow)
+            swipes += 1
+        }
+        app.typeKey("z", modifierFlags: [.control, .option])
+        sleep(1)
+        menu.tap()
+        let close = app.buttons["Close Notebook"]
+        XCTAssertTrue(close.waitForExistence(timeout: 5), "the drawer did not open")
+        app.typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
+        sleep(1)
+        XCTExpectFailure("a bare Escape from XCUITest has not reached a SwiftUI keyboardShortcut on the simulator")
+        XCTAssertFalse(close.exists, "Escape did not close the drawer")
+    }
 }

@@ -27,6 +27,7 @@ One of 11 topic pages of [package core](core.md), which has the package overview
     - [`func OnBack`](#func-onback)
     - [`func OnBlur`](#func-onblur)
     - [`func OnClick`](#func-onclick)
+    - [`func OnEscape`](#func-onescape)
     - [`func OnFocus`](#func-onfocus)
     - [`func OnLongPress`](#func-onlongpress)
     - [`func OnTouch`](#func-ontouch)
@@ -297,7 +298,7 @@ func OnBlur(handler func()) BehaviorProp
 
 OnBlur fires when the node loses input focus. See OnFocus for the pairing and the ordering caveat.
 
-<small>[core/behavioral_props.go:166](https://github.com/rohanthewiz/grmob/blob/master/core/behavioral_props.go#L166)</small>
+<small>[core/behavioral_props.go:214](https://github.com/rohanthewiz/grmob/blob/master/core/behavioral_props.go#L214)</small>
 
 #### func OnClick
 
@@ -306,6 +307,44 @@ func OnClick(handler func()) BehaviorProp
 ```
 
 <small>[core/behavioral_props.go:25](https://github.com/rohanthewiz/grmob/blob/master/core/behavioral_props.go#L25)</small>
+
+#### func OnEscape
+
+```go
+func OnEscape(handler func()) BehaviorProp
+```
+
+OnEscape claims the Escape key for as long as the node is on screen: a press on a hardware keyboard runs the innermost claimant's handler. It is for a layer that closes (comps.Drawer's open panel carries it beside OnBack), and an open core.Modal with an OnDismiss is a claimant without it, so every Dialog, ActionSheet, Menu and Lightbox closes on Escape too.
+
+##### Not OnBack
+
+Back is claimed by more than layers: core.Navigator claims it for a pushed route and comps.AppBar for its back arrow. Escape on a desktop page, or on an iPad keyboard, closes what is open over the screen and does not navigate, which is what every platform's own sheets and popovers do. So Escape reads its own claims, and a layer that wants both carries both.
+
+Its callback IDs come from OnBack's sequence ("back\_cb\_N"), for OnBack's reason: a second quick press is dispatched with the ID from before the first press's patches landed.
+
+##### Hosts
+
+	Web      one window keydown listener; the innermost claimant (onEscape,
+	         or an open Modal's onDismiss) in document order wins. A handler
+	         under focus that owns the key and calls preventDefault (a
+	         combobox clearing its active option) goes first. A modified
+	         Escape is left alone. htmlout does not export the prop.
+	Android  the Activity walks the tree for a bare KEYCODE_ESCAPE and runs
+	         the last claimant in tree order that is on screen, the web's
+	         rule (GrMobRuntime.handleKeyEvent). An open Modal is a Dialog
+	         window, which takes the keys while it is up, so its content
+	         wraps that window's callback and runs onDismiss (DialogEscape):
+	         the platform maps Escape to back only with predictive back off,
+	         and this shell opts in to it.
+	iOS      a node carrying the prop gets an Escape keyboard shortcut on a
+	         hidden button while it is on screen. Unverified: XCUITest's
+	         Escape reached neither it nor SwiftUI's .cancelAction on the
+	         simulator, though the same claim bound to a chord worked (see
+	         TutorialKeyShortcutsUITests). A Modal has no claim of its own
+	         there yet; whether a real iPad keyboard's Escape closes one
+	         through SwiftUI's own dismissal is unchecked.
+
+<small>[core/behavioral_props.go:174](https://github.com/rohanthewiz/grmob/blob/master/core/behavioral_props.go#L174)</small>
 
 #### func OnFocus
 
@@ -323,7 +362,7 @@ Focus is a leaf concern in practice: the renderers wire these on the text input 
 
 Ordering note: the framework guarantees the edges are dispatched in the order they happened, but \*not\* that a blur on the field being left arrives before the focus on the field being entered — that ordering is the platform's, and Android and iOS do not agree on it. Handlers must therefore be independent: read the field the callback belongs to, never "the field that is focused now".
 
-<small>[core/behavioral_props.go:160](https://github.com/rohanthewiz/grmob/blob/master/core/behavioral_props.go#L160)</small>
+<small>[core/behavioral_props.go:208](https://github.com/rohanthewiz/grmob/blob/master/core/behavioral_props.go#L208)</small>
 
 #### func OnLongPress
 
@@ -381,7 +420,7 @@ A browser moves focus on mousedown and delivers the click on mouseup, so a press
 
 A no-arg flag, like StartAtEnd: a widget that wants the default writes no prop.
 
-<small>[core/behavioral_props.go:207](https://github.com/rohanthewiz/grmob/blob/master/core/behavioral_props.go#L207)</small>
+<small>[core/behavioral_props.go:255](https://github.com/rohanthewiz/grmob/blob/master/core/behavioral_props.go#L255)</small>
 
 #### func ScrollTarget
 

@@ -240,3 +240,62 @@ test("an unwound entry leaves no mark behind to misjudge a later back", () => {
     assert.deepEqual(rt.dispatched, []);
     assert.equal(h.depth(), 2, "with no claim on screen a typed hash is the page's own entry, left alone");
 });
+
+// --- Escape (core.OnEscape) ---------------------------------------------------
+//
+// Escape closes the innermost layer and never navigates: its claimants are
+// onEscape nodes and open Modals, not back's. A keydown the runtime's window
+// listener hears, as a hardware key anywhere on the page is.
+
+const escape = (rt, init = {}) => {
+    const e = { key: "Escape", defaultPrevented: false, preventDefault() { this.defaultPrevented = true; }, ...init };
+    rt.fireWindowEvent("keydown", e);
+    return e;
+};
+
+test("Escape runs the innermost escape claim and not a back claim", () => {
+    const { rt } = mount({
+        Type: "ZStack",
+        Props: { onBack: "back_cb_0" },
+        Children: [
+            { Type: "Column", Children: [text("screen")] },
+            { Type: "Row", Props: { onBack: "back_cb_1", onEscape: "back_cb_2" }, Children: [text("drawer")] },
+        ],
+    });
+    assert.equal(escape(rt).defaultPrevented, true);
+    assert.deepEqual(rt.dispatched.map((d) => d.id), ["back_cb_2"]);
+});
+
+test("with nothing but back claims, Escape does nothing and leaves the key alone", () => {
+    const { rt } = mount({ Type: "Column", Props: { onBack: "back_cb_0" }, Children: [text("route")] });
+    assert.equal(escape(rt).defaultPrevented, false);
+    assert.deepEqual(rt.dispatched, []);
+});
+
+test("an open Modal's dismiss is an escape claim; a closed one's is not", () => {
+    const modal = (visible) => ({
+        Type: "Column",
+        Children: [
+            { Type: "Row", Props: { onEscape: "back_cb_0" }, Children: [text("panel")] },
+            { Type: "Modal", Props: { visible, onDismiss: "cb_0" }, Children: [text("dialog")] },
+        ],
+    });
+    const open = mount(modal(true));
+    escape(open.rt);
+    assert.deepEqual(open.rt.dispatched.map((d) => d.id), ["cb_0"], "the open Modal is the later layer");
+
+    const closed = mount(modal(false));
+    escape(closed.rt);
+    assert.deepEqual(closed.rt.dispatched.map((d) => d.id), ["back_cb_0"]);
+});
+
+test("a claim the tree drops, a prevented key and a modified key run nothing", () => {
+    const { rt } = mount({ Type: "Column", Children: [{ Type: "Row", Props: { onEscape: "back_cb_0" }, Children: [text("panel")] }] });
+    escape(rt, { defaultPrevented: true });
+    escape(rt, { shiftKey: true });
+    escape(rt, { repeat: true });
+    assert.deepEqual(rt.dispatched, []);
+    rt.GrMob.patch(JSON.stringify([{ Type: "update-props", TargetID: "root/0", Changes: {} }]));
+    escape(rt);
+    assert.deepEqual(rt.dispatched, [], "a panel that shut stopped claiming");
+});

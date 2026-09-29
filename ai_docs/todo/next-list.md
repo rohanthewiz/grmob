@@ -61,6 +61,9 @@ with each item's `raised` traced back through all session docs.
 - **N-004** · raised `2026-0913-2250-next-list-hook-blame-cell-elements-f-keys-and-a-row-that-fills` · value low
   **F-keys through GameController have never reached the app from XCUITest.**
   Needs a real iPad keyboard. (was #3)
+  - 2026-09-29: bare Escape joins it (N-057): XCUITest's Escape reaches no
+    SwiftUI keyboardShortcut on the simulator, so core.OnEscape on iOS, and
+    whether a Modal closes on it there, wait on the same keyboard.
 - **N-005** · raised `2026-0914-2319-next-list-row-hug-box-chords-and-a-strip-that-divides` · value low
   **iOS chords.** Page-global chords were verified once, and the chord gate
   (behind a modal, inside a shut Drawer panel) is unheard. (was #6;
@@ -160,24 +163,6 @@ with each item's `raised` traced back through all session docs.
 - **N-051** · raised `2026-0918-2310-mi-max-3-android-10-force-dark-theme-sweep` · value low
   **Why the decor-view force-dark flag stopped holding after an AndroidView
   attached is undiagnosed.** Moot for this app. (was #68)
-- **N-057** · raised `2026-0919-1254-fold6-talkback-hid-harness-focus-after-navigation-inert-named-controls` · value low
-  **Nothing closes on Escape, on any host** — not Drawer, and not Dialog,
-  Menu, ActionSheet or Lightbox either. Read off the source
-  (2026-0919-2303), so the item's "check the web and iPad" is answered:
-  - Web: `core.Modal` renders as a plain `div`, not `<dialog>`, so there is
-    no free browser Escape; the only bare-key listener is the combobox's,
-    which clears its active option and explicitly leaves Escape to the page.
-  - Android: `dispatchKeyEvent` names the key "Escape" and looks for a
-    page-global chord, but `pageGlobal` requires a modifier or an F-key, and
-    `findKeyShortcut` only matches nodes with an `onClick` — a Drawer panel
-    carries `onBack`. Hence "unhandled".
-  - iPad: the chord gate drops every bare key too. A sheet-backed Modal may
-    still close for free through SwiftUI's `isPresented` binding, which
-    already calls `onDismiss`; a Drawer is a ZStack layer and never can.
-  Two shapes if it is ever built: route Escape into the existing back claim
-  (`onBackPressedDispatcher`, the web's `innermostBackClaim()`) — no Go API,
-  but it would also pop a Navigator route and fire an AppBar back arrow — or
-  a layer-only `core.OnEscape` beside `OnBack`. (was #79)
 - **N-058** · raised `2026-0919-1254-fold6-talkback-hid-harness-focus-after-navigation-inert-named-controls` · value medium
   (Raised from low 2026-09-25: it now blocks the emulator half of N-062's
   Poll, N-068's TreeView and Wizard checks, and N-072's TalkBack pass. The
@@ -557,6 +542,34 @@ with each item's `raised` traced back through all session docs.
   path works. (was #76)
 
 ## Closed
+
+- **N-057** · raised `2026-0919-1254-fold6-talkback-hid-harness-focus-after-navigation-inert-named-controls`
+  · closed 2026-09-29, `SESSION` — the layer-only shape: `core.OnEscape`, a
+  claim of its own beside OnBack (Escape closes what is open over a screen
+  and does not navigate, so a Navigator route and an AppBar's back arrow
+  claim back and not Escape), with an open Modal's OnDismiss counting as a
+  claim. `comps.Drawer`'s open panel carries `OnEscape(OnDismiss)`, so every
+  Modal-based widget and the Drawer close on Escape.
+  - Web: one window keydown listener (shared with the page shortcuts, which
+    keynav_test pins to one) runs the last claimant in document order; a
+    handler that consumed the key first (a combobox clearing its active
+    option) wins. Seen in headless Chrome with CDP keys: 4.18's drawer and
+    6.6's dialog close; both stay open with the listener removed. Four
+    tests in browserback_test.mjs.
+  - Android: the Activity walks the tree for the last claimant
+    (`GrMobRuntime.lastEscapeClaim`). A Modal's Dialog is its own window and
+    did *not* close on Escape (seen on the emulator: the platform maps
+    Escape to back only with predictive back off, and this shell opts in),
+    so the Dialog's content wraps its window's callback (`DialogEscape`).
+    Seen: `input keyevent KEYCODE_ESCAPE` closes 4.18's drawer and 6.6's
+    dialog, and back still closes the dialog.
+  - iOS: unverified. The claim is an invisible Button with Escape as its
+    keyboardShortcut (`GrMobEscapeClaim`). XCUITest's Escape reached neither
+    it nor `.cancelAction`, while the same claim bound to Control+Option+E
+    closed the drawer; the Mac's own Escape could not be sent (osascript has
+    no keystroke permission here). `testEscapeClosesTheDrawerAndTheDialog` is
+    a strict XCTExpectFailure, like F6's. A Modal has no Escape claim on iOS
+    yet. Carried by N-004's real-iPad-keyboard check.
 
 - **N-050** · raised `2026-0918-2310-mi-max-3-android-10-force-dark-theme-sweep`
   · closed 2026-09-29, `SESSION` — the hosts report the system's scheme and

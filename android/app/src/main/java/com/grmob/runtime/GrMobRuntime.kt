@@ -153,11 +153,39 @@ class GrMobRuntime(private val bridge: GrMobBridge) {
         if (event.action != KeyEvent.ACTION_DOWN || event.repeatCount != 0) return false
         val name = keyName(event.keyCode) ?: return false
         val root = store.root ?: return false
+        // core.OnEscape: a bare Escape closes the innermost layer that claims
+        // it, the last claimant in tree order, which is the web's rule. Checked
+        // before the chords because Escape is never one (a chord needs a
+        // modifier or an F-key). A Modal needs nothing here: Compose's Dialog
+        // is its own window, takes the key itself and closes on it as on back.
+        if (event.keyCode == KeyEvent.KEYCODE_ESCAPE && event.hasNoModifiers()) {
+            val claim = lastEscapeClaim(root)
+            if (claim != null) {
+                click(claim)
+                return true
+            }
+        }
         val target = findKeyShortcut(
             root, false, name, event.isCtrlPressed, event.isAltPressed, event.isMetaPressed, event.isShiftPressed,
         ) ?: return false
         if (!target.disabled) click(target.node.stringProp("onClick"))
         return true
+    }
+
+    /**
+     * The onEscape callback of the last node in tree order that carries one
+     * and is on screen: not display "none" and not hidden, nor under a node
+     * that is. A shut Drawer panel is both, so it claims nothing even if a
+     * stale prop were left on it.
+     */
+    private fun lastEscapeClaim(node: GrMobNode): String? {
+        val style = node.style
+        if (style?.display == "none" || style?.accessibilityHidden == true) return null
+        var found = node.stringProp("onEscape").ifEmpty { null }
+        for (child in node.children) {
+            lastEscapeClaim(child)?.let { found = it }
+        }
+        return found
     }
 
     /** A node answering a chord, and whether it or an ancestor is disabled. */

@@ -87,6 +87,8 @@ import "github.com/rohanthewiz/grmob/core"
 //     before a Navigator pops or an AppBar's back runs; the next back is
 //     theirs. With OnDismiss nil there is nothing to call and back falls
 //     through to them.
+//   - Escape. The open panel also carries core.OnEscape(OnDismiss), so a
+//     hardware keyboard closes it on every host, as it closes a Dialog.
 //
 // # It covers its own box, so give it one
 //
@@ -317,6 +319,9 @@ func (d Drawer) panelLayer(t *core.Theme) core.View {
 		// swallow the press meant for a Navigator or an AppBar, and any other
 		// reader of the tree would see back claimed by a closed drawer.
 		items = append(items, core.OnBack(d.OnDismiss))
+		// And Escape, from a hardware keyboard on any host. A claim of its
+		// own rather than back's: see core.OnEscape.
+		items = append(items, core.OnEscape(d.OnDismiss))
 	}
 	items = append(items, d.panel(t), d.scrim())
 	return core.Row(items...)

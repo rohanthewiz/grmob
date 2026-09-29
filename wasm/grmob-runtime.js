@@ -262,6 +262,12 @@ const GrMob = (() => {
                     // own. See the browser-back section above mount.
                     el.dataset.listener_onBack = value;
                     backClaimants.add(el);
+                } else if (key === "onEscape") {
+                    // core.OnEscape. No "escape" DOM event either: the
+                    // element is recorded as a claimant and the window's
+                    // keydown listener (handleEscape) picks the innermost.
+                    el.dataset.listener_onEscape = value;
+                    escapeClaimants.add(el);
                 } else if (key.startsWith("on")) {
                     const event = mapEventName(key);
                     el.dataset[`listener_${key}`] = value;
@@ -7978,6 +7984,60 @@ const GrMob = (() => {
     // or "" when nothing on screen claims it. Detached candidates are pruned on
     // the way, which is what keeps the set from growing with every screen ever
     // shown.
+    // --- Escape (core.OnEscape) -----------------------------------------------
+    //
+    // Escape closes the innermost layer: a node carrying onEscape (a Drawer's
+    // open panel), or an open Modal with an onDismiss, whichever is later in
+    // the document. Back's claimants are not Escape's: a Navigator route and
+    // an AppBar's back arrow claim back, and Escape on a page must not
+    // navigate. So the Modal half is read from backClaimants (a Modal's
+    // dismiss is both) and the rest from a set of its own.
+    //
+    // One window listener, bubbling, so anything under focus that owns the
+    // key goes first: a combobox with an active option clears it and calls
+    // preventDefault, and this then does nothing. A modified Escape, a repeat
+    // and one mid-composition are left alone.
+    const escapeClaimants = new Set();
+
+    function escapeClaimID(el) {
+        if (el.dataset.nodeType === "Modal") return backClaimID(el);
+        if (!el.dataset.listener_onEscape) return "";
+        // backClaimID's visibility walk, for the same reason: a claim in a
+        // hidden subtree, or one no longer in the document, is not a claim.
+        for (let n = el; n; n = n.parentNode) {
+            if (n.style && n.style.display === "none") return "";
+            if (n === document.body) return el.dataset.listener_onEscape;
+        }
+        return "";
+    }
+
+    function innermostEscapeClaim() {
+        let best = null;
+        let bestID = "";
+        const modals = [...backClaimants].filter((el) => el.dataset.nodeType === "Modal");
+        for (const el of [...escapeClaimants, ...modals]) {
+            const id = escapeClaimID(el);
+            if (!id) {
+                if (!el.parentNode) escapeClaimants.delete(el);
+                continue;
+            }
+            if (!best || followsInDocument(el, best)) {
+                best = el;
+                bestID = id;
+            }
+        }
+        return bestID;
+    }
+
+    function handleEscape(e) {
+        if (e.key !== "Escape" || e.defaultPrevented || e.repeat || e.isComposing) return;
+        if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+        const id = innermostEscapeClaim();
+        if (!id) return;
+        e.preventDefault();
+        window.GoInvokeCallback(id, {});
+    }
+
     function innermostBackClaim() {
         let best = null;
         let bestID = "";
@@ -8379,6 +8439,11 @@ const GrMob = (() => {
                             // claim.
                             el.dataset.listener_onBack = v;
                             backClaimants.add(el);
+                        } else if (k === "onEscape") {
+                            // As on the create path; pruneStaleListeners
+                            // drops a prop that went away, ending the claim.
+                            el.dataset.listener_onEscape = v;
+                            escapeClaimants.add(el);
                         } else if (k.startsWith("on")) {
                             const event = mapEventName(k);
                             el.dataset[`listener_${k}`] = v;
@@ -9260,7 +9325,13 @@ const GrMob = (() => {
     // Guarded like the lifecycle listener above, for hosts with no window.
     (() => {
         if (typeof window === "undefined" || typeof window.addEventListener !== "function") return;
-        window.addEventListener("keydown", handlePageShortcut);
+        // core.OnEscape rides the same listener, after the shortcuts: one
+        // page-wide keydown listener is what keynav_test holds the runtime
+        // to, and handleEscape skips a key a shortcut already prevented.
+        window.addEventListener("keydown", (e) => {
+            handlePageShortcut(e);
+            handleEscape(e);
+        });
     })();
 
     // The browser half of core's clipboard (core/clipboard.go). The async
