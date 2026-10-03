@@ -4160,6 +4160,60 @@ comps.Poll{
 - Asking with no `OnVote`, and neither `ShowResults` nor `Disabled`, raises
   `ConcernPollInert` in debug builds.
 
+## Discussion
+
+A threaded comment section: comments with their replies indented under a
+thread line, Reply and Like on each, and threads that fold away. The comments
+under an article, a forum topic, the Q&A on a lesson.
+
+```go
+comps.Discussion{
+    Title:      "12 comments",
+    Comments:   comments,           // []comps.DiscussionComment, each with Replies
+    OnReply:    replyingTo.Set,     // the key of the comment answered
+    OnLike:     toggleLike,         // the key; flip Liked and Likes in your data
+    ReplyingTo: replyingTo.Get(),   // where the Composer goes; "" is the top
+    Composer: comps.InputRow{
+        Value: draft.Get(), OnChange: draft.Set, OnSubmit: post,
+        Button: comps.Button{Label: "Post"},
+    },
+}
+```
+
+**The comments are the caller's.** `OnLike` and `OnReply` report a comment's
+`Key`, and the caller updates its data or sets `ReplyingTo`. The `Composer`
+is drawn under the comment `ReplyingTo` names, or at the top when it is
+empty, for a new thread. The widget never sees the draft. A `ReplyingTo` that
+names no comment draws the composer at the top and raises
+`ConcernDiscussionReplyTargetMissing`.
+
+**Hooks.** Which threads are folded is the widget's own state, as an
+Accordion's open/closed is. So Discussion takes one hook and must be
+rendered unconditionally, every pass. `Composer` moves as `ReplyingTo`
+changes, so it must be hook-free (an `InputRow` over your own draft state).
+`InitiallyCollapsed` starts every thread folded. A thread holding the
+`ReplyingTo` comment is always drawn open.
+
+**Accessibility.** Each level is a `RoleList` of `RoleListItem`s with
+`AccessibilityNestingLevel`, which the web reads as "level 2". Android and
+iOS cannot express a level, so each header row is also named with what the
+indent shows: "Ben, reply to Ana, 1h". Like is a `Chip` toggle with one
+stable name ("Like, 3") and a selected state. Reply is named "Reply to Ana".
+The fold is a disclosure button named "2 replies" that states expanded or
+collapsed.
+
+Other notes:
+
+- `MaxDepth` (zero is 4) caps the indent so deep threads stay on a phone
+  screen. The nesting level keeps counting past it.
+- A `Deleted` comment shows `DeletedText` ("This comment was deleted.") in
+  italics, keeps its replies, and offers no Reply or Like.
+- Without `OnLike`, a count is drawn as text, not a toggle that does
+  nothing. Without `OnReply`, there are no Reply buttons.
+- `Key` must be stable (a server ID): it keys each item and names the
+  comment to every callback.
+- For a chat transcript, use `MessageThread` instead.
+
 ## ExpandableText
 
 Body text capped at a few lines, with a Read more that opens it in place.

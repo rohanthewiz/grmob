@@ -529,7 +529,7 @@ widget's exact fields before using it):
 | Inputs & pickers | `FormField` `PasswordField` `PINInput` `TagInput` `MaskedInput` `NumberPad` `ColorSwatchPicker` `RangeSlider` `SearchField` `SearchableSelect` `RadioGroup` `Calendar` `DatePicker` `DateRangePicker` `TimePicker` `CodeEditor` `RichTextEditor` `RichTextView` |
 | Buttons & choices | `Button` `CopyButton` `Link` `Chip` `ChipStrip` `SegmentedControl` `Stepper` `Rating` `Badge` `StripeCheckout` |
 | Overlays & feedback | `Dialog` `Lightbox` `ActionSheet` `Menu` `Snackbar` `Banner` `ProgressBar` `Spinner` `Skeleton` `EmptyState` |
-| Data display & maps | `Avatar` `AvatarStack` `StatTile` `Compass` `AnalogClock` `DigitalClock` `Countdown` `Stopwatch` `AlarmRow` `AlarmRinging` `AudioPlayer` `MessageBubble` `MessageThread` `TypingIndicator` `ReactionBar` `Poll` `ExpandableText` `BibleVerse` `QRCode` `MapPanel` `StaticMap` |
+| Data display & maps | `Avatar` `AvatarStack` `StatTile` `Compass` `AnalogClock` `DigitalClock` `Countdown` `Stopwatch` `AlarmRow` `AlarmRinging` `AudioPlayer` `MessageBubble` `MessageThread` `TypingIndicator` `ReactionBar` `Poll` `Discussion` `ExpandableText` `BibleVerse` `QRCode` `MapPanel` `StaticMap` |
 | Charts | `Sparkline` `LineChart` `AreaChart` `BarChart` `ScatterChart` `Histogram` `Heatmap` `CalendarHeatmap` `DonutChart` `PieChart` `Gauge` `CandlestickChart` `FunnelChart` `RadarChart` `Waveform` |
 
 `Screen` is the scaffold: `Children`, `Scroll`, `KeyboardAware`, `Gap`, `Fill`,

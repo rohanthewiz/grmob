@@ -4,13 +4,13 @@
 import "github.com/rohanthewiz/grmob/comps"
 ```
 
-Avatars and avatar stacks, stat tiles, the compass, clocks, countdowns and alarms, an audio player, message bubbles and threads, typing indicators, reaction bars, polls, expandable text, Bible verses, QR codes, map panels and static maps.
+Avatars and avatar stacks, stat tiles, the compass, clocks, countdowns and alarms, an audio player, message bubbles and threads, typing indicators, reaction bars, polls, threaded discussions, expandable text, Bible verses, QR codes, map panels and static maps.
 
-One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/avatar.go`, `comps/avatar_stack.go`, `comps/stat_tile.go`, `comps/compass.go`, `comps/clock.go`, `comps/timers.go`, `comps/alarm.go`, `comps/audio_player.go`, `comps/message_bubble.go`, `comps/message_thread.go`, `comps/typing_indicator.go`, `comps/reaction_bar.go`, `comps/poll.go`, `comps/expandable_text.go`, `comps/qr_code.go`, `comps/map_panel.go`, `comps/static_map.go`, `comps/bible_verse.go`.
+One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/avatar.go`, `comps/avatar_stack.go`, `comps/stat_tile.go`, `comps/compass.go`, `comps/clock.go`, `comps/timers.go`, `comps/alarm.go`, `comps/audio_player.go`, `comps/message_bubble.go`, `comps/message_thread.go`, `comps/typing_indicator.go`, `comps/reaction_bar.go`, `comps/poll.go`, `comps/expandable_text.go`, `comps/qr_code.go`, `comps/map_panel.go`, `comps/static_map.go`, `comps/bible_verse.go`, `comps/discussion.go`.
 
 ## Index
 
-- [Constants](#constants) — `ConcernAudioPlayerNoTrack`, `ConcernBibleVerseEmpty`, `ConcernCountdownUntilUnset`, `ConcernNoMapProvider`, `ConcernPollInert`, `ConcernQRDataTooLong`, `ConcernReactionBarInert`, `ConcernStopwatchSinceUnset`, `DefaultMapHeight`, `DefaultMapPanelHeight`, `DefaultMapScale`, `DefaultMapWidth`, and 9 more
+- [Constants](#constants) — `ConcernAudioPlayerNoTrack`, `ConcernBibleVerseEmpty`, `ConcernCountdownUntilUnset`, `ConcernDiscussionReplyTargetMissing`, `ConcernNoMapProvider`, `ConcernPollInert`, `ConcernQRDataTooLong`, `ConcernReactionBarInert`, `ConcernStopwatchSinceUnset`, `DefaultMapHeight`, `DefaultMapPanelHeight`, `DefaultMapScale`, and 10 more
 - [`func FitRegion`](#func-fitregion)
 - [`func GoogleMapsHandoff`](#func-googlemapshandoff)
 - [`func OSMStaticMap`](#func-osmstaticmap)
@@ -37,6 +37,9 @@ One of 7 topic pages of [package comps](comps.md), which has the package overvie
     - [`func (Countdown) Render`](#func-countdown-render)
 - [`type DigitalClock`](#type-digitalclock)
     - [`func (DigitalClock) Render`](#func-digitalclock-render)
+- [`type Discussion`](#type-discussion)
+    - [`func (Discussion) Render`](#func-discussion-render)
+- [`type DiscussionComment`](#type-discussioncomment)
 - [`type ECLevel`](#type-eclevel)
 - [`type ExpandableText`](#type-expandabletext)
     - [`func (ExpandableText) Render`](#func-expandabletext-render)
@@ -189,6 +192,14 @@ const ConcernCountdownUntilUnset = "countdown-until-unset"
 ```
 
 <small>[comps/timers.go:20](https://github.com/rohanthewiz/grmob/blob/master/comps/timers.go#L20)</small>
+
+ConcernDiscussionReplyTargetMissing is raised, in debug builds only, when Discussion.ReplyingTo names a key no comment has. The composer is drawn at the top instead, so the reader's draft does not vanish, but it is no longer under the comment the app thinks it is answering.
+
+```go
+const ConcernDiscussionReplyTargetMissing = "discussion-reply-target-missing"
+```
+
+<small>[comps/discussion.go:13](https://github.com/rohanthewiz/grmob/blob/master/comps/discussion.go#L13)</small>
 
 ConcernNoMapProvider: a StaticMap rendered with no Provider, which draws an empty frame. It is a development-time finding rather than a panic because the failure is survivable — a screen missing its map is still a screen — and because the fix is configuration, which is exactly the class of mistake that is invisible in a running app and obvious in a concern list.
 
@@ -1126,6 +1137,163 @@ func (c DigitalClock) Render(ctx *core.Context) *core.Node
 ```
 
 <small>[comps/clock.go:70](https://github.com/rohanthewiz/grmob/blob/master/comps/clock.go#L70)</small>
+
+### type Discussion
+
+```go
+type Discussion struct {
+	// Title heads the section ("12 comments"). Empty draws no heading.
+	Title string
+
+	// HeadingLevel is the Title's tier; zero is 2.
+	HeadingLevel int
+
+	// Comments are the top-level comments, in the order to draw them.
+	Comments []DiscussionComment
+
+	// OnReply reports the key of the comment whose Reply was tapped. Nil
+	// draws no Reply buttons.
+	OnReply func(key string)
+
+	// OnLike reports the key of the comment whose Like was tapped. Nil draws
+	// each count as text rather than a toggle.
+	OnLike func(key string)
+
+	// ReplyingTo is the key Composer is drawn under. Empty draws it at the
+	// top.
+	ReplyingTo string
+
+	// Composer is the reply or new-comment box. Nil draws none. It must be
+	// hook-free; see Hooks.
+	Composer core.View
+
+	// MaxDepth caps the indent at this many levels of replies. Zero is 4.
+	MaxDepth int
+
+	// InitiallyCollapsed starts every thread with its replies folded. It
+	// seeds the widget's state on the first pass only.
+	InitiallyCollapsed bool
+
+	// EmptyText replaces "No comments yet." when Comments is empty.
+	EmptyText string
+
+	// ReplyLabel replaces "Reply", LikeLabel "Like" and DeletedText
+	// "This comment was deleted.".
+	ReplyLabel  string
+	LikeLabel   string
+	DeletedText string
+
+	// Style is applied to the outer column after the widget's own props.
+	Style []core.StyleProp
+}
+```
+
+Discussion is a threaded comment section: comments, their replies indented under them with a thread line, a Reply and a Like on each, and threads that fold away. The comments under an article, a forum topic, the Q&A on a course lesson.
+
+	comps.Discussion{
+	    Title:      "12 comments",
+	    Comments:   comments,                 // []comps.DiscussionComment, a tree
+	    OnReply:    func(key string) { replyingTo.Set(key) },
+	    OnLike:     toggleLike,
+	    ReplyingTo: replyingTo.Get(),
+	    Composer:   comps.InputRow{Value: draft.Get(), OnChange: draft.Set, OnSubmit: post, …},
+	}
+
+	┌ Column ────────────────────────────────────────────────┐
+	│ 12 comments                                 heading 2  │
+	│ ┌ Column role=list ──────────────────────────────────┐ │
+	│ │ (A) Ana · 2h                    listitem, level 1  │ │
+	│ │     Has anyone tried the new build?                │ │
+	│ │     Reply   ♡ 3   ▾ 2 replies                      │ │
+	│ │  │ ┌ role=list ───────────────────────────────────┐│ │
+	│ │  │ │ (B) Ben · 1h               listitem, level 2 ││ │
+	│ │  │ │     Works on my Pixel.                       ││ │
+	│ │  │ │     Reply   ♥ 1                              ││ │
+	│ │  │ │     [ Composer, when ReplyingTo is Ben's ]   ││ │
+	│ │  │ └──────────────────────────────────────────────┘│ │
+	│ └────────────────────────────────────────────────────┘ │
+	└────────────────────────────────────────────────────────┘
+
+#### Who holds what
+
+The comments are the caller's: they are server state other people change, as Poll's counts are. OnLike reports the key and the caller flips Liked and the count when its data comes back; OnReply reports the key and the caller sets ReplyingTo, which places Composer under that comment. With ReplyingTo empty the Composer, if any, is at the top, for a new thread. Posting is the Composer's business; the widget never sees the draft.
+
+Which threads are folded is the widget's own, Accordion's open/closed by another name: no application wants to read or persist it. A thread that holds the ReplyingTo comment is drawn open whatever its state, so the composer can never be folded away under the reader.
+
+#### Hooks
+
+Discussion takes one hook (the folded set), so it must be rendered unconditionally, every pass. Composer moves from comment to comment as ReplyingTo changes, so it must be hook-free: an InputRow over the caller's own draft state, as above, is the shape.
+
+#### Depth
+
+Each level of replies is indented by a thread line, up to MaxDepth levels; deeper replies keep that indent rather than walking off a phone's screen. A reply drawn at a capped depth is still a level deeper in the outline (below), so nothing is lost to a reader who cannot see the indent.
+
+#### Accessibility
+
+The structure is a list of lists: each level of replies is a core.RoleList whose items carry core.AccessibilityNestingLevel, which the web states as aria-level ("level 2") and Android and iOS cannot express at all. For those two the header row is named with what the indent says, "Ben, reply to Ana, 1h". The name is dropped on the web, where the level already says it, and announced on both natives.
+
+Like is a Chip, a toggle: one stable name, "Like, 3", and its state as selected. Reply is named "Reply to Ana", since a column of identical "Reply" buttons is no help to a reader moving from control to control. The fold is the package's disclosure: a button that states expanded or collapsed and is named by its count, "2 replies".
+
+#### Theme roles read
+
+	Author       Typography.Body, bold, Colors.TextPrimary
+	Time         Typography.Caption, Colors.TextSecondary
+	Body         Typography.Body, Colors.TextPrimary
+	Deleted      Typography.Body, italic, Colors.TextSecondary
+	Thread line  Colors.Border, centred under the avatar
+	Fold         Typography.Caption, Colors.Primary's ink tone
+	Gaps         Spacing.XS inside a comment, Spacing.MD between comments
+
+<small>[comps/discussion.go:128](https://github.com/rohanthewiz/grmob/blob/master/comps/discussion.go#L128)</small>
+
+#### func (Discussion) Render
+
+```go
+func (d Discussion) Render(ctx *core.Context) *core.Node
+```
+
+Render draws the discussion. It takes one hook slot; see Hooks.
+
+<small>[comps/discussion.go:175](https://github.com/rohanthewiz/grmob/blob/master/comps/discussion.go#L175)</small>
+
+### type DiscussionComment
+
+```go
+type DiscussionComment struct {
+	// Key identifies the comment for as long as it exists: a server ID, not
+	// an index. It names the comment to OnReply and OnLike, keys its row,
+	// and is what ReplyingTo is compared with.
+	Key string
+
+	// Author is drawn bold over the body; AvatarSrc, when set, is their
+	// picture, and their initials are drawn otherwise.
+	Author    string
+	AvatarSrc string
+
+	// Time is drawn as given, after the author ("2h", "Mar 4").
+	Time string
+
+	// Body is the comment's text.
+	Body string
+
+	// Likes is the count, Liked whether the reader is one of them.
+	Likes int
+	Liked bool
+
+	// Deleted draws DeletedText in place of Body and offers no Reply or Like,
+	// but keeps the comment's place and its replies: a deleted comment in
+	// the middle of a thread is the context its replies were written in.
+	Deleted bool
+
+	// Replies are the answers to this comment, oldest first, each of which
+	// may have replies of its own.
+	Replies []DiscussionComment
+}
+```
+
+DiscussionComment is one comment and the replies under it.
+
+<small>[comps/discussion.go:16](https://github.com/rohanthewiz/grmob/blob/master/comps/discussion.go#L16)</small>
 
 ### type ECLevel
 
