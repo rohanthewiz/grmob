@@ -140,8 +140,8 @@ type WindowRect struct {
 }
 
 // SafeInsets is how far in from each window edge the content area starts:
-// the status bar, the navigation bar or home indicator, the display cutout,
-// and on a browser whatever the platform puts over the viewport.
+// the status bar, the navigation bar or home indicator, and the display
+// cutout. A browser reports none (see the table below).
 //
 // # Why the record has it when SafeArea already handles it
 //
@@ -169,6 +169,16 @@ type WindowRect struct {
 //	iOS       the root GeometryReader's safeAreaInsets, in points
 //	Browser   zero: there is no JS reading of env(safe-area-inset-*), and a
 //	          page in a normal browser window has no system bars anyway
+//
+// The browser's zero is wrong in one case: a page drawn behind a notch or a
+// home indicator (viewport-fit=cover, as an installed PWA usually is), where
+// the bars do cover it. The numbers exist there only as CSS env() values,
+// and reading them back would cost a probe element and a getComputedStyle —
+// a forced layout — on every report. A non-goal (N-061), not a gap: the
+// page that opts into cover owns its HTML, and keeping its content clear is
+// one CSS padding of env(safe-area-inset-*) on the element that hosts the
+// app, with no number crossing into Go. The reasoning also sits beside the
+// report in wasm/grmob-runtime.js (windowMetrics).
 //
 // Left and Right are physical edges, not leading and trailing: a cutout is
 // where it is whatever the writing direction is, and the fold bounds beside

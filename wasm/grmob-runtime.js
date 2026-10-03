@@ -9568,7 +9568,11 @@ const GrMob = (() => {
     // JS reading of them. Getting them would mean a probe element padded
     // with the env() values and a getComputedStyle of it every report, which
     // is a layout read per resize for a case this app does not have. Left
-    // undone on purpose, not overlooked.
+    // undone on purpose, not overlooked (N-061, a non-goal): a page that
+    // opts into viewport-fit=cover keeps its content clear with a CSS
+    // padding of the env() values on the element hosting the app, and no
+    // number has to reach Go for that. The tutorial's index.html sets cover
+    // without that padding (N-088).
     //
     // It reports on resize (a fold or unfold resizes the viewport), on a
     // change in the segment count (see the matchMedia listeners below: a

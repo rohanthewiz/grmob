@@ -30,7 +30,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-088
+**Next ID:** N-089
 
 ## Open
 
@@ -186,16 +186,6 @@ with each item's `raised` traced back through all session docs.
     "‹ Contents"; an earlier Enter on Next advanced the step with nothing
     logged, so whether it was Next that Enter pressed is unknown. Injected
     taps do not reach the emulator's touch explorer either.
-- **N-061** · raised `2026-0919-2303-safe-insets-record-inert-codeeditor-sse-cleanup` · value low
-  **The browser reports no safe-area insets.** `Window.Insets` is zero on the
-  web, which is right for a page in a browser window but wrong for an
-  installed PWA drawn behind a notch. The values exist only as CSS
-  `env(safe-area-inset-*)`; reading them means a probe element and a
-  `getComputedStyle` per report. Left undone on purpose (the reason is in
-  `wasm/grmob-runtime.js`'s windowMetrics comment), not overlooked.
-  - Recommendation (2026-09-29): make it a non-goal; the reason is already
-    in the runtime's windowMetrics comment, and no bundled page is a PWA.
-
 - **N-062** · raised `2026-0921-0912-comps-round-four-phase-1-chat-family` · value medium
   **Phase 1's chat widgets, unrun on a device.** Lesson 4.34 and
   `examples/chat` were looked at in headless Chrome only.
@@ -443,6 +433,16 @@ with each item's `raised` traced back through all session docs.
   Nothing catches drift when a core or comps signature changes. Candidate: a
   test that extracts the ```go blocks under named headings into a temp
   module and builds them. The doc-gen test only matches the fence prefix.
+- **N-088** · raised 2026-10-03 · value low
+  **The tutorial page sets `viewport-fit=cover` and pads nothing.**
+  `wasm/index.html`'s viewport meta opts into drawing behind the notch and
+  home indicator, and no rule anywhere on the web side uses
+  `env(safe-area-inset-*)`. Under 520px the bezel goes away and `#app` runs
+  to the bottom edge, so on an iPhone the bottom of a lesson (a pinned tag, a
+  TabBar) may sit under the home indicator, and in landscape the page's
+  sides under the notch. Found while declining N-061; unseen on a device.
+  Candidates: pad `.screen` with the env() values in the 520px query, or
+  drop `viewport-fit=cover` if nothing relies on it.
 
 ## Non-goals
 
@@ -522,6 +522,16 @@ with each item's `raised` traced back through all session docs.
   `2026-0919-1118-next-list-readonly-code-tab-stop-button-min-fill-onring-relaunch`
   — 4.19 can't show OnRing after a force-stop. Its alarms live in memory. The
   path works. (was #76)
+- **N-061** · raised `2026-0919-2303-safe-insets-record-inert-codeeditor-sse-cleanup`
+  · declined 2026-10-03 — the browser reports no safe-area insets, by design.
+  Zero is the true answer for a page in a browser window; the one case it is
+  wrong (a page drawn behind a notch with `viewport-fit=cover`, typically an
+  installed PWA) would cost a probe element and a `getComputedStyle` per
+  report, and that page owns its HTML: one CSS padding of
+  `env(safe-area-inset-*)` on the element hosting the app keeps the content
+  clear with no number reaching Go. Recorded in `core.SafeInsets`' doc
+  comment (and docs/api/core-device.md) and in the runtime's windowMetrics
+  comment. The tutorial page that does set cover is N-088.
 
 ## Closed
 
