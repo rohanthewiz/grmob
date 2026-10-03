@@ -409,6 +409,56 @@ comps.Link{Text: "Forgot password?", OnTap: showReset}
   of a `core.Paragraph`, in the same colour, underlined (there the colour is the
   only other signal), with the same tap.
 
+## StripeCheckout
+
+The order summary and Pay button in front of a Stripe payment: the items, any
+shipping, tax or discount lines, the total, and one full-width button that
+hands the reader to Stripe.
+
+```go
+comps.StripeCheckout{
+    Items: []comps.CheckoutItem{
+        {Label: "Pour-over kettle", Detail: "Matte black", UnitAmount: 4500},
+        {Label: "Filters (100)", Quantity: 2, UnitAmount: 650}, // "2 × $6.50"
+    },
+    Adjustments: []comps.CheckoutAdjustment{{Label: "Shipping", Amount: 500}},
+    Currency:    "usd",
+    OnPay:       startCheckout,     // your server creates a Session; then core.OpenURL(url)
+    Pending:     redirecting.Get(), // "Redirecting to Stripe…", disabled
+    Error:       payErr.Get(),
+}
+```
+
+**No card field.** A card number typed into the app's own field puts the app
+in PCI scope. Stripe collects the card on a page it hosts (Checkout or a
+Payment Link), so the widget stops at the hand-off. `CheckoutURL` (a
+`https://buy.stripe.com/…` Payment Link or a Session's url) is opened with
+`core.OpenURL`. `OnPay` wins when set: creating a Session for a cart needs the
+secret key, which belongs on your server and never in an app binary. When the
+reader comes back through the Session's success or cancel URL, ask your server
+whether the payment went through.
+
+**Amounts** are `int64` minor units, as in Stripe's API. `FormatMoney` follows
+Stripe's zero-decimal (JPY, KRW, …) and three-decimal (KWD, BHD, …) rules:
+4500 is "$45.00" in USD and "¥4,500" in JPY. `Format` takes a locale-aware
+replacement. The total is computed from the lines, so the button never
+disagrees with the list. The Session still decides what is charged.
+
+**Accessibility.** Each line is one spoken phrase ("Filters (100), 2 × $6.50,
+$13.00"), the title is a level-2 heading, the Pay button says the total, and
+`Error` is an alert.
+
+Other notes:
+
+- No hooks; it may be rendered conditionally.
+- `Quantity` zero counts as one. A negative `Adjustments` amount is a
+  discount.
+- `Disabled` for an empty cart; `HideNote` or `Note` for the "Payments are
+  processed securely by Stripe." line.
+- Neither `OnPay` nor `CheckoutURL` (and not `Disabled`) raises
+  `ConcernStripeCheckoutInert`. A non-https `CheckoutURL` raises
+  `ConcernStripeCheckoutInsecureURL`.
+
 ## InputRow
 
 The composer: a text field that fills the row, and an optional trailing button

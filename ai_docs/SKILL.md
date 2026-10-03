@@ -527,7 +527,7 @@ widget's exact fields before using it):
 | Screens & structure | `Screen` `AppBar` `BottomBar` `FAB` `Tabs` `Drawer` `StepIndicator` `Wizard` `TreeView` `TwoPane` `Card` `Accordion` `Breadcrumb` `Separator` `LabeledSeparator` |
 | Lists & tables | `ListRow` `SwitchRow` `CheckboxRow` `SelectRow` `SliderRow` `InputRow` `KeyValueList` `BulletList` `GroupedList[T]` `GroupHeader` `CollapseBand` `DataTable[T]` `EditableGrid` `Pagination` `LoadMore` `Timeline` |
 | Inputs & pickers | `FormField` `PasswordField` `PINInput` `TagInput` `MaskedInput` `NumberPad` `ColorSwatchPicker` `RangeSlider` `SearchField` `SearchableSelect` `RadioGroup` `Calendar` `DatePicker` `DateRangePicker` `TimePicker` `CodeEditor` `RichTextEditor` `RichTextView` |
-| Buttons & choices | `Button` `CopyButton` `Link` `Chip` `ChipStrip` `SegmentedControl` `Stepper` `Rating` `Badge` |
+| Buttons & choices | `Button` `CopyButton` `Link` `Chip` `ChipStrip` `SegmentedControl` `Stepper` `Rating` `Badge` `StripeCheckout` |
 | Overlays & feedback | `Dialog` `Lightbox` `ActionSheet` `Menu` `Snackbar` `Banner` `ProgressBar` `Spinner` `Skeleton` `EmptyState` |
 | Data display & maps | `Avatar` `AvatarStack` `StatTile` `Compass` `AnalogClock` `DigitalClock` `Countdown` `Stopwatch` `AlarmRow` `AlarmRinging` `AudioPlayer` `MessageBubble` `MessageThread` `TypingIndicator` `ReactionBar` `Poll` `ExpandableText` `BibleVerse` `QRCode` `MapPanel` `StaticMap` |
 | Charts | `Sparkline` `LineChart` `AreaChart` `BarChart` `ScatterChart` `Histogram` `Heatmap` `CalendarHeatmap` `DonutChart` `PieChart` `Gauge` `CandlestickChart` `FunnelChart` `RadarChart` `Waveform` |

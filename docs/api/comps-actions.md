@@ -4,17 +4,20 @@
 import "github.com/rohanthewiz/grmob/comps"
 ```
 
-Buttons and their variants, copy buttons, links, chips, segmented controls, steppers, ratings and badges.
+Buttons and their variants, copy buttons, links, chips, segmented controls, steppers, ratings, badges and the Stripe checkout summary.
 
-One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/button.go`, `comps/variant.go`, `comps/copy_button.go`, `comps/link.go`, `comps/chip.go`, `comps/chip_strip.go`, `comps/segmented_control.go`, `comps/stepper.go`, `comps/rating.go`, `comps/badge.go`.
+One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/button.go`, `comps/variant.go`, `comps/copy_button.go`, `comps/link.go`, `comps/chip.go`, `comps/chip_strip.go`, `comps/segmented_control.go`, `comps/stepper.go`, `comps/rating.go`, `comps/badge.go`, `comps/stripe_checkout.go`.
 
 ## Index
 
-- [Constants](#constants) — `ColorTransparent`, `ConcernLinkInert`
+- [Constants](#constants) — `ColorTransparent`, `ConcernLinkInert`, `ConcernStripeCheckoutInert`, `ConcernStripeCheckoutInsecureURL`
+- [`func FormatMoney`](#func-formatmoney)
 - [`type Badge`](#type-badge)
     - [`func (Badge) Render`](#func-badge-render)
 - [`type Button`](#type-button)
     - [`func (Button) Render`](#func-button-render)
+- [`type CheckoutAdjustment`](#type-checkoutadjustment)
+- [`type CheckoutItem`](#type-checkoutitem)
 - [`type Chip`](#type-chip)
     - [`func (Chip) Render`](#func-chip-render)
 - [`type ChipStrip`](#type-chipstrip)
@@ -32,6 +35,9 @@ One of 7 topic pages of [package comps](comps.md), which has the package overvie
     - [`func (SegmentedControl) Render`](#func-segmentedcontrol-render)
 - [`type Stepper`](#type-stepper)
     - [`func (Stepper) Render`](#func-stepper-render)
+- [`type StripeCheckout`](#type-stripecheckout)
+    - [`func (StripeCheckout) Render`](#func-stripecheckout-render)
+    - [`func (StripeCheckout) Total`](#func-stripecheckout-total)
 - [`type Variant`](#type-variant)
     - [`func (Variant) AsInk`](#func-variant-asink)
     - [`func (Variant) Color`](#func-variant-color)
@@ -57,6 +63,36 @@ const ConcernLinkInert = "link-inert"
 ```
 
 <small>[comps/link.go:9](https://github.com/rohanthewiz/grmob/blob/master/comps/link.go#L9)</small>
+
+ConcernStripeCheckoutInert is raised, in debug builds only, when a StripeCheckout has neither OnPay nor CheckoutURL and is not Disabled. Its Pay button looks ready and does nothing, on the one screen where a reader is most sure what a button should do.
+
+```go
+const ConcernStripeCheckoutInert = "stripe-checkout-inert"
+```
+
+<small>[comps/stripe_checkout.go:14](https://github.com/rohanthewiz/grmob/blob/master/comps/stripe_checkout.go#L14)</small>
+
+ConcernStripeCheckoutInsecureURL is raised, in debug builds only, when CheckoutURL is not an https:// address. Stripe's Checkout Session and Payment Link URLs always are; anything else is a typo or a URL that did not come from Stripe, and the widget is about to hand it to the browser with the word "Pay" on it.
+
+```go
+const ConcernStripeCheckoutInsecureURL = "stripe-checkout-insecure-url"
+```
+
+<small>[comps/stripe_checkout.go:21](https://github.com/rohanthewiz/grmob/blob/master/comps/stripe_checkout.go#L21)</small>
+
+## Functions
+
+### func FormatMoney
+
+```go
+func FormatMoney(amount int64, currency string) string
+```
+
+FormatMoney writes amount, in currency's minor unit, the way an English receipt does: "$1,234.50", "¥4,500", "-€5.00", "SEK 99.00".
+
+The decimals follow Stripe's rules for the currency (two, or none for the yen and fifteen others, or three for the Gulf dinars), so an amount that round-trips through Stripe's API is shown as Stripe will charge it. It is English formatting throughout; StripeCheckout.Format takes a locale-aware replacement.
+
+<small>[comps/stripe_checkout.go:374](https://github.com/rohanthewiz/grmob/blob/master/comps/stripe_checkout.go#L374)</small>
 
 ## Types
 
@@ -221,6 +257,44 @@ func (b Button) Render(ctx *core.Context) *core.Node
 ```
 
 <small>[comps/button.go:202](https://github.com/rohanthewiz/grmob/blob/master/comps/button.go#L202)</small>
+
+### type CheckoutAdjustment
+
+```go
+type CheckoutAdjustment struct {
+	Label  string
+	Amount int64
+}
+```
+
+CheckoutAdjustment is a line after the items that changes the total: shipping, tax, a discount (a negative Amount). In minor units.
+
+<small>[comps/stripe_checkout.go:52](https://github.com/rohanthewiz/grmob/blob/master/comps/stripe_checkout.go#L52)</small>
+
+### type CheckoutItem
+
+```go
+type CheckoutItem struct {
+	// Label names the item ("Pour-over kettle").
+	Label string
+
+	// Detail is a second, smaller line ("Matte black"). Empty draws the
+	// quantity and unit price there when Quantity is above one.
+	Detail string
+
+	// Quantity multiplies UnitAmount. Zero or less counts as one, so a line
+	// written without it is one of the thing.
+	Quantity int
+
+	// UnitAmount is the price of one, in the currency's minor unit (cents),
+	// the way Stripe's API states every amount.
+	UnitAmount int64
+}
+```
+
+CheckoutItem is one line of a StripeCheckout's order.
+
+<small>[comps/stripe_checkout.go:24](https://github.com/rohanthewiz/grmob/blob/master/comps/stripe_checkout.go#L24)</small>
 
 ### type Chip
 
@@ -925,6 +999,148 @@ func (s Stepper) Render(ctx *core.Context) *core.Node
 Render builds the group row described in the type doc.
 
 <small>[comps/stepper.go:125](https://github.com/rohanthewiz/grmob/blob/master/comps/stepper.go#L125)</small>
+
+### type StripeCheckout
+
+```go
+type StripeCheckout struct {
+	// Title heads the card. Empty is "Order summary".
+	Title string
+
+	// HeadingLevel is the Title's tier; zero is 2, as for a Card.
+	HeadingLevel int
+
+	// Items are the order's lines, in order.
+	Items []CheckoutItem
+
+	// Adjustments are drawn after the items and added to the total.
+	Adjustments []CheckoutAdjustment
+
+	// Currency is the ISO 4217 code, either case ("usd", "EUR"). Empty is USD.
+	Currency string
+
+	// CheckoutURL is a Payment Link or Checkout Session url, opened when Pay
+	// is tapped and OnPay is nil.
+	CheckoutURL string
+
+	// OnPay handles the tap instead of opening CheckoutURL.
+	OnPay func()
+
+	// Pending disables the button and relabels it PendingLabel: the app is
+	// fetching a Session, or the browser is opening.
+	Pending bool
+
+	// PayLabel replaces "Pay <total>".
+	PayLabel string
+
+	// PendingLabel replaces "Redirecting to Stripe…".
+	PendingLabel string
+
+	// Disabled disables the button: the cart is empty, a form above is
+	// incomplete.
+	Disabled bool
+
+	// Error is drawn above the button: the last attempt failed. A reader is
+	// told at once (RoleAlert), since they are waiting on the outcome.
+	Error string
+
+	// Note replaces the line under the button. HideNote leaves it out.
+	Note     string
+	HideNote bool
+
+	// Variant colours the Pay button. Zero is the theme's primary.
+	Variant Variant
+
+	// Format renders an amount. Nil is FormatMoney.
+	Format func(amount int64, currency string) string
+
+	// Style is applied to the card after the widget's own props.
+	Style []core.StyleProp
+}
+```
+
+StripeCheckout is the order summary and Pay button in front of a Stripe payment: the items, any shipping, tax or discount lines, the total, and one button that hands the payment to Stripe.
+
+	comps.StripeCheckout{
+	    Items: []comps.CheckoutItem{
+	        {Label: "Pour-over kettle", Detail: "Matte black", UnitAmount: 4500},
+	        {Label: "Filters (100)", Quantity: 2, UnitAmount: 650},
+	    },
+	    Adjustments: []comps.CheckoutAdjustment{{Label: "Shipping", Amount: 500}},
+	    Currency:    "usd",
+	    OnPay:       startCheckout, // asks your server for a Session, then core.OpenURL
+	    Pending:     redirecting.Get(),
+	}
+
+	┌ Card ─────────────────────────────────────────┐
+	│  Order summary                    heading 2   │
+	│  Pour-over kettle                    $45.00   │  Row, named
+	│  Matte black                                  │  "Pour-over kettle, $45.00"
+	│  Filters (100)                       $13.00   │
+	│  2 × $6.50                                    │
+	│  Shipping                             $5.00   │
+	│  ──────────────────────────────────────────── │  Separator
+	│  Total                               $63.00   │  Row, named "Total, $63.00"
+	│  (Error, when set)                            │  Text, RoleAlert
+	│  ┌──────────────── Pay $63.00 ─────────────┐  │  Button, full width
+	│  └─────────────────────────────────────────┘  │
+	│  🔒 Payments are processed securely by Stripe │  Caption
+	└───────────────────────────────────────────────┘
+
+#### What it does not do: take a card
+
+There is no card field here, and there will not be. A card number typed into an app's own text field passes through the app's memory, its logs and its crash reports, and that puts the app in PCI DSS scope. Stripe's answer is to collect the card on a page it hosts, which is what Checkout and Payment Links are. So the widget's job ends at the hand-off: it shows what is being bought and sends the reader to Stripe to pay for it.
+
+Two ways to get there:
+
+  - CheckoutURL, a Payment Link ([https://buy.stripe.com/](https://buy.stripe.com/)…) or a Checkout Session's url. A tap opens it with core.OpenURL: the browser on every platform. Right for a fixed product, where the link can be made once in the Stripe dashboard.
+  - OnPay, which wins when set. Creating a Checkout Session for a cart needs the secret key, and the secret key lives on a server, never in an app binary, where anyone can read it out. So OnPay is where the app calls its own server, gets the Session's url back, and opens it. Set Pending while that round trip runs.
+
+When the reader comes back (Stripe redirects to the success\_url or cancel\_url the Session was created with; on a phone, a deep link), the app asks its server whether the payment went through. Nothing this widget saw says so.
+
+#### Amounts
+
+Every amount is an int64 in the currency's minor unit, as Stripe's API takes them: 4500 is $45.00, and 4500 yen is ¥4,500, because the yen has no minor unit. FormatMoney knows which currencies Stripe treats as zero- and three-decimal. The total is computed here from the lines, so the button can never disagree with the list above it; it is still the Session, not this number, that decides what is charged.
+
+#### Accessibility
+
+Each line is a row named as one phrase, "Filters (100), 2 × $6.50, $13.00", so a reader hears an item and its price together rather than a column of names and then a column of prices. The Pay button says the total in its label. While Pending the button is disabled and reads "Redirecting to Stripe…", which is what the reader is waiting for.
+
+#### No hooks
+
+Everything is the caller's, so StripeCheckout may be rendered conditionally.
+
+#### Theme roles read
+
+	Card         the theme's Card base, Spacing.SM between the parts
+	Title        Typography.Subtitle, bold
+	Line         Typography.Body, Colors.TextPrimary; detail Caption, TextSecondary
+	Total        Typography.Subtitle, bold
+	Error        Typography.Body, Colors.Error
+	Button       as Button, with Variant
+	Note         Typography.Caption, Colors.TextSecondary
+
+<small>[comps/stripe_checkout.go:144](https://github.com/rohanthewiz/grmob/blob/master/comps/stripe_checkout.go#L144)</small>
+
+#### func (StripeCheckout) Render
+
+```go
+func (s StripeCheckout) Render(ctx *core.Context) *core.Node
+```
+
+Render draws the summary. It takes no hook slot.
+
+<small>[comps/stripe_checkout.go:212](https://github.com/rohanthewiz/grmob/blob/master/comps/stripe_checkout.go#L212)</small>
+
+#### func (StripeCheckout) Total
+
+```go
+func (s StripeCheckout) Total() int64
+```
+
+Total is the sum of the items and adjustments, in minor units.
+
+<small>[comps/stripe_checkout.go:200](https://github.com/rohanthewiz/grmob/blob/master/comps/stripe_checkout.go#L200)</small>
 
 ### type Variant
 

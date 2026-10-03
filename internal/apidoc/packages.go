@@ -263,9 +263,9 @@ var Packages = []Pkg{
 		}, {
 			Slug:  "actions",
 			Title: "Buttons & choices",
-			Blurb: "Buttons and their variants, copy buttons, links, chips, segmented controls, steppers, ratings and badges.",
+			Blurb: "Buttons and their variants, copy buttons, links, chips, segmented controls, steppers, ratings, badges and the Stripe checkout summary.",
 			Files: []string{"button.go", "variant.go", "copy_button.go", "link.go", "chip.go", "chip_strip.go", "segmented_control.go",
-				"stepper.go", "rating.go", "badge.go"},
+				"stepper.go", "rating.go", "badge.go", "stripe_checkout.go"},
 		}, {
 			Slug:  "overlays",
 			Title: "Overlays & feedback",
