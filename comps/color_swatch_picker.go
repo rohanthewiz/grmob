@@ -89,7 +89,7 @@ type Swatch struct {
 //
 // # What selected looks like
 //
-// A ring in PrimaryOnLight round the swatch, and a check on it. The check's
+// A ring in PrimaryInk round the swatch, and a check on it. The check's
 // ink is whichever of black and white has the better contrast against that
 // swatch (contrastInk), so it reads on yellow and on navy alike. Colour alone
 // never carries the state: the ring has a shape and the check is a glyph.
@@ -127,7 +127,7 @@ type Swatch struct {
 //
 // # Theme roles read
 //
-//	Ring          Colors.PrimaryOnLight
+//	Ring          Colors.PrimaryInk
 //	Swatch edge   ColorPalette.BorderColor hairline, so white shows on white
 //	Check         black or white, by contrast with the swatch
 //	Gaps          Spacing.XS between swatches, Spacing.SM above the field
@@ -324,7 +324,7 @@ func (p ColorSwatchPicker) grid(t *core.Theme, swatches []Swatch, value string, 
 func (p ColorSwatchPicker) swatch(t *core.Theme, s Swatch, selected bool, onTap func()) core.View {
 	ring := ColorTransparent
 	if selected {
-		ring = t.Colors.PrimaryOnLightColor()
+		ring = t.Colors.PrimaryInkColor()
 	}
 	fill := []core.PropsAndChildren{
 		core.Width("100%"),

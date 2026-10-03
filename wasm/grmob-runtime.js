@@ -156,6 +156,8 @@ const GrMob = (() => {
             // total, gated on its own node types, and repeated on the
             // update-props path.
             applyCanvasProps(el, node.Props, node.Type);
+            // A chart's hidden data table; see "Chart data table".
+            applyChartData(el, node.Props);
         }
 
         // The <input> variant, which the tag alone cannot express: tagForType
@@ -375,6 +377,103 @@ const GrMob = (() => {
         }
 
         return el;
+    }
+
+    // --- Chart data table (core.AccessibilityChart) ---------------------------
+    //
+    // A chart node carrying a chartData prop gets a visually hidden <table> of
+    // its numbers as its first child, and is written role="figure" rather than
+    // the role="img" its Style asks for: an img's children are presentational
+    // in ARIA, so a table inside one is pruned from the accessibility tree.
+    // htmlout/charttable.go carries the shared reasoning and writes the same
+    // document; chart_test.mjs holds the two together on real charts that Go
+    // renders (gen.go chartCases).
+    //
+    // The table is chrome, not a node: no data-node-path, never addressed by a
+    // patch, marked data-grmob-chrome so chromeOffset counts it. It leads the
+    // node children because chromeOffset only counts leading chrome — and
+    // because a reader wants the numbers right after the figure's name.
+    //
+    // The figure swap is remembered as data-grmob-chart, which is how
+    // applyAccessibility (which sees only the Style) keeps it across an
+    // update-style patch.
+
+    // htmlout.ChartTableStyle, restated.
+    const CHART_TABLE_STYLE = "position:absolute;width:1px;height:1px;padding:0;border:0;" +
+        "overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap";
+
+    // htmlout.ChartTableRows, restated: the caption, the header row, and the
+    // body rows (each one's first cell its row header). Categorical charts are
+    // a row per category and a column per series; numeric ones (a scatter) a
+    // row per point, headed by its series, with x and y.
+    function chartTableRows(data) {
+        const series = data.series || [];
+        const x = data.x || {};
+        const y = data.y || {};
+        const text = (p) => (p.text ? p.text : String(p.y ?? 0));
+        if (x.categories && x.categories.length) {
+            const head = [x.title || "", ...series.map((s) => s.name || "")];
+            const body = x.categories.map((c) => [c, ...series.map((s) => {
+                const p = (s.points || []).find((q) => (q.x || "") === c);
+                return p ? text(p) : "";
+            })]);
+            return { caption: data.title || "", head, body };
+        }
+        const body = [];
+        for (const s of series) {
+            for (const p of s.points || []) {
+                body.push([s.name || "", p.xt ? p.xt : String(p.xv ?? 0), text(p)]);
+            }
+        }
+        return { caption: data.title || "", head: ["", x.title || "", y.title || ""], body };
+    }
+
+    function buildChartTable(data) {
+        const { caption, head, body } = chartTableRows(data);
+        const cell = (tag, value, scope) => {
+            const c = document.createElement(tag);
+            if (scope) c.setAttribute("scope", scope);
+            c.textContent = value;
+            return c;
+        };
+        const table = document.createElement("table");
+        table.dataset.grmobChrome = "charttable";
+        table.setAttribute("style", CHART_TABLE_STYLE);
+        if (caption) table.appendChild(cell("caption", caption));
+        const thead = document.createElement("thead");
+        const headRow = document.createElement("tr");
+        for (const h of head) headRow.appendChild(cell("th", h, "col"));
+        thead.appendChild(headRow);
+        table.appendChild(thead);
+        const tbody = document.createElement("tbody");
+        for (const row of body) {
+            const tr = document.createElement("tr");
+            row.forEach((v, i) => tr.appendChild(i === 0 ? cell("th", v, "row") : cell("td", v)));
+            tbody.appendChild(tr);
+        }
+        table.appendChild(tbody);
+        return table;
+    }
+
+    // Total, like the other props helpers: the update-props patch carries the
+    // whole new map, so a chart that loses its data loses the table and the
+    // figure role with it.
+    function applyChartData(el, props) {
+        const first = el.children.length ? el.children[0] : null;
+        const existing = first && first.dataset.grmobChrome === "charttable" ? first : null;
+        const data = props && props.chartData;
+        if (!data) {
+            if (existing) existing.remove();
+            if (el.dataset.grmobChart !== undefined) {
+                delete el.dataset.grmobChart;
+                if (el.getAttribute("role") === "figure") el.setAttribute("role", "img");
+            }
+            return;
+        }
+        el.dataset.grmobChart = "";
+        if (el.getAttribute("role") === "img") el.setAttribute("role", "figure");
+        if (existing) existing.remove();
+        el.insertBefore(buildChartTable(data), el.children.length ? el.children[0] : null);
     }
 
     // --- TabView chrome ------------------------------------------------------
@@ -2837,9 +2936,11 @@ const GrMob = (() => {
         // reach is inert.
         const own = hidden ? "" : ownRole(nodeType);
         const dialog = nodeType === "Modal" && !hidden;
-        const role = hidden ? "" : (own
+        let role = hidden ? "" : (own
             ? (style.AccessibilityRole || own)
             : ariaRole(el, style));
+        // A chart with a data table is a figure; see "Chart data table".
+        if (role === "img" && el.dataset.grmobChart !== undefined) role = "figure";
         setOrRemove(el, "aria-hidden", hidden ? "true" : "");
         setOrRemove(el, "aria-label", hidden ? "" : (style.AccessibilityLabel || ""));
         setOrRemove(el, "aria-description", hidden ? "" : (style.AccessibilityHint || ""));
@@ -4323,9 +4424,10 @@ const GrMob = (() => {
 
     // Drops the callback IDs of handler props this node no longer carries.
     //
-    // Callback IDs are *positional*: core/event.go re-derives them from a
-    // per-pass counter, so "cb_3" belongs to whichever node happens to be the
-    // fourth registration this pass. A node that stops carrying, say, onClick
+    // Callback IDs are *positional* within their key scope: core/event.go
+    // re-derives them from a per-pass counter, so "cb_3" (or "cb_row7/3")
+    // belongs to whichever node happens to be the fourth registration there
+    // this pass. A node that stops carrying, say, onClick
     // must therefore forget the ID it last saw — keep it, and the next pass
     // hands that same ID to some other node, and clicking this element fires
     // that node's handler. The failure is silent and looks like a wiring bug
@@ -8299,6 +8401,8 @@ const GrMob = (() => {
                     // whole for the same reason: the patch carries the whole
                     // new map, and an attribute absent from it is gone.
                     applyCanvasProps(el, p.Changes, el.dataset.nodeType);
+                    // A chart's data table, rebuilt whole for the same reason.
+                    applyChartData(el, p.Changes);
                     // The editor's own props, before the per-key loop and for
                     // the same reason the hint and the map's dataset are: they
                     // are read together (the command's epoch and its string,

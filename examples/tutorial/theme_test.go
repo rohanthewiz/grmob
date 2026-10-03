@@ -130,14 +130,15 @@ func TestASchemeSentBeforeTheFirstRenderIsTheFirstFrame(t *testing.T) {
 	}
 }
 
-// darkTheme is built from a copy of DefaultTheme; building it must not have
-// written through to the original.
+// darkTheme (core.DarkTheme) is built from a copy of DefaultTheme; building
+// it must not have written through to the original. core's
+// TestDarkThemeIsDefaultThemesGeometryRecoloured holds the same at its source.
 func TestDarkThemeLeavesDefaultThemeAlone(t *testing.T) {
 	d := core.DefaultTheme
 	if d.Colors.Background != "#FFFFFF" || d.Colors.TextPrimary != "#000000" ||
 		d.Components.Button.TextColor != "#FFFFFF" || d.Components.Card.Background != "#FFFFFF" ||
 		d.Typography.Body.TextColor != "#000000" {
-		t.Fatal("newDarkTheme wrote through to core.DefaultTheme")
+		t.Fatal("core.DarkTheme's constructor wrote through to core.DefaultTheme")
 	}
 	if darkTheme.Colors.Background == d.Colors.Background {
 		t.Fatal("darkTheme should not share DefaultTheme's page colour")

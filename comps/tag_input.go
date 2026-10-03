@@ -85,7 +85,7 @@ const ConcernTagInputInert = "tag-input-inert"
 //
 //	Pill       Colors.Surface fill, ColorPalette.BorderColor hairline
 //	Tag text   Typography.Body
-//	✕          a ghost Button (Primary's on-light tone)
+//	✕          a ghost Button (Primary's ink tone)
 //	Gaps       Spacing.XS between tags and between the strip and the input
 type TagInput struct {
 	// Tags are the committed tags, owned by the caller.

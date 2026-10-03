@@ -28,12 +28,12 @@ import "github.com/rohanthewiz/grmob/core"
 // A strip that runs the width of the screen cannot: a saturated Error red
 // across a screen reads as a failure of the app rather than of one fetch, and
 // the palette carries no muted *container* tone to fill with instead. (It
-// carries an on-light tone now, which is the opposite end of the range — ink
+// carries an ink tone now, which is the opposite end of the range — ink
 // for a light surface, not a wash to sit behind one — so it does not answer
 // this. A container tone would still be a palette decision, not a Banner one.)
 //
 // So the variant is spent on the edges: a hairline border and the leading
-// glyph take the role's on-light tone, the fill stays the theme's Surface, and
+// glyph take the role's ink tone, the fill stays the theme's Surface, and
 // the text keeps the primary ink so it is legible whatever the role. That also
 // means a Banner's contrast does not depend on which variant it is, which the
 // alternatives could not promise.
@@ -115,7 +115,7 @@ func (b Banner) Render(ctx *core.Context) *core.Node {
 	// The role's ink-weight tone, not its fill. Both places this colour lands
 	// — the hairline and the leading glyph — are drawn *over* the Surface fill
 	// rather than being a fill themselves, which is exactly the position the
-	// on-light tone exists for. The glyph is the one that needed it: under
+	// ink tone exists for. The glyph is the one that needed it: under
 	// DefaultTheme a warning's ⚠ was Colors.Warning on Surface, about 2:1,
 	// which is a mark that is technically present.
 	//
@@ -124,7 +124,7 @@ func (b Banner) Render(ctx *core.Context) *core.Node {
 	// #F2F2F7 rather than #FFFFFF costs roughly 7% — and all four still clear
 	// AA. Worth knowing rather than worth a second set of tones: a Surface is
 	// a light surface, which is what the name claims.
-	accent := b.Variant.OnLight(t)
+	accent := b.Variant.AsInk(t)
 
 	items := make([]core.PropsAndChildren, 0, len(b.Style)+8)
 	items = append(items,

@@ -123,8 +123,8 @@ func TestColorSwatchPickerMarksTheChoice(t *testing.T) {
 				if check.Style.TextColor != c.ink {
 					t.Errorf("check on %s is %s, want %s", c.name, check.Style.TextColor, c.ink)
 				}
-				if r.Style.BorderColor != th.Colors.PrimaryOnLightColor() {
-					t.Errorf("ring is %s, want PrimaryOnLight", r.Style.BorderColor)
+				if r.Style.BorderColor != th.Colors.PrimaryInkColor() {
+					t.Errorf("ring is %s, want PrimaryInk", r.Style.BorderColor)
 				}
 			} else if r.Style.BorderColor != ColorTransparent {
 				t.Errorf("an unselected ring is %s, want transparent", r.Style.BorderColor)

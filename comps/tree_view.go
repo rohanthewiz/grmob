@@ -132,7 +132,7 @@ func (n TreeNode) isBranch() bool { return n.Branch || len(n.Children) > 0 }
 // # Theme roles read
 //
 //	Label          Typography.Body, Colors.TextPrimary
-//	Chosen leaf    bold, Colors.PrimaryOnLightColor(), on Colors.Surface
+//	Chosen leaf    bold, Colors.PrimaryInkColor(), on Colors.Surface
 //	Chevron        Typography.Body, Colors.TextSecondary
 //	Row padding    Spacing.XS by Spacing.SM; gap Spacing.SM
 //	Indent         Spacing.LG per level, unless Indent is set
@@ -379,7 +379,7 @@ func (tv TreeView) leafRow(t *core.Theme, n TreeNode) core.View {
 func (tv TreeView) rowContent(t *core.Theme, n TreeNode, chosen bool) []core.View {
 	color, weight := t.Colors.TextPrimary, core.Normal
 	if chosen {
-		color, weight = t.Colors.PrimaryOnLightColor(), core.Bold
+		color, weight = t.Colors.PrimaryInkColor(), core.Bold
 	}
 	out := make([]core.View, 0, 2)
 	if n.Leading != nil {

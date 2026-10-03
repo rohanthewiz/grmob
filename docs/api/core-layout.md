@@ -317,11 +317,11 @@ Anywhere. containerNode registers behavior props in argument order but renders c
 
 That is worth saying out loud rather than leaving to be derived, because the guard below is keyed by the ID and a reader who works out what the key is made of is right to wonder whether a page that lengthens the list moves it. Within one List it cannot; TestOnEndReachedIDIsIndependentOfArgumentOrder holds the contract still.
 
-What \*does\* move it is anything earlier in the same pass that registers a varying number of callbacks: a sibling above the List whose own children grow with the page, or a row helper that renders on the spot with view.Render(ctx) rather than returning a View for the List to render. Then the ID slides with the data, each page starts its guard from scratch under a key something else held on the previous pass, and the double-load this prop exists to prevent comes back. Same family as the edge below, and the same identity-keyed IDs close both.
+What \*can\* move it is anything earlier in the same ID scope that registers a varying number of callbacks: an unkeyed sibling above the List whose own children grow with the page, or a row helper that renders on the spot with view.Render(ctx) rather than returning a View for the List to render. Then the ID slides with the data, each page starts its guard from scratch under a key something else held on the previous pass, and the double-load this prop exists to prevent comes back. Keyed siblings cannot do it, since a keyed subtree numbers its callbacks under its own key (see "Identity-keyed IDs" on callbackRegistry.beginPass), and keying the List itself, or the sibling, closes the edge.
 
-#### The guard's one sharp edge
+#### Across a navigation
 
-State is keyed by callback ID, and callback IDs are positional: the Nth void handler registered in a pass is always "cb\_N" (see callbackRegistry). Two different Lists in two different screens can therefore inherit the same ID across a navigation, and the second one's first end-reached is swallowed if it happens to hold exactly as many rows as the first did when the first last fired. That is the same stale-ID window the registry itself documents, and it closes when identity-keyed IDs land; nothing here can close it earlier, because the two lists are indistinguishable from this side.
+State is keyed by callback ID. Before IDs were keyed, two different Lists in two different screens could inherit the same "cb\_N" across a navigation, and the second one's first end-reached was swallowed if it held exactly as many rows as the first did when the first last fired. Each Navigator frame now spells its IDs under the frame's key, so two screens' Lists cannot share one. Two Lists swapped at one position of one screen, unkeyed, still can.
 
 <small>[core/list.go:154](https://github.com/rohanthewiz/grmob/blob/master/core/list.go#L154)</small>
 

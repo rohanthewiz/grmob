@@ -38,11 +38,27 @@ sequenceDiagram
     M-->>H: patches
 ```
 
-**IDs are per-pass sequence numbers.** `BeginRenderPass` resets the counters,
-so the Nth callback registered in a pass is always `cb_N`. This is what keeps
-IDs stable across renders: an unchanged UI re-registers the same IDs in the
-same order — zero prop diffs — while each registration overwrites the map
-entry with the latest closure, so handlers always capture current state.
+**IDs are per-pass sequence numbers, named by key.** `BeginRenderPass` resets
+the counters, so the Nth callback registered in a pass is always `cb_N`. This
+is what keeps IDs stable across renders: an unchanged UI re-registers the same
+IDs in the same order — zero prop diffs — while each registration overwrites
+the map entry with the latest closure, so handlers always capture current
+state.
+
+A keyed subtree (`core.Keyed`, and the root of each `Navigator` frame) numbers
+its own callbacks under its key, and the counters outside it do not move:
+
+```
+Column                         cb_0
+├─ Keyed "r1" ─ Row
+│   ├─ Keyed "c0" ─ cell       cb_r1/c0/0
+│   └─ Keyed "c1" ─ cell       cb_r1/c1/0
+└─ Button "Save"               cb_1
+```
+
+So a row that gains or loses a handler renumbers nothing outside itself. A
+key that repeats within one scope (two keyed lists under one unkeyed column)
+is told apart by occurrence, `0~1`; `/`, `~` and `%` in a key are escaped.
 
 **Unused IDs are purged.** After each diff, any callback not re-registered in
 that pass is dropped: handlers for nodes that left the tree become silent
@@ -50,18 +66,21 @@ no-ops instead of firing for dead UI. A late native event racing a purge is
 expected traffic, not an error.
 
 !!! note "Stability granularity"
-    Per-pass sequence IDs have the same stability as the reconciler's
-    positional patch paths: a structural change that shifts later siblings
-    also shifts their callback IDs — and those same nodes receive
-    update-props patches regardless, so the renderer re-binds them. In the
-    brief window around a structural re-render, an event dispatched against
-    a stale tree can hit a re-used ID; identity-keyed IDs are the planned
-    fix, alongside identity-based node paths.
+    Within one scope, IDs have the same stability as the reconciler's
+    positional patch paths: a structural change that shifts later unkeyed
+    siblings also shifts their callback IDs — and those same nodes receive
+    update-props patches regardless, so the renderer re-binds them. Nothing
+    past the nearest keyed ancestor moves. In the brief window around a
+    structural re-render, an event dispatched against a stale tree can still
+    hit a re-used ID at an unkeyed position the change shifted; key the rows
+    of anything dynamic. An event from a screen that has been navigated away
+    from cannot reach the next one, whose IDs carry a different frame key.
 
-    System back is where that window is most likely to be hit, because a
-    user presses it twice in quick succession. `core.OnBack` therefore
-    numbers its handlers separately (`back_cb_N`), so a stale back ID can
-    only reach another back handler or nothing, never a tap.
+    System back is the event a user sends twice in quick succession.
+    `core.OnBack` numbers its handlers separately (`back_cb_N`), and
+    Navigator's own Pop is registered outside the frame's scope, so a stale
+    back ID can only reach another back handler or nothing, never a tap,
+    and two quick presses on a three-deep stack still pop twice.
 
 ## Attaching handlers
 

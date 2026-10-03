@@ -8,7 +8,7 @@ Package htmlout exports a rendered core.Node tree as a standalone HTML document.
 
 ## Index
 
-- [Constants](#constants) — `OverlayChassis`, `OverlayChildDecl`
+- [Constants](#constants) — `ChartTableStyle`, `OverlayChassis`, `OverlayChildDecl`
 - [`func AlignFallbackAxes`](#func-alignfallbackaxes)
 - [`func AlignFallbackAxisFor`](#func-alignfallbackaxisfor)
 - [`func AlignFallbackTypes`](#func-alignfallbacktypes)
@@ -22,6 +22,8 @@ Package htmlout exports a rendered core.Node tree as a standalone HTML document.
 - [`func CanvasStrokeGradient`](#func-canvasstrokegradient)
 - [`func CanvasStrokeGradientID`](#func-canvasstrokegradientid)
 - [`func CarriesOwnRole`](#func-carriesownrole)
+- [`func ChartDataOf`](#func-chartdataof)
+- [`func ChartTableRows`](#func-charttablerows)
 - [`func CrossAxisAlignFor`](#func-crossaxisalignfor)
 - [`func CrossAxisAligns`](#func-crossaxisaligns)
 - [`func EdgeCSS`](#func-edgecss)
@@ -70,6 +72,15 @@ const (
 ```
 
 <small>[htmlout/stack.go:222](https://github.com/rohanthewiz/grmob/blob/master/htmlout/stack.go#L222)</small>
+
+ChartTableStyle is the table's inline style. The runtime restates it as CHART\_TABLE\_STYLE; wasm/verify/chart\_test.mjs holds them together.
+
+```go
+const ChartTableStyle = "position:absolute;width:1px;height:1px;padding:0;border:0;" +
+	"overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap"
+```
+
+<small>[htmlout/charttable.go:51](https://github.com/rohanthewiz/grmob/blob/master/htmlout/charttable.go#L51)</small>
 
 ## Functions
 
@@ -219,6 +230,30 @@ Exported because the TabView wiring has to know: the role attribute has one slot
 
 <small>[htmlout/tag.go:295](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L295)</small>
 
+### func ChartDataOf
+
+```go
+func ChartDataOf(props map[string]any) (core.ChartData, bool)
+```
+
+ChartDataOf returns the chart data a node carries, if any.
+
+<small>[htmlout/charttable.go:55](https://github.com/rohanthewiz/grmob/blob/master/htmlout/charttable.go#L55)</small>
+
+### func ChartTableRows
+
+```go
+func ChartTableRows(d core.ChartData) (caption string, head []string, body [][]string)
+```
+
+ChartTableRows lays d out as a table: a caption, one header row, and the body rows, each body row's first cell being its row header.
+
+A categorical chart is a row per category and a column per series, which is how the chart is read: across a row, one category's value in every series. A numeric one (ScatterChart) is a row per point, headed by its series, with its x and y. A missing value is an empty cell. A point's own Text (the chart's formatting) is preferred to the bare number.
+
+The runtime restates this as chartTableRows; gen.go's chartCases computes Go's answer for real charts and chart\_test.mjs compares.
+
+<small>[htmlout/charttable.go:71](https://github.com/rohanthewiz/grmob/blob/master/htmlout/charttable.go#L71)</small>
+
 ### func CrossAxisAlignFor
 
 ```go
@@ -326,7 +361,7 @@ func InputModeFor(kind string) string
 
 InputModeFor maps a core.KeyboardKind to HTML's inputmode: the attribute a mobile browser reads to choose its software keyboard. "" is no attribute, the browser's text keyboard. Exported for the WASM runtime's table to be checked against, as InputTypeFor is.
 
-<small>[htmlout/export.go:887](https://github.com/rohanthewiz/grmob/blob/master/htmlout/export.go#L887)</small>
+<small>[htmlout/export.go:896](https://github.com/rohanthewiz/grmob/blob/master/htmlout/export.go#L896)</small>
 
 ### func InputTypeFor
 
@@ -394,7 +429,7 @@ display and background are deliberately not in it. Both are prop-driven, and the
 
 A copy, not the slice itself, for the reason StackAxes returns one: a package-level slice is reachable and writable by any importer.
 
-<small>[htmlout/export.go:1233](https://github.com/rohanthewiz/grmob/blob/master/htmlout/export.go#L1233)</small>
+<small>[htmlout/export.go:1242](https://github.com/rohanthewiz/grmob/blob/master/htmlout/export.go#L1242)</small>
 
 ### func ObjectFitFor
 

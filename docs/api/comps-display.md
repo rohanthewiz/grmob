@@ -1069,7 +1069,7 @@ The text node carries the whole string on every target; the cap is visual only (
 #### Theme roles read
 
 	Text     Typography.Body
-	Toggle   a ghost Button (Primary's on-light tone)
+	Toggle   a ghost Button (Primary's ink tone)
 	Gap      Spacing.XS
 
 <small>[comps/expandable_text.go:60](https://github.com/rohanthewiz/grmob/blob/master/comps/expandable_text.go#L60)</small>
@@ -1437,7 +1437,7 @@ The poll is a RoleGroup named by Question, and the question is drawn as a RoleHe
 
 	Question      Typography.Subtitle, in Colors.TextPrimary
 	Option text   Typography.Body; the reader's choice bold, in
-	              Colors.PrimaryOnLightColor()
+	              Colors.PrimaryInkColor()
 	Share, total  Typography.Caption, Colors.TextSecondary
 	Bars          comps.ProgressBar: Colors.Primary on Colors.Surface
 	Buttons       comps.Button outlined

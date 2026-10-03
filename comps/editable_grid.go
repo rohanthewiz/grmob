@@ -292,9 +292,10 @@ var gridBlurGrace = 150 * time.Millisecond
 // A List with no height is not lazy, so give the grid one (Style: core.Height
 // or core.FlexGrow).
 //
-// A changed value patches that cell alone. Entering or leaving EDIT does more:
-// callback IDs are issued in render order, the editor registers more of them
-// than the box it replaces, and every later cell's onClick is re-bound.
+// A changed value patches that cell alone, and so does entering or leaving
+// EDIT. The editor registers three handlers where the box it replaces
+// registers one, but rows and cells are keyed, and a keyed subtree names its
+// own callback IDs (core.Keyed), so no other cell's onClick moves.
 //
 // # It holds hooks
 //

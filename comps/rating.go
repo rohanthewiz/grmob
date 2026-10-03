@@ -71,7 +71,7 @@ import (
 //
 // # Theme roles read
 //
-//	Filled glyph   Colors.WarningOnLightColor() — amber that holds contrast on
+//	Filled glyph   Colors.WarningInkColor() — amber that holds contrast on
 //	               a light surface, where Colors.Warning is about 2:1
 //	Empty glyph    Colors.TextSecondary
 //	Glyph size     Typography.Subtitle
@@ -150,7 +150,7 @@ func (r Rating) Render(ctx *core.Context) *core.Node {
 	for i := range maxN {
 		glyph, color := empty, t.Colors.TextSecondary
 		if i < filled {
-			glyph, color = full, t.Colors.WarningOnLightColor()
+			glyph, color = full, t.Colors.WarningInkColor()
 		}
 		text := []core.StyleProp{core.UseStyle(t.Typography.Subtitle), core.TextColor(color)}
 
@@ -228,7 +228,7 @@ func ratingStar(t *core.Theme, fill float64) core.View {
 		return p.Close()
 	}
 
-	on, off := t.Colors.WarningOnLightColor(), t.Colors.TextSecondary
+	on, off := t.Colors.WarningInkColor(), t.Colors.TextSecondary
 	whole := polygon(0, 1, 2, 3, 4, 5, 6, 7, 8, 9)
 	var shapes []core.Shape
 	switch {

@@ -85,7 +85,7 @@ import "github.com/rohanthewiz/grmob/core"
 // # Theme roles read
 //
 //	Bar background   Colors.Surface
-//	Current item     Colors.PrimaryOnLightColor(), bold
+//	Current item     Colors.PrimaryInkColor(), bold
 //	Other items      Colors.TextSecondary
 //	Label text       Typography.Caption; Icon uses Typography.Subtitle
 //	Padding          Spacing.XS
@@ -159,7 +159,7 @@ func (b BottomBar) item(t *core.Theme, it BarItem, current bool) core.View {
 	color := t.Colors.TextSecondary
 	weight := core.Normal
 	if current {
-		color = t.Colors.PrimaryOnLightColor()
+		color = t.Colors.PrimaryInkColor()
 		weight = core.Bold
 	}
 

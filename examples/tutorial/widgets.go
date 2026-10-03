@@ -94,8 +94,8 @@ func caption(text string) core.View {
 // the rule above holds for the block as a whole. It copies the trimmed
 // snippet — the exact string the editor draws — and is coloured from the
 // scheme rather than the theme, because its backdrop is the code surface and
-// not the page: the theme's on-light tones would be dark ink on Darcula's
-// dark grey.
+// not the page: the theme's ink tones are measured against the page, and
+// under a light theme they are dark ink on Darcula's dark grey.
 //
 // The button sits in a strip of the code surface above the first line, not
 // over it:

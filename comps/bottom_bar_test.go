@@ -55,7 +55,7 @@ func TestBottomBarIsANavigationOfEqualCells(t *testing.T) {
 		t.Error("the icon is decoration and hidden from assistive technology")
 	}
 	cur, other := findText(n.Children[1], "Search"), findText(n.Children[0], "Home")
-	if cur.Style.TextColor != core.DefaultTheme.Colors.PrimaryOnLightColor() || cur.Style.FontWeight != core.Bold {
+	if cur.Style.TextColor != core.DefaultTheme.Colors.PrimaryInkColor() || cur.Style.FontWeight != core.Bold {
 		t.Errorf("current item colour/weight = %q/%v", cur.Style.TextColor, cur.Style.FontWeight)
 	}
 	if other.Style.TextColor != core.DefaultTheme.Colors.TextSecondary {

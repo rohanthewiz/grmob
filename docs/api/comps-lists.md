@@ -161,7 +161,7 @@ The column is a RoleList and each row a listitem named by its text, so a reader 
 
 #### Theme roles read
 
-	Marker     Colors.Primary's on-light tone, bold
+	Marker     Colors.Primary's ink tone, bold
 	Text       Typography.Body
 	Gap        Spacing.XS between items, Spacing.SM after the marker
 
@@ -728,7 +728,7 @@ Each visible cell is a node. core.List windows the rows on both natives, so the 
 
 A List with no height is not lazy, so give the grid one (Style: core.Height or core.FlexGrow).
 
-A changed value patches that cell alone. Entering or leaving EDIT does more: callback IDs are issued in render order, the editor registers more of them than the box it replaces, and every later cell's onClick is re-bound.
+A changed value patches that cell alone, and so does entering or leaving EDIT. The editor registers three handlers where the box it replaces registers one, but rows and cells are keyed, and a keyed subtree names its own callback IDs (core.Keyed), so no other cell's onClick moves.
 
 #### It holds hooks
 
@@ -743,7 +743,7 @@ Two FocusRefs, the editor, the landing cell, the open menu and the blur timer. S
 	Editing    Colors.Primary border; Colors.Error after a refused commit
 	Read only  Colors.Surface fill, TextSecondary ink
 
-<small>[comps/editable_grid.go:313](https://github.com/rohanthewiz/grmob/blob/master/comps/editable_grid.go#L313)</small>
+<small>[comps/editable_grid.go:314](https://github.com/rohanthewiz/grmob/blob/master/comps/editable_grid.go#L314)</small>
 
 #### func (EditableGrid) Render
 
@@ -753,7 +753,7 @@ func (g EditableGrid) Render(ctx *core.Context) *core.Node
 
 Render builds the grid as drawn in the type doc.
 
-<small>[comps/editable_grid.go:359](https://github.com/rohanthewiz/grmob/blob/master/comps/editable_grid.go#L359)</small>
+<small>[comps/editable_grid.go:360](https://github.com/rohanthewiz/grmob/blob/master/comps/editable_grid.go#L360)</small>
 
 ### type GridCellKind
 

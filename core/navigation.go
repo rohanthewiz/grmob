@@ -170,7 +170,13 @@ func Navigator(initial func(*Context) View) View {
 		}
 
 		frame := ctx.disposableScope(routeScopeKey(entry.id))
-		n := withFrameKey(entry.id, entry.route(frame).Render(frame))
+		// The frame's key names its callbacks too, so an event dispatched
+		// from a screen that has since been popped or replaced cannot reach
+		// the one now in its place. withSystemBackPop stays outside: see
+		// callbackRegistry.registerBack.
+		n := withFrameKey(entry.id, frame.keyScope(routeScopeKey(entry.id), func() *Node {
+			return entry.route(frame).Render(frame)
+		}))
 		if canPop {
 			n = withSystemBackPop(ctx, n)
 		}

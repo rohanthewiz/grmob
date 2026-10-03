@@ -105,7 +105,7 @@ const (
 //
 // Outlined and Ghost own neither: the fill is transparent, so the label's real
 // backdrop is whatever the button was placed on, which the widget cannot see.
-// Their label is therefore the role's *on-light* tone — the palette's second
+// Their label is therefore the role's *ink* tone — the palette's second
 // value per role, dark enough to be read as ink on a light surface — rather
 // than the fill colour. Measured against each theme's own Background (both are
 // #FFFFFF), with the value each replaced in brackets:
@@ -134,7 +134,7 @@ const (
 // here can know. What changed is that the default case is now legible rather
 // than documented as illegible.
 //
-// A theme that declares no on-light tones falls back to the role colour, i.e.
+// A theme that declares no ink tones falls back to the role colour, i.e.
 // to the bracketed numbers, and to exactly the pixels this widget painted
 // before the palette had a second value. Darkening a role colour *here* was
 // considered and rejected for the reason it always was: it would repaint a hex
@@ -260,7 +260,7 @@ func (b Button) colorProps(t *core.Theme) []core.StyleProp {
 	// the fill. They own no background, so the label's real backdrop is
 	// whatever the button was placed on — which the widget cannot see, and
 	// which on both bundled themes is a light surface — so the value has to
-	// stand on its own. That is the whole of what the on-light tone is for,
+	// stand on its own. That is the whole of what the ink tone is for,
 	// and it is why the numbers in the type doc above are now the ones they
 	// are. A theme that declares no tone falls back to the role colour, which
 	// is what this spent before the palette had a second value, so nothing
@@ -272,7 +272,7 @@ func (b Button) colorProps(t *core.Theme) []core.StyleProp {
 	// coherence: a label and the box drawn around it reading as two different
 	// colours is worse than either one being a shade darker than the fill it
 	// would turn into.
-	ink := b.Variant.OnLight(t)
+	ink := b.Variant.AsInk(t)
 
 	// Both transparent treatments also drop the theme base's elevation
 	// (Components.Button.Shadow). A shadow is cast by a fill, and these have

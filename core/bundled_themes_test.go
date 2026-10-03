@@ -21,14 +21,15 @@ import (
 // hand-written list.
 //
 // So the declarations are read out of theme.go: every package-level
-// `var X = &Theme{...}` has to appear in BundledThemes() under its own
-// identifier. Adding a fourth palette and forgetting the map fails here by
+// `var X = &Theme{...}`, or `var X = newX()` where newX is a function in
+// theme.go returning *Theme (DarkTheme, a recoloured copy of DefaultTheme),
+// has to appear in BundledThemes() under its own identifier. Adding a fourth palette and forgetting the map fails here by
 // name, which is the same trick TestBundledThemesSetEveryColorRole plays one
 // level down with reflection over ColorPalette's fields.
 //
-// The parse is deliberately narrow — the file, the top level, `&Theme{` — so
-// that a *Theme built inside a function (a test fixture, a WithTheme example)
-// is not swept in. A bundled theme is a package-level var by definition: it is
+// The parse is deliberately narrow — the file, the top level, `&Theme{` or a
+// call to one of the file's own *Theme constructors — so that a *Theme built
+// inside a function (a test fixture, a WithTheme example) is not swept in. A bundled theme is a package-level var by definition: it is
 // the thing an app names.
 func TestBundledThemesListIsExhaustive(t *testing.T) {
 	declared := themeVarsDeclaredIn(t, "theme.go")
@@ -90,6 +91,21 @@ func themeVarsDeclaredIn(t *testing.T, file string) []string {
 		t.Fatalf("parsing %s: %v", file, err)
 	}
 
+	// The file's own *Theme constructors, by name: a package-level var
+	// initialised by calling one is a bundled theme built from another.
+	ctors := map[string]bool{}
+	for _, decl := range f.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Recv != nil || fn.Type.Results == nil || len(fn.Type.Results.List) != 1 {
+			continue
+		}
+		if star, ok := fn.Type.Results.List[0].Type.(*ast.StarExpr); ok {
+			if ident, ok := star.X.(*ast.Ident); ok && ident.Name == "Theme" {
+				ctors[fn.Name.Name] = true
+			}
+		}
+	}
+
 	var names []string
 	for _, decl := range f.Decls {
 		gen, ok := decl.(*ast.GenDecl)
@@ -102,7 +118,7 @@ func themeVarsDeclaredIn(t *testing.T, file string) []string {
 				continue
 			}
 			for i, value := range vs.Values {
-				if !isThemeLiteral(value) || i >= len(vs.Names) {
+				if !(isThemeLiteral(value) || isThemeConstructorCall(value, ctors)) || i >= len(vs.Names) {
 					continue
 				}
 				name := vs.Names[i].Name
@@ -120,8 +136,8 @@ func themeVarsDeclaredIn(t *testing.T, file string) []string {
 	return names
 }
 
-// isThemeLiteral matches `&Theme{...}`, which is how every bundled palette is
-// spelled. A composite literal of any other type, or a call, is not one.
+// isThemeLiteral matches `&Theme{...}`, which is how the light bundled
+// palettes are spelled. A composite literal of any other type is not one.
 func isThemeLiteral(x ast.Expr) bool {
 	unary, ok := x.(*ast.UnaryExpr)
 	if !ok || unary.Op != token.AND {
@@ -133,4 +149,17 @@ func isThemeLiteral(x ast.Expr) bool {
 	}
 	ident, ok := lit.Type.(*ast.Ident)
 	return ok && ident.Name == "Theme"
+}
+
+// isThemeConstructorCall matches `newX()`, a call with no arguments to one of
+// the file's own *Theme constructors (ctors). Arguments are refused so that a
+// helper deriving a theme from a caller's input is not mistaken for a
+// bundled palette.
+func isThemeConstructorCall(x ast.Expr, ctors map[string]bool) bool {
+	call, ok := x.(*ast.CallExpr)
+	if !ok || len(call.Args) != 0 {
+		return false
+	}
+	ident, ok := call.Fun.(*ast.Ident)
+	return ok && ctors[ident.Name]
 }

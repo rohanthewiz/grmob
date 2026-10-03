@@ -158,7 +158,23 @@ func (c Histogram) Render(ctx *core.Context) *core.Node {
 	if label == "" {
 		label = c.summary(bins, format)
 	}
-	return cartesianFrameWithValues(ctx, yscale, h, nil, canvas, xLabels, nil, label, c.Style, nil, 0)
+	return cartesianFrameWithValues(ctx, yscale, h, nil, canvas, xLabels, nil, label, c.Style, nil, 0,
+		c.data(bins, format, yscale))
+}
+
+// data is the histogram's core.ChartData: one row per bin, named by its two
+// edges in the axis's own format ("10–20"), and one series of counts. The
+// counts are spelled plainly rather than in Format, which writes edges
+// (values of the measured quantity), not how many fell between them.
+func (c Histogram) data(bins histBins, format func(float64) string, yscale valueScale) core.ChartData {
+	nb := len(bins.counts)
+	names := make([]string, nb)
+	counts := ChartSeries{Name: "Count", Values: make([]float64, nb)}
+	for i, n := range bins.counts {
+		names[i] = format(bins.edge(i)) + "–" + format(bins.edge(i+1))
+		counts.Values[i] = float64(n)
+	}
+	return seriesData(c.Subject, names, nb, []ChartSeries{counts}, formatValue, yscale.lo, yscale.hi, false)
 }
 
 // histBins is the binning: the first edge, the bin width and a count per bin.

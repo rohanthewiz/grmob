@@ -427,8 +427,9 @@ core.BorderColor(t.Colors.BorderColor()) // late roles resolve through methods`)
 					"minimum: ComponentDefaults has no resolvers, and a missing base is "+
 					"genuinely no styling."),
 				prose("One thing Border does not name: the edge of a control. A rule between "+
-					"rows is decoration and all three bundled themes spend a very pale hex on "+
-					"it (1.26:1 for Default, 1.32:1 for the other two), while the edge that "+
+					"rows is decoration and every bundled theme spends a faint hex on it "+
+					"(1.26:1 for Default, 1.32:1 for Material and Amber, 1.45:1 for Dark), "+
+					"while the edge that "+
 					"says this rectangle is something "+
 					"you can operate is the only thing identifying it — WCAG 1.4.11 puts a 3:1 "+
 					"floor under that, and neither Border passes it. ControlBorder is the other "+
@@ -556,7 +557,7 @@ core.BundledThemes() // every palette the package ships, keyed by identifier`),
 				prose("Because which theme a node sees is decided at render time, a live "+
 					"switcher needs no framework machinery at all: hold the choice as state, "+
 					"hand the chosen theme to the wrapper, and the flip is an ordinary render "+
-					"whose changes ship as update-style patches. The three buttons above are "+
+					"whose changes ship as update-style patches. The buttons above are "+
 					"core.BundledThemes() rather than a list typed out here, which is the "+
 					"habit worth copying: a palette added to the package should appear in "+
 					"your switcher without anybody remembering to add it. The swap only reaches what "+

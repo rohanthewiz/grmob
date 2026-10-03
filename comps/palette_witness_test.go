@@ -20,11 +20,11 @@ import (
 // evidence was midTonePrimaryTheme, a fixture:
 //
 //	inkOn's first step        reads the theme's declared pair before measuring.
-//	OnLight's Primary arm     returns the role's ink-weight tone.
+//	AsInk's Primary arm       returns the role's ink-weight tone.
 //
 // AmberTheme was written to answer that, and it answers most of it. Its brand
 // is a fill that cannot be ink (amber 700 is 2.04:1 on white), so its Primary
-// role and its on-light tone are genuinely different colours; and its button
+// role and its ink tone are genuinely different colours; and its button
 // declares MD brown 900 over that amber where measurement would pick the page's
 // near-black, so deleting declaredInk moves pixels there. Two rows that rested
 // on a fixture now rest on a shipped palette.
@@ -151,19 +151,19 @@ var paletteRules = []paletteRule{
 
 // onLightRule builds the "the reverse lookup moves this role's colour" rule.
 //
-// Asked through ColorPalette.OnLight rather than through the role's own
-// resolver, because OnLight is the arm that can be deleted: a widget holding
+// Asked through ColorPalette.AsInk rather than through the role's own
+// resolver, because AsInk is the arm that can be deleted: a widget holding
 // a hex and no name for it is the position the reverse lookup exists for (see
 // chipAccent, which reads the theme's Button base and so has a colour rather
 // than a role).
 func onLightRule(role string, get func(core.ColorPalette) string) paletteRule {
 	return paletteRule{
-		name: "OnLight moves the " + role + " role",
-		deletable: "the " + role + " arm of ColorPalette.OnLight — for this theme the " +
+		name: "AsInk moves the " + role + " role",
+		deletable: "the " + role + " arm of ColorPalette.AsInk — for this theme the " +
 			"lookup is an identity and returning the colour unchanged would agree",
 		witnesses: func(t *core.Theme) bool {
 			c := get(t.Colors)
-			return c != "" && !strings.EqualFold(t.Colors.OnLight(c), c)
+			return c != "" && !strings.EqualFold(t.Colors.AsInk(c), c)
 		},
 	}
 }
@@ -280,7 +280,7 @@ type witnessRow struct {
 var wantWitnesses = []witnessRow{
 	{
 		rule:   "the declaration outranks the measurement",
-		themes: []string{"AmberTheme", "midTonePrimary"},
+		themes: []string{"AmberTheme", "DarkTheme", "midTonePrimary"},
 		rests:  restsOnBundled,
 	},
 	{
@@ -292,23 +292,23 @@ var wantWitnesses = []witnessRow{
 			"1.8% wide — see TestThePoleFlipBandIsTooNarrowToShip",
 	},
 	{
-		rule:   "OnLight moves the Primary role",
+		rule:   "AsInk moves the Primary role",
 		themes: []string{"AmberTheme", "midTonePrimary"},
 		rests:  restsOnBundled,
 	},
 	{
-		rule:   "OnLight moves the Error role",
-		themes: []string{"DefaultTheme", "midTonePrimary"},
+		rule:   "AsInk moves the Error role",
+		themes: []string{"DarkTheme", "DefaultTheme", "midTonePrimary"},
 		rests:  restsOnBundled,
 	},
 	{
-		rule:   "OnLight moves the Success role",
-		themes: []string{"DefaultTheme"},
+		rule:   "AsInk moves the Success role",
+		themes: []string{"DarkTheme", "DefaultTheme"},
 		rests:  restsOnBundled,
 	},
 	{
-		rule:   "OnLight moves the Warning role",
-		themes: []string{"AmberTheme", "DefaultTheme", "MaterialTheme"},
+		rule:   "AsInk moves the Warning role",
+		themes: []string{"AmberTheme", "DarkTheme", "DefaultTheme", "MaterialTheme"},
 		rests:  restsOnBundled,
 	},
 }

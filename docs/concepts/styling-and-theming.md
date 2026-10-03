@@ -1079,7 +1079,7 @@ type Theme struct {
     Colors     ColorPalette      // Primary, Secondary, Background, Surface,
                                  // TextPrimary, TextSecondary, Error,
                                  // Border, ControlBorder, Success, Warning,
-                                 // and the four on-light tones
+                                 // and the four ink tones
     Typography Typography        // Title, Subtitle, Body, Caption (each a Style)
     Spacing    SpacingScale      // XS SM MD LG XL
     Components ComponentDefaults // base Style per widget: Button, Card, Input, ...
@@ -1107,7 +1107,7 @@ Name the *role*, never the literal, and one theme swap restyles the tree:
 | `Error`, `Success`, `Warning` | the status triad — meaning, not brand |
 | `Border` | strokes and hairlines: rules between rows, card outlines — a **divider** |
 | `ControlBorder` | the edge that says *this rectangle is a control*: a field frame, a quiet chip's ring — a **boundary** |
-| `PrimaryOnLight`, `SuccessOnLight`, `WarningOnLight`, `ErrorOnLight` | the same four roles again, dark enough to be read as **ink** on a light surface |
+| `PrimaryInk`, `SuccessInk`, `WarningInk`, `ErrorInk` | the same four roles again, in the weight that reads as **ink** on the theme's own page |
 | `Chart` | a *list*: the categorical series colours, ordered so neighbours stay apart — read via `ChartColors()` |
 | `Sequential` | a *list*: a quantity's scale, least to most, one hue in even lightness steps — read via `SequentialColors()` |
 
@@ -1132,8 +1132,8 @@ The distinctions the names do not make obvious:
   make teal or magenta (`MaterialTheme` makes it teal), while `Success`
   carries meaning — a magenta "saved" badge is a bug.
 - **`Border` is not `ControlBorder`.** A rule *between* things is decoration
-  and every bundled theme spends a very pale hex on it (1.26:1 or 1.32:1
-  against white); the edge that says *this rectangle is something you can
+  and every bundled theme spends a faint hex on it (1.26:1 to 1.45:1
+  against its own page); the edge that says *this rectangle is something you can
   operate* is the only thing identifying a control, which WCAG 1.4.11 puts a
   3:1 floor under. One hex cannot be both, for the same reason a role's fill
   tone cannot also be its ink.
@@ -1143,6 +1143,7 @@ The distinctions the names do not make obvious:
   | `DefaultTheme` | `#E5E5EA` 1.26:1 | `#89898E` 3.48:1 |
   | `MaterialTheme` | `#E0E0E0` 1.32:1 | `#757575` 4.61:1 |
   | `AmberTheme` | `#E0E0E0` 1.32:1 | `#8D6E63` 4.62:1 |
+  | `DarkTheme` | `#38383A` 1.45:1 | `#8E8E93` 5.22:1 |
 
   The split shipped in two steps and the second one is the instructive half.
   The field frames moved first and lived in `Components.Input` and
@@ -1171,6 +1172,7 @@ The distinctions the names do not make obvious:
   | `DefaultTheme` | 3.48:1 | 3.12:1 | 3.48:1 | 3.48:1 |
   | `MaterialTheme` | 4.61:1 | 4.23:1 | 4.61:1 | 4.41:1 |
   | `AmberTheme` | 4.62:1 | 4.35:1 | 4.62:1 | 4.35:1 |
+  | `DarkTheme` | 5.22:1 | 4.27:1 | 4.27:1 | 5.22:1 |
 
   **The list of backdrops is derived, not remembered.** It used to be five
   fills named by hand with `Camera` left out by name — every entry correct and
@@ -1332,7 +1334,17 @@ bg := ctx.Theme().Colors.SuccessColor()
 The original seven need no resolver and deliberately have none: every theme
 that exists predates them, so none can be missing.
 
-#### The on-light tones
+#### The ink tones
+
+These four fields were `PrimaryOnLight`, `SuccessOnLight`, `WarningOnLight`
+and `ErrorOnLight` until `core.DarkTheme` was bundled. On a light page a
+role's ink weight is the dark end of its hue; on a dark page it is the light
+end, and a field called "on light" holding a light ink was a name that lied.
+The resolvers (`PrimaryOnLightColor`, …) and the lookup (`Colors.OnLight`,
+`Variant.OnLight`) remain as deprecated wrappers. The fields could not: a
+second, deprecated field would make the release idiom below (clear the tone
+when you re-brand the role) a silent no-op for code still writing the old
+name, so the old field names are a compile error that points here.
 
 A palette role is one hex, and one hex cannot do both jobs a role is asked to
 do:
@@ -1361,7 +1373,7 @@ theme's to declare and the widget's to spend.
 
 !!! note "`DefaultTheme`'s primary row was later settled at the role"
     Its `Primary` is no longer the 4.02:1 systemBlue in that table — it is
-    `#0040DD`, the same accessible blue `PrimaryOnLight` already carried, so
+    `#0040DD`, the same accessible blue `PrimaryInk` already carried, so
     the role and its tone are now one colour.
 
     The reason is that this role is not only read as ink. It is also the
@@ -1378,27 +1390,31 @@ theme's to declare and the widget's to spend.
     eight still need their tone.
 
 ```go
-ink := ctx.Theme().Colors.PrimaryOnLightColor()   // by role
-ink = ctx.Theme().Colors.OnLight(someAccent)      // by colour, for a widget
-                                                  // that holds a hex and no
-                                                  // name for it
+ink := ctx.Theme().Colors.PrimaryInkColor()   // by role
+ink = ctx.Theme().Colors.AsInk(someAccent)    // by colour, for a widget
+                                              // that holds a hex and no
+                                              // name for it
 ```
 
-`comps.Variant.OnLight(theme)` is the same lookup keyed by variant, and is
+`comps.Variant.AsInk(theme)` is the same lookup keyed by variant, and is
 what `Button`'s outlined and ghost treatments, `Chip`'s loud prominence and
 `Banner`'s edges now spend.
 
 An unset tone falls back to **its own role**, not to a constant — a softer
 fallback than `Border`/`Success`/`Warning` get, because those degrade to a
-visible default (an empty color is no color) while an absent on-light tone has
-a perfectly good, merely paler, answer beside it. So a theme written before
+visible default (an empty color is no color) while an absent ink tone has
+a perfectly good, merely weaker, answer beside it. So a theme written before
 these fields renders exactly as it always did.
 
-"Light" means the theme's own `Background`, which is `#FFFFFF` for both bundled
-themes. A dark theme's role colors are usually already legible on its dark
-ground, so it leaves these empty and the fallback does the right thing — which
-is why these are four extra fields rather than a second palette every theme has
-to fill in twice.
+"The page" means the theme's own `Background`: `#FFFFFF` for the three light
+bundled themes and `#1C1C1E` for `DarkTheme`, whose tones are Apple's
+dark-mode accessible variants (green `#30DB5B` 9.24:1, orange `#FFB340`
+9.54:1, red `#FF6961` 6.03:1, and its blue `#409CFF` already ink at 6.01:1).
+A dark theme's role colors are often legible on its ground already, and one
+that leaves these empty gets the role back from the fallback — which is why
+these are four extra fields rather than a second palette every theme has to
+fill in twice. `TestBundledInkTonesClearWCAGAA` holds every bundled theme's
+tones to 4.5:1 on its own page.
 
 #### The ink over a fill
 
@@ -1524,12 +1540,15 @@ declared pair is 7.56:1.
 
     When you write a theme, fill in `Components.Button` at minimum.
 
-Three themes ship with the framework: `core.DefaultTheme` (iOS-flavored),
-`core.MaterialTheme`, and `core.AmberTheme` — a warm brand palette whose
+Four themes ship with the framework: `core.DefaultTheme` (iOS-flavored),
+`core.MaterialTheme`, `core.AmberTheme` — a warm brand palette whose
 `Primary` is a fill rather than an ink, and whose button declares its own brand
-label colour. `core.BundledThemes()` returns all three by name; every palette
-census in the repository loops over that rather than over a list of its own, so
-a fourth theme is asked every question the first three are.
+label colour — and `core.DarkTheme`, `DefaultTheme`'s geometry in Apple's
+dark-mode colours, for an app that follows the system scheme
+(`hooks.UseWindow(ctx).Dark()`). `core.BundledThemes()` returns all four by
+name; every palette census in the repository loops over that rather than over a
+list of its own, so `DarkTheme` was asked every question the light three are,
+and answered it.
 
 Install one at the root:
 

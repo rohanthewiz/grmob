@@ -360,7 +360,7 @@ The count is read as part of the item's name ("Inbox, 3"), because the cell is o
 #### Theme roles read
 
 	Bar background   Colors.Surface
-	Current item     Colors.PrimaryOnLightColor(), bold
+	Current item     Colors.PrimaryInkColor(), bold
 	Other items      Colors.TextSecondary
 	Label text       Typography.Caption; Icon uses Typography.Subtitle
 	Padding          Spacing.XS
@@ -434,7 +434,7 @@ The row is RoleNavigation named "Breadcrumb", ARIA's own breadcrumb pattern: a l
 
 #### Theme roles read
 
-	Ancestors  Colors.Primary's on-light tone, through a ghost Button
+	Ancestors  Colors.Primary's ink tone, through a ghost Button
 	Current    Typography.Body over TextPrimary
 	Chevron    Typography.Body over TextSecondary
 	Gaps       Spacing.XS between every item
@@ -1334,7 +1334,7 @@ Selected's row states core.CurrentTrue, which is aria-current on the web and the
 #### Theme roles read
 
 	Label          Typography.Body, Colors.TextPrimary
-	Chosen leaf    bold, Colors.PrimaryOnLightColor(), on Colors.Surface
+	Chosen leaf    bold, Colors.PrimaryInkColor(), on Colors.Surface
 	Chevron        Typography.Body, Colors.TextSecondary
 	Row padding    Spacing.XS by Spacing.SM; gap Spacing.SM
 	Indent         Spacing.LG per level, unless Indent is set

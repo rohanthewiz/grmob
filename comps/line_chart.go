@@ -217,8 +217,11 @@ func (c LineChart) Render(ctx *core.Context) *core.Node {
 		legendView = legend(t, names, colors)
 	}
 
+	// c.Series, not drawn: see seriesData. A line is continuous; an area is
+	// still one sampled line with a fill under it.
+	data := seriesData(c.Subject, c.Labels, n, c.Series, c.Format, scale.lo, scale.hi, true)
 	return cartesianFrame(ctx, scale, h, c.Format, canvas, pointLabels(t, c.Labels, n),
-		legendView, c.label(), c.Style)
+		legendView, c.label(), c.Style, data)
 }
 
 // The two ends of an unstacked area's fade, as alpha bytes: 30% at the

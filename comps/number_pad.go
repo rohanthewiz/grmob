@@ -86,7 +86,7 @@ const numberPadKeyHeight = 56
 //
 // # Theme roles read
 //
-//	Keys   outlined Buttons: Components.Button's shape, PrimaryOnLight ink
+//	Keys   outlined Buttons: Components.Button's shape, PrimaryInk ink
 //	Gap    Spacing.SM between keys and between rows
 type NumberPad struct {
 	// OnKey receives the key's text: "0" to "9", or Extra. Nil reports

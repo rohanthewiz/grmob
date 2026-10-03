@@ -165,7 +165,7 @@ func (s Snackbar) Render(ctx *core.Context) *core.Node {
 			Label:    s.Action,
 			OnTap:    s.OnAction,
 			Emphasis: EmphasisGhost,
-			// A ghost button spends the on-light ink, which disappears on the
+			// A ghost button spends the ink tone, which disappears on the
 			// inverse fill; the strip's own ink replaces it.
 			Style: []core.StyleProp{core.TextColor(ink), core.FontWeight(core.Bold)},
 		})

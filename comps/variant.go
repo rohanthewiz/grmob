@@ -47,7 +47,7 @@ func (v Variant) Color(t *core.Theme) string {
 	}
 }
 
-// OnLight resolves the variant to the ink-weight tone of its role — the value
+// AsInk resolves the variant to the ink-weight tone of its role — the value
 // to spend when the color *is* the ink, rather than the fill something else is
 // laid over.
 //
@@ -56,10 +56,11 @@ func (v Variant) Color(t *core.Theme) string {
 //
 //	Color     a fill. The ink over it is chosen by contrast (Ink, below), so
 //	          a mid-tone works and the pair clears AA on every bundled theme.
-//	OnLight   ink itself — an outlined button's label and rule, a loud chip's
+//	AsInk     ink itself — an outlined button's label and rule, a loud chip's
 //	          outline. The backdrop is whatever the widget was placed on,
-//	          which the widget cannot see, so the value has to be dark enough
-//	          to be read against a light surface on its own.
+//	          which the widget cannot see, so the value has to be read
+//	          against the theme's page on its own: dark on a light theme,
+//	          light on DarkTheme.
 //
 // VariantDefault resolves through the palette's Primary tone here, with no
 // special arm, and the reason is that there is nothing for one to preserve.
@@ -69,18 +70,23 @@ func (v Variant) Color(t *core.Theme) string {
 // role spent as ink on an unknown backdrop, because before these tones existed
 // every caller spent the role colour raw — which is exactly what the unset
 // fallback still returns.
-func (v Variant) OnLight(t *core.Theme) string {
+func (v Variant) AsInk(t *core.Theme) string {
 	switch v {
 	case VariantSuccess:
-		return t.Colors.SuccessOnLightColor()
+		return t.Colors.SuccessInkColor()
 	case VariantWarning:
-		return t.Colors.WarningOnLightColor()
+		return t.Colors.WarningInkColor()
 	case VariantError:
-		return t.Colors.ErrorOnLightColor()
+		return t.Colors.ErrorInkColor()
 	default:
-		return t.Colors.PrimaryOnLightColor()
+		return t.Colors.PrimaryInkColor()
 	}
 }
+
+// OnLight is AsInk's former name.
+//
+// Deprecated: use AsInk.
+func (v Variant) OnLight(t *core.Theme) string { return v.AsInk(t) }
 
 // Ink returns the label color to lay over bg.
 //
@@ -138,7 +144,7 @@ func (v Variant) Ink(t *core.Theme, bg string) string {
 // arithmetic rather than taste: nothing a theme could name would outscore
 // black on a mid-tone, so any fix expressed as another *candidate* would have
 // lost the same comparison. What had to change is the question. The theme is
-// the authority on its own colours — the same rule the on-light tones landed
+// the authority on its own colours — the same rule the ink tones landed
 // under, where a widget was said to have "the number and not the authority" —
 // so the pairing is read, not recomputed, wherever one exists.
 //
@@ -202,7 +208,7 @@ func inkOn(t *core.Theme, fill string) string {
 // palette cannot describe without answering the question — Card names no ink,
 // Input's pair is a field's own text on its own white — so the button base is
 // where the answer lives, and reading it back is the same reverse lookup
-// ColorPalette.OnLight performs one property over.
+// ColorPalette.AsInk performs one property over.
 //
 // This is also why comps.Chip reads its accent off the Button base rather
 // than off Colors.Primary: a theme whose buttons are not primary-coloured has
@@ -213,7 +219,7 @@ func inkOn(t *core.Theme, fill string) string {
 // an invisible label; a base that sets a text colour and no background has
 // nothing to match fill against.
 //
-// Comparison is case-insensitive, as OnLight's is: "#007AFF" and "#007aff" are
+// Comparison is case-insensitive, as AsInk's is: "#007AFF" and "#007aff" are
 // one colour to every renderer, and a theme is hand-written. It is not
 // format-insensitive — "#FFF" and "#FFFFFF" are the same colour and different
 // strings — which costs nothing here, since the miss falls through to

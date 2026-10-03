@@ -144,6 +144,11 @@ type transcript struct {
 	// canvasCases.
 	Canvases []canvasCase `json:"canvases"`
 
+	// Charts are real comps charts carrying core.AccessibilityChart, with
+	// the table htmlout writes for each; chart_test.mjs mounts the same
+	// tree through the runtime and compares. See chartCases.
+	Charts []chartCase `json:"charts"`
+
 	// Lessons are the tutorial's lesson IDs ("1.1" … "8.5") in reading
 	// order, for browser check 24's overflow sweep. Derived here from
 	// tutorial.Chapters, the way the app itself derives them, rather than
@@ -381,6 +386,7 @@ func main() {
 		InkLigatures: ligatures,
 		Pins:         pinfixture.Cases(),
 		Canvases:     canvasCases(),
+		Charts:       chartCases(),
 		Lessons:      lessonIDs(),
 	})
 	if err != nil {
@@ -508,6 +514,74 @@ func canvasCases() []canvasCase {
 			{Path: core.Circle(50, 25, 20), FillGradient: core.RadialGradientFill(50, 25, 20, core.Stop(0, "#ffffff"), core.Stop(1, "#1baf7a")), StrokeGradient: core.RadialGradientFill(50, 25, 22, core.Stop(0, "#4a3aa7"), core.Stop(1, "#e34948")), StrokeWidth: 2},
 			{Path: core.Rect(0, 0, 10, 10), StrokeGradient: core.RadialGradientFill(5, 5, 0, core.Stop(0, "#000000"), core.Stop(1, "#654321"))},
 		})),
+	}
+}
+
+// --- Chart data tables -----------------------------------------------------
+
+// chartCase is one comps chart rendered by Go, with the data table htmlout
+// writes for it (htmlout.ChartTableRows). The runtime restates that function
+// as chartTableRows; running both on the chart a real widget emits is the only
+// way to hold a restatement to its source across two languages, as
+// canvasCases does for the canvas.
+type chartCase struct {
+	What string `json:"what"`
+	// Tree is the chart's node JSON, exactly as a bridge sends it.
+	Tree    string     `json:"tree"`
+	Caption string     `json:"caption"`
+	Head    []string   `json:"head"`
+	Body    [][]string `json:"body"`
+	// Style is htmlout.ChartTableStyle, so the runtime's copy is held to it.
+	Style string `json:"style"`
+}
+
+// chartCases covers both table shapes (categorical and numeric x), a missing
+// value, a chart's own formatting, a stacked chart (whose table reads the
+// input, not the running totals) and the charts that build their data their
+// own way: a donut's shares, a funnel's rates, a heatmap's grid.
+func chartCases() []chartCase {
+	build := func(what string, v core.View) chartCase {
+		ctx := core.NewContext()
+		ctx.BeginRenderPass()
+		n := v.Render(ctx)
+		data, ok := htmlout.ChartDataOf(n.Props)
+		if !ok {
+			fatal("chart case %q: the chart's root carries no chartData", what)
+		}
+		caption, head, body := htmlout.ChartTableRows(data)
+		return chartCase{What: what, Tree: jsonout.Export(n), Caption: caption,
+			Head: head, Body: body, Style: htmlout.ChartTableStyle}
+	}
+	money := func(v float64) string { return "$" + strconv.FormatFloat(v, 'f', 0, 64) }
+	return []chartCase{
+		build("a line with a gap and its own format", comps.LineChart{
+			Subject: "Revenue", Labels: []string{"Jan", "Feb", "Mar"}, Format: money,
+			Series: []comps.ChartSeries{{Name: "2026", Values: []float64{120, math.NaN(), 180}}},
+		}),
+		build("stacked areas read their input", comps.LineChart{
+			Subject: "Visits", Labels: []string{"Mon", "Tue"}, Area: true, Stacked: true,
+			Series: []comps.ChartSeries{{Name: "Web", Values: []float64{3, 4}}, {Name: "App", Values: []float64{1, 2.5}}},
+		}),
+		build("horizontal bars with an unlabelled row", comps.BarChart{
+			Horizontal: true, Labels: []string{"North"},
+			Series: []comps.ChartSeries{{Values: []float64{7, 9}}},
+		}),
+		build("a scatter, numeric x", comps.ScatterChart{
+			Subject: "Height and weight",
+			Series:  []comps.ScatterSeries{{Name: "Group A", Points: []comps.ChartPoint{{X: 1.5, Y: 60}, {X: 1.8, Y: 82}}}},
+		}),
+		build("a donut's shares", comps.DonutChart{
+			Subject: "Spend",
+			Slices:  []comps.ChartSlice{{Label: "Rent", Value: 3}, {Label: "Food", Value: 1}},
+		}),
+		build("a funnel's rates", comps.FunnelChart{
+			Subject: "Signups",
+			Stages:  []comps.FunnelStage{{Label: "Visited", Value: 1000}, {Label: "Signed up", Value: 250}},
+		}),
+		build("a heatmap's grid", comps.Heatmap{
+			Subject: "Load", RowLabels: []string{"Mon", "Tue"}, ColumnLabels: []string{"AM", "PM"},
+			Values: [][]float64{{1, 2}, {3, math.NaN()}},
+		}),
 	}
 }
 

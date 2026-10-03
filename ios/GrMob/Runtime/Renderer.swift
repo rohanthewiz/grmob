@@ -40,6 +40,9 @@ private struct GrMobIntoViewProxyKey: EnvironmentKey {
 
 struct GrMobRoot: View {
     let runtime: GrMobRuntime
+    /// The innermost painted SafeArea's Background, reported up the tree;
+    /// see GrMobSurface.swift.
+    @State private var barSurface: Color?
 
     var body: some View {
         if let root = runtime.store.root {
@@ -62,6 +65,15 @@ struct GrMobRoot: View {
                 // GrMobDispatchKey for why the indirection exists.
                 .environment(\.grMobDispatch) { [runtime] id in runtime.click(id) }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                // The shell's surface and the window's style come from the Go
+                // tree, not the system's dark mode (N-085; GrMobSurface.swift).
+                // The surface is painted under the bars, as the SafeArea arm
+                // paints its own background, so a root that states no colour
+                // shows the theme's white page there and not systemBackground.
+                .onPreferenceChange(GrMobBarSurfaceKey.self) { barSurface = $0 }
+                .background((root.style?.background ?? grMobShellPage).ignoresSafeArea())
+                .background(GrMobWindowStyle(
+                    dark: grMobIsDark(barSurface ?? root.style?.background ?? grMobShellPage)))
         }
     }
 }
@@ -161,8 +173,13 @@ struct RenderNode: View {
                 //
                 // The background still rides outside GrMobColumn's own box,
                 // where ignoresSafeArea can carry it under the bars.
+                //
+                // A painted SafeArea is also what sits under the status bar,
+                // so it claims the bars' colour for the window style
+                // (grMobClaimsBars; GrMobSurface.swift).
                 GrMobColumn(node: node, grow: grow)
                     .background((node.style?.background ?? Color.clear).ignoresSafeArea())
+                    .grMobClaimsBars(node.style?.background)
 
             case "TabView": GrMobTabView(node: node, grow: grow)
             case "Modal": GrMobModal(node: node)
@@ -425,6 +442,9 @@ private struct GrMobRow: View {
                         onLongPress: node.stringProp("onLongPress"),
                         axis: .horizontal)
             .grMobInk(s)
+            // core.AccessibilityChart: see GrMobChartAccessibility. A Row
+            // because comps.FunnelChart's labelled root is one.
+            .modifier(GrMobChartAccessibility(node: node))
         } else {
             GrMobFlexStack(axis: .horizontal, style: s) {
                 FlexChildren(node: node, axis: .horizontal)
@@ -434,6 +454,9 @@ private struct GrMobRow: View {
                         onLongPress: node.stringProp("onLongPress"),
                         axis: .horizontal)
             .grMobInk(s)
+            // core.AccessibilityChart: see GrMobChartAccessibility. A Row
+            // because comps.FunnelChart's labelled root is one.
+            .modifier(GrMobChartAccessibility(node: node))
         }
     }
 }
@@ -536,6 +559,8 @@ private struct GrMobColumn: View {
                     onLongPress: node.stringProp("onLongPress"),
                     axis: .vertical)
         .grMobInk(s)
+        // core.AccessibilityChart: see GrMobChartAccessibility.
+        .modifier(GrMobChartAccessibility(node: node))
     }
 }
 

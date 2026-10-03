@@ -59,7 +59,7 @@ import (
 //
 //	Row gap         Spacing.SM
 //	Value text      Typography.Body, bold
-//	Buttons         comps.Button outlined: Colors.Primary's on-light tone
+//	Buttons         comps.Button outlined: Colors.Primary's ink tone
 type Stepper struct {
 	// Value is the caller's current number.
 	Value int

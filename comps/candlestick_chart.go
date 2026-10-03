@@ -197,7 +197,7 @@ func (c CandlestickChart) Render(ctx *core.Context) *core.Node {
 			[]string{up, down})
 	}
 	return cartesianFrame(ctx, scale, h, c.Format, canvas, bandLabels(t, c.Labels, n),
-		legendView, c.label(), c.Style)
+		legendView, c.label(), c.Style, c.data(n, scale))
 }
 
 // valid reports whether all four prices are finite.
@@ -222,6 +222,24 @@ func (k Candle) extent() (lo, hi float64) {
 // candleSummaryLimit of them, and otherwise the first open and last close.
 // Either way it ends with the range and the count that rose and fell, which
 // is what the colours say.
+// data is the chart's core.ChartData: a period per row and the four prices
+// as four series, which is how a price table is read (one row a day, Open to
+// Close across it). A candle that is not valid() is a missing row in all four,
+// as it is missing from the drawing.
+func (c CandlestickChart) data(n int, scale valueScale) core.ChartData {
+	prices := []ChartSeries{{Name: "Open"}, {Name: "High"}, {Name: "Low"}, {Name: "Close"}}
+	for _, k := range c.Candles {
+		v := [4]float64{k.Open, k.High, k.Low, k.Close}
+		if !k.valid() {
+			v = [4]float64{math.NaN(), math.NaN(), math.NaN(), math.NaN()}
+		}
+		for j := range prices {
+			prices[j].Values = append(prices[j].Values, v[j])
+		}
+	}
+	return seriesData(c.Subject, c.Labels, n, prices, c.Format, scale.lo, scale.hi, false)
+}
+
 func (c CandlestickChart) label() string {
 	if c.AccessibilityLabel != "" {
 		return c.AccessibilityLabel

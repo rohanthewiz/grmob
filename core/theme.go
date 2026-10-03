@@ -42,13 +42,14 @@ type ColorPalette struct {
 	// This role used to name input borders too, and no longer does. A rule
 	// *between* things is decoration — nothing about the page becomes
 	// unusable if a reader cannot make it out — and every bundled theme spends
-	// a very pale hex on it accordingly: #E5E5EA measures 1.26:1 against
-	// white and #E0E0E0 1.32:1 (AmberTheme spends the second of those). The
+	// a faint hex on it accordingly: #E5E5EA measures 1.26:1 against
+	// white and #E0E0E0 1.32:1 (AmberTheme spends the second of those), and
+	// DarkTheme's #38383A is 1.45:1 against its own #1C1C1E. The
 	// edge that says *this rectangle is a field
 	// you can type in* is the opposite case: it is the only thing identifying
 	// a control, which WCAG 1.4.11 (Non-text Contrast) puts a 3:1 floor
 	// under. One hex cannot be both, for the same reason a role's fill tone
-	// cannot also be its ink — see the on-light tones below.
+	// cannot also be its ink — see the ink tones below.
 	//
 	// So this role keeps the dividers and ControlBorder below carries the
 	// boundary. That split used to have no second field in it — the frames
@@ -67,19 +68,20 @@ type ColorPalette struct {
 	// operate.
 	//
 	// It is Border's other half and exists because one hex cannot do both
-	// jobs, which is the same shape the on-light tones' argument has one
-	// property over. A divider is decoration and a pale one is a legitimate
+	// jobs, which is the same shape the ink tones' argument has one
+	// property over. A divider is decoration and a faint one is a legitimate
 	// choice; a boundary that identifies a control carries WCAG 1.4.11's 3:1
-	// floor. Every bundled theme spends 1.26:1 or 1.32:1 on Border
+	// floor. Every bundled theme spends between 1.26:1 and 1.45:1 on Border
 	// accordingly, so a control drawn in it is close to invisible *as a
 	// control*:
 	//
-	//	                    Default            Material           Amber
-	//	Border              #E5E5EA  1.26:1    #E0E0E0  1.32:1    #E0E0E0  1.32:1
-	//	ControlBorder       #89898E  3.48:1    #757575  4.61:1    #8D6E63  4.62:1
+	//	                    Default            Material           Amber              Dark
+	//	Border              #E5E5EA  1.26:1    #E0E0E0  1.32:1    #E0E0E0  1.32:1    #38383A  1.45:1
+	//	ControlBorder       #89898E  3.48:1    #757575  4.61:1    #8D6E63  4.62:1    #8E8E93  5.22:1
 	//
-	// (against each theme's own white Background; see the themes for the
-	// second backdrop each measures against.)
+	// (against each theme's own Background — white for the first three,
+	// #1C1C1E for Dark; see the themes for the second backdrop each measures
+	// against.)
 	//
 	// # A control has more than one backdrop, and the census is the list
 	//
@@ -90,7 +92,7 @@ type ColorPalette struct {
 	//
 	// Every pair a bundled theme can produce is enumerated and measured by
 	// TestEveryControlBoundaryPairIsAccountedFor in comps/variant_test.go
-	// (the arithmetic lives there, beside the on-light census, for the reason
+	// (the arithmetic lives there, beside the ink-tone census, for the reason
 	// that one gives). Every pair clears, and the census's
 	// knownBoundaryShortfalls table — the place a defended shortfall would be
 	// recorded as a fact rather than as prose — is empty.
@@ -137,8 +139,20 @@ type ColorPalette struct {
 	Success string
 	Warning string
 
-	// The on-light tones: the same four roles again, dark enough to be read
-	// as *ink* on a light surface.
+	// The ink tones: the same four roles again, in the weight that can be
+	// read as *ink* on the theme's own page.
+	//
+	// They were called PrimaryOnLight, SuccessOnLight, WarningOnLight and
+	// ErrorOnLight until DarkTheme was bundled (N-074). On a light page the
+	// ink weight is the dark end of a hue, which is what the old names said;
+	// on DarkTheme's page it is the light end, and a field named "on light"
+	// holding a light ink was a name that lied. The resolvers and the reverse
+	// lookup keep their old names as deprecated wrappers. The fields could
+	// not: Go has no field alias, and a second, deprecated field would turn
+	// the release idiom below (clear the tone when re-branding the role) into
+	// a silent no-op for every app still writing the old name, which is the
+	// half-branded bug that idiom exists to prevent. A compile error is the
+	// honest deprecation for a field.
 	//
 	// A palette role is one hex, and one hex cannot do both jobs a role is
 	// asked to do. Spent as a fill with a chosen ink over it, a mid-tone
@@ -181,23 +195,25 @@ type ColorPalette struct {
 	//
 	// # Reading them
 	//
-	// Through the resolver methods below, or through OnLight when a widget
+	// Through the resolver methods below, or through AsInk when a widget
 	// holds a colour rather than a role. An unset tone falls back to the role
 	// itself, which is exactly what every widget spent before these existed,
 	// so a theme that predates them renders as it always did rather than
 	// rendering nothing. That is a softer fallback than Border/Success/
 	// Warning get, and deliberately: those degrade to a *visible* default
-	// because an empty color is no color, while an absent on-light tone has a
-	// perfectly good — merely paler — answer sitting beside it.
+	// because an empty color is no color, while an absent ink tone has a
+	// perfectly good — merely weaker — answer sitting beside it.
 	//
-	// # "Light" is the theme's Background, not a global assumption
+	// # "The page" is the theme's Background, not a global assumption
 	//
-	// The name says which surface the tone is legible on, and for both
-	// bundled themes that surface is #FFFFFF. A dark theme's role colours are
-	// usually already legible on its dark background, so it leaves these
-	// empty and the fallback returns the role — which is the right answer,
-	// and the reason these are four extra fields rather than a second
-	// palette every theme has to fill in twice.
+	// A tone is measured against its own theme's Background. For the three
+	// light bundled themes that is #FFFFFF; for DarkTheme it is #1C1C1E, and
+	// its tones are the light, accessible variants of each hue. A dark
+	// theme's role colours are often legible on its page already, and one
+	// that leaves these empty gets the role back from the fallback — which is
+	// the reason these are four extra fields rather than a second palette
+	// every theme has to fill in twice. comps' TestBundledInkTonesClearWCAGAA
+	// holds every bundled theme's four tones to 4.5:1 on its own page.
 	//
 	// # Overriding a role means releasing its tone
 	//
@@ -207,7 +223,7 @@ type ColorPalette struct {
 	// is no longer there:
 	//
 	//	theme := *core.DefaultTheme
-	//	theme.Colors.Primary = siteColor   // and PrimaryOnLight is still #0040DD
+	//	theme.Colors.Primary = siteColor   // and PrimaryInk is still #0040DD
 	//
 	// The result is a half-branded app, and a quiet one — filled controls take
 	// the new colour (they read Primary, or the Button base) while every
@@ -218,17 +234,17 @@ type ColorPalette struct {
 	// So an override sets the pair or clears it:
 	//
 	//	theme.Colors.Primary = siteColor
-	//	theme.Colors.PrimaryOnLight = ""   // no measurement, use the role
+	//	theme.Colors.PrimaryInk = ""   // no measurement, use the role
 	//
 	// Clearing is the honest default. The fallback then returns siteColor,
 	// which is the same treatment every widget gave before these fields
 	// existed; writing siteColor into the tone renders identically but claims
 	// a contrast check nobody ran. Either way, what is not available is
 	// leaving the old number in place.
-	PrimaryOnLight string
-	SuccessOnLight string
-	WarningOnLight string
-	ErrorOnLight   string
+	PrimaryInk string
+	SuccessInk string
+	WarningInk string
+	ErrorInk   string
 
 	// Chart is the categorical series palette: the colours a chart gives its
 	// series, in the fixed order it gives them. Read via ChartColors.
@@ -530,39 +546,39 @@ func (c ColorPalette) WarningColor() string {
 	return FallbackWarning
 }
 
-// The four on-light resolvers. Each falls back to its own role rather than to
+// The four ink-tone resolvers. Each falls back to its own role rather than to
 // a constant — see the field docs for why this fallback is softer than
 // Border's, and note that each defers to the role's *resolver* where it has
 // one, so a theme missing both halves of a role still lands somewhere visible.
-func (c ColorPalette) PrimaryOnLightColor() string {
-	if c.PrimaryOnLight != "" {
-		return c.PrimaryOnLight
+func (c ColorPalette) PrimaryInkColor() string {
+	if c.PrimaryInk != "" {
+		return c.PrimaryInk
 	}
 	return c.Primary
 }
 
-func (c ColorPalette) SuccessOnLightColor() string {
-	if c.SuccessOnLight != "" {
-		return c.SuccessOnLight
+func (c ColorPalette) SuccessInkColor() string {
+	if c.SuccessInk != "" {
+		return c.SuccessInk
 	}
 	return c.SuccessColor()
 }
 
-func (c ColorPalette) WarningOnLightColor() string {
-	if c.WarningOnLight != "" {
-		return c.WarningOnLight
+func (c ColorPalette) WarningInkColor() string {
+	if c.WarningInk != "" {
+		return c.WarningInk
 	}
 	return c.WarningColor()
 }
 
-func (c ColorPalette) ErrorOnLightColor() string {
-	if c.ErrorOnLight != "" {
-		return c.ErrorOnLight
+func (c ColorPalette) ErrorInkColor() string {
+	if c.ErrorInk != "" {
+		return c.ErrorInk
 	}
 	return c.Error
 }
 
-// OnLight returns the ink-weight tone paired with color, when color is one of
+// AsInk returns the ink-weight tone paired with color, when color is one of
 // this palette's four toned roles, and color itself otherwise.
 //
 // The four resolvers above answer for a widget that knows which *role* it is
@@ -608,19 +624,45 @@ func (c ColorPalette) ErrorOnLightColor() string {
 // recorded and checked per role by TestEveryPaletteRuleStillHasAWitness in
 // comps/palette_witness_test.go, so a retint that leaves an arm with no
 // evidence anywhere is reported rather than merely true.
-func (c ColorPalette) OnLight(color string) string {
+func (c ColorPalette) AsInk(color string) string {
 	switch {
 	case strings.EqualFold(color, c.Primary):
-		return c.PrimaryOnLightColor()
+		return c.PrimaryInkColor()
 	case strings.EqualFold(color, c.Error):
-		return c.ErrorOnLightColor()
+		return c.ErrorInkColor()
 	case strings.EqualFold(color, c.SuccessColor()):
-		return c.SuccessOnLightColor()
+		return c.SuccessInkColor()
 	case strings.EqualFold(color, c.WarningColor()):
-		return c.WarningOnLightColor()
+		return c.WarningInkColor()
 	}
 	return color
 }
+
+// PrimaryOnLightColor is PrimaryInkColor's former name.
+//
+// Deprecated: use PrimaryInkColor. The tone is the page's ink weight, which
+// is light on DarkTheme; see ColorPalette.PrimaryInk.
+func (c ColorPalette) PrimaryOnLightColor() string { return c.PrimaryInkColor() }
+
+// SuccessOnLightColor is SuccessInkColor's former name.
+//
+// Deprecated: use SuccessInkColor.
+func (c ColorPalette) SuccessOnLightColor() string { return c.SuccessInkColor() }
+
+// WarningOnLightColor is WarningInkColor's former name.
+//
+// Deprecated: use WarningInkColor.
+func (c ColorPalette) WarningOnLightColor() string { return c.WarningInkColor() }
+
+// ErrorOnLightColor is ErrorInkColor's former name.
+//
+// Deprecated: use ErrorInkColor.
+func (c ColorPalette) ErrorOnLightColor() string { return c.ErrorInkColor() }
+
+// OnLight is AsInk's former name.
+//
+// Deprecated: use AsInk.
+func (c ColorPalette) OnLight(color string) string { return c.AsInk(color) }
 
 type Typography struct {
 	Title    Style
@@ -797,13 +839,13 @@ var DefaultTheme = &Theme{
 		// Blue is stated and equal to its role, on MaterialTheme's pattern:
 		// Primary moved to the accessible variant for the fill's sake, so the
 		// role is now ink-weight on its own and needs no second tone. Written
-		// out rather than left to PrimaryOnLightColor's fallback because
+		// out rather than left to PrimaryInkColor's fallback because
 		// "this role needs no second tone" is a measurement, and a blank
 		// field cannot be told apart from "nobody has looked".
-		PrimaryOnLight: "#0040DD", // = Primary               — 7.56:1, already ink
-		SuccessOnLight: "#1E7A34", // systemGreen, darkened   — 5.40:1 (from 2.22:1)
-		WarningOnLight: "#C93400", // Apple accessible orange — 5.28:1 (from 2.20:1)
-		ErrorOnLight:   "#D70015", // Apple accessible red    — 5.38:1 (from 3.55:1)
+		PrimaryInk: "#0040DD", // = Primary               — 7.56:1, already ink
+		SuccessInk: "#1E7A34", // systemGreen, darkened   — 5.40:1 (from 2.22:1)
+		WarningInk: "#C93400", // Apple accessible orange — 5.28:1 (from 2.20:1)
+		ErrorInk:   "#D70015", // Apple accessible red    — 5.38:1 (from 3.55:1)
 
 		// The shared series palette; see DefaultChartColors. It is not
 		// derived from this theme's own hues, because Secondary and Success
@@ -954,7 +996,7 @@ var MaterialTheme = &Theme{
 		ControlBorder: "#757575", // MD grey 600 — 4.61:1 on #FFFFFF, 4.23:1 on #F5F5F5
 
 		// Three of Material's four roles are already ink-weight against this
-		// theme's white Background, so their on-light tone is the role
+		// theme's white Background, so their ink tone is the role
 		// itself. Stating them rather than leaving them to the fallback is
 		// the point: "this role needs no second tone" is a measurement, and a
 		// blank field cannot tell it apart from "nobody has looked".
@@ -963,10 +1005,10 @@ var MaterialTheme = &Theme{
 		// family carries — MD orange 900 (#E65100) is still only 3.79:1 — so
 		// this is deep orange 900, which is Material's own answer for the
 		// same problem one hue over.
-		PrimaryOnLight: "#6200EE", // = Primary            — 7.63:1, already ink
-		SuccessOnLight: "#2E7D32", // = Success            — 5.13:1, already ink
-		WarningOnLight: "#BF360C", // MD deep orange 900   — 5.60:1 (from 3.08:1)
-		ErrorOnLight:   "#B00020", // = Error              — 7.33:1, already ink
+		PrimaryInk: "#6200EE", // = Primary            — 7.63:1, already ink
+		SuccessInk: "#2E7D32", // = Success            — 5.13:1, already ink
+		WarningInk: "#BF360C", // MD deep orange 900   — 5.60:1 (from 3.08:1)
+		ErrorInk:   "#B00020", // = Error              — 7.33:1, already ink
 
 		// The shared series palette (see DefaultChartColors), checked
 		// against this theme's white page and its own Surface.
@@ -1048,7 +1090,7 @@ var MaterialTheme = &Theme{
 // # Why a third theme exists at all
 //
 // Two rules in this framework had no bundled evidence. inkOn reads the theme's
-// declared fill/ink pair *before* measuring contrast, and ColorPalette.OnLight
+// declared fill/ink pair *before* measuring contrast, and ColorPalette.AsInk
 // moves a role to its ink-weight tone — and under both palettes above, an
 // implementation that deleted either would paint identical pixels. Their only
 // witness was a test fixture (components' midTonePrimaryTheme), which is a
@@ -1064,9 +1106,9 @@ var MaterialTheme = &Theme{
 //	    a different, and slightly *higher*-contrast, label. Deleting declaredInk
 //	    moves pixels here.
 //
-//	OnLight moves the Primary role
+//	AsInk moves the Primary role
 //	    Amber 700 is 2.04:1 on white. It is an excellent fill and cannot be ink,
-//	    which is the whole argument for the on-light tones and the case neither
+//	    which is the whole argument for the ink tones and the case neither
 //	    palette above still makes for Primary.
 //
 // # The escape that made this shippable, which is worth recording
@@ -1094,14 +1136,14 @@ var MaterialTheme = &Theme{
 //
 // Material Design published values throughout, as MaterialTheme's are, with one
 // exception stated at the field: the amber family carries no swatch dark enough
-// to be read as ink on white (amber 900 is 2.79:1), so PrimaryOnLight is amber
+// to be read as ink on white (amber 900 is 2.79:1), so PrimaryInk is amber
 // 700 scaled to 56% brightness — the same hue at 37.8 degrees, and the same
-// move DefaultTheme's SuccessOnLight makes one hue over for the same reason.
+// move DefaultTheme's SuccessInk makes one hue over for the same reason.
 var AmberTheme = &Theme{
 	Colors: ColorPalette{
 		// MD amber 700. A fill and not an ink: white over it is 2.04:1 and the
 		// page's own near-black is 8.39:1, which is why this role has a
-		// separate on-light tone below and why the button declares a dark
+		// separate ink tone below and why the button declares a dark
 		// label. Both bundled palettes above are the other case — a role dark
 		// enough to be either — so this is the only place in the repository a
 		// reader can see the two halves of a role come apart in a shipped
@@ -1130,14 +1172,14 @@ var AmberTheme = &Theme{
 		// The amber family stops at 900 (#FF6F00, 2.79:1) and has nothing
 		// darker, so this is the one value in this palette without a published
 		// source — the same position, and the same remedy, as DefaultTheme's
-		// SuccessOnLight.
+		// SuccessInk.
 		//
 		// This is the pair no bundled theme could show before: a role that is
 		// a good fill and cannot be ink.
-		PrimaryOnLight: "#8F5A00", // amber 700 at 56% — 5.78:1 (from 2.04:1)
-		SuccessOnLight: "#2E7D32", // = Success            — 5.13:1, already ink
-		WarningOnLight: "#BF360C", // MD deep orange 900   — 5.60:1 (from 3.08:1)
-		ErrorOnLight:   "#B00020", // = Error              — 7.33:1, already ink
+		PrimaryInk: "#8F5A00", // amber 700 at 56% — 5.78:1 (from 2.04:1)
+		SuccessInk: "#2E7D32", // = Success            — 5.13:1, already ink
+		WarningInk: "#BF360C", // MD deep orange 900   — 5.60:1 (from 3.08:1)
+		ErrorInk:   "#B00020", // = Error              — 7.33:1, already ink
 
 		// The shared series palette (see DefaultChartColors), checked
 		// against this theme's white page and its own Surface.
@@ -1240,6 +1282,104 @@ var AmberTheme = &Theme{
 	},
 }
 
+// DarkTheme is DefaultTheme's dark counterpart: the same type scale, spacing
+// and component geometry, repainted in Apple's dark-mode system colours.
+//
+// It began as the tutorial's own theme (examples/tutorial, 2026-09-21), kept
+// out of core while core's palette censuses assumed a light page. It is
+// bundled now because it has a consumer on every host — the natives follow
+// the system's scheme through Window.ColorScheme — and because the censuses
+// that loop over BundledThemes measure it like any other palette, where its
+// figures used to be computed by hand.
+//
+// # The page
+//
+// #1C1C1E, iOS secondarySystemBackground (dark), chosen over pure black so a
+// screen reads as a lit sheet rather than a hole, and Surface one step
+// lighter (#2C2C2E), as a grouped cell sits lighter than its page on iOS.
+//
+// # The ink tones are the light ends of their hues
+//
+// The four *Ink fields hold the tone of each role that reads as ink on the
+// page. On a light page that is the dark end of the hue; here it is the
+// light end, so they are Apple's dark-mode accessible variants rather than
+// the fills.
+//
+// # Primary is a light fill with dark ink
+//
+// A blue light enough to be read as ink on #1C1C1E (#409CFF) cannot also
+// carry white text (2.8:1). Components.Button declares black over it instead,
+// and comps.declaredInk carries that pairing to every Badge, filled Button
+// and selection that paints Primary — the arrangement AmberTheme makes for
+// its light fill.
+var DarkTheme = newDarkTheme()
+
+// newDarkTheme builds DarkTheme from a copy of DefaultTheme, so type sizes,
+// paddings and radii stay in step with it and only colours are restated.
+// Style and ColorPalette are value types, so assigning their fields never
+// writes DefaultTheme; the slices are replaced outright rather than edited,
+// for the same reason.
+func newDarkTheme() *Theme {
+	th := *DefaultTheme
+
+	const (
+		bg        = "#1C1C1E" // iOS secondarySystemBackground (dark)
+		surface   = "#2C2C2E" // iOS tertiarySystemBackground (dark)
+		ink       = "#FFFFFF"
+		inkDim    = "#AEAEB2" // iOS systemGray2 (dark), opaque so contrast math is exact
+		primary   = "#409CFF" // iOS accessible blue (dark)
+		control   = "#8E8E93" // iOS systemGray
+		separator = "#38383A" // iOS opaqueSeparator (dark)
+	)
+
+	th.Colors = ColorPalette{
+		Primary:       primary,
+		Secondary:     "#30D158", // iOS systemGreen (dark)
+		Background:    bg,
+		Surface:       surface,
+		TextPrimary:   ink,
+		TextSecondary: inkDim,
+		Error:         "#FF453A", // iOS systemRed (dark)
+		Border:        separator, // a divider, by design: it carries no 3:1 floor
+		ControlBorder: control,
+		Success:       "#30D158", // iOS systemGreen (dark)
+		Warning:       "#FF9F0A", // iOS systemOrange (dark)
+
+		// Ink-weight tones on the dark page; see the doc above. Primary is
+		// already ink here, so its tone is itself, written out rather than
+		// left blank for the reason DefaultTheme's is.
+		PrimaryInk: primary,
+		SuccessInk: "#30DB5B", // Apple accessible green (dark)
+		WarningInk: "#FFB340", // Apple accessible orange (dark)
+		ErrorInk:   "#FF6961", // Apple accessible red (dark)
+
+		// The dark-page series and quantity lists (see DefaultDarkChartColors
+		// and DefaultDarkSequentialColors), which were written for this.
+		Chart:      DefaultDarkChartColors(),
+		Sequential: DefaultDarkSequentialColors(),
+	}
+
+	th.Typography.Title.TextColor = ink
+	th.Typography.Subtitle.TextColor = inkDim
+	th.Typography.Body.TextColor = ink
+	th.Typography.Caption.TextColor = inkDim
+
+	th.Components.Button.Background = primary
+	th.Components.Button.TextColor = "#000000"
+	th.Components.Card.Background = surface
+	// Fields keep DefaultTheme's shape: the page's own fill, framed by the
+	// boundary tone.
+	th.Components.Input.Background = bg
+	th.Components.Input.TextColor = ink
+	th.Components.Input.BorderColor = control
+	th.Components.TextArea.Background = bg
+	th.Components.TextArea.TextColor = ink
+	th.Components.TextArea.BorderColor = control
+	th.Components.CheckBox.Background = bg
+
+	return &th
+}
+
 // BundledThemes returns every theme this package ships, keyed by its Go
 // identifier.
 //
@@ -1266,5 +1406,6 @@ func BundledThemes() map[string]*Theme {
 		"DefaultTheme":  DefaultTheme,
 		"MaterialTheme": MaterialTheme,
 		"AmberTheme":    AmberTheme,
+		"DarkTheme":     DarkTheme,
 	}
 }

@@ -33,7 +33,7 @@ func TestSnackbarIsAnInverseStatusStripWithAnAction(t *testing.T) {
 		t.Fatalf("want one Undo button, got %d", len(btns))
 	}
 	if btns[0].Style.TextColor != th.Colors.Background {
-		t.Errorf("action ink = %q, want the strip's ink: on-light ink vanishes on the inverse fill",
+		t.Errorf("action ink = %q, want the strip's ink: the ink tone vanishes on the inverse fill",
 			btns[0].Style.TextColor)
 	}
 }

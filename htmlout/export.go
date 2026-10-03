@@ -653,7 +653,16 @@ func renderContainer(b *element.Builder, node *core.Node, attrs []string, path s
 	//
 	// Fragment and Theme never reach here — renderNode emits their children
 	// directly rather than a box.
+	// A chart's data table (core.AccessibilityChart): the role becomes
+	// figure and the table is the leading chrome. See charttable.go.
+	data, chart := ChartDataOf(node.Props)
+	if chart {
+		attrs = figureRole(attrs)
+	}
 	e := b.Ele(TagFor(node.Type), attrs...)
+	if chart {
+		renderChartTable(b, data)
+	}
 	// What this container imposes on each of its children. An overlay is the
 	// second caller of the imposed channel after the TabView pages, and it is
 	// there for the same reason they are: a child has no idea it is a layer,

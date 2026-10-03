@@ -271,7 +271,7 @@ func (c Chip) stateStyle(t *core.Theme) []core.StyleProp {
 		// reason Button's doc gives at length: a transparent fill means the
 		// label's real backdrop is whatever the chip was placed on, which the
 		// widget cannot see. So the outline is drawn in the accent's
-		// *on-light* tone — the palette's second value per role, dark enough
+		// *ink* tone — the palette's second value per role, dark enough
 		// to be read as ink on a light surface.
 		//
 		// The bundled numbers are Button's outlined "default" row, since it
@@ -289,7 +289,7 @@ func (c Chip) stateStyle(t *core.Theme) []core.StyleProp {
 		// line above: the accent is read off the theme's Button base rather
 		// than off Colors.Primary, precisely so a theme whose buttons are not
 		// primary-coloured keeps its own look — which leaves this widget
-		// holding a hex and no name for it. Colors.OnLight is the reverse
+		// holding a hex and no name for it. Colors.AsInk is the reverse
 		// lookup for that position, and a base fill that is not one of the
 		// palette's toned roles comes back unchanged, which is the same
 		// fallback and the same pixels as before.
@@ -301,7 +301,7 @@ func (c Chip) stateStyle(t *core.Theme) []core.StyleProp {
 		// rather than the same value. They are still the same hue by
 		// construction, which is what stopped the two from drifting apart on
 		// a theme whose buttons are not primary-coloured.
-		accent := t.Colors.OnLight(chipAccent(t))
+		accent := t.Colors.AsInk(chipAccent(t))
 		return []core.StyleProp{
 			core.BackgroundColor(ColorTransparent),
 			core.TextColor(accent),

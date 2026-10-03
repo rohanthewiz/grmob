@@ -163,9 +163,9 @@ Cancel calls OnDismiss, like a scrim tap. There is no Cancel.OnTap to fall back 
 
 	Panel          Components.Card, through comps.Card
 	Title          Typography.Subtitle, bold (Card's title treatment)
-	Action ink     Variant.OnLight — Colors.PrimaryOnLight, or ErrorOnLight
+	Action ink     Variant.AsInk — Colors.PrimaryInk, or ErrorInk
 	               for a destructive action (ghost Button)
-	Cancel         Colors.PrimaryOnLight, outlined
+	Cancel         Colors.PrimaryInk, outlined
 	Rule           Colors.Border, through Separator
 
 <small>[comps/action_sheet.go:118](https://github.com/rohanthewiz/grmob/blob/master/comps/action_sheet.go#L118)</small>
@@ -244,9 +244,9 @@ core.ShowToast reaches the platform's own transient overlay and disappears on a 
 
 #### The variant is a tint, not a fill
 
-Badge and a filled Button spend the whole variant color as a background. A strip that runs the width of the screen cannot: a saturated Error red across a screen reads as a failure of the app rather than of one fetch, and the palette carries no muted \*container\* tone to fill with instead. (It carries an on-light tone now, which is the opposite end of the range — ink for a light surface, not a wash to sit behind one — so it does not answer this. A container tone would still be a palette decision, not a Banner one.)
+Badge and a filled Button spend the whole variant color as a background. A strip that runs the width of the screen cannot: a saturated Error red across a screen reads as a failure of the app rather than of one fetch, and the palette carries no muted \*container\* tone to fill with instead. (It carries an ink tone now, which is the opposite end of the range — ink for a light surface, not a wash to sit behind one — so it does not answer this. A container tone would still be a palette decision, not a Banner one.)
 
-So the variant is spent on the edges: a hairline border and the leading glyph take the role's on-light tone, the fill stays the theme's Surface, and the text keeps the primary ink so it is legible whatever the role. That also means a Banner's contrast does not depend on which variant it is, which the alternatives could not promise.
+So the variant is spent on the edges: a hairline border and the leading glyph take the role's ink tone, the fill stays the theme's Surface, and the text keeps the primary ink so it is legible whatever the role. That also means a Banner's contrast does not depend on which variant it is, which the alternatives could not promise.
 
 #### Color is not the message, again
 
@@ -369,7 +369,7 @@ Both web targets write role="dialog" and aria-modal on the Modal chassis and bot
 	Title           Typography.Subtitle, bold (Card's title treatment)
 	Message         Typography.Body
 	Confirm fill    Variant.Color — Colors.Primary, or Error/Success/Warning
-	Cancel ink      Colors.Primary's on-light tone (ghost Button)
+	Cancel ink      Colors.Primary's ink tone (ghost Button)
 	Button gap      Spacing.SM
 
 <small>[comps/dialog.go:94](https://github.com/rohanthewiz/grmob/blob/master/comps/dialog.go#L94)</small>
@@ -406,7 +406,7 @@ type DialogAction struct {
 
 	// Variant colours a Confirm button's fill (VariantError for a destructive
 	// action). A Cancel button is always ghost and reads only the variant's
-	// on-light ink, so Cancel's Variant is rarely worth setting.
+	// ink tone, so Cancel's Variant is rarely worth setting.
 	Variant Variant
 
 	// Disabled greys the button and drops its taps, for a Confirm that waits

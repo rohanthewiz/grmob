@@ -302,6 +302,10 @@ func (c RadarChart) Render(ctx *core.Context) *core.Node {
 		core.AlignItemsProp(core.AlignItemsCenter),
 		core.AccessibilityRole(core.RoleImg),
 		core.AccessibilityLabel(c.label()),
+		// A row per axis and a series per polygon, from the centre (0) to the
+		// rim (top). Not continuous: the axes are categories, and the polygon
+		// joining them is a drawing convention, not a sampled line.
+		core.AccessibilityChart(seriesData(c.Subject, c.Axes, len(c.Axes), c.Series, c.Format, 0, top, false)),
 	)
 	items = append(items, asProps(c.Style)...)
 	items = append(items, core.ZStack(layers...))

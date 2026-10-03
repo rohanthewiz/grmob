@@ -111,9 +111,9 @@ import "github.com/rohanthewiz/grmob/core"
 //
 //	Panel          Components.Card, through comps.Card
 //	Title          Typography.Subtitle, bold (Card's title treatment)
-//	Action ink     Variant.OnLight — Colors.PrimaryOnLight, or ErrorOnLight
+//	Action ink     Variant.AsInk — Colors.PrimaryInk, or ErrorInk
 //	               for a destructive action (ghost Button)
-//	Cancel         Colors.PrimaryOnLight, outlined
+//	Cancel         Colors.PrimaryInk, outlined
 //	Rule           Colors.Border, through Separator
 type ActionSheet struct {
 	// Visible is the caller's open/closed state.

@@ -297,24 +297,27 @@ contrast and is tested to clear WCAG AA under both bundled themes.
 Outlined and Ghost own neither — the fill is transparent, so the label's real
 backdrop is whatever you placed the button on. Their label and rule are
 therefore the role's
-[**on-light tone**](concepts/styling-and-theming.md#the-on-light-tones), the
+[**ink tone**](concepts/styling-and-theming.md#the-ink-tones), the
 palette's second value per role, rather than the fill color. Measured against
-each theme's own `Background` (both `#FFFFFF`), with the value each replaced:
+each theme's own `Background` (`#FFFFFF` for the first three, `#1C1C1E` for
+`DarkTheme`), with the value each replaced:
 
-| variant | DefaultTheme | MaterialTheme | AmberTheme |
-|---|---|---|---|
-| default | **7.56:1** (needs no second tone) | 7.63:1 (needed no second tone) | **5.78:1** (was 2.04) |
-| success | **5.40:1** (was 2.22) | 5.13:1 (needed no second tone) | 5.13:1 (needed no second tone) |
-| warning | **5.28:1** (was 2.20) | **5.60:1** (was 3.08) | **5.60:1** (was 3.08) |
-| error | **5.38:1** (was 3.55) | 7.33:1 (needed no second tone) | 7.33:1 (needed no second tone) |
+| variant | DefaultTheme | MaterialTheme | AmberTheme | DarkTheme |
+|---|---|---|---|---|
+| default | **7.56:1** (needs no second tone) | 7.63:1 (needed no second tone) | **5.78:1** (was 2.04) | 6.01:1 (needs no second tone) |
+| success | **5.40:1** (was 2.22) | 5.13:1 (needed no second tone) | 5.13:1 (needed no second tone) | **9.24:1** (was 8.42) |
+| warning | **5.28:1** (was 2.20) | **5.60:1** (was 3.08) | **5.60:1** (was 3.08) | **9.54:1** (was 8.28) |
+| error | **5.38:1** (was 3.55) | 7.33:1 (needed no second tone) | 7.33:1 (needed no second tone) | **6.03:1** (was 4.99) |
 
-All twelve clear WCAG AA (4.5:1); five of them did not before their tone
-existed. `AmberTheme`'s `default` row is the widest gap in the table and the
+All sixteen clear WCAG AA (4.5:1); five of them did not before their tone
+existed. `DarkTheme`'s roles all cleared already; its tones are the lighter,
+accessible variants Apple pairs with them, which is why three cells there
+improve on a pass rather than rescue a fail. `AmberTheme`'s `default` row is the widest gap in the table and the
 reason that palette was written: MD amber 700 is a fine fill and cannot be ink,
 which is the case neither of the other two still makes for `Primary`.
 
 `DefaultTheme`'s `default` row read "was 4.02" until its `Primary` role was
-[darkened to the accessible blue its tone already carried](concepts/styling-and-theming.md#the-on-light-tones),
+[darkened to the accessible blue its tone already carried](concepts/styling-and-theming.md#the-ink-tones),
 which the *filled* treatment needed and this one did not. The number here is
 unchanged by that; the role and its tone simply became one colour.
 
@@ -322,7 +325,7 @@ The promise is still narrower than `EmphasisFilled`'s: these numbers hold
 against a theme's `Background`, and a button placed on some other surface — a
 tinted card, a photo — is measured against that instead, which nothing here can
 know. What changed is that the *default* case is legible rather than documented
-as illegible. A theme that declares no on-light tones falls back to the role
+as illegible. A theme that declares no ink tones falls back to the role
 color, i.e. to the numbers in brackets, and to exactly the pixels this widget
 painted before.
 
@@ -395,7 +398,7 @@ comps.Link{Text: "Forgot password?", OnTap: showReset}
   whether to follow it needs to know that.
 - `OnTap` wins; otherwise a tap is `core.OpenURL(URL)`. With neither, it reports
   `ConcernLinkInert`.
-- Drawn in `Primary`'s on-light tone, hugging its text (`AlignSelf(start)`) so
+- Drawn in `Primary`'s ink tone, hugging its text (`AlignSelf(start)`) so
   the empty width beside it is not a target.
 - **Not underlined** on its own line, where being a line of link colour is what
   says it is a link. **Inline**, inside a sentence, use `Link.Span(ctx)`: a run
@@ -997,7 +1000,7 @@ this field touches. *How much* quieter the other one is has two right answers:
 | | |
 |---|---|
 | `ProminenceQuiet` (zero) | Surface fill, `TextPrimary` ink, a ring in `Colors.ControlBorder`. Right for a **filter** row, which is chrome above the content it filters: a loud row of years competes with the archive it is filtering. |
-| `ProminenceLoud` | The chip's accent, in its on-light tone, as ink and as a 1px rule over a transparent fill — the outlined treatment. Right for a row of **suggestions** the reader is meant to reach into: grey pills over an empty amount field do not read as "tap one of these". |
+| `ProminenceLoud` | The chip's accent, in its ink tone, as ink and as a 1px rule over a transparent fill — the outlined treatment. Right for a row of **suggestions** the reader is meant to reach into: grey pills over an empty amount field do not read as "tap one of these". |
 
 ```go
 comps.Chip{Label: "$25", Prominence: comps.ProminenceLoud,
@@ -1024,7 +1027,7 @@ The accent is the theme's own `Components.Button` background — the fill the
 selected chip paints — so the outline and what it becomes when tapped are the
 same hue on any theme. A theme with no Button fill falls back to
 `Colors.Primary`. Whichever it lands on is then resolved through
-[`Colors.OnLight`](concepts/styling-and-theming.md#the-on-light-tones) — a
+[`Colors.AsInk`](concepts/styling-and-theming.md#the-ink-tones) — a
 lookup by *colour* rather than by role, because the accent is a hex the widget
 read off the Button base and has no name for — so the outline is drawn at ink
 weight. The numbers are the outlined [`Button`](#button)'s `default` row, since
@@ -1295,7 +1298,7 @@ Other notes:
 
 - `Max` sets the glyph count and defaults to 5. `Glyph` and `EmptyGlyph`
   default to ★ and ☆.
-- Filled glyphs use the warning role's on-light tone, which holds contrast on
+- Filled glyphs use the warning role's ink tone, which holds contrast on
   a light surface where the raw warning colour does not.
 
 ## Separator
@@ -2843,7 +2846,7 @@ bar with no dead gaps between them.
 
 Other notes:
 
-- The current item is drawn bold in the primary on-light tone and states
+- The current item is drawn bold in the primary ink tone and states
   `core.CurrentPage`: `aria-current="page"` on the web, selected on Compose and
   SwiftUI. Its name stays the label. A tab role would claim a panel the bar does
   not control.
@@ -2992,12 +2995,12 @@ comps.Banner{
 
 **The variant is a tint, not a fill.** A hairline border and the leading glyph
 take the role's
-[on-light tone](concepts/styling-and-theming.md#the-on-light-tones); the strip
+[ink tone](concepts/styling-and-theming.md#the-ink-tones); the strip
 keeps the theme's Surface and the primary ink. A saturated Error red across the
 width of a screen reads as a failure of the app rather than of one fetch, and
 the palette carries no muted *container* tone to fill with instead — an
-on-light tone is the opposite end of the range, ink for a light surface rather
-than a wash to sit behind one. The upshot is that a banner's contrast does not
+ink tone is the opposite end of the range, ink for the page rather
+than a wash to sit behind text. The upshot is that a banner's contrast does not
 depend on which variant it is.
 
 The glyph is the mark that most needed the second tone: under `DefaultTheme` a
@@ -3544,7 +3547,7 @@ package where `VariantDefault` is not the theme's brand color. A delta is a
 measurement, and whether a number going up is good is the caller's domain:
 attendance up is a success, spend up is not, latency up is an incident. So
 the default says nothing. A colored delta takes the role's
-[on-light tone](concepts/styling-and-theming.md#the-on-light-tones) rather than
+[ink tone](concepts/styling-and-theming.md#the-ink-tones) rather than
 its fill color, for the reason an outlined [`Button`](#contrast-and-what-the-widget-can-promise)'s
 label does: the line is *read*, on whatever the tile was dropped into, and the
 tile paints no background to pick an ink against. Under `DefaultTheme` a
@@ -3555,6 +3558,28 @@ second value per role.
 four targets agree: Compose and SwiftUI divide the whole axis by weight, CSS
 divides only the leftover space. The natives ignore `FlexBasis`, so the prop
 that is inert on two targets is exactly the one that converges the other two.
+
+## Chart data
+
+Every chart below, and `LineChart`, `AreaChart`, `BarChart`, `ScatterChart`
+and `DonutChart`, is announced as **one element with one summary sentence**,
+and that element also carries the chart's numbers
+(`core.AccessibilityChart`), offered in each platform's own idiom:
+
+| target | what a reader gets |
+|---|---|
+| Web and HTML export | the element becomes `role="figure"` (named by the sentence) holding a visually hidden `<table>`: a row per category, a column per series, the values as the chart formats them |
+| iOS | an `AXChartDescriptor` on the element, for VoiceOver's chart details and Audio Graphs |
+| Android | the sentence alone; Compose and TalkBack have no chart equivalent |
+
+`role="figure"` rather than `img` on the web because an img's children are
+presentational, which would hide the table. A stacked chart's table holds
+each series' own values, not the running totals it draws; a missing value is
+an empty cell. `Sparkline` and `Gauge` carry no table: one unlabelled run, or
+one value, is already all the sentence says. There is no generic
+screen-reader-only primitive behind this, by design. What a native reader does
+with a zero-size view is unmeasured, so core carries the data and leaves the
+presentation to each host (see `core.ChartData`).
 
 ## Histogram
 
@@ -4071,7 +4096,7 @@ comps.Poll{
   default to 0 and open the poll already voted for its first option.
 - **Showing results** after that, or with `ShowResults` (a closed poll): each
   option is its label, its share and a `ProgressBar`, with the reader's choice
-  checked and in the on-light `Primary`, and the total underneath.
+  checked and in `Primary`'s ink tone, and the total underneath.
 - The shares **always total 100**, by the largest-remainder method: three
   options at one vote each read 34 / 33 / 33, not 33 / 33 / 33. With no votes
   every share is 0%. The bars use the true fractions.

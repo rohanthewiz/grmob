@@ -63,7 +63,7 @@ func TestStatTileDeltaDefaultsToNeutralInkNotPrimary(t *testing.T) {
 	}
 }
 
-// The delta line takes the role's on-light tone, not its fill colour: it is a
+// The delta line takes the role's ink tone, not its fill colour: it is a
 // sentence, read on whatever the tile was dropped into, and the tile paints no
 // background to pick an ink against. Under DefaultTheme a Success delta was
 // 2.22:1 before.
@@ -78,13 +78,13 @@ func TestStatTileDeltaVariantColors(t *testing.T) {
 		if delta == nil {
 			t.Fatalf("variant %q: no delta", v)
 		}
-		want := v.OnLight(theme)
+		want := v.AsInk(theme)
 		if want == v.Color(theme) {
-			t.Fatalf("fixture no longer exercises the split: %q's on-light tone is its "+
+			t.Fatalf("fixture no longer exercises the split: %q's ink tone is its "+
 				"fill colour under DefaultTheme", v)
 		}
 		if delta.Style.TextColor != want {
-			t.Errorf("variant %q ink = %q, want the role's on-light tone %q",
+			t.Errorf("variant %q ink = %q, want the role's ink tone %q",
 				v, delta.Style.TextColor, want)
 		}
 	}

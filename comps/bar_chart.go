@@ -235,8 +235,10 @@ func (c BarChart) Render(ctx *core.Context) *core.Node {
 	if format == nil {
 		format = formatValue
 	}
+	// Bars are separate marks, not samples of a line.
+	data := seriesData(c.Subject, c.Labels, n, c.Series, c.Format, scale.lo, scale.hi, false)
 	if c.Horizontal {
-		return c.horizontalFrame(ctx, scale, h, n, fill, canvas, legendView, colors, format)
+		return c.horizontalFrame(ctx, scale, h, n, fill, canvas, legendView, colors, format, data)
 	}
 	var values core.View
 	bottomExtra := 0.0
@@ -244,7 +246,7 @@ func (c BarChart) Render(ctx *core.Context) *core.Node {
 		values, bottomExtra = c.valueLayer(t, n, fill, scale, h, colors, format)
 	}
 	return cartesianFrameWithValues(ctx, scale, h, c.Format, canvas, bandLabels(t, c.Labels, n),
-		legendView, c.label(n), c.Style, values, bottomExtra)
+		legendView, c.label(n), c.Style, values, bottomExtra, data)
 }
 
 // barRect is one bar in band-and-value coordinates: a runs across the
@@ -687,7 +689,7 @@ func chartLabelText(t *core.Theme, text string, align core.Alignment, ink string
 // horizontalFrame lays out a horizontal bar chart: the name column, the plot
 // over its tick labels, and the value column. See "Horizontal" above.
 func (c BarChart) horizontalFrame(ctx *core.Context, scale valueScale, h float64, n int, fill float64,
-	canvas, legendView core.View, colors []string, format func(float64) string) *core.Node {
+	canvas, legendView core.View, colors []string, format func(float64) string, data core.ChartData) *core.Node {
 	t := ctx.Theme()
 
 	labelWidth := c.LabelWidth
@@ -742,6 +744,7 @@ func (c BarChart) horizontalFrame(ctx *core.Context, scale valueScale, h float64
 		core.Gap(float64(t.Spacing.SM)),
 		core.AccessibilityRole(core.RoleImg),
 		core.AccessibilityLabel(c.label(n)),
+		core.AccessibilityChart(data),
 	)
 	for _, sp := range c.Style {
 		items = append(items, sp)

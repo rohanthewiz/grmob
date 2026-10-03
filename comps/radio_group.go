@@ -70,7 +70,7 @@ import "github.com/rohanthewiz/grmob/core"
 //
 // # Theme roles read
 //
-//	Ring, selected   Colors.PrimaryOnLightColor() — border and dot
+//	Ring, selected   Colors.PrimaryInkColor() — border and dot
 //	Ring, other      Colors.ControlBorder (Colors.BorderColor() if unset):
 //	                 the ring is a control boundary, so it takes the stroke
 //	                 role that clears 3:1
@@ -196,7 +196,7 @@ func ring(t *core.Theme, selected, disabled bool) core.View {
 		stroke = t.Colors.BorderColor()
 	}
 	if selected {
-		stroke = t.Colors.PrimaryOnLightColor()
+		stroke = t.Colors.PrimaryInkColor()
 	}
 	if disabled {
 		stroke = t.Colors.TextSecondary

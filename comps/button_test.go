@@ -118,7 +118,7 @@ func TestButtonFilledStatusVariantsAreLegibleOnEveryTheme(t *testing.T) {
 // empty Background inherits the theme's solid Button base, which is the
 // opposite of the intent.
 //
-// Their label is the role's *on-light* tone, not the fill colour. A treatment
+// Their label is the role's *ink* tone, not the fill colour. A treatment
 // that owns no background cannot pick its ink by contrast the way the filled
 // one does, so the palette has to supply a value that stands on a light
 // surface unaided; see the contrast table on the Button type.
@@ -153,13 +153,13 @@ func TestButtonOutlinedAndGhostAreTransparentWithVariantInk(t *testing.T) {
 				if out.Style.Background != ColorTransparent {
 					t.Errorf("outlined fill = %q, want transparent", out.Style.Background)
 				}
-				want := v.OnLight(theme)
+				want := v.AsInk(theme)
 				if out.Style.TextColor != want {
-					t.Errorf("outlined ink = %q, want the role's on-light tone %q",
+					t.Errorf("outlined ink = %q, want the role's ink tone %q",
 						out.Style.TextColor, want)
 				}
 				if out.Style.BorderWidth == 0 || out.Style.BorderColor != want {
-					t.Errorf("outlined rule = %vpx %q, want 1px in the on-light tone %q",
+					t.Errorf("outlined rule = %vpx %q, want 1px in the ink tone %q",
 						out.Style.BorderWidth, out.Style.BorderColor, want)
 				}
 				if want != v.Color(theme) {
@@ -174,7 +174,7 @@ func TestButtonOutlinedAndGhostAreTransparentWithVariantInk(t *testing.T) {
 					t.Errorf("ghost drew a rule of %vpx", ghost.Style.BorderWidth)
 				}
 				if ghost.Style.TextColor != want {
-					t.Errorf("ghost ink = %q, want the role's on-light tone %q",
+					t.Errorf("ghost ink = %q, want the role's ink tone %q",
 						ghost.Style.TextColor, want)
 				}
 			})

@@ -263,7 +263,8 @@ ctx.Theme().Typography.Body   // Title / Subtitle / Body / Caption
 ctx.Theme().Spacing           // never a magic number in widget code
 ```
 
-Bundled: `core.DefaultTheme`, `core.MaterialTheme`, `core.AmberTheme`.
+Bundled: `core.DefaultTheme`, `core.MaterialTheme`, `core.AmberTheme`,
+`core.DarkTheme` (all four from `core.BundledThemes()`).
 Override by copying a base and editing the copy.
 
 ### Accessibility

@@ -148,7 +148,7 @@ func (s StatTile) Render(ctx *core.Context) *core.Node {
 	return core.Box(items...).Render(ctx)
 }
 
-// deltaInk resolves the movement line's color: the role's on-light tone for a
+// deltaInk resolves the movement line's color: the role's ink tone for a
 // set variant, the theme's secondary ink for the zero value.
 //
 // The tone rather than the role colour, because this line is *read* — it is a
@@ -162,11 +162,11 @@ func (s StatTile) Render(ctx *core.Context) *core.Node {
 // VariantDefault stays TextSecondary and does not go through the lookup at
 // all. That arm is not a role at all here — it is the deliberate *neutral*
 // this widget alone gives the zero variant, on the reasoning in the type
-// comment, and Variant.OnLight would resolve it to the brand tone the tile is
+// comment, and Variant.AsInk would resolve it to the brand tone the tile is
 // specifically avoiding.
 func (s StatTile) deltaInk(t *core.Theme) string {
 	if s.DeltaVariant == VariantDefault {
 		return t.Colors.TextSecondary
 	}
-	return s.DeltaVariant.OnLight(t)
+	return s.DeltaVariant.AsInk(t)
 }

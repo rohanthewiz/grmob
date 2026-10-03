@@ -128,6 +128,7 @@ func (h Heatmap) Render(ctx *core.Context) *core.Node {
 		format:     h.Format,
 		style:      h.Style,
 		label:      h.AccessibilityLabel,
+		subject:    h.Subject,
 		summary: func(g heatGrid, format func(float64) string) string {
 			return g.matrixSummary(h.Subject, format)
 		},
@@ -147,7 +148,37 @@ type heatGrid struct {
 	format     func(float64) string
 	style      []core.StyleProp
 	label      string
-	summary    func(g heatGrid, format func(float64) string) string
+	// subject titles the data table (core.ChartData.Title); the summary
+	// closure already speaks it.
+	subject string
+	summary func(g heatGrid, format func(float64) string) string
+}
+
+// data is the grid's core.ChartData, laid out as it is drawn: a row per grid
+// row (named by its label, else its 1-based position) and a series per
+// column, so the table a reader walks has the grid's own shape. A cell that
+// is absent (past a calendar's last day) or has no data is a missing value.
+// The value axis is the colour scale's range.
+func (g heatGrid) data(format func(float64) string, lo, hi float64) core.ChartData {
+	rows, cols := g.dims()
+	series := make([]ChartSeries, cols)
+	for j := range series {
+		if j < len(g.colLabels) {
+			series[j].Name = g.colLabels[j]
+		}
+		if series[j].Name == "" {
+			series[j].Name = "Column " + strconv.Itoa(j+1)
+		}
+		series[j].Values = make([]float64, rows)
+		for i := range rows {
+			v, drawn := g.cell(i, j)
+			if !drawn {
+				v = math.NaN()
+			}
+			series[j].Values[i] = v
+		}
+	}
+	return seriesData(g.subject, g.rowLabels, rows, series, format, lo, hi, false)
 }
 
 // dims is the grid's rows and columns.
@@ -283,6 +314,7 @@ func (g heatGrid) render(ctx *core.Context) *core.Node {
 		core.Gap(float64(t.Spacing.SM)),
 		core.AccessibilityRole(core.RoleImg),
 		core.AccessibilityLabel(label),
+		core.AccessibilityChart(g.data(format, lo, hi)),
 	)
 	items = append(items, asProps(g.style)...)
 	items = append(items, core.Row(grid...))
@@ -637,6 +669,7 @@ func (c CalendarHeatmap) Render(ctx *core.Context) *core.Node {
 		format:     c.Format,
 		style:      c.Style,
 		label:      c.AccessibilityLabel,
+		subject:    c.Subject,
 		summary: func(_ heatGrid, format func(float64) string) string {
 			parts := []string{summaryPrefix(c.Subject) + format(total) + " over " + plural2(weeks, "week")}
 			if active == 0 {

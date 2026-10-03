@@ -121,7 +121,7 @@ func TestVariantInkFlipsDirectionBetweenThemes(t *testing.T) {
 
 // midTonePrimaryTheme is DefaultTheme as it stood before its Primary role was
 // darkened: iOS systemBlue as the brand colour, white declared over it by the
-// Button base, and Apple's accessible blue as the separate on-light tone.
+// Button base, and Apple's accessible blue as the separate ink tone.
 //
 // It is the fixture for the two properties a mid-tone role has and a dark one
 // does not. core.AmberTheme now carries the second of them in a shipped
@@ -139,7 +139,7 @@ func TestVariantInkFlipsDirectionBetweenThemes(t *testing.T) {
 //	    below AA, and every legal version of the same disagreement sits between
 //	    4.50:1 and 4.58:1.
 //
-//	the role splits from its on-light tone
+//	the role splits from its ink tone
 //	    #007AFF cannot be read as ink on white and #0040DD can, which is the
 //	    whole reason the tones exist. core.AmberTheme now shows this too, so
 //	    this half of the fixture is a second witness rather than the only one.
@@ -149,19 +149,19 @@ func TestVariantInkFlipsDirectionBetweenThemes(t *testing.T) {
 //
 // The first property is asserted from the outside by
 // TestTheFixtureStillCarriesWhatNoBundledThemeCan, so an edit here that looked
-// like tidying a helper — rounding the blue, dropping the separate on-light
+// like tidying a helper — rounding the blue, dropping the separate ink
 // tone — fails rather than leaving that rule with no evidence in the repository
 // at all.
 func midTonePrimaryTheme() *core.Theme {
 	return &core.Theme{
 		Colors: core.ColorPalette{
-			Primary:        "#007AFF", // iOS systemBlue: white 4.02:1, black 5.23:1
-			PrimaryOnLight: "#0040DD", // Apple accessible blue — 7.56:1 on white
-			Background:     "#FFFFFF",
-			Surface:        "#F2F2F7",
-			TextPrimary:    "#000000",
-			Error:          "#FF3B30",
-			ErrorOnLight:   "#D70015",
+			Primary:     "#007AFF", // iOS systemBlue: white 4.02:1, black 5.23:1
+			PrimaryInk:  "#0040DD", // Apple accessible blue — 7.56:1 on white
+			Background:  "#FFFFFF",
+			Surface:     "#F2F2F7",
+			TextPrimary: "#000000",
+			Error:       "#FF3B30",
+			ErrorInk:    "#D70015",
 		},
 		Components: core.ComponentDefaults{
 			Button: core.Style{Background: "#007AFF", TextColor: "#FFFFFF"},
@@ -373,7 +373,7 @@ func TestRelativeLuminance(t *testing.T) {
 	}
 }
 
-// The guarantee the on-light tones exist to make: every one of them clears
+// The guarantee the ink tones exist to make: every one of them clears
 // WCAG AA against its own theme's Background.
 //
 // This is the check that could not live in core. The tones are a palette
@@ -387,7 +387,7 @@ func TestRelativeLuminance(t *testing.T) {
 // outlined button's label and a loud chip's caption are read, not glanced at.
 // The looser 3:1 large-text allowance is deliberately not used — a chip's
 // caption is 13pt in the one app that has one.
-func TestBundledOnLightTonesClearWCAGAA(t *testing.T) {
+func TestBundledInkTonesClearWCAGAA(t *testing.T) {
 	const floor = 4.5
 
 	for name, theme := range core.BundledThemes() {
@@ -399,18 +399,18 @@ func TestBundledOnLightTonesClearWCAGAA(t *testing.T) {
 			what string
 			tone string
 		}{
-			{"Primary", theme.Colors.PrimaryOnLightColor()},
-			{"Success", theme.Colors.SuccessOnLightColor()},
-			{"Warning", theme.Colors.WarningOnLightColor()},
-			{"Error", theme.Colors.ErrorOnLightColor()},
+			{"Primary", theme.Colors.PrimaryInkColor()},
+			{"Success", theme.Colors.SuccessInkColor()},
+			{"Warning", theme.Colors.WarningInkColor()},
+			{"Error", theme.Colors.ErrorInkColor()},
 		} {
 			lum, ok := relativeLuminance(role.tone)
 			if !ok {
-				t.Errorf("%s: %s on-light tone %q does not parse", name, role.what, role.tone)
+				t.Errorf("%s: %s ink tone %q does not parse", name, role.what, role.tone)
 				continue
 			}
 			if r := contrastRatio(bg, lum); r < floor {
-				t.Errorf("%s: %s on-light tone %q is %.2f:1 against Background %q, want at "+
+				t.Errorf("%s: %s ink tone %q is %.2f:1 against Background %q, want at "+
 					"least %.1f:1 — the tone exists precisely to clear this",
 					name, role.what, role.tone, r, theme.Colors.Background, floor)
 			}
@@ -425,7 +425,7 @@ func TestBundledOnLightTonesClearWCAGAA(t *testing.T) {
 // count. If a later retint made every role ink-weight on its own, the tones
 // would be redundant and this would say so; a test that only checked the tones
 // would let that pass in silence and leave eight fields with nothing to do.
-func TestTheRoleColoursAreWhyTheOnLightTonesExist(t *testing.T) {
+func TestTheRoleColoursAreWhyTheInkTonesExist(t *testing.T) {
 	const floor = 4.5
 	failing := 0
 
@@ -445,7 +445,7 @@ func TestTheRoleColoursAreWhyTheOnLightTonesExist(t *testing.T) {
 
 	if failing == 0 {
 		t.Error("every bundled role colour now clears AA as ink on its own Background — " +
-			"the on-light tones have nothing left to fix, and eight palette fields plus " +
+			"the ink tones have nothing left to fix, and eight palette fields plus " +
 			"their plumbing should be reconsidered rather than left standing")
 	}
 }
@@ -456,9 +456,9 @@ func TestTheRoleColoursAreWhyTheOnLightTonesExist(t *testing.T) {
 // 3:1 floor for a control boundary against both the page behind the field and
 // the field's own fill.
 //
-// It lives beside the on-light census for the same reason that one is here
+// It lives beside the ink-tone census for the same reason that one is here
 // rather than in core: the palette declares the tone and this package owns the
-// arithmetic. What is different is the floor. The on-light tones are *ink* and
+// arithmetic. What is different is the floor. The ink tones are *ink* and
 // take AA's 4.5:1 body-text floor; this is a *boundary* — Non-text Contrast,
 // where 3:1 is the whole requirement, because the question is only whether a
 // reader can see that a control is there.
@@ -524,7 +524,7 @@ func TestBundledFieldFramesClearNonTextContrast(t *testing.T) {
 // that floor on either bundled theme, which is why the field frames are not
 // spent out of it.
 //
-// A census rather than two assertions, and pointed the same way as the on-light
+// A census rather than two assertions, and pointed the same way as the ink-tone
 // one. Border is a divider — a rule between list rows, the outline of a card —
 // and a pale rule is a legitimate choice there; the fault would be reaching for
 // it as a control boundary. If a later retint darkened it past 3:1 the two jobs

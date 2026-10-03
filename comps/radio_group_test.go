@@ -71,7 +71,7 @@ func TestRadioGroupRingFillsOnlyTheSelectedOption(t *testing.T) {
 		t.Errorf("dots: std %d, exp %d; want 0 and 1", len(std.Children), len(exp.Children))
 	}
 	th := core.DefaultTheme
-	if exp.Style.BorderColor != th.Colors.PrimaryOnLightColor() {
+	if exp.Style.BorderColor != th.Colors.PrimaryInkColor() {
 		t.Errorf("selected ring = %q", exp.Style.BorderColor)
 	}
 	if pick.Style.BorderColor != th.Colors.TextSecondary {

@@ -224,17 +224,17 @@ func TestScopeKeepsItsHookSlotsAcrossAThemeChange(t *testing.T) {
 	}
 }
 
-// The on-light tones fall back to their own role rather than to a constant,
+// The ink tones fall back to their own role rather than to a constant,
 // which is what makes them a no-op for a theme written before they existed:
 // every widget spending one lands on exactly the colour it spent before.
 //
 // Each role is checked with the *other* three set, so a resolver that read the
 // wrong field would fail here rather than pass by coincidence.
-func TestOnLightTonesFallBackToTheirOwnRole(t *testing.T) {
+func TestInkTonesFallBackToTheirOwnRole(t *testing.T) {
 	full := ColorPalette{
 		Primary: "#111111", Error: "#222222", Success: "#333333", Warning: "#444444",
-		PrimaryOnLight: "#AAAAAA", ErrorOnLight: "#BBBBBB",
-		SuccessOnLight: "#CCCCCC", WarningOnLight: "#DDDDDD",
+		PrimaryInk: "#AAAAAA", ErrorInk: "#BBBBBB",
+		SuccessInk: "#CCCCCC", WarningInk: "#DDDDDD",
 	}
 
 	for _, c := range []struct {
@@ -243,51 +243,51 @@ func TestOnLightTonesFallBackToTheirOwnRole(t *testing.T) {
 		clear func(*ColorPalette)
 		want  string
 	}{
-		{"Primary", ColorPalette.PrimaryOnLightColor, func(p *ColorPalette) { p.PrimaryOnLight = "" }, "#111111"},
-		{"Error", ColorPalette.ErrorOnLightColor, func(p *ColorPalette) { p.ErrorOnLight = "" }, "#222222"},
-		{"Success", ColorPalette.SuccessOnLightColor, func(p *ColorPalette) { p.SuccessOnLight = "" }, "#333333"},
-		{"Warning", ColorPalette.WarningOnLightColor, func(p *ColorPalette) { p.WarningOnLight = "" }, "#444444"},
+		{"Primary", ColorPalette.PrimaryInkColor, func(p *ColorPalette) { p.PrimaryInk = "" }, "#111111"},
+		{"Error", ColorPalette.ErrorInkColor, func(p *ColorPalette) { p.ErrorInk = "" }, "#222222"},
+		{"Success", ColorPalette.SuccessInkColor, func(p *ColorPalette) { p.SuccessInk = "" }, "#333333"},
+		{"Warning", ColorPalette.WarningInkColor, func(p *ColorPalette) { p.WarningInk = "" }, "#444444"},
 	} {
 		if got := c.tone(full); got == c.want {
-			t.Errorf("%sOnLightColor read the role while the tone was set", c.role)
+			t.Errorf("%sInkColor read the role while the tone was set", c.role)
 		}
 		bare := full
 		c.clear(&bare)
 		if got := c.tone(bare); got != c.want {
-			t.Errorf("%sOnLightColor with no tone = %q, want the role's own %q — a theme "+
+			t.Errorf("%sInkColor with no tone = %q, want the role's own %q — a theme "+
 				"that predates the field must render as it always did", c.role, got, c.want)
 		}
 	}
 }
 
 // A theme missing both halves of Success or Warning still lands somewhere
-// visible: the on-light resolver defers to the role's *resolver*, not to the
+// visible: the ink-tone resolver defers to the role's *resolver*, not to the
 // raw field, so the documented fallback colour comes through rather than an
 // empty string. Primary and Error need no such step — they are two of the
 // original seven and no theme can be missing them.
-func TestOnLightTonesInheritTheRoleFallbacks(t *testing.T) {
+func TestInkTonesInheritTheRoleFallbacks(t *testing.T) {
 	empty := ColorPalette{}
-	if got := empty.SuccessOnLightColor(); got != FallbackSuccess {
-		t.Errorf("SuccessOnLightColor on an empty palette = %q, want %q", got, FallbackSuccess)
+	if got := empty.SuccessInkColor(); got != FallbackSuccess {
+		t.Errorf("SuccessInkColor on an empty palette = %q, want %q", got, FallbackSuccess)
 	}
-	if got := empty.WarningOnLightColor(); got != FallbackWarning {
-		t.Errorf("WarningOnLightColor on an empty palette = %q, want %q", got, FallbackWarning)
+	if got := empty.WarningInkColor(); got != FallbackWarning {
+		t.Errorf("WarningInkColor on an empty palette = %q, want %q", got, FallbackWarning)
 	}
 }
 
-// OnLight is the reverse lookup, for a widget holding a colour rather than a
+// AsInk is the reverse lookup, for a widget holding a colour rather than a
 // role — comps.Chip's accent, read off the theme's Button base.
-func TestOnLightResolvesAColourToItsRolesTone(t *testing.T) {
+func TestAsInkResolvesAColourToItsRolesTone(t *testing.T) {
 	p := DefaultTheme.Colors
 
 	for _, c := range []struct{ from, want string }{
-		{p.Primary, p.PrimaryOnLightColor()},
-		{p.Error, p.ErrorOnLightColor()},
-		{p.Success, p.SuccessOnLightColor()},
-		{p.Warning, p.WarningOnLightColor()},
+		{p.Primary, p.PrimaryInkColor()},
+		{p.Error, p.ErrorInkColor()},
+		{p.Success, p.SuccessInkColor()},
+		{p.Warning, p.WarningInkColor()},
 	} {
-		if got := p.OnLight(c.from); got != c.want {
-			t.Errorf("OnLight(%q) = %q, want %q", c.from, got, c.want)
+		if got := p.AsInk(c.from); got != c.want {
+			t.Errorf("AsInk(%q) = %q, want %q", c.from, got, c.want)
 		}
 	}
 
@@ -301,9 +301,9 @@ func TestOnLightResolvesAColourToItsRolesTone(t *testing.T) {
 	// one that no longer shows a wrong colour. Error's tone is a genuinely
 	// different hex, so this checks the miss the way a widget would feel it.
 	lower := strings.ToLower(p.Error)
-	if got := p.OnLight(lower); got != p.ErrorOnLightColor() {
-		t.Errorf("OnLight(%q) = %q, want the lookup to ignore hex case and return %q",
-			lower, got, p.ErrorOnLightColor())
+	if got := p.AsInk(lower); got != p.ErrorInkColor() {
+		t.Errorf("AsInk(%q) = %q, want the lookup to ignore hex case and return %q",
+			lower, got, p.ErrorInkColor())
 	}
 
 	// A colour that is not one of the four toned roles comes back unchanged.
@@ -312,8 +312,8 @@ func TestOnLightResolvesAColourToItsRolesTone(t *testing.T) {
 	// some fifth colour keeps it rather than being snapped to a role it never
 	// named.
 	for _, other := range []string{"#8E44AD", p.Surface, p.TextSecondary, ""} {
-		if got := p.OnLight(other); got != other {
-			t.Errorf("OnLight(%q) = %q, want it unchanged", other, got)
+		if got := p.AsInk(other); got != other {
+			t.Errorf("AsInk(%q) = %q, want it unchanged", other, got)
 		}
 	}
 }
@@ -322,7 +322,7 @@ func TestOnLightResolvesAColourToItsRolesTone(t *testing.T) {
 // the fixture that proves it matters: it paints Secondary and Success the same
 // green. A lookup that consulted Secondary would answer for a brand slot with
 // a status role's tone.
-func TestOnLightDoesNotTintTheBrandSlot(t *testing.T) {
+func TestAsInkDoesNotTintTheBrandSlot(t *testing.T) {
 	p := DefaultTheme.Colors
 	if p.Secondary != p.Success {
 		t.Skipf("fixture assumed DefaultTheme paints Secondary and Success alike; "+
@@ -331,9 +331,9 @@ func TestOnLightDoesNotTintTheBrandSlot(t *testing.T) {
 	// The shared hex resolves through Success, which is the documented
 	// first-match rule — what is pinned is that Secondary has no tone of its
 	// own to disagree with it.
-	if got := p.OnLight(p.Secondary); got != p.SuccessOnLightColor() {
-		t.Errorf("OnLight(Secondary) = %q, want the Success tone %q it shares a hex with",
-			got, p.SuccessOnLightColor())
+	if got := p.AsInk(p.Secondary); got != p.SuccessInkColor() {
+		t.Errorf("AsInk(Secondary) = %q, want the Success tone %q it shares a hex with",
+			got, p.SuccessInkColor())
 	}
 }
 
@@ -465,6 +465,50 @@ func TestSequentialColorsResolve(t *testing.T) {
 	for i := range light {
 		if dark[i] != light[len(light)-1-i] {
 			t.Fatalf("dark step %d = %s, want the light list reversed", i, dark[i])
+		}
+	}
+}
+
+// DarkTheme is DefaultTheme's geometry in other colours (newDarkTheme), and
+// building it must not have written through to DefaultTheme.
+//
+// The write-through is the failure a value copy of a struct holding slices
+// invites: a constructor that appended to th.Colors.Chart instead of
+// replacing it would repaint DefaultTheme's series. The geometry half is the
+// reason the theme is built from a copy at all — a dark screen whose type
+// scale or paddings drifted from the light one would reflow on every scheme
+// switch.
+func TestDarkThemeIsDefaultThemesGeometryRecoloured(t *testing.T) {
+	d, k := DefaultTheme, DarkTheme
+	if d.Colors.Background != "#FFFFFF" || d.Colors.TextPrimary != "#000000" ||
+		d.Components.Button.TextColor != "#FFFFFF" || d.Components.Card.Background != "#FFFFFF" ||
+		d.Typography.Body.TextColor != "#000000" {
+		t.Fatal("newDarkTheme wrote through to DefaultTheme")
+	}
+	if !reflect.DeepEqual(d.Colors.Chart, DefaultChartColors()) ||
+		!reflect.DeepEqual(d.Colors.Sequential, DefaultSequentialColors()) {
+		t.Fatal("newDarkTheme wrote through to DefaultTheme's lists")
+	}
+	if k.Colors.Background == d.Colors.Background {
+		t.Fatal("DarkTheme shares DefaultTheme's page colour")
+	}
+	if k.Spacing != d.Spacing {
+		t.Errorf("DarkTheme's spacing %+v drifted from DefaultTheme's %+v", k.Spacing, d.Spacing)
+	}
+	for _, c := range []struct {
+		what       string
+		dark, base Style
+	}{
+		{"Title", k.Typography.Title, d.Typography.Title},
+		{"Body", k.Typography.Body, d.Typography.Body},
+		{"Caption", k.Typography.Caption, d.Typography.Caption},
+		{"Button", k.Components.Button, d.Components.Button},
+		{"Card", k.Components.Card, d.Components.Card},
+		{"Input", k.Components.Input, d.Components.Input},
+	} {
+		if c.dark.FontSize != c.base.FontSize || c.dark.FontWeight != c.base.FontWeight ||
+			c.dark.Padding != c.base.Padding || c.dark.BorderRadius != c.base.BorderRadius {
+			t.Errorf("DarkTheme's %s geometry drifted from DefaultTheme's", c.what)
 		}
 	}
 }

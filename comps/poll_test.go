@@ -101,8 +101,8 @@ func TestPollResultsAreOneStopPerOption(t *testing.T) {
 		t.Fatal("each result should be one stop named label, share, votes (and the reader's own, marked)")
 	}
 	label := findText(mine, "Tabs ✓")
-	if label == nil || label.Style.TextColor != th.Colors.PrimaryOnLightColor() || !label.Style.AccessibilityHidden {
-		t.Error("the reader's choice is checked, in the on-light Primary, and hidden under the stop's name")
+	if label == nil || label.Style.TextColor != th.Colors.PrimaryInkColor() || !label.Style.AccessibilityHidden {
+		t.Error("the reader's choice is checked, in the Primary ink tone, and hidden under the stop's name")
 	}
 	if findText(other, "37%") == nil || findText(other, "Spaces") == nil {
 		t.Error("the other option draws its plain label and its share")

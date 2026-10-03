@@ -228,6 +228,7 @@ func (c FunnelChart) Render(ctx *core.Context) *core.Node {
 		core.AlignItemsProp(core.AlignItemsStart),
 		core.AccessibilityRole(core.RoleImg),
 		core.AccessibilityLabel(c.label(values, format)),
+		core.AccessibilityChart(c.data(values, format)),
 	)
 	row = append(row, asProps(c.Style)...)
 	row = append(row,
@@ -324,6 +325,31 @@ func funnelColumn(t *core.Theme, texts []string, weights []float64, h float64, i
 
 // label is each stage with its step rate, then the overall rate from the
 // first stage to the last.
+// data is the chart's core.ChartData: a row per stage, named as the summary
+// names it, holding the stage's value and, after the first, its rate from
+// the step before ("1,200 (40% of the step before)"), which is the number a
+// funnel is read for. The value axis runs from 0 to the widest stage.
+func (c FunnelChart) data(values []float64, format func(float64) string) core.ChartData {
+	labels := make([]string, len(c.Stages))
+	stages := ChartSeries{Name: seriesName("", c.Subject, 0, 1), Values: make([]float64, len(c.Stages))}
+	hi := 0.0
+	for i, st := range c.Stages {
+		labels[i] = st.Label
+		if labels[i] == "" {
+			labels[i] = "stage " + formatValue(float64(i+1))
+		}
+		stages.Values[i] = values[i]
+		hi = math.Max(hi, values[i])
+	}
+	d := seriesData(c.Subject, labels, len(c.Stages), []ChartSeries{stages}, format, 0, hi, false)
+	for i := 1; i < len(d.Series[0].Points); i++ {
+		if rate := funnelRate(values[i-1], values[i]); rate != "" {
+			d.Series[0].Points[i].Text += " (" + rate + " of the step before)"
+		}
+	}
+	return d
+}
+
 func (c FunnelChart) label(values []float64, format func(float64) string) string {
 	if c.AccessibilityLabel != "" {
 		return c.AccessibilityLabel

@@ -271,7 +271,7 @@ It is a Heatmap — the same grid, scale, legend and one-sentence summary — wi
 
 The summary is the calendar's own: "Workouts: 42 over 17 weeks, on 23 days; most on Tue 3 Mar 2026, 4." When several days share the highest total, the sentence names the earliest of them. A tie has no right answer, so it only needs to be stable: the same days always name the same day. Earliest is simply the order the grid is walked in, and a reader told "most on" a date can find it by reading forward from there. The sentence does not mention the tie, because counting how many days share the peak would be a second statistic that the grid itself does not show.
 
-<small>[comps/heatmap.go:463](https://github.com/rohanthewiz/grmob/blob/master/comps/heatmap.go#L463)</small>
+<small>[comps/heatmap.go:495](https://github.com/rohanthewiz/grmob/blob/master/comps/heatmap.go#L495)</small>
 
 #### func (CalendarHeatmap) Render
 
@@ -279,7 +279,7 @@ The summary is the calendar's own: "Workouts: 42 over 17 weeks, on 23 days; most
 func (c CalendarHeatmap) Render(ctx *core.Context) *core.Node
 ```
 
-<small>[comps/heatmap.go:546](https://github.com/rohanthewiz/grmob/blob/master/comps/heatmap.go#L546)</small>
+<small>[comps/heatmap.go:578](https://github.com/rohanthewiz/grmob/blob/master/comps/heatmap.go#L578)</small>
 
 #### func (CalendarHeatmap) WeeksFor
 
@@ -297,7 +297,7 @@ The grid stretches its columns to whatever width it is given, so Weeks is not wh
 
 It is arithmetic on a width the caller supplies, not a measurement: no host reports a rendered width, and the caller knows its own padding where this widget does not. It reads no hook, so CalendarHeatmap stays safe to render conditionally; the caller's hooks.UseWindow is what makes a rotation or a fold re-render with a new count.
 
-<small>[comps/heatmap.go:528](https://github.com/rohanthewiz/grmob/blob/master/comps/heatmap.go#L528)</small>
+<small>[comps/heatmap.go:560](https://github.com/rohanthewiz/grmob/blob/master/comps/heatmap.go#L560)</small>
 
 ### type Candle
 
@@ -441,7 +441,7 @@ type ChartSeries struct {
 
 ChartSeries is one named run of values: a line, an area, or one colour of bars in a grouped BarChart.
 
-<small>[comps/chart.go:54](https://github.com/rohanthewiz/grmob/blob/master/comps/chart.go#L54)</small>
+<small>[comps/chart.go:66](https://github.com/rohanthewiz/grmob/blob/master/comps/chart.go#L66)</small>
 
 ### type ChartSlice
 
@@ -470,7 +470,7 @@ type DayValue struct {
 
 DayValue is one dated value of a CalendarHeatmap.
 
-<small>[comps/heatmap.go:498](https://github.com/rohanthewiz/grmob/blob/master/comps/heatmap.go#L498)</small>
+<small>[comps/heatmap.go:530](https://github.com/rohanthewiz/grmob/blob/master/comps/heatmap.go#L530)</small>
 
 ### type DonutChart
 

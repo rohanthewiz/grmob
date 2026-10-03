@@ -1,3 +1,4 @@
+import Accessibility
 import SwiftUI
 
 /// Swift mirror of Go's core.Style, decoded from the tree/patch JSON.
@@ -602,6 +603,110 @@ struct GrMobAccessibilityModifier: ViewModifier {
             .modifier(GrMobGestureAccessibility(onTap: onTap, onLongPress: onLongPress,
                                                 disabled: style?.disabled ?? false,
                                                 isLink: style?.accessibilityRole == "link"))
+    }
+}
+
+/// core.AccessibilityChart on this platform: the chart's numbers as an
+/// AXChartDescriptor on the chart's own accessibility element, which is what
+/// VoiceOver's "Chart details" and Audio Graphs read (N-010).
+///
+/// The web writes the same data as a visually hidden table; this platform
+/// has an API for exactly this, so no hidden view is made. What VoiceOver
+/// does with a zero-size or transparent view is unmeasured, which is why
+/// core carries data rather than a screen-reader-only node — see
+/// core.ChartData's "Why per host".
+///
+/// Applied by the flex containers outside grMobBox, as one concrete
+/// `.modifier` layer: the element it describes is the one grMobAccessibility
+/// made from the node's label (`.accessibilityElement(children:)`), and
+/// accessibility modifiers further out apply to that element. A node with
+/// no chartData takes the identity branch, so every other container is
+/// unchanged.
+struct GrMobChartAccessibility: ViewModifier {
+    let node: GrMobNode
+
+    func body(content: Content) -> some View {
+        if let chart = GrMobChartDescriptor(node: node) {
+            content.accessibilityChartDescriptor(chart)
+        } else {
+            content
+        }
+    }
+}
+
+/// The chartData prop, parsed: the wire shape is core.ChartData's JSON (title,
+/// x and y axes, series of points). nil when the node carries none or it is
+/// not an object, which is the "no chart" case and draws nothing differently.
+struct GrMobChartDescriptor: AXChartDescriptorRepresentable {
+    struct Point { let x: String; let xv: Double; let y: Double; let text: String }
+    struct Series { let name: String; let continuous: Bool; let points: [Point] }
+
+    let title: String
+    let summary: String
+    let xTitle: String
+    let categories: [String]
+    let xRange: ClosedRange<Double>
+    let yTitle: String
+    let yRange: ClosedRange<Double>
+    let series: [Series]
+
+    init?(node: GrMobNode) {
+        guard let data = node.props["chartData"] as? [String: Any] else { return nil }
+        let x = data["x"] as? [String: Any] ?? [:]
+        let y = data["y"] as? [String: Any] ?? [:]
+        func num(_ o: [String: Any], _ k: String) -> Double { (o[k] as? NSNumber)?.doubleValue ?? 0 }
+        // A ClosedRange needs lower ≤ upper, and a descriptor with a zero
+        // span gives Audio Graphs nothing to play against, so a degenerate
+        // axis (one value, or no data) is widened by one either side.
+        func range(_ o: [String: Any]) -> ClosedRange<Double> {
+            let lo = num(o, "min"), hi = num(o, "max")
+            return lo < hi ? lo...hi : (min(lo, hi) - 1)...(max(lo, hi) + 1)
+        }
+        title = data["title"] as? String ?? ""
+        // The summary sentence is the node's label, already spoken as the
+        // element's name; the descriptor carries it too so "Chart details"
+        // opens on it.
+        summary = node.style?.accessibilityLabel ?? ""
+        xTitle = x["title"] as? String ?? ""
+        categories = x["categories"] as? [String] ?? []
+        xRange = range(x)
+        yTitle = y["title"] as? String ?? ""
+        yRange = range(y)
+        series = (data["series"] as? [[String: Any]] ?? []).map { s in
+            Series(name: s["name"] as? String ?? "",
+                   continuous: s["continuous"] as? Bool ?? false,
+                   points: (s["points"] as? [[String: Any]] ?? []).map { p in
+                       Point(x: p["x"] as? String ?? "", xv: num(p, "xv"),
+                             y: num(p, "y"), text: p["text"] as? String ?? "")
+                   })
+        }
+    }
+
+    func makeChartDescriptor() -> AXChartDescriptor {
+        // The number Go formatted (Point.text) is each point's label, which
+        // is what VoiceOver reads for it; the axes' own descriptions only
+        // ever see a bare Double, so they say it plainly.
+        let plain: (Double) -> String = { v in
+            v.formatted(.number.precision(.fractionLength(0...2)))
+        }
+        let xAxis: any AXDataAxisDescriptor = categories.isEmpty
+            ? AXNumericDataAxisDescriptor(title: xTitle, range: xRange, gridlinePositions: [],
+                                          valueDescriptionProvider: plain)
+            : AXCategoricalDataAxisDescriptor(title: xTitle, categoryOrder: categories)
+        let yAxis = AXNumericDataAxisDescriptor(title: yTitle, range: yRange, gridlinePositions: [],
+                                                valueDescriptionProvider: plain)
+        let categorical = !categories.isEmpty
+        let described = series.map { s in
+            AXDataSeriesDescriptor(name: s.name, isContinuous: s.continuous, dataPoints: s.points.map { p in
+                let label = p.text.isEmpty ? nil : p.text
+                return categorical
+                    ? AXDataPoint(x: p.x, y: p.y, additionalValues: [], label: label)
+                    : AXDataPoint(x: p.xv, y: p.y, additionalValues: [], label: label)
+            })
+        }
+        return AXChartDescriptor(title: title.isEmpty ? nil : title,
+                                 summary: summary.isEmpty ? nil : summary,
+                                 xAxis: xAxis, yAxis: yAxis, additionalAxes: [], series: described)
     }
 }
 

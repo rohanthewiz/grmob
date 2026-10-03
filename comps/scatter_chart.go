@@ -183,7 +183,37 @@ func (c ScatterChart) Render(ctx *core.Context) *core.Node {
 		legendView = legendWithMarks(t, names, colors, squares)
 	}
 	return cartesianFrame(ctx, yScale, h, c.Format, canvas, pointLabels(t, tickText, len(ticks)),
-		legendView, c.label(), c.Style)
+		legendView, c.label(), c.Style, c.data(xScale, yScale))
+}
+
+// data is the chart's core.ChartData, the one chart here with a numeric x
+// axis: each point keeps its own x (XValue, spelled by XFormat), and the axes
+// state the drawn ranges. Points are separate marks, not a line.
+func (c ScatterChart) data(xScale, yScale valueScale) core.ChartData {
+	fx, fy := c.XFormat, c.Format
+	if fx == nil {
+		fx = formatValue
+	}
+	if fy == nil {
+		fy = formatValue
+	}
+	d := core.ChartData{
+		Title: c.Subject,
+		// The table's column heads, which no renderer may invent: "x" and
+		// "y" are what the summary calls the two coordinates too.
+		X:      core.ChartAxis{Title: "x", Min: xScale.lo, Max: xScale.hi},
+		Y:      core.ChartAxis{Title: "y", Min: yScale.lo, Max: yScale.hi},
+		Series: make([]core.ChartDataSeries, 0, len(c.Series)),
+	}
+	for i, s := range c.Series {
+		cs := core.ChartDataSeries{Name: seriesName(s.Name, c.Subject, i, len(c.Series))}
+		for _, p := range s.Points {
+			cs.Points = append(cs.Points, core.ChartDataPoint{
+				XValue: p.X, XText: fx(p.X), Y: p.Y, Text: fy(p.Y)})
+		}
+		d.Series = append(d.Series, cs)
+	}
+	return d
 }
 
 // scatterSquareHalf is half a square dot's segment, in viewBox units.

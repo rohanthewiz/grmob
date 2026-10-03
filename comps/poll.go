@@ -102,7 +102,7 @@ type PollOption struct {
 //
 //	Question      Typography.Subtitle, in Colors.TextPrimary
 //	Option text   Typography.Body; the reader's choice bold, in
-//	              Colors.PrimaryOnLightColor()
+//	              Colors.PrimaryInkColor()
 //	Share, total  Typography.Caption, Colors.TextSecondary
 //	Bars          comps.ProgressBar: Colors.Primary on Colors.Surface
 //	Buttons       comps.Button outlined
@@ -270,10 +270,10 @@ func (p Poll) result(t *core.Theme, o PollOption, share int, fraction float64) c
 	spoken := o.Label + ", " + strconv.Itoa(share) + " percent, " + countNoun(max(o.Votes, 0), "vote")
 	if o.Mine {
 		// A check as well as the colour: colour alone is not a signal
-		// (WCAG 1.4.1), and the on-light tone is the ink-weight Primary, the
+		// (WCAG 1.4.1), and the ink tone is the ink-weight Primary, the
 		// one measured against a light page.
 		label += " ✓"
-		ink = t.Colors.PrimaryOnLightColor()
+		ink = t.Colors.PrimaryInkColor()
 		weight = core.Bold
 		spoken += ", " + orDefault(p.ChoiceLabel, "your choice")
 	}

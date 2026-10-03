@@ -626,6 +626,69 @@ func TestEditableGridChangedValuePatchesOneCell(t *testing.T) {
 	}
 }
 
+// Entering and leaving EDIT re-binds no other cell (N-073). The editor
+// registers three handlers where the cell it replaces registers one; with
+// positional callback IDs every later cell's onClick moved by two on each
+// transition, a patch per cell and a window for a stale tap to land on the
+// wrong cell. Rows and cells are keyed, so each cell names its own handler.
+func TestEditableGridEditMovesNoOtherCellsHandler(t *testing.T) {
+	g := newGridHarness(t, nil)
+	// Every cell's onClick, by the start of its name (column and row), so a
+	// cell is the same entry whatever value it currently shows.
+	handlers := func() map[string]string {
+		out := map[string]string{}
+		var walk func(*core.Node)
+		walk = func(n *core.Node) {
+			if n == nil {
+				return
+			}
+			if id, ok := n.Props["onClick"].(string); ok && n.Style != nil &&
+				(n.Style.AccessibilityRole == core.RoleGridCell || n.Style.AccessibilityRole == core.RoleCell) {
+				name := n.Style.AccessibilityLabel
+				if i := strings.Index(name, ", row "); i >= 0 {
+					if j := strings.Index(name[i+6:], ","); j >= 0 {
+						name = name[:i+6+j]
+					}
+				}
+				out[name] = id
+			}
+			for _, c := range n.Children {
+				walk(c)
+			}
+		}
+		walk(g.node)
+		return out
+	}
+	before := handlers()
+	if len(before) < 8 {
+		t.Fatalf("found %d cell handlers, want at least the 8 in rows 2–3: %v", len(before), before)
+	}
+
+	diff := func(stage string, now map[string]string) {
+		t.Helper()
+		for name, id := range before {
+			if name == "Item, row 1" {
+				continue // the cell being edited is the one that may change
+			}
+			if now[name] != id {
+				t.Errorf("%s: %s's onClick moved from %q to %q", stage, name, id, now[name])
+			}
+		}
+	}
+
+	g.tap(g.cell("Item, row 1"))
+	if g.editor() == nil {
+		t.Fatal("the tap did not open the editor")
+	}
+	diff("entering EDIT", handlers())
+
+	g.fire("onSubmit")
+	if g.editor() != nil {
+		t.Fatal("the editor did not close")
+	}
+	diff("leaving EDIT", handlers())
+}
+
 // The size the doc states, measured: build and diff a 30 × 1000 sheet.
 func BenchmarkEditableGrid30x1000(b *testing.B) {
 	const cols, rows = 30, 1000

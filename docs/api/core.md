@@ -49,12 +49,12 @@ Package core's reference is split into 11 topic pages by source file. The index 
 | [Layout](core-layout.md) | Rows, columns, stacks, scrolls and lists, and the alignment vocabulary they are placed with. | 2 types, 27 functions and methods |
 | [Styling: the Style struct](core-style.md) | Style and the value types its fields take: alignment, flex, position, weights and edge insets. | 11 types, 12 functions and methods |
 | [Styling: style props](core-style-props.md) | The StyleProp constructors: spacing and per-side insets, flex, typography, colour, borders, per-corner radii and animation. | 2 types, 73 functions and methods |
-| [Theming](core-theme.md) | Themes, palettes, typography and spacing scales, and per-component defaults. | 5 types, 17 functions and methods |
+| [Theming](core-theme.md) | Themes, palettes, typography and spacing scales, and per-component defaults. | 5 types, 22 functions and methods |
 | [Controls](core-controls.md) | Buttons, text inputs, switches, sliders, selects, images, tab views, text grids and vector canvases. | 20 types, 48 functions and methods |
 | [Editors](core-editors.md) | The code editor and the rich text editor, and the refs and commands that drive them. | 2 types, 15 functions and methods |
 | [Events & focus](core-events.md) | Event props, host and system events, focus refs and focus order, and scrolling a node into view. | 2 types, 23 functions and methods |
 | [Navigation & overlays](core-navigation.md) | The navigator stack, modals, toasts, deep links and opening URLs. | 4 types, 19 functions and methods |
-| [Accessibility](core-accessibility.md) | Roles, selected, expanded and current states, value ranges and the accessibility audit. | 9 types, 19 functions and methods |
+| [Accessibility](core-accessibility.md) | Roles, selected, expanded and current states, value ranges and the accessibility audit. | 13 types, 20 functions and methods |
 | [Device services](core-device.md) | Audio, camera, clipboard, haptics, local notifications, compass heading, location, maps, the app lifecycle, and the window's size and fold. | 21 types, 71 functions and methods |
 
 ## Index
@@ -231,7 +231,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
     - [`type Easing`](core-style-props.md#type-easing)
 - [Theming](core-theme.md)
     - [Constants](core-theme.md#constants) — `FallbackBorder`, `FallbackControlBorder`, `FallbackSuccess`, `FallbackWarning`
-    - [Variables](core-theme.md#variables) — `AmberTheme`, `DefaultTheme`, `MaterialTheme`
+    - [Variables](core-theme.md#variables) — `AmberTheme`, `DarkTheme`, `DefaultTheme`, `MaterialTheme`
     - [`func BundledThemes`](core-theme.md#func-bundledthemes)
     - [`func DefaultChartColors`](core-theme.md#func-defaultchartcolors)
     - [`func DefaultDarkChartColors`](core-theme.md#func-defaultdarkchartcolors)
@@ -374,8 +374,13 @@ Package core's reference is split into 11 topic pages by source file. The index 
         - [`func UseToastStyle`](core-navigation.md#func-usetoaststyle)
 - [Accessibility](core-accessibility.md)
     - [Constants](core-accessibility.md#constants) — `ConcernDanglingReference`, `ConcernDuplicateAccessibilityID`, `ConcernInertDisclosure`, `ConcernInertFollowsFocus`, `ConcernInvalidAccessibilityID`, `ConcernNestedComposite`, `ConcernUnusableValueRange`
+    - [`func AccessibilityChart`](core-accessibility.md#func-accessibilitychart)
     - [`func AuditTree`](core-accessibility.md#func-audittree)
     - [`func CompositeWalkStopsAt`](core-accessibility.md#func-compositewalkstopsat)
+    - [`type ChartAxis`](core-accessibility.md#type-chartaxis)
+    - [`type ChartData`](core-accessibility.md#type-chartdata)
+    - [`type ChartDataPoint`](core-accessibility.md#type-chartdatapoint)
+    - [`type ChartDataSeries`](core-accessibility.md#type-chartdataseries)
     - [`type CompositeWalk`](core-accessibility.md#type-compositewalk)
         - [`func CompositeWalkAt`](core-accessibility.md#func-compositewalkat)
     - [`type CurrentKind`](core-accessibility.md#type-currentkind)

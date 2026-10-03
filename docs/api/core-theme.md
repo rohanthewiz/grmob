@@ -11,7 +11,7 @@ One of 11 topic pages of [package core](core.md), which has the package overview
 ## Index
 
 - [Constants](#constants) — `FallbackBorder`, `FallbackControlBorder`, `FallbackSuccess`, `FallbackWarning`
-- [Variables](#variables) — `AmberTheme`, `DefaultTheme`, `MaterialTheme`
+- [Variables](#variables) — `AmberTheme`, `DarkTheme`, `DefaultTheme`, `MaterialTheme`
 - [`func BundledThemes`](#func-bundledthemes)
 - [`func DefaultChartColors`](#func-defaultchartcolors)
 - [`func DefaultDarkChartColors`](#func-defaultdarkchartcolors)
@@ -19,16 +19,21 @@ One of 11 topic pages of [package core](core.md), which has the package overview
 - [`func DefaultSequentialColors`](#func-defaultsequentialcolors)
 - [`func WithTheme`](#func-withtheme)
 - [`type ColorPalette`](#type-colorpalette)
+    - [`func (ColorPalette) AsInk`](#func-colorpalette-asink)
     - [`func (ColorPalette) BorderColor`](#func-colorpalette-bordercolor)
     - [`func (ColorPalette) ChartColors`](#func-colorpalette-chartcolors)
     - [`func (ColorPalette) ControlBorderColor`](#func-colorpalette-controlbordercolor)
+    - [`func (ColorPalette) ErrorInkColor`](#func-colorpalette-errorinkcolor)
     - [`func (ColorPalette) ErrorOnLightColor`](#func-colorpalette-erroronlightcolor)
     - [`func (ColorPalette) OnLight`](#func-colorpalette-onlight)
+    - [`func (ColorPalette) PrimaryInkColor`](#func-colorpalette-primaryinkcolor)
     - [`func (ColorPalette) PrimaryOnLightColor`](#func-colorpalette-primaryonlightcolor)
     - [`func (ColorPalette) SequentialColors`](#func-colorpalette-sequentialcolors)
     - [`func (ColorPalette) SuccessColor`](#func-colorpalette-successcolor)
+    - [`func (ColorPalette) SuccessInkColor`](#func-colorpalette-successinkcolor)
     - [`func (ColorPalette) SuccessOnLightColor`](#func-colorpalette-successonlightcolor)
     - [`func (ColorPalette) WarningColor`](#func-colorpalette-warningcolor)
+    - [`func (ColorPalette) WarningInkColor`](#func-colorpalette-warninginkcolor)
     - [`func (ColorPalette) WarningOnLightColor`](#func-colorpalette-warningonlightcolor)
 - [`type ComponentDefaults`](#type-componentdefaults)
 - [`type SpacingScale`](#type-spacingscale)
@@ -56,7 +61,7 @@ const (
 )
 ```
 
-<small>[core/theme.go:476](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L476)</small>
+<small>[core/theme.go:492](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L492)</small>
 
 ## Variables
 
@@ -64,7 +69,7 @@ AmberTheme is the third bundled palette, and the one whose brand colour is not a
 
 #### Why a third theme exists at all
 
-Two rules in this framework had no bundled evidence. inkOn reads the theme's declared fill/ink pair \*before\* measuring contrast, and ColorPalette.OnLight moves a role to its ink-weight tone — and under both palettes above, an implementation that deleted either would paint identical pixels. Their only witness was a test fixture (components' midTonePrimaryTheme), which is a thing a palette edit can quietly leave holding the whole thread.
+Two rules in this framework had no bundled evidence. inkOn reads the theme's declared fill/ink pair \*before\* measuring contrast, and ColorPalette.AsInk moves a role to its ink-weight tone — and under both palettes above, an implementation that deleted either would paint identical pixels. Their only witness was a test fixture (components' midTonePrimaryTheme), which is a thing a palette edit can quietly leave holding the whole thread.
 
 This palette witnesses both, and it does so the way a real brand does rather than by being contrived:
 
@@ -75,9 +80,9 @@ This palette witnesses both, and it does so the way a real brand does rather tha
 	    a different, and slightly *higher*-contrast, label. Deleting declaredInk
 	    moves pixels here.
 
-	OnLight moves the Primary role
+	AsInk moves the Primary role
 	    Amber 700 is 2.04:1 on white. It is an excellent fill and cannot be ink,
-	    which is the whole argument for the on-light tones and the case neither
+	    which is the whole argument for the ink tones and the case neither
 	    palette above still makes for Primary.
 
 #### The escape that made this shippable, which is worth recording
@@ -88,7 +93,7 @@ The squeeze binds only when the declared ink is one of the two poles being measu
 
 #### Provenance
 
-Material Design published values throughout, as MaterialTheme's are, with one exception stated at the field: the amber family carries no swatch dark enough to be read as ink on white (amber 900 is 2.79:1), so PrimaryOnLight is amber 700 scaled to 56% brightness — the same hue at 37.8 degrees, and the same move DefaultTheme's SuccessOnLight makes one hue over for the same reason.
+Material Design published values throughout, as MaterialTheme's are, with one exception stated at the field: the amber family carries no swatch dark enough to be read as ink on white (amber 900 is 2.79:1), so PrimaryInk is amber 700 scaled to 56% brightness — the same hue at 37.8 degrees, and the same move DefaultTheme's SuccessInk makes one hue over for the same reason.
 
 ```go
 var AmberTheme = &Theme{
@@ -107,10 +112,10 @@ var AmberTheme = &Theme{
 
 		ControlBorder: "#8D6E63",
 
-		PrimaryOnLight: "#8F5A00",
-		SuccessOnLight: "#2E7D32",
-		WarningOnLight: "#BF360C",
-		ErrorOnLight:   "#B00020",
+		PrimaryInk: "#8F5A00",
+		SuccessInk: "#2E7D32",
+		WarningInk: "#BF360C",
+		ErrorInk:   "#B00020",
 
 		Chart: DefaultChartColors(),
 
@@ -195,7 +200,29 @@ var AmberTheme = &Theme{
 }
 ```
 
-<small>[core/theme.go:1100](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L1100)</small>
+<small>[core/theme.go:1142](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L1142)</small>
+
+DarkTheme is DefaultTheme's dark counterpart: the same type scale, spacing and component geometry, repainted in Apple's dark-mode system colours.
+
+It began as the tutorial's own theme (examples/tutorial, 2026-09-21), kept out of core while core's palette censuses assumed a light page. It is bundled now because it has a consumer on every host — the natives follow the system's scheme through Window.ColorScheme — and because the censuses that loop over BundledThemes measure it like any other palette, where its figures used to be computed by hand.
+
+#### The page
+
+\#1C1C1E, iOS secondarySystemBackground (dark), chosen over pure black so a screen reads as a lit sheet rather than a hole, and Surface one step lighter (#2C2C2E), as a grouped cell sits lighter than its page on iOS.
+
+#### The ink tones are the light ends of their hues
+
+The four \*Ink fields hold the tone of each role that reads as ink on the page. On a light page that is the dark end of the hue; here it is the light end, so they are Apple's dark-mode accessible variants rather than the fills.
+
+#### Primary is a light fill with dark ink
+
+A blue light enough to be read as ink on #1C1C1E (#409CFF) cannot also carry white text (2.8:1). Components.Button declares black over it instead, and comps.declaredInk carries that pairing to every Badge, filled Button and selection that paints Primary — the arrangement AmberTheme makes for its light fill.
+
+```go
+var DarkTheme = newDarkTheme()
+```
+
+<small>[core/theme.go:1315](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L1315)</small>
 
 ```go
 var DefaultTheme = &Theme{
@@ -214,10 +241,10 @@ var DefaultTheme = &Theme{
 
 		ControlBorder: "#89898E",
 
-		PrimaryOnLight: "#0040DD",
-		SuccessOnLight: "#1E7A34",
-		WarningOnLight: "#C93400",
-		ErrorOnLight:   "#D70015",
+		PrimaryInk: "#0040DD",
+		SuccessInk: "#1E7A34",
+		WarningInk: "#C93400",
+		ErrorInk:   "#D70015",
 
 		Chart: DefaultChartColors(),
 
@@ -323,7 +350,7 @@ var DefaultTheme = &Theme{
 }
 ```
 
-<small>[core/theme.go:732](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L732)</small>
+<small>[core/theme.go:774](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L774)</small>
 
 ```go
 var MaterialTheme = &Theme{
@@ -341,10 +368,10 @@ var MaterialTheme = &Theme{
 
 		ControlBorder: "#757575",
 
-		PrimaryOnLight: "#6200EE",
-		SuccessOnLight: "#2E7D32",
-		WarningOnLight: "#BF360C",
-		ErrorOnLight:   "#B00020",
+		PrimaryInk: "#6200EE",
+		SuccessInk: "#2E7D32",
+		WarningInk: "#BF360C",
+		ErrorInk:   "#B00020",
 
 		Chart: DefaultChartColors(),
 
@@ -413,7 +440,7 @@ var MaterialTheme = &Theme{
 }
 ```
 
-<small>[core/theme.go:936](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L936)</small>
+<small>[core/theme.go:978](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L978)</small>
 
 ## Functions
 
@@ -433,7 +460,7 @@ So the list is one list, and TestBundledThemesListIsExhaustive derives it from t
 
 A fresh map each call, for the reason ColorPalette's resolvers exist: a package-level map is reachable and writable by any importer, and a test that deleted an entry would silently narrow every census at once.
 
-<small>[core/theme.go:1264](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L1264)</small>
+<small>[core/theme.go:1404](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L1404)</small>
 
 ### func DefaultChartColors
 
@@ -473,7 +500,7 @@ The contrast warning means colour alone cannot identify a thin mark in slots 3�
 
 It is a function returning a fresh slice, not a package var, for the same reason ChartColors copies: a slice var is writable by any importer.
 
-<small>[core/theme.go:346](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L346)</small>
+<small>[core/theme.go:362](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L362)</small>
 
 ### func DefaultDarkChartColors
 
@@ -483,7 +510,7 @@ func DefaultDarkChartColors() []string
 
 DefaultDarkChartColors is DefaultChartColors stepped for a dark surface (validated against #1A1A19): the same eight hues in the same order, each moved into the lightness band a dark page needs, so the two can be swapped by a theme without a series changing its hue. No bundled theme is dark; this is what a dark theme should put in Colors.Chart.
 
-<small>[core/theme.go:364](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L364)</small>
+<small>[core/theme.go:380](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L380)</small>
 
 ### func DefaultDarkSequentialColors
 
@@ -493,7 +520,7 @@ func DefaultDarkSequentialColors() []string
 
 DefaultDarkSequentialColors is DefaultSequentialColors for a dark page: the same five steps reversed, so "more" still runs away from the page. Against #1A1A19 the least step (#0B519D) stands ΔE 26.4 from the page and the most (#C4D9F6) 66.3. No bundled theme is dark; this is what a dark theme should put in Colors.Sequential.
 
-<small>[core/theme.go:428](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L428)</small>
+<small>[core/theme.go:444](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L444)</small>
 
 ### func DefaultSequentialColors
 
@@ -525,7 +552,7 @@ The first step's distance from "no data", which a widget paints in Surface, is t
 
 ΔE 9 is clearly visible and the contrast is low, which is the same shape as Chart's warning: colour tells a quiet cell from an empty one, but not to every eye, so a widget drawing this scale says its values in words too.
 
-<small>[core/theme.go:413](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L413)</small>
+<small>[core/theme.go:429](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L429)</small>
 
 ### func WithTheme
 
@@ -533,7 +560,7 @@ The first step's distance from "no data", which a widget paints in Surface, is t
 func WithTheme(theme *Theme, children ...View) View
 ```
 
-<small>[core/theme.go:717](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L717)</small>
+<small>[core/theme.go:759](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L759)</small>
 
 ## Types
 
@@ -560,13 +587,14 @@ type ColorPalette struct {
 	// This role used to name input borders too, and no longer does. A rule
 	// *between* things is decoration — nothing about the page becomes
 	// unusable if a reader cannot make it out — and every bundled theme spends
-	// a very pale hex on it accordingly: #E5E5EA measures 1.26:1 against
-	// white and #E0E0E0 1.32:1 (AmberTheme spends the second of those). The
+	// a faint hex on it accordingly: #E5E5EA measures 1.26:1 against
+	// white and #E0E0E0 1.32:1 (AmberTheme spends the second of those), and
+	// DarkTheme's #38383A is 1.45:1 against its own #1C1C1E. The
 	// edge that says *this rectangle is a field
 	// you can type in* is the opposite case: it is the only thing identifying
 	// a control, which WCAG 1.4.11 (Non-text Contrast) puts a 3:1 floor
 	// under. One hex cannot be both, for the same reason a role's fill tone
-	// cannot also be its ink — see the on-light tones below.
+	// cannot also be its ink — see the ink tones below.
 	//
 	// So this role keeps the dividers and ControlBorder below carries the
 	// boundary. That split used to have no second field in it — the frames
@@ -585,19 +613,20 @@ type ColorPalette struct {
 	// operate.
 	//
 	// It is Border's other half and exists because one hex cannot do both
-	// jobs, which is the same shape the on-light tones' argument has one
-	// property over. A divider is decoration and a pale one is a legitimate
+	// jobs, which is the same shape the ink tones' argument has one
+	// property over. A divider is decoration and a faint one is a legitimate
 	// choice; a boundary that identifies a control carries WCAG 1.4.11's 3:1
-	// floor. Every bundled theme spends 1.26:1 or 1.32:1 on Border
+	// floor. Every bundled theme spends between 1.26:1 and 1.45:1 on Border
 	// accordingly, so a control drawn in it is close to invisible *as a
 	// control*:
 	//
-	//	                    Default            Material           Amber
-	//	Border              #E5E5EA  1.26:1    #E0E0E0  1.32:1    #E0E0E0  1.32:1
-	//	ControlBorder       #89898E  3.48:1    #757575  4.61:1    #8D6E63  4.62:1
+	//	                    Default            Material           Amber              Dark
+	//	Border              #E5E5EA  1.26:1    #E0E0E0  1.32:1    #E0E0E0  1.32:1    #38383A  1.45:1
+	//	ControlBorder       #89898E  3.48:1    #757575  4.61:1    #8D6E63  4.62:1    #8E8E93  5.22:1
 	//
-	// (against each theme's own white Background; see the themes for the
-	// second backdrop each measures against.)
+	// (against each theme's own Background — white for the first three,
+	// #1C1C1E for Dark; see the themes for the second backdrop each measures
+	// against.)
 	//
 	// # A control has more than one backdrop, and the census is the list
 	//
@@ -608,7 +637,7 @@ type ColorPalette struct {
 	//
 	// Every pair a bundled theme can produce is enumerated and measured by
 	// TestEveryControlBoundaryPairIsAccountedFor in comps/variant_test.go
-	// (the arithmetic lives there, beside the on-light census, for the reason
+	// (the arithmetic lives there, beside the ink-tone census, for the reason
 	// that one gives). Every pair clears, and the census's
 	// knownBoundaryShortfalls table — the place a defended shortfall would be
 	// recorded as a fact rather than as prose — is empty.
@@ -655,8 +684,20 @@ type ColorPalette struct {
 	Success string
 	Warning string
 
-	// The on-light tones: the same four roles again, dark enough to be read
-	// as *ink* on a light surface.
+	// The ink tones: the same four roles again, in the weight that can be
+	// read as *ink* on the theme's own page.
+	//
+	// They were called PrimaryOnLight, SuccessOnLight, WarningOnLight and
+	// ErrorOnLight until DarkTheme was bundled (N-074). On a light page the
+	// ink weight is the dark end of a hue, which is what the old names said;
+	// on DarkTheme's page it is the light end, and a field named "on light"
+	// holding a light ink was a name that lied. The resolvers and the reverse
+	// lookup keep their old names as deprecated wrappers. The fields could
+	// not: Go has no field alias, and a second, deprecated field would turn
+	// the release idiom below (clear the tone when re-branding the role) into
+	// a silent no-op for every app still writing the old name, which is the
+	// half-branded bug that idiom exists to prevent. A compile error is the
+	// honest deprecation for a field.
 	//
 	// A palette role is one hex, and one hex cannot do both jobs a role is
 	// asked to do. Spent as a fill with a chosen ink over it, a mid-tone
@@ -699,23 +740,25 @@ type ColorPalette struct {
 	//
 	// # Reading them
 	//
-	// Through the resolver methods below, or through OnLight when a widget
+	// Through the resolver methods below, or through AsInk when a widget
 	// holds a colour rather than a role. An unset tone falls back to the role
 	// itself, which is exactly what every widget spent before these existed,
 	// so a theme that predates them renders as it always did rather than
 	// rendering nothing. That is a softer fallback than Border/Success/
 	// Warning get, and deliberately: those degrade to a *visible* default
-	// because an empty color is no color, while an absent on-light tone has a
-	// perfectly good — merely paler — answer sitting beside it.
+	// because an empty color is no color, while an absent ink tone has a
+	// perfectly good — merely weaker — answer sitting beside it.
 	//
-	// # "Light" is the theme's Background, not a global assumption
+	// # "The page" is the theme's Background, not a global assumption
 	//
-	// The name says which surface the tone is legible on, and for both
-	// bundled themes that surface is #FFFFFF. A dark theme's role colours are
-	// usually already legible on its dark background, so it leaves these
-	// empty and the fallback returns the role — which is the right answer,
-	// and the reason these are four extra fields rather than a second
-	// palette every theme has to fill in twice.
+	// A tone is measured against its own theme's Background. For the three
+	// light bundled themes that is #FFFFFF; for DarkTheme it is #1C1C1E, and
+	// its tones are the light, accessible variants of each hue. A dark
+	// theme's role colours are often legible on its page already, and one
+	// that leaves these empty gets the role back from the fallback — which is
+	// the reason these are four extra fields rather than a second palette
+	// every theme has to fill in twice. comps' TestBundledInkTonesClearWCAGAA
+	// holds every bundled theme's four tones to 4.5:1 on its own page.
 	//
 	// # Overriding a role means releasing its tone
 	//
@@ -725,7 +768,7 @@ type ColorPalette struct {
 	// is no longer there:
 	//
 	//	theme := *core.DefaultTheme
-	//	theme.Colors.Primary = siteColor   // and PrimaryOnLight is still #0040DD
+	//	theme.Colors.Primary = siteColor   // and PrimaryInk is still #0040DD
 	//
 	// The result is a half-branded app, and a quiet one — filled controls take
 	// the new colour (they read Primary, or the Button base) while every
@@ -736,17 +779,17 @@ type ColorPalette struct {
 	// So an override sets the pair or clears it:
 	//
 	//	theme.Colors.Primary = siteColor
-	//	theme.Colors.PrimaryOnLight = ""   // no measurement, use the role
+	//	theme.Colors.PrimaryInk = ""   // no measurement, use the role
 	//
 	// Clearing is the honest default. The fallback then returns siteColor,
 	// which is the same treatment every widget gave before these fields
 	// existed; writing siteColor into the tone renders identically but claims
 	// a contrast check nobody ran. Either way, what is not available is
 	// leaving the old number in place.
-	PrimaryOnLight string
-	SuccessOnLight string
-	WarningOnLight string
-	ErrorOnLight   string
+	PrimaryInk string
+	SuccessInk string
+	WarningInk string
+	ErrorInk   string
 
 	// Chart is the categorical series palette: the colours a chart gives its
 	// series, in the fixed order it gives them. Read via ChartColors.
@@ -821,57 +864,13 @@ The seven original roles (Primary through Error) are set by every theme that exi
 
 <small>[core/theme.go:25](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L25)</small>
 
-#### func (ColorPalette) BorderColor
+#### func (ColorPalette) AsInk
 
 ```go
-func (c ColorPalette) BorderColor() string
+func (c ColorPalette) AsInk(color string) string
 ```
 
-BorderColor resolves the Border role, falling back to FallbackBorder when the theme predates it.
-
-Note this is a \*method on the palette\* and is unrelated to the core.BorderColor style prop, which sets a node's stroke color:
-
-	core.BorderColor(ctx.Theme().Colors.BorderColor())
-
-<small>[core/theme.go:496](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L496)</small>
-
-#### func (ColorPalette) ChartColors
-
-```go
-func (c ColorPalette) ChartColors() []string
-```
-
-ChartColors resolves the Chart role: a copy of the theme's list, or DefaultChartColors when the theme predates the role or leaves it empty. Blank entries are dropped, because an empty colour paints nothing and a series drawn in it would vanish rather than look wrong.
-
-<small>[core/theme.go:457](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L457)</small>
-
-#### func (ColorPalette) ControlBorderColor
-
-```go
-func (c ColorPalette) ControlBorderColor() string
-```
-
-ControlBorderColor resolves the ControlBorder role, falling back to FallbackControlBorder when the theme predates it.
-
-Note it does \*not\* fall back to BorderColor(). The two roles are near neighbours in the struct and opposites in intent — see the field docs — and a theme that has one and not the other is a theme that has only the divider, which is precisely the value this must not return.
-
-<small>[core/theme.go:510](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L510)</small>
-
-#### func (ColorPalette) ErrorOnLightColor
-
-```go
-func (c ColorPalette) ErrorOnLightColor() string
-```
-
-<small>[core/theme.go:558](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L558)</small>
-
-#### func (ColorPalette) OnLight
-
-```go
-func (c ColorPalette) OnLight(color string) string
-```
-
-OnLight returns the ink-weight tone paired with color, when color is one of this palette's four toned roles, and color itself otherwise.
+AsInk returns the ink-weight tone paired with color, when color is one of this palette's four toned roles, and color itself otherwise.
 
 The four resolvers above answer for a widget that knows which \*role\* it is spending. This answers for one that knows only a \*colour\*, which is the commoner case than it sounds: comps.Chip's accent is read off the theme's Button base rather than off Colors.Primary, precisely so that a theme whose buttons are not primary-coloured still gets its own look, and a widget in that position has a hex and no name for it.
 
@@ -891,7 +890,85 @@ Primary's used to be exactly that, and AmberTheme is what put it back: amber 700
 
 Which arms have a bundled witness and which rest on a test fixture is recorded and checked per role by TestEveryPaletteRuleStillHasAWitness in comps/palette\_witness\_test.go, so a retint that leaves an arm with no evidence anywhere is reported rather than merely true.
 
-<small>[core/theme.go:611](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L611)</small>
+<small>[core/theme.go:627](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L627)</small>
+
+#### func (ColorPalette) BorderColor
+
+```go
+func (c ColorPalette) BorderColor() string
+```
+
+BorderColor resolves the Border role, falling back to FallbackBorder when the theme predates it.
+
+Note this is a \*method on the palette\* and is unrelated to the core.BorderColor style prop, which sets a node's stroke color:
+
+	core.BorderColor(ctx.Theme().Colors.BorderColor())
+
+<small>[core/theme.go:512](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L512)</small>
+
+#### func (ColorPalette) ChartColors
+
+```go
+func (c ColorPalette) ChartColors() []string
+```
+
+ChartColors resolves the Chart role: a copy of the theme's list, or DefaultChartColors when the theme predates the role or leaves it empty. Blank entries are dropped, because an empty colour paints nothing and a series drawn in it would vanish rather than look wrong.
+
+<small>[core/theme.go:473](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L473)</small>
+
+#### func (ColorPalette) ControlBorderColor
+
+```go
+func (c ColorPalette) ControlBorderColor() string
+```
+
+ControlBorderColor resolves the ControlBorder role, falling back to FallbackControlBorder when the theme predates it.
+
+Note it does \*not\* fall back to BorderColor(). The two roles are near neighbours in the struct and opposites in intent — see the field docs — and a theme that has one and not the other is a theme that has only the divider, which is precisely the value this must not return.
+
+<small>[core/theme.go:526](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L526)</small>
+
+#### func (ColorPalette) ErrorInkColor
+
+```go
+func (c ColorPalette) ErrorInkColor() string
+```
+
+<small>[core/theme.go:574](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L574)</small>
+
+#### func (ColorPalette) ErrorOnLightColor
+
+```go
+func (c ColorPalette) ErrorOnLightColor() string
+```
+
+ErrorOnLightColor is ErrorInkColor's former name.
+
+Deprecated: use ErrorInkColor.
+
+<small>[core/theme.go:660](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L660)</small>
+
+#### func (ColorPalette) OnLight
+
+```go
+func (c ColorPalette) OnLight(color string) string
+```
+
+OnLight is AsInk's former name.
+
+Deprecated: use AsInk.
+
+<small>[core/theme.go:665](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L665)</small>
+
+#### func (ColorPalette) PrimaryInkColor
+
+```go
+func (c ColorPalette) PrimaryInkColor() string
+```
+
+The four ink-tone resolvers. Each falls back to its own role rather than to a constant — see the field docs for why this fallback is softer than Border's, and note that each defers to the role's \*resolver\* where it has one, so a theme missing both halves of a role still lands somewhere visible.
+
+<small>[core/theme.go:553](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L553)</small>
 
 #### func (ColorPalette) PrimaryOnLightColor
 
@@ -899,9 +976,11 @@ Which arms have a bundled witness and which rest on a test fixture is recorded a
 func (c ColorPalette) PrimaryOnLightColor() string
 ```
 
-The four on-light resolvers. Each falls back to its own role rather than to a constant — see the field docs for why this fallback is softer than Border's, and note that each defers to the role's \*resolver\* where it has one, so a theme missing both halves of a role still lands somewhere visible.
+PrimaryOnLightColor is PrimaryInkColor's former name.
 
-<small>[core/theme.go:537](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L537)</small>
+Deprecated: use PrimaryInkColor. The tone is the page's ink weight, which is light on DarkTheme; see ColorPalette.PrimaryInk.
+
+<small>[core/theme.go:645](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L645)</small>
 
 #### func (ColorPalette) SequentialColors
 
@@ -911,7 +990,7 @@ func (c ColorPalette) SequentialColors() []string
 
 SequentialColors resolves the Sequential role as ChartColors resolves Chart: a copy of the theme's list with blanks dropped, or DefaultSequentialColors when the theme predates the role or leaves it empty.
 
-<small>[core/theme.go:440](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L440)</small>
+<small>[core/theme.go:456](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L456)</small>
 
 #### func (ColorPalette) SuccessColor
 
@@ -921,7 +1000,15 @@ func (c ColorPalette) SuccessColor() string
 
 SuccessColor resolves the Success role, falling back to FallbackSuccess.
 
-<small>[core/theme.go:518](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L518)</small>
+<small>[core/theme.go:534](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L534)</small>
+
+#### func (ColorPalette) SuccessInkColor
+
+```go
+func (c ColorPalette) SuccessInkColor() string
+```
+
+<small>[core/theme.go:560](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L560)</small>
 
 #### func (ColorPalette) SuccessOnLightColor
 
@@ -929,7 +1016,11 @@ SuccessColor resolves the Success role, falling back to FallbackSuccess.
 func (c ColorPalette) SuccessOnLightColor() string
 ```
 
-<small>[core/theme.go:544](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L544)</small>
+SuccessOnLightColor is SuccessInkColor's former name.
+
+Deprecated: use SuccessInkColor.
+
+<small>[core/theme.go:650](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L650)</small>
 
 #### func (ColorPalette) WarningColor
 
@@ -939,7 +1030,15 @@ func (c ColorPalette) WarningColor() string
 
 WarningColor resolves the Warning role, falling back to FallbackWarning.
 
-<small>[core/theme.go:526](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L526)</small>
+<small>[core/theme.go:542](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L542)</small>
+
+#### func (ColorPalette) WarningInkColor
+
+```go
+func (c ColorPalette) WarningInkColor() string
+```
+
+<small>[core/theme.go:567](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L567)</small>
 
 #### func (ColorPalette) WarningOnLightColor
 
@@ -947,7 +1046,11 @@ WarningColor resolves the Warning role, falling back to FallbackWarning.
 func (c ColorPalette) WarningOnLightColor() string
 ```
 
-<small>[core/theme.go:551](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L551)</small>
+WarningOnLightColor is WarningInkColor's former name.
+
+Deprecated: use WarningInkColor.
+
+<small>[core/theme.go:655](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L655)</small>
 
 ### type ComponentDefaults
 
@@ -987,7 +1090,7 @@ They live here rather than in a list one package over because this is where a th
 
 palette.IsABackdrop and palette.NotABackdrop read these tags and are their only readers; the reachability claim travels on into the census, which prints it when a pair falls short.
 
-<small>[core/theme.go:683](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L683)</small>
+<small>[core/theme.go:725](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L725)</small>
 
 ### type SpacingScale
 
@@ -997,7 +1100,7 @@ type SpacingScale struct {
 }
 ```
 
-<small>[core/theme.go:632](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L632)</small>
+<small>[core/theme.go:674](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L674)</small>
 
 ### type Theme
 
@@ -1023,5 +1126,5 @@ type Typography struct {
 }
 ```
 
-<small>[core/theme.go:625](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L625)</small>
+<small>[core/theme.go:667](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L667)</small>
 

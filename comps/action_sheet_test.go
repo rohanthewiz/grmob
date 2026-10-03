@@ -67,7 +67,7 @@ func TestActionSheetActionsAreFullWidthGhostButtonsThenCancel(t *testing.T) {
 	if btns[0].Style.Background != ColorTransparent {
 		t.Error("actions are ghost buttons")
 	}
-	if btns[1].Style.TextColor != core.DefaultTheme.Colors.ErrorOnLightColor() {
+	if btns[1].Style.TextColor != core.DefaultTheme.Colors.ErrorInkColor() {
 		t.Errorf("a destructive action takes the error ink, got %q", btns[1].Style.TextColor)
 	}
 	if btns[2].Style.BorderWidth != 1 {

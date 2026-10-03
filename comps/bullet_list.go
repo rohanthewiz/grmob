@@ -48,7 +48,7 @@ import (
 //
 // # Theme roles read
 //
-//	Marker     Colors.Primary's on-light tone, bold
+//	Marker     Colors.Primary's ink tone, bold
 //	Text       Typography.Body
 //	Gap        Spacing.XS between items, Spacing.SM after the marker
 type BulletList struct {
@@ -122,7 +122,7 @@ func (b BulletList) Render(ctx *core.Context) *core.Node {
 	for i, text := range b.Items {
 		mark := []core.StyleProp{
 			core.UseStyle(t.Typography.Body),
-			core.TextColor(VariantDefault.OnLight(t)),
+			core.TextColor(VariantDefault.AsInk(t)),
 			core.FontWeight(core.Bold),
 			core.FlexShrink(0),
 			core.AccessibilityHidden(),

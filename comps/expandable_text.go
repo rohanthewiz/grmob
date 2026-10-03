@@ -55,7 +55,7 @@ import (
 // # Theme roles read
 //
 //	Text     Typography.Body
-//	Toggle   a ghost Button (Primary's on-light tone)
+//	Toggle   a ghost Button (Primary's ink tone)
 //	Gap      Spacing.XS
 type ExpandableText struct {
 	// Text is the full text.

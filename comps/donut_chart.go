@@ -219,6 +219,7 @@ func (c DonutChart) Render(ctx *core.Context) *core.Node {
 		core.AlignItemsProp(core.AlignItemsCenter),
 		core.AccessibilityRole(core.RoleImg),
 		core.AccessibilityLabel(c.label(values, total)),
+		core.AccessibilityChart(c.data(values, total)),
 	)
 	for _, sp := range c.Style {
 		items = append(items, sp)
@@ -257,6 +258,32 @@ func (c DonutChart) legend(t *core.Theme, colors []string, values []float64, tot
 
 // label is "Subject: Rent 1200, 73%; Food 450, 27%", followed by the centre
 // text when there is some.
+// data is the chart's core.ChartData: a row per slice, in slice order, with
+// its value and its share of the whole, as the summary and the legend give
+// them ("$420 (35%)"). One series, since the share is the value restated, and
+// a second series in a different unit would play as a second line on iOS. The
+// value axis runs from 0 to the largest slice.
+func (c DonutChart) data(values []float64, total float64) core.ChartData {
+	format := c.Format
+	if format == nil {
+		format = formatValue
+	}
+	pcts := percentages(values, total)
+	labels := make([]string, len(c.Slices))
+	slices := ChartSeries{Name: seriesName("", c.Subject, 0, 1), Values: make([]float64, len(c.Slices))}
+	hi := 0.0
+	for i, sl := range c.Slices {
+		labels[i] = sl.Label
+		slices.Values[i] = values[i]
+		hi = math.Max(hi, values[i])
+	}
+	d := seriesData(c.Subject, labels, len(c.Slices), []ChartSeries{slices}, format, 0, hi, false)
+	for i := range d.Series[0].Points {
+		d.Series[0].Points[i].Text += " (" + strconv.Itoa(pcts[i]) + "%)"
+	}
+	return d
+}
+
 func (c DonutChart) label(values []float64, total float64) string {
 	if c.AccessibilityLabel != "" {
 		return c.AccessibilityLabel

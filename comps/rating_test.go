@@ -34,7 +34,7 @@ func TestRatingDrawsRoundedGlyphsAndStatesTheScore(t *testing.T) {
 			t.Errorf("glyph %d = %v, want %s", i, g[i].Props["content"], want)
 		}
 	}
-	if g[0].Style.TextColor != core.DefaultTheme.Colors.WarningOnLightColor() {
+	if g[0].Style.TextColor != core.DefaultTheme.Colors.WarningInkColor() {
 		t.Errorf("filled colour = %q", g[0].Style.TextColor)
 	}
 	if n.Style.AccessibilityRole != core.RoleGroup || n.Style.AccessibilityLabel != "Rating" {
@@ -105,7 +105,7 @@ func TestRatingHalvesDrawsAHalfStar(t *testing.T) {
 	if len(n.Children) != 5 {
 		t.Fatalf("glyphs = %d, want 5", len(n.Children))
 	}
-	on := core.DefaultTheme.Colors.WarningOnLightColor()
+	on := core.DefaultTheme.Colors.WarningInkColor()
 	for i, want := range []string{"full", "full", "full", "half", "empty"} {
 		c := n.Children[i]
 		if c.Type != "Canvas" || !c.Style.AccessibilityHidden {

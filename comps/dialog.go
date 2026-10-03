@@ -89,7 +89,7 @@ import "github.com/rohanthewiz/grmob/core"
 //	Title           Typography.Subtitle, bold (Card's title treatment)
 //	Message         Typography.Body
 //	Confirm fill    Variant.Color — Colors.Primary, or Error/Success/Warning
-//	Cancel ink      Colors.Primary's on-light tone (ghost Button)
+//	Cancel ink      Colors.Primary's ink tone (ghost Button)
 //	Button gap      Spacing.SM
 type Dialog struct {
 	// Visible is the caller's open/closed state. The Modal renders its content
@@ -139,7 +139,7 @@ type DialogAction struct {
 
 	// Variant colours a Confirm button's fill (VariantError for a destructive
 	// action). A Cancel button is always ghost and reads only the variant's
-	// on-light ink, so Cancel's Variant is rarely worth setting.
+	// ink tone, so Cancel's Variant is rarely worth setting.
 	Variant Variant
 
 	// Disabled greys the button and drops its taps, for a Confirm that waits

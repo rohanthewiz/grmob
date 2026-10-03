@@ -21,11 +21,11 @@ func TestBannerVariantTintsTheEdgesNotTheFill(t *testing.T) {
 			n.Style.Background, theme.Colors.Surface)
 	}
 	// The role's ink-weight tone, not its fill: the hairline is drawn over the
-	// Surface fill rather than being one, which is the position the on-light
+	// Surface fill rather than being one, which is the position the ink
 	// tone exists for. Under DefaultTheme the two differ, so this cannot pass
 	// on the old behaviour.
-	if want := theme.Colors.ErrorOnLightColor(); n.Style.BorderColor != want {
-		t.Errorf("border = %q, want the Error role's on-light tone %q",
+	if want := theme.Colors.ErrorInkColor(); n.Style.BorderColor != want {
+		t.Errorf("border = %q, want the Error role's ink tone %q",
 			n.Style.BorderColor, want)
 	}
 	if n.Style.BorderWidth != 1 {
@@ -63,8 +63,8 @@ func TestBannerDefaultGlyphPerVariant(t *testing.T) {
 		// The glyph is the mark that most needed the second tone: a warning's
 		// ⚠ in Colors.Warning on Surface is about 2:1, which is a symbol that
 		// is technically present.
-		if want := c.variant.OnLight(core.DefaultTheme); g.Style.TextColor != want {
-			t.Errorf("variant %q glyph ink = %q, want the role's on-light tone %q",
+		if want := c.variant.AsInk(core.DefaultTheme); g.Style.TextColor != want {
+			t.Errorf("variant %q glyph ink = %q, want the role's ink tone %q",
 				c.variant, g.Style.TextColor, want)
 		}
 		// Decoration. A reader announcing "circled times" ahead of the message
@@ -113,13 +113,13 @@ func TestBannerActionAndDismiss(t *testing.T) {
 	// already says what it is twice, and warning-on-surface is the least
 	// legible combination this package has.
 	//
-	// Its ink is the Primary role's on-light tone, because that is what every
+	// Its ink is the Primary role's ink tone, because that is what every
 	// ghost button spends now — and it matters more here than most places: a
 	// banner's fill is the theme's Surface, so the action sits on a tint
 	// rather than on the Background the tone is measured against, and the
 	// darker of the two values is the one with room to spare.
-	if want := core.DefaultTheme.Colors.PrimaryOnLightColor(); retry.Style.TextColor != want {
-		t.Errorf("action ink = %q, want the Primary role's on-light tone %q — the action "+
+	if want := core.DefaultTheme.Colors.PrimaryInkColor(); retry.Style.TextColor != want {
+		t.Errorf("action ink = %q, want the Primary role's ink tone %q — the action "+
 			"does not take the variant", retry.Style.TextColor, want)
 	}
 	ctx.TriggerCallback(retry.Props["onClick"].(string))

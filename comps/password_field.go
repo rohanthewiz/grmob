@@ -79,7 +79,7 @@ const ConcernPasswordFieldInert = "password-field-inert"
 // # Theme roles read
 //
 //	Input      Components.Input, through core.Input / core.InputPassword
-//	Toggle     Colors.Primary's on-light tone, through a ghost Button
+//	Toggle     Colors.Primary's ink tone, through a ghost Button
 //	Gap        Spacing.XS between the input and the toggle
 type PasswordField struct {
 	// Value is the password, owned by the caller.

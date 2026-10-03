@@ -620,7 +620,7 @@ With no Colors the picker offers the theme's chart colours (ColorPalette.ChartCo
 
 #### What selected looks like
 
-A ring in PrimaryOnLight round the swatch, and a check on it. The check's ink is whichever of black and white has the better contrast against that swatch (contrastInk), so it reads on yellow and on navy alike. Colour alone never carries the state: the ring has a shape and the check is a glyph. Every swatch carries the ring's border, transparent when unselected, so a selection never shifts its neighbours.
+A ring in PrimaryInk round the swatch, and a check on it. The check's ink is whichever of black and white has the better contrast against that swatch (contrastInk), so it reads on yellow and on navy alike. Colour alone never carries the state: the ring has a shape and the check is a glyph. Every swatch carries the ring's border, transparent when unselected, so a selection never shifts its neighbours.
 
 #### Custom colours
 
@@ -638,7 +638,7 @@ The grid is a core.RoleRadioGroup named by Label and each swatch a core.RoleRadi
 
 #### Theme roles read
 
-	Ring          Colors.PrimaryOnLight
+	Ring          Colors.PrimaryInk
 	Swatch edge   ColorPalette.BorderColor hairline, so white shows on white
 	Check         black or white, by contrast with the swatch
 	Gaps          Spacing.XS between swatches, Spacing.SM above the field
@@ -1159,7 +1159,7 @@ The pad is a core.RoleGroup named by Label ("Number pad"). Each key is a real Bu
 
 #### Theme roles read
 
-	Keys   outlined Buttons: Components.Button's shape, PrimaryOnLight ink
+	Keys   outlined Buttons: Components.Button's shape, PrimaryInk ink
 	Gap    Spacing.SM between keys and between rows
 
 <small>[comps/number_pad.go:91](https://github.com/rohanthewiz/grmob/blob/master/comps/number_pad.go#L91)</small>
@@ -1346,7 +1346,7 @@ The input is named by Label, since the FormField's visible label is a separate T
 #### Theme roles read
 
 	Input      Components.Input, through core.Input / core.InputPassword
-	Toggle     Colors.Primary's on-light tone, through a ghost Button
+	Toggle     Colors.Primary's ink tone, through a ghost Button
 	Gap        Spacing.XS between the input and the toggle
 
 <small>[comps/password_field.go:84](https://github.com/rohanthewiz/grmob/blob/master/comps/password_field.go#L84)</small>
@@ -1429,7 +1429,7 @@ No row takes a background tint. ListRow's Surface tint is its selection cue for 
 
 #### Theme roles read
 
-	Ring, selected   Colors.PrimaryOnLightColor() — border and dot
+	Ring, selected   Colors.PrimaryInkColor() — border and dot
 	Ring, other      Colors.ControlBorder (Colors.BorderColor() if unset):
 	                 the ring is a control boundary, so it takes the stroke
 	                 role that clears 3:1
@@ -2131,7 +2131,7 @@ The strip is a RoleList and each tag a listitem, so a reader hears "list, 3 item
 
 	Pill       Colors.Surface fill, ColorPalette.BorderColor hairline
 	Tag text   Typography.Body
-	✕          a ghost Button (Primary's on-light tone)
+	✕          a ghost Button (Primary's ink tone)
 	Gaps       Spacing.XS between tags and between the strip and the input
 
 <small>[comps/tag_input.go:90](https://github.com/rohanthewiz/grmob/blob/master/comps/tag_input.go#L90)</small>

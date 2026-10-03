@@ -48,6 +48,18 @@ import (
 // label and legend entry under it is hidden — the same shape DigitalClock and
 // Compass take. A reader walking twenty tick labels learns less than
 // "Visits: 12 points, from 12 in Jan to 45 in Dec; low 12, high 45".
+//
+// # And then the numbers
+//
+// The sentence is the right first thing to hear and says nothing about
+// March. So the same element also carries the chart's data
+// (core.AccessibilityChart, built by seriesData or a chart's own data
+// method), which each host offers in its own idiom: a visually hidden table
+// on the web (the element becomes a figure there), an AXChartDescriptor on
+// iOS, and nothing more than the sentence on Android, which has no
+// equivalent. See core.ChartData for why that is per host rather than a
+// hidden node. Sparkline and Gauge carry none: one unlabelled run, or one
+// value, is already the whole of what the sentence says.
 
 // ChartSeries is one named run of values: a line, an area, or one colour of
 // bars in a grouped BarChart.
@@ -630,10 +642,12 @@ func markSwatch(color string, squares []bool, i int) core.View {
 
 // cartesianFrame assembles the y axis, the canvas and the x labels (see the
 // diagram at the top of this file) and the legend under them, as one element
-// announcing label. xLabels may be nil.
+// announcing label and carrying data (core.AccessibilityChart). xLabels may be
+// nil.
 func cartesianFrame(ctx *core.Context, s valueScale, h float64, format func(float64) string,
-	canvas core.View, xLabels core.View, legendView core.View, label string, style []core.StyleProp) *core.Node {
-	return cartesianFrameWithValues(ctx, s, h, format, canvas, xLabels, legendView, label, style, nil, 0)
+	canvas core.View, xLabels core.View, legendView core.View, label string, style []core.StyleProp,
+	data core.ChartData) *core.Node {
+	return cartesianFrameWithValues(ctx, s, h, format, canvas, xLabels, legendView, label, style, nil, 0, data)
 }
 
 // cartesianFrameWithValues is cartesianFrame with an optional layer laid over
@@ -645,7 +659,7 @@ func cartesianFrame(ctx *core.Context, s valueScale, h float64, format func(floa
 // with the gridlines.
 func cartesianFrameWithValues(ctx *core.Context, s valueScale, h float64, format func(float64) string,
 	canvas core.View, xLabels core.View, legendView core.View, label string, style []core.StyleProp,
-	values core.View, bottomExtra float64) *core.Node {
+	values core.View, bottomExtra float64, data core.ChartData) *core.Node {
 	t := ctx.Theme()
 
 	plot := []core.PropsAndChildren{
@@ -699,6 +713,7 @@ func cartesianFrameWithValues(ctx *core.Context, s valueScale, h float64, format
 		core.Gap(float64(t.Spacing.SM)),
 		core.AccessibilityRole(core.RoleImg),
 		core.AccessibilityLabel(label),
+		core.AccessibilityChart(data),
 	)
 	for _, sp := range style {
 		items = append(items, sp)
@@ -714,6 +729,66 @@ func cartesianFrameWithValues(ctx *core.Context, s valueScale, h float64, format
 		items = append(items, legendView)
 	}
 	return core.Column(items...).Render(ctx)
+}
+
+// seriesData is the core.ChartData of a chart whose x axis is categories:
+// rows 0..n-1 named by labels, one series per ChartSeries, values spelled by
+// format (formatValue when nil), and a value axis from lo to hi.
+//
+// # What the data says, and what it does not
+//
+// It says what the chart's *input* says, never what it draws. A stacked
+// chart draws running totals and its summary reads the series themselves (see
+// LineChart.Render), so the table does too: a reader who asks for March's
+// "Returns" wants returns, not returns plus everything under them. lo and hi
+// are the drawn scale, which is the range the axis labels show and the one
+// Audio Graphs should play against.
+//
+// A row with no label is named by its 1-based position, since a table row
+// and a descriptor category both need a name; a series with no name takes
+// the chart's subject when it is the only one, and "Series N" otherwise.
+// Missing values (NaN) are left out by core.AccessibilityChart.
+func seriesData(subject string, labels []string, n int, series []ChartSeries,
+	format func(float64) string, lo, hi float64, continuous bool) core.ChartData {
+	if format == nil {
+		format = formatValue
+	}
+	cats := make([]string, n)
+	for i := range cats {
+		cats[i] = strconv.Itoa(i + 1)
+		if i < len(labels) && labels[i] != "" {
+			cats[i] = labels[i]
+		}
+	}
+	d := core.ChartData{
+		Title:  subject,
+		X:      core.ChartAxis{Categories: cats},
+		Y:      core.ChartAxis{Min: lo, Max: hi},
+		Series: make([]core.ChartDataSeries, 0, len(series)),
+	}
+	for j, s := range series {
+		cs := core.ChartDataSeries{Name: seriesName(s.Name, subject, j, len(series)), Continuous: continuous}
+		for i, v := range s.Values {
+			if i >= n {
+				break
+			}
+			cs.Points = append(cs.Points, core.ChartDataPoint{X: cats[i], Y: v, Text: format(v)})
+		}
+		d.Series = append(d.Series, cs)
+	}
+	return d
+}
+
+// seriesName is a series' name for the data table: its own, else the chart's
+// subject when it is the only series, else its 1-based position.
+func seriesName(name, subject string, i, count int) string {
+	switch {
+	case name != "":
+		return name
+	case count == 1 && subject != "":
+		return subject
+	}
+	return "Series " + strconv.Itoa(i+1)
 }
 
 // summaryPrefix starts a spoken summary with the chart's subject, when given.

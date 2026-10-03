@@ -8,7 +8,7 @@ import (
 )
 
 // A link is a labelled RoleLink container that hugs its text, drawn in the
-// primary on-light ink, whose text is hidden so the name is read once.
+// primary ink tone, whose text is hidden so the name is read once.
 func TestLinkIsANamedLinkInThePrimaryInk(t *testing.T) {
 	_, n := renderDebug(t, Link{Text: "Privacy policy", URL: "https://example.com/privacy"})
 
@@ -25,7 +25,7 @@ func TestLinkIsANamedLinkInThePrimaryInk(t *testing.T) {
 	if text == nil {
 		t.Fatal("the link text is drawn")
 	}
-	if want := VariantDefault.OnLight(core.DefaultTheme); text.Style.TextColor != want {
+	if want := VariantDefault.AsInk(core.DefaultTheme); text.Style.TextColor != want {
 		t.Errorf("ink = %q, want %q", text.Style.TextColor, want)
 	}
 	if !text.Style.AccessibilityHidden {

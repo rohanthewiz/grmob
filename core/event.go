@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -26,16 +27,22 @@ type callbackRegistry struct {
 	boolCBs map[string]func(bool)
 	intCBs  map[string]func(int)
 
-	voidCounter int
-	textCounter int
-	boolCounter int
-	intCounter  int
+	// scopes is the stack of ID namespaces open at this point of the pass:
+	// scopes[0] is the pass's root, and each keyed subtree being rendered
+	// pushes one more (openScope). Every registration draws its number from
+	// the top scope's counters and its spelling from the top scope's path.
+	// See "Identity-keyed IDs" on beginPass.
+	scopes []*idScope
 
-	// backCounter numbers core.OnBack's handlers ("back_cb_N"). They are void
-	// callbacks and live in voidCBs, so every host dispatches them through the
-	// ordinary void path, but they take IDs from a sequence of their own. See
-	// registerBack for why.
-	backCounter int
+	// total counts registrations of every kind, in every scope, since
+	// beginPass. registrationCount reads it; ErrorBoundary snapshots it.
+	total int
+
+	// trail records, in order, every ID registered and every child-key
+	// occurrence counted since beginPass, so ErrorBoundary can undo exactly
+	// what an abandoned subtree did (rollbackCounters). Reset, not freed, at
+	// each beginPass, so a steady app reuses one backing array.
+	trail []trailEntry
 
 	// edits holds the text-edit ledger of each text field a native host
 	// edits, by callback ID; see text_edit.go. Nil until the first
@@ -55,6 +62,41 @@ type callbackRegistry struct {
 	used map[string]bool
 }
 
+// idScope is one ID namespace: the root of a pass, or one keyed subtree.
+//
+// The counters are per kind, as they always were. backCounter numbers
+// core.OnBack's handlers ("back_cb_N"): they are void callbacks and live in
+// voidCBs, so every host dispatches them through the ordinary void path, but
+// they take IDs from a sequence of their own. See registerBack for why.
+type idScope struct {
+	// path is "" for the root and "k1/k2/" below it: each enclosing key,
+	// escaped (escapeIDKey) and followed by '/'. An ID is its kind's prefix,
+	// the path, then the counter, so the counter is always the text after
+	// the last '/' and no two scopes can spell the same ID.
+	path string
+
+	voidCounter int
+	textCounter int
+	boolCounter int
+	intCounter  int
+	backCounter int
+
+	// seen counts the child scopes opened under this one this pass, by key.
+	// A key is unique among siblings, not within a scope: two lists that are
+	// both children of one unkeyed column, each keyed "0", "1", ..., open the
+	// same keys in the same scope. The second "0" is spelled "0~1". Nil until
+	// the first child scope, which most scopes never open.
+	seen map[string]int
+}
+
+// trailEntry is one undoable step of a pass: an ID registered (id set) or a
+// child key counted in a scope (scope set). See rollbackCounters.
+type trailEntry struct {
+	id    string
+	scope *idScope
+	key   string
+}
+
 func newCallbackRegistry() *callbackRegistry {
 	return &callbackRegistry{
 		voidCBs: make(map[string]func()),
@@ -62,12 +104,15 @@ func newCallbackRegistry() *callbackRegistry {
 		boolCBs: make(map[string]func(bool)),
 		intCBs:  make(map[string]func(int)),
 		used:    make(map[string]bool),
+		// A root scope from the start, so a view rendered outside any pass
+		// (a test calling Render directly) still has somewhere to register.
+		scopes: []*idScope{{}},
 	}
 }
 
 // beginPass resets the ID counters so IDs are assigned by render-pass
-// sequence: the Nth callback registered in a pass is always "cb_N" (or
-// "txt_cb_N"/"bool_cb_N"/"int_cb_N" for its kind).
+// sequence: the Nth callback registered in a scope is always "cb_N" with that
+// scope's path (or "txt_cb_"/"bool_cb_"/"int_cb_"/"back_cb_" for its kind).
 //
 // This is what makes callback IDs stable across renders. Component trees are
 // rebuilt from scratch on every render, and with monotonically increasing
@@ -79,13 +124,41 @@ func newCallbackRegistry() *callbackRegistry {
 // closure, which is required for correctness anyway (the new closure captures
 // the current state slots).
 //
-// The IDs have the same stability granularity as the reconciler's positional
-// TargetID paths: a structural change that shifts later siblings also shifts
-// their callback IDs, and the same nodes get update-props patches the
-// positional differ would emit regardless. An event dispatched against a
-// stale tree can therefore hit a re-used ID and run the wrong handler in the
-// brief window around a structural re-render; identity-keyed IDs (planned
-// with stable node identity) are the eventual fix.
+// # Identity-keyed IDs
+//
+// A sequence alone is positional: a subtree that registers one more callback
+// than last pass shifts the ID of every callback after it, anywhere in the
+// tree. That cost a patch per later node and, worse, let an event dispatched
+// against the tree before the change land on a neighbour's handler.
+// EditableGrid paid both: its editor registers three handlers where the cell
+// it replaces registers one, so every later cell's onClick moved on each
+// entry to and exit from EDIT (N-073).
+//
+// So a keyed node names its own callbacks. core.Keyed, and the root of each
+// Navigator frame, open a scope while their subtree renders (Context.keyScope);
+// the subtree numbers its callbacks from zero under the key's path, and the
+// enclosing scope's counters do not move at all:
+//
+//	Column                         cb_0          (root scope)
+//	├─ Keyed "r1" ─ Row
+//	│   ├─ Keyed "c0" ─ cell       cb_r1/c0/0
+//	│   └─ Keyed "c1" ─ cell       cb_r1/c1/0
+//	├─ Keyed "r2" ─ Row
+//	│   ├─ Keyed "e0" ─ editor     cb_r2/e0/0 … cb_r2/e0/2
+//	│   └─ Keyed "c1" ─ cell       cb_r2/c1/0    (unmoved by the editor)
+//	└─ Button "Save"               cb_1          (unmoved by every row)
+//
+// IDs at the root keep the spelling they always had, so an app with no keys
+// sees no change. Within a scope, IDs are still positional, with the same
+// granularity as the reconciler's positional paths: a change shifts its
+// unkeyed later siblings and nothing past the nearest keyed ancestor.
+//
+// What remains of the stale-ID window is narrower in kind, not just in
+// reach. An ID now belongs to a key path; a late event can land on another
+// handler only inside the same keyed node, or at an unkeyed position the
+// change shifted. A Navigator frame's IDs carry the frame's key, so an event
+// from a screen that has been navigated away from cannot reach the screen
+// that replaced it at all.
 //
 // Must be called exactly once at the start of each render pass, before any
 // component builders run. Renderers do this via render.Manager, not directly.
@@ -93,24 +166,78 @@ func (r *callbackRegistry) beginPass() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	r.voidCounter = 0
-	r.textCounter = 0
-	r.boolCounter = 0
-	r.intCounter = 0
-	r.backCounter = 0
+	// A fresh root rather than zeroed counters: a pass that panicked through
+	// a keyed subtree unwinds its scopes with defers, but a fresh root makes
+	// the pass boundary the one place the stack is known to be right.
+	r.scopes = append(r.scopes[:0], &idScope{})
+	r.total = 0
+	r.trail = r.trail[:0]
 	// Fresh liveness marks for this pass: only callbacks re-registered below
 	// survive the post-render purge.
 	r.used = make(map[string]bool)
+}
+
+// idKeyEscaper keeps a key from forging a scope boundary. '/' ends a path
+// segment and '~' introduces an occurrence suffix, so a key holding either
+// could otherwise spell another key path's ID; '%' is escaped so the escape
+// itself is unambiguous. Navigator's frame keys ("nav:frame:3") and
+// EditableGrid's ("c2") pass through unchanged.
+var idKeyEscaper = strings.NewReplacer("%", "%25", "/", "%2F", "~", "%7E")
+
+// openScope pushes the ID scope of a keyed child of the current scope. It is
+// paired with closeScope by Context.keyScope, under a defer, so a panic
+// inside the subtree cannot leave the stack deep.
+func (r *callbackRegistry) openScope(key string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	parent := r.scopes[len(r.scopes)-1]
+	if parent.seen == nil {
+		parent.seen = make(map[string]int)
+	}
+	n := parent.seen[key]
+	parent.seen[key] = n + 1
+	r.trail = append(r.trail, trailEntry{scope: parent, key: key})
+
+	seg := idKeyEscaper.Replace(key)
+	if n > 0 {
+		// A repeat of a key already opened in this scope. Its IDs are
+		// positional among the repeats, which is no worse than before keyed
+		// IDs and needs two keyed lists without a keyed container to arise.
+		seg += "~" + strconv.Itoa(n)
+	}
+	r.scopes = append(r.scopes, &idScope{path: parent.path + seg + "/"})
+}
+
+func (r *callbackRegistry) closeScope() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	// The root is never popped: beginPass owns it.
+	if len(r.scopes) > 1 {
+		r.scopes = r.scopes[:len(r.scopes)-1]
+	}
+}
+
+// nextIDLocked spells the next ID of one kind in the current scope and records it.
+// counter points into the top scope; prefix is the kind's ("cb_", ...).
+// Callers hold r.mu.
+func (r *callbackRegistry) nextIDLocked(prefix string, counter func(*idScope) *int) string {
+	s := r.scopes[len(r.scopes)-1]
+	c := counter(s)
+	id := prefix + s.path + strconv.Itoa(*c)
+	*c++
+	r.total++
+	r.trail = append(r.trail, trailEntry{id: id})
+	r.used[id] = true
+	return id
 }
 
 func (r *callbackRegistry) registerVoid(fn func()) string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	id := "cb_" + strconv.Itoa(r.voidCounter)
-	r.voidCounter++
+	id := r.nextIDLocked("cb_", func(s *idScope) *int { return &s.voidCounter })
 	r.voidCBs[id] = fn // overwrites last pass's closure at this position, keeping the freshest captures
-	r.used[id] = true
 	return id
 }
 
@@ -137,18 +264,17 @@ func (r *callbackRegistry) registerVoid(fn func()) string {
 //	pass 2  contents screen no back handlers, back_cb_0 is purged
 //	press 2 → back_cb_0 → unknown ID → silent no-op
 //
-// That narrows the framework-wide stale-ID window (see beginPass) for the
-// event most likely to hit it, without waiting for identity-keyed IDs. What is
-// left is benign by construction: "back" meeting a different back handler is
-// still a back, as when two quick presses on a three-deep stack pop twice.
+// Keyed IDs (see beginPass) would close that example on their own, since the
+// two screens' callbacks now carry different frame keys. The namespace stays
+// for what keys do not cover: Navigator's own Pop is registered outside the
+// frame's scope, on purpose, so that "back" meeting a different back handler
+// is still a back, as when two quick presses on a three-deep stack pop twice.
 func (r *callbackRegistry) registerBack(fn func()) string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	id := "back_cb_" + strconv.Itoa(r.backCounter)
-	r.backCounter++
+	id := r.nextIDLocked("back_cb_", func(s *idScope) *int { return &s.backCounter })
 	r.voidCBs[id] = fn
-	r.used[id] = true
 	return id
 }
 
@@ -156,10 +282,8 @@ func (r *callbackRegistry) registerText(fn func(string)) string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	id := "txt_cb_" + strconv.Itoa(r.textCounter)
-	r.textCounter++
+	id := r.nextIDLocked("txt_cb_", func(s *idScope) *int { return &s.textCounter })
 	r.textCBs[id] = fn
-	r.used[id] = true
 	return id
 }
 
@@ -167,10 +291,8 @@ func (r *callbackRegistry) registerBool(fn func(bool)) string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	id := "bool_cb_" + strconv.Itoa(r.boolCounter)
-	r.boolCounter++
+	id := r.nextIDLocked("bool_cb_", func(s *idScope) *int { return &s.boolCounter })
 	r.boolCBs[id] = fn
-	r.used[id] = true
 	return id
 }
 
@@ -178,22 +300,20 @@ func (r *callbackRegistry) registerInt(fn func(int)) string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	id := "int_cb_" + strconv.Itoa(r.intCounter)
-	r.intCounter++
+	id := r.nextIDLocked("int_cb_", func(s *idScope) *int { return &s.intCounter })
 	r.intCBs[id] = fn
-	r.used[id] = true
 	return id
 }
 
 // registrationCount is the total callbacks registered so far in the current
-// pass, across every kind (back handlers included). The debug-mode Cached bypass samples it before
-// and after rendering a cached subtree: any advance means the subtree
-// registers callbacks, which the production cache would break (see
-// ConcernCachedCallbacks).
+// pass, across every kind (back handlers included) and every scope. The
+// debug-mode Cached bypass samples it before and after rendering a cached
+// subtree: any advance means the subtree registers callbacks, which the
+// production cache would break (see ConcernCachedCallbacks).
 func (r *callbackRegistry) registrationCount() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.voidCounter + r.textCounter + r.boolCounter + r.intCounter + r.backCounter
+	return r.total
 }
 
 // lookupVoid (and the sibling lookups below) fetch the handler and mark the
@@ -327,6 +447,22 @@ func (ctx *Context) registerIntCallback(fn func(int)) string {
 	return ctx.registry.registerInt(fn)
 }
 
+// keyScope renders a keyed subtree inside its own callback-ID scope, so the
+// subtree's IDs are spelled under key and nothing it registers moves an ID
+// outside it (see "Identity-keyed IDs" on callbackRegistry.beginPass). An
+// empty key is no key, as it is on Node.Key, and opens nothing.
+//
+// The close is deferred: a panic inside the subtree is recovered by an
+// ErrorBoundary above it, and the pass carries on in the enclosing scope.
+func (ctx *Context) keyScope(key string, render func() *Node) *Node {
+	if key == "" {
+		return render()
+	}
+	ctx.registry.openScope(key)
+	defer ctx.registry.closeScope()
+	return render()
+}
+
 // BeginRenderPass starts a callback ID pass for this context tree; see
 // callbackRegistry.beginPass for the stability contract.
 func (ctx *Context) BeginRenderPass() {
@@ -435,15 +571,20 @@ func (ctx *Context) ReceiveEventPayload(payload map[string]any) {
 
 // ---- Counter snapshot / rollback (ErrorBoundary) ----
 
-// counterSnapshot is the registry's ID counters at one instant. It is
-// only ever produced and consumed inside a single render pass — the counters
-// restart at every beginPass, so a snapshot has no meaning across passes.
+// counterSnapshot is the registry's position at one instant: the current
+// scope's counters, the pass's registration total, and how much of the trail
+// existed. It is only ever produced and consumed inside a single render pass,
+// in the scope it was taken in — the counters restart at every beginPass, so
+// a snapshot has no meaning across passes.
 type counterSnapshot struct {
+	scope   *idScope
 	void    int
 	text    int
 	boolean int
 	integer int
 	back    int
+	total   int
+	trail   int
 }
 
 // snapshotCounters records where the next callback ID of each kind would be
@@ -452,12 +593,16 @@ type counterSnapshot struct {
 func (r *callbackRegistry) snapshotCounters() counterSnapshot {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	s := r.scopes[len(r.scopes)-1]
 	return counterSnapshot{
-		void:    r.voidCounter,
-		text:    r.textCounter,
-		boolean: r.boolCounter,
-		integer: r.intCounter,
-		back:    r.backCounter,
+		scope:   s,
+		void:    s.voidCounter,
+		text:    s.textCounter,
+		boolean: s.boolCounter,
+		integer: s.intCounter,
+		back:    s.backCounter,
+		total:   r.total,
+		trail:   len(r.trail),
 	}
 }
 
@@ -472,35 +617,44 @@ func (r *callbackRegistry) snapshotCounters() counterSnapshot {
 //     which can vary with data between passes — so without the rewind every
 //     component rendered after the boundary would see its IDs shift whenever
 //     the failure point moved, and taps would land on the wrong handlers.
-//     After the rewind the boundary's footprint is just its fallback's.
+//     After the rewind the boundary's footprint is just its fallback's. The
+//     same goes for child keys counted: a key the abandoned subtree opened
+//     would otherwise make the fallback's own use of it a "~1" repeat.
 //
 //   - Un-marking makes purge collect the abandoned handlers. purge keeps
 //     every ID marked used since beginPass; the abandoned subtree marked its
 //     own, and those nodes are not on screen, so leaving the marks would keep
 //     dead handlers dispatchable for as long as the failure persists.
 //
+// The trail, not the counters, says what to undo: the subtree may have
+// registered inside keyed scopes of its own, whose IDs no range of the
+// current scope's counters describes. Those scopes were popped by their
+// defers during the panic, so only the current scope's counters need
+// rewinding.
+//
 // The entries in the four callback maps are deliberately left alone: purge
 // removes exactly the unmarked ones at the end of the pass, and any ID in the
 // rolled-back range that the fallback or a later sibling re-uses is
 // overwritten and re-marked on registration, as it would be normally.
-func (r *callbackRegistry) rollbackCounters(s counterSnapshot) {
+func (r *callbackRegistry) rollbackCounters(snap counterSnapshot) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	unmark := func(prefix string, from, to int) {
-		for i := from; i < to; i++ {
-			delete(r.used, prefix+strconv.Itoa(i))
+	for i := len(r.trail) - 1; i >= snap.trail; i-- {
+		e := r.trail[i]
+		if e.scope != nil {
+			e.scope.seen[e.key]--
+			continue
 		}
+		delete(r.used, e.id)
 	}
-	unmark("cb_", s.void, r.voidCounter)
-	unmark("txt_cb_", s.text, r.textCounter)
-	unmark("bool_cb_", s.boolean, r.boolCounter)
-	unmark("int_cb_", s.integer, r.intCounter)
-	unmark("back_cb_", s.back, r.backCounter)
+	r.trail = r.trail[:snap.trail]
+	r.total = snap.total
 
-	r.voidCounter = s.void
-	r.textCounter = s.text
-	r.boolCounter = s.boolean
-	r.intCounter = s.integer
-	r.backCounter = s.back
+	s := snap.scope
+	s.voidCounter = snap.void
+	s.textCounter = snap.text
+	s.boolCounter = snap.boolean
+	s.intCounter = snap.integer
+	s.backCounter = snap.back
 }

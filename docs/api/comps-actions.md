@@ -33,6 +33,7 @@ One of 7 topic pages of [package comps](comps.md), which has the package overvie
 - [`type Stepper`](#type-stepper)
     - [`func (Stepper) Render`](#func-stepper-render)
 - [`type Variant`](#type-variant)
+    - [`func (Variant) AsInk`](#func-variant-asink)
     - [`func (Variant) Color`](#func-variant-color)
     - [`func (Variant) Ink`](#func-variant-ink)
     - [`func (Variant) OnLight`](#func-variant-onlight)
@@ -195,7 +196,7 @@ Variant carries \*meaning\* — success, warning, error. Secondary is a brand sl
 
 EmphasisFilled owns both the fill and the label, so it picks the label by contrast against the fill (Variant.Ink) and is tested to clear WCAG AA under both bundled themes.
 
-Outlined and Ghost own neither: the fill is transparent, so the label's real backdrop is whatever the button was placed on, which the widget cannot see. Their label is therefore the role's \*on-light\* tone — the palette's second value per role, dark enough to be read as ink on a light surface — rather than the fill colour. Measured against each theme's own Background (both are #FFFFFF), with the value each replaced in brackets:
+Outlined and Ghost own neither: the fill is transparent, so the label's real backdrop is whatever the button was placed on, which the widget cannot see. Their label is therefore the role's \*ink\* tone — the palette's second value per role, dark enough to be read as ink on a light surface — rather than the fill colour. Measured against each theme's own Background (both are #FFFFFF), with the value each replaced in brackets:
 
 	            Default          Material
 	default      7.56:1 [same]    7.63:1 [same]
@@ -209,7 +210,7 @@ DefaultTheme's default row reads "same" and did not always: its Primary was iOS 
 
 The promise is still narrower than EmphasisFilled's. These numbers hold against a theme's Background, and a button placed on some other surface — a tinted card, a photo — is measured against that instead, which nothing here can know. What changed is that the default case is now legible rather than documented as illegible.
 
-A theme that declares no on-light tones falls back to the role colour, i.e. to the bracketed numbers, and to exactly the pixels this widget painted before the palette had a second value. Darkening a role colour \*here\* was considered and rejected for the reason it always was: it would repaint a hex the theme author chose. Declaring the second value is the theme's call; spending it is this widget's — and when DefaultTheme later did darken its Primary, it was to fix the \*filled\* treatment, whose declared white on systemBlue this widget could only document.
+A theme that declares no ink tones falls back to the role colour, i.e. to the bracketed numbers, and to exactly the pixels this widget painted before the palette had a second value. Darkening a role colour \*here\* was considered and rejected for the reason it always was: it would repaint a hex the theme author chose. Declaring the second value is the theme's call; spending it is this widget's — and when DefaultTheme later did darken its Primary, it was to fix the \*filled\* treatment, whose declared white on systemBlue this widget could only document.
 
 <small>[comps/button.go:145](https://github.com/rohanthewiz/grmob/blob/master/comps/button.go#L145)</small>
 
@@ -536,7 +537,7 @@ Link is a line of text that goes somewhere: a terms page, a help article, a "For
 	comps.Link{Text: "Forgot password?", OnTap: showReset}
 
 	┌ Box  role=link  name=Text  onClick ┐
-	│  Text  (Primary's on-light tone)   │
+	│  Text  (Primary's ink tone)   │
 	└────────────────────────────────────┘
 
 #### A link and not a ghost Button
@@ -553,7 +554,7 @@ Rendered, a Link is a line of its own, not underlined: the link colour and the r
 
 #### Theme roles read
 
-	Ink          Colors.Primary's on-light tone (Variant.OnLight)
+	Ink          Colors.Primary's ink tone (Variant.AsInk)
 	Type         Typography.Body
 
 <small>[comps/link.go:48](https://github.com/rohanthewiz/grmob/blob/master/comps/link.go#L48)</small>
@@ -712,7 +713,7 @@ The row is RoleGroup with Label (default "Rating") as its name and the rounded s
 
 #### Theme roles read
 
-	Filled glyph   Colors.WarningOnLightColor() — amber that holds contrast on
+	Filled glyph   Colors.WarningInkColor() — amber that holds contrast on
 	               a light surface, where Colors.Warning is about 2:1
 	Empty glyph    Colors.TextSecondary
 	Glyph size     Typography.Subtitle
@@ -911,7 +912,7 @@ There is no spinbutton role in core.Role and none is added for this: the row is 
 
 	Row gap         Spacing.SM
 	Value text      Typography.Body, bold
-	Buttons         comps.Button outlined: Colors.Primary's on-light tone
+	Buttons         comps.Button outlined: Colors.Primary's ink tone
 
 <small>[comps/stepper.go:63](https://github.com/rohanthewiz/grmob/blob/master/comps/stepper.go#L63)</small>
 
@@ -948,6 +949,28 @@ const (
 )
 ```
 
+#### func (Variant) AsInk
+
+```go
+func (v Variant) AsInk(t *core.Theme) string
+```
+
+AsInk resolves the variant to the ink-weight tone of its role — the value to spend when the color \*is\* the ink, rather than the fill something else is laid over.
+
+Color and this are the two halves of one role, and which one a widget wants is decided by what it does with it:
+
+	Color     a fill. The ink over it is chosen by contrast (Ink, below), so
+	          a mid-tone works and the pair clears AA on every bundled theme.
+	AsInk     ink itself — an outlined button's label and rule, a loud chip's
+	          outline. The backdrop is whatever the widget was placed on,
+	          which the widget cannot see, so the value has to be read
+	          against the theme's page on its own: dark on a light theme,
+	          light on DarkTheme.
+
+VariantDefault resolves through the palette's Primary tone here, with no special arm, and the reason is that there is nothing for one to preserve. Ink's answer for the default is a \*pairing\* the theme itself declares (Background over Primary, which is what Button already paints, and which Ink now reads back rather than assuming); no theme declares anything about a role spent as ink on an unknown backdrop, because before these tones existed every caller spent the role colour raw — which is exactly what the unset fallback still returns.
+
+<small>[comps/variant.go:73](https://github.com/rohanthewiz/grmob/blob/master/comps/variant.go#L73)</small>
+
 #### func (Variant) Color
 
 ```go
@@ -981,7 +1004,7 @@ VariantDefault had an arm of its own here that returned the theme's Background w
   - Badge{Color: "#FFF9C4"} with no variant used to get white ink on pale yellow, because the exemption ignored bg entirely. Badge's own doc already promised the opposite ("resolved against bg, so an explicit Color still gets a legible ink picked for it"); it is true now.
   - A theme that states no Components.Button base at all — examples exist, see the Components note in examples/fintechapp — has declared no pairing, so its default variant is measured like any other. That is the one case whose pixels move, and towards the more legible ink.
 
-<small>[comps/variant.go:117](https://github.com/rohanthewiz/grmob/blob/master/comps/variant.go#L117)</small>
+<small>[comps/variant.go:123](https://github.com/rohanthewiz/grmob/blob/master/comps/variant.go#L123)</small>
 
 #### func (Variant) OnLight
 
@@ -989,18 +1012,9 @@ VariantDefault had an arm of its own here that returned the theme's Background w
 func (v Variant) OnLight(t *core.Theme) string
 ```
 
-OnLight resolves the variant to the ink-weight tone of its role — the value to spend when the color \*is\* the ink, rather than the fill something else is laid over.
+OnLight is AsInk's former name.
 
-Color and this are the two halves of one role, and which one a widget wants is decided by what it does with it:
+Deprecated: use AsInk.
 
-	Color     a fill. The ink over it is chosen by contrast (Ink, below), so
-	          a mid-tone works and the pair clears AA on every bundled theme.
-	OnLight   ink itself — an outlined button's label and rule, a loud chip's
-	          outline. The backdrop is whatever the widget was placed on,
-	          which the widget cannot see, so the value has to be dark enough
-	          to be read against a light surface on its own.
-
-VariantDefault resolves through the palette's Primary tone here, with no special arm, and the reason is that there is nothing for one to preserve. Ink's answer for the default is a \*pairing\* the theme itself declares (Background over Primary, which is what Button already paints, and which Ink now reads back rather than assuming); no theme declares anything about a role spent as ink on an unknown backdrop, because before these tones existed every caller spent the role colour raw — which is exactly what the unset fallback still returns.
-
-<small>[comps/variant.go:72](https://github.com/rohanthewiz/grmob/blob/master/comps/variant.go#L72)</small>
+<small>[comps/variant.go:89](https://github.com/rohanthewiz/grmob/blob/master/comps/variant.go#L89)</small>
 

@@ -345,7 +345,7 @@ func (ctx *Context) BeginRenderPass()
 
 BeginRenderPass starts a callback ID pass for this context tree; see callbackRegistry.beginPass for the stability contract.
 
-<small>[core/event.go:332](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L332)</small>
+<small>[core/event.go:468](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L468)</small>
 
 #### func (*Context) ClearDirty
 
@@ -454,7 +454,7 @@ PurgeUnusedCallbacks drops handlers not re-registered in the current pass; see c
 
 OnEndReached's debounce ledger is trimmed in the same breath and against the registry's own survivors, so the two can never disagree about which lists are still on screen — a guard outliving its handler would silently suppress the first page fetch of whatever list next inherits the ID.
 
-<small>[core/event.go:343](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L343)</small>
+<small>[core/event.go:479](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L479)</small>
 
 #### func (*Context) ReceiveEventPayload
 
@@ -464,7 +464,7 @@ func (ctx *Context) ReceiveEventPayload(payload map[string]any)
 
 ReceiveEventPayload dispatches a loosely typed event envelope ({"callback": id, "value": ...}) by sniffing the value's type — the shape the WASM host sends. Typed hosts should call the Trigger\* methods directly.
 
-<small>[core/event.go:381](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L381)</small>
+<small>[core/event.go:517](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L517)</small>
 
 #### func (*Context) RequestRender
 
@@ -518,7 +518,7 @@ func (ctx *Context) TriggerBoolCallback(id string, val bool)
 
 TriggerBoolCallback dispatches a bool-carrying event (e.g. a toggle).
 
-<small>[core/event.go:365](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L365)</small>
+<small>[core/event.go:501](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L501)</small>
 
 #### func (*Context) TriggerCallback
 
@@ -528,7 +528,7 @@ func (ctx *Context) TriggerCallback(id string)
 
 TriggerCallback dispatches a void event (e.g. a button tap) by callback ID. Unknown IDs are silent no-ops: a late native event racing a purge is expected traffic, not an error.
 
-<small>[core/event.go:351](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L351)</small>
+<small>[core/event.go:487](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L487)</small>
 
 #### func (*Context) TriggerIntCallback
 
@@ -538,7 +538,7 @@ func (ctx *Context) TriggerIntCallback(id string, val int)
 
 TriggerIntCallback dispatches an int-carrying event (e.g. tab selection).
 
-<small>[core/event.go:372](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L372)</small>
+<small>[core/event.go:508](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L508)</small>
 
 #### func (*Context) TriggerTextCallback
 
@@ -548,7 +548,7 @@ func (ctx *Context) TriggerTextCallback(id string, val string)
 
 TriggerTextCallback dispatches a string-carrying event (e.g. input change).
 
-<small>[core/event.go:358](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L358)</small>
+<small>[core/event.go:494](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L494)</small>
 
 #### func (*Context) TriggerTextEdit
 
@@ -907,7 +907,11 @@ func IfElse(condition bool, thenView View, elseView View) View
 func Keyed(key string, child View) View
 ```
 
-<small>[core/view.go:13](https://github.com/rohanthewiz/grmob/blob/master/core/view.go#L13)</small>
+Keyed gives child's root node an identity, key, which outlives its position among its siblings.
+
+The key does two jobs. The reconciler replaces a keyed slot whose key changed rather than patching one node into another. And the subtree's callback IDs are named by the key (Context.keyScope): a sibling that grows or shrinks its handler count no longer renumbers this subtree's handlers, and this subtree no longer renumbers anyone else's.
+
+<small>[core/view.go:21](https://github.com/rohanthewiz/grmob/blob/master/core/view.go#L21)</small>
 
 #### func Match
 

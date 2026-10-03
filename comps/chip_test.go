@@ -232,7 +232,7 @@ func TestChipNilOnTapDoesNotPanic(t *testing.T) {
 // The load-bearing assertion is that the outline is the accent's *tone* and
 // not the accent, and it can only say that where the two are different hexes.
 // DefaultTheme's Primary was darkened to a value that is ink-weight on its own
-// (Colors.PrimaryOnLight now equals Colors.Primary), so under it the two
+// (Colors.PrimaryInk now equals Colors.Primary), so under it the two
 // implementations paint the same pixels and this test would pass on either.
 // midTonePrimaryTheme (variant_test.go) is DefaultTheme as it stood before
 // that move: systemBlue with a separate accessible tone.
@@ -245,10 +245,10 @@ func TestChipProminenceLoudIsAnOutlineNotAFill(t *testing.T) {
 	// The outline is drawn in the accent's ink-weight tone, looked up by
 	// colour because the accent is a hex the widget read off the Button base
 	// rather than a role it named.
-	ink := theme.Colors.OnLight(accent)
+	ink := theme.Colors.AsInk(accent)
 	if ink == accent {
 		t.Fatalf("fixture no longer exercises the split: the Button base fill %q has no "+
-			"separate on-light tone", accent)
+			"separate ink tone", accent)
 	}
 
 	c := Chip{Label: "$25", Prominence: ProminenceLoud, OnTap: func() {}}
@@ -261,7 +261,7 @@ func TestChipProminenceLoudIsAnOutlineNotAFill(t *testing.T) {
 			unselected.Style.Background, ColorTransparent)
 	}
 	if unselected.Style.TextColor != ink || unselected.Style.BorderColor != ink {
-		t.Errorf("loud unselected ink/rule = %q/%q, want the accent's on-light tone %q",
+		t.Errorf("loud unselected ink/rule = %q/%q, want the accent's ink tone %q",
 			unselected.Style.TextColor, unselected.Style.BorderColor, ink)
 	}
 	if unselected.Style.BorderWidth != 1 {
@@ -341,9 +341,9 @@ func TestChipProminenceLoudFallsBackToPrimaryWithoutAButtonFill(t *testing.T) {
 
 	n := Chip{Label: "$25", Prominence: ProminenceLoud}.Render(ctx)
 
-	want := fillless.Colors.PrimaryOnLightColor()
+	want := fillless.Colors.PrimaryInkColor()
 	if n.Style.TextColor != want || n.Style.BorderColor != want {
-		t.Errorf("ink/rule = %q/%q, want the Primary role's on-light tone %q",
+		t.Errorf("ink/rule = %q/%q, want the Primary role's ink tone %q",
 			n.Style.TextColor, n.Style.BorderColor, want)
 	}
 }

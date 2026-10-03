@@ -15,7 +15,7 @@ const ConcernLinkInert = "link-inert"
 //	comps.Link{Text: "Forgot password?", OnTap: showReset}
 //
 //	┌ Box  role=link  name=Text  onClick ┐
-//	│  Text  (Primary's on-light tone)   │
+//	│  Text  (Primary's ink tone)   │
 //	└────────────────────────────────────┘
 //
 // # A link and not a ghost Button
@@ -43,7 +43,7 @@ const ConcernLinkInert = "link-inert"
 //
 // # Theme roles read
 //
-//	Ink          Colors.Primary's on-light tone (Variant.OnLight)
+//	Ink          Colors.Primary's ink tone (Variant.AsInk)
 //	Type         Typography.Body
 type Link struct {
 	// Text is the visible link text and its accessible name.
@@ -92,7 +92,7 @@ func (l Link) Span(ctx *core.Context) core.Span {
 	return core.Span{
 		Text:      l.Text,
 		Underline: true,
-		Color:     VariantDefault.OnLight(ctx.Theme()),
+		Color:     VariantDefault.AsInk(ctx.Theme()),
 		OnTap:     tap,
 	}
 }
@@ -119,7 +119,7 @@ func (l Link) Render(ctx *core.Context) *core.Node {
 	text := make([]core.StyleProp, 0, len(l.Style)+3)
 	text = append(text,
 		core.UseStyle(t.Typography.Body),
-		core.TextColor(VariantDefault.OnLight(t)),
+		core.TextColor(VariantDefault.AsInk(t)),
 	)
 	text = append(text, l.Style...)
 

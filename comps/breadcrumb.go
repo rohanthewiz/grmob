@@ -50,7 +50,7 @@ import "github.com/rohanthewiz/grmob/core"
 //
 // # Theme roles read
 //
-//	Ancestors  Colors.Primary's on-light tone, through a ghost Button
+//	Ancestors  Colors.Primary's ink tone, through a ghost Button
 //	Current    Typography.Body over TextPrimary
 //	Chevron    Typography.Body over TextSecondary
 //	Gaps       Spacing.XS between every item

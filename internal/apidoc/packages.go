@@ -208,7 +208,7 @@ var Packages = []Pkg{
 			Slug:  "accessibility",
 			Title: "Accessibility",
 			Blurb: "Roles, selected, expanded and current states, value ranges and the accessibility audit.",
-			Files: []string{"role.go", "popup.go", "selected.go", "expanded.go", "current.go", "value.go", "a11y_audit.go"},
+			Files: []string{"role.go", "popup.go", "selected.go", "expanded.go", "current.go", "value.go", "chart_data.go", "a11y_audit.go"},
 		}, {
 			Slug:  "device",
 			Title: "Device services",
