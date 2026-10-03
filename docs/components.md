@@ -35,6 +35,10 @@ All widgets take their look from `ctx.Theme()` — palette colors, spacing and
 typography scales, never hard-coded values — and accept `Style` overrides
 for per-use adjustment.
 
+Every widget here keeps the component contract stated on `core.View`. To
+write your own widget, in an app or for this library, see
+[Components](concepts/components.md).
+
 ## Screen
 
 The root scaffold: safe-area inset, an optional scroll region, and the

@@ -1,6 +1,6 @@
 ---
 name: grmob-native-mobile-go
-description: Build native mobile apps (Android, iOS), browser apps and HTML exports in pure Go with the GrMob framework — declarative views, positional hook state, and a tree diff that every host applies as patches.
+description: Build native mobile apps (Android, iOS), browser apps and HTML exports in pure Go with the GrMob framework — declarative views, positional hook state, and a tree diff that every host applies as patches. Use when starting a GrMob app (`grmob new`), writing screens, state, forms, navigation or tests for one, or building it for the browser, Android or iOS. For authoring a reusable widget, see the grmob-component skill.
 ---
 
 # GrMob — AI Agent Documentation
@@ -39,7 +39,78 @@ Four consequences worth holding on to:
 4. **`State.Set` is the whole update path.** Write state, and the next pass's
    diff reaches the screen. Never try to "refresh" anything by hand.
 
+## Starting an app
+
+An app lives in **its own module**, made by the `grmob` command. Do not copy
+this repository's `build.sh`, `wasm/` or shells into an app: they assume the
+grmob module root and go stale silently.
+
+```sh
+go run github.com/rohanthewiz/grmob/cmd/grmob@latest new myapp \
+    -name "My App" -id com.example.myapp     # both optional; derived from the dir
+cd myapp
+./dev.sh          # http://localhost:8080 — rebuilds and hot-swaps on every save
+go test ./app     # the fastest loop: no browser, no device
+```
+
+`new` flags: `-module` (default: the dir name), `-name` (launcher label),
+`-id` (Android applicationId and iOS bundle ID — letters and digits per
+segment, at least two segments), `-grmob <version|master>`,
+`-replace <path to a grmob checkout>` (a `replace` directive, for working
+against local framework changes), `-no-build`. The target directory must be
+empty (a `.git` is allowed).
+
+What it writes:
+
+```
+app/app.go        root view + init registration + AppName (every target mounts this)
+app/app_test.go   render.Manager test with debug mode and tap/shows helpers
+wasm/main.go      browser host: webhost.Run(nil, app.App)
+wasm/index.html   host page (rendered once; the app may edit it)
+build.sh          browser build; re-copies grmob-runtime.js from go.mod's grmob
+dev.sh            go run github.com/rohanthewiz/grmob/serve -dev
+grmob.json        {"name", "id"} for the native shells
+```
+
+The rule the scaffold keeps: **anything grmob owns comes from the grmob
+version in `go.mod`, at build time.** The runtime JS is copied by every build
+and never committed or edited — a runtime bug is a grmob bug; fix it upstream
+and `go get github.com/rohanthewiz/grmob@<version> && go mod tidy`. The two
+exceptions are copied into the app once, because an app edits them: the host
+page (`grmob web` warns when it differs from go.mod's page; `-refresh`
+re-renders it) and the native shells (a build warns when go.mod has moved past
+the version they came from; `-refresh` re-copies). Commit before `-refresh` —
+it overwrites edits.
+
+Every later command runs from anywhere inside the app (it walks up to
+`grmob.json`):
+
+```sh
+go run github.com/rohanthewiz/grmob/cmd/grmob doctor          # which targets this machine can build
+go run github.com/rohanthewiz/grmob/cmd/grmob web             # one-off browser build (+ host-page check)
+go run github.com/rohanthewiz/grmob/cmd/grmob android -install # APK; Android SDK + NDK, JDK 17+
+go run github.com/rohanthewiz/grmob/cmd/grmob ios -run        # simulator; Xcode + xcodegen (-open: Xcode)
+```
+
+The first native build vendors grmob's shell into `android/` or `ios/`; after
+that the icon, permissions and manifest there are the app's to change.
+
+### The working loop
+
+1. Write views in `app/` — one file per screen is the usual split; screens are
+   plain functions taking `ctx` and the state they need.
+2. Keep `func init() { mobile.Register(...) }` and `AppName()` in the package
+   `grmob android|ios` binds (`./app`); see the next section for why.
+3. Test each behaviour through `render.Manager` with debug mode on (the
+   scaffold's `app_test.go` has `tree` / `find` / `tap` / `shows` helpers to
+   extend), and assert `core.Concerns()` is empty.
+4. Check it by eye in `./dev.sh`, then on a native target.
+5. Before hand-rolling a card, chip, list row or form field, look in
+   [the widget library](#the-widget-library).
+
 ## A complete app
+
+This is the shape `grmob new` writes into `app/app.go`.
 
 ```go
 package counter
@@ -68,6 +139,10 @@ func App(ctx *core.Context) core.View {
         core.Gap(12),
         core.Text(fmt.Sprintf("Count: %d", count.Get()), core.FontSize(28)),
         core.Row(
+            // The theme insets every Column and Row (16 either side in
+            // DefaultTheme): right for a screen band, wrong for a Row
+            // nested in an already padded Column. Padding(0) clears it.
+            core.Padding(0),
             core.Gap(8),
             core.Button("−", func() { count.Set(count.Get() - 1) }),
             core.Button("+", func() { count.Set(count.Get() + 1) }),
@@ -109,6 +184,12 @@ core.Image("logo.png", core.Width("100%"))
 
 ### Composition
 
+A **component** is a View written in Go out of other Views; a **widget**
+is a reusable struct component (every `comps` type); a **primitive** is a
+core constructor a host draws itself. The definition and the contract a
+component keeps are on `core.View`; building a reusable one is the
+**grmob-component** skill (`ai_docs/SKILL-component.md`).
+
 Extract a screen into a function; there is no component registration step.
 
 ```go
@@ -117,8 +198,10 @@ func header(title string) core.View {
 }
 ```
 
-Use `core.ComponentFunc` when a piece needs its **own** render function value
-(and therefore its own hook slots relative to where it is called):
+Use `core.ComponentFunc` when a piece needs its **own** render function
+value. Its body runs when the tree renders it, not when it is constructed,
+so its hooks are claimed at that point in the tree — still in the caller's
+positional sequence, since containers render children on the same context:
 
 ```go
 core.ComponentFunc(func(ctx *core.Context) *core.Node {
@@ -436,12 +519,18 @@ comps.Screen{
 }
 ```
 
-Available: `Screen` `AppBar` `Card` `Button` `InputRow` `SearchField`
-`SegmentedControl` `ListRow` `GroupedList[T]` `DataTable[T]` `Separator`
-`Avatar` `ProgressBar` `Chip` `ChipStrip` `Badge` `Banner` `FormField`
-`Accordion` `Collapse` `CollapseBand` `Tabs` `Calendar` `DatePicker`
-`EmptyState` `Skeleton` `Pagination` `LoadMore` `StatTile` `MapPanel`
-`StaticMap` `CodeEditor` `RichTextEditor` `RichToolbar` `Compass`.
+Available, by the topic pages of `docs/api/comps-*.md` (read the page for a
+widget's exact fields before using it):
+
+| Topic | Widgets |
+|---|---|
+| Screens & structure | `Screen` `AppBar` `BottomBar` `FAB` `Tabs` `Drawer` `StepIndicator` `Wizard` `TreeView` `TwoPane` `Card` `Accordion` `Breadcrumb` `Separator` `LabeledSeparator` |
+| Lists & tables | `ListRow` `SwitchRow` `CheckboxRow` `SelectRow` `SliderRow` `InputRow` `KeyValueList` `BulletList` `GroupedList[T]` `GroupHeader` `CollapseBand` `DataTable[T]` `EditableGrid` `Pagination` `LoadMore` `Timeline` |
+| Inputs & pickers | `FormField` `PasswordField` `PINInput` `TagInput` `MaskedInput` `NumberPad` `ColorSwatchPicker` `RangeSlider` `SearchField` `SearchableSelect` `RadioGroup` `Calendar` `DatePicker` `DateRangePicker` `TimePicker` `CodeEditor` `RichTextEditor` `RichTextView` |
+| Buttons & choices | `Button` `CopyButton` `Link` `Chip` `ChipStrip` `SegmentedControl` `Stepper` `Rating` `Badge` |
+| Overlays & feedback | `Dialog` `Lightbox` `ActionSheet` `Menu` `Snackbar` `Banner` `ProgressBar` `Spinner` `Skeleton` `EmptyState` |
+| Data display & maps | `Avatar` `AvatarStack` `StatTile` `Compass` `AnalogClock` `DigitalClock` `Countdown` `Stopwatch` `AlarmRow` `AlarmRinging` `AudioPlayer` `MessageBubble` `MessageThread` `TypingIndicator` `ReactionBar` `Poll` `ExpandableText` `QRCode` `MapPanel` `StaticMap` |
+| Charts | `Sparkline` `LineChart` `AreaChart` `BarChart` `ScatterChart` `Histogram` `Heatmap` `CalendarHeatmap` `DonutChart` `PieChart` `Gauge` `CandlestickChart` `FunnelChart` `RadarChart` `Waveform` |
 
 `Screen` is the scaffold: `Children`, `Scroll`, `KeyboardAware`, `Gap`, `Fill`,
 `Style`. Leave `Scroll` false when the screen already contains its own
@@ -532,13 +621,17 @@ json := jsonout.Export(node)       // the same shape the bridges send
 
 ## Targets
 
-| Target | How |
-|---|---|
-| Go test | `render.New` — start here for everything |
-| Browser | `GOOS=js GOARCH=wasm go build -o main.wasm ./wasm`, then `./build.sh` |
-| Android | gomobile bind → `.aar`, Compose renderer applies patches |
-| iOS | gomobile bind → framework, SwiftUI renderer applies patches |
-| HTML | `htmlout.ExportHTML` |
+| Target | In an app made by `grmob new` | What runs |
+|---|---|---|
+| Go test | `go test ./app` | `render.New` — start here for everything |
+| Browser | `./dev.sh` (hot swap) or `grmob web` / `./build.sh` | `webhost.Run` + `grmob-runtime.js` |
+| Android | `grmob android [-install] [-refresh]` | gomobile bind → `.aar`; Compose renderer applies patches |
+| iOS | `grmob ios [-run] [-open] [-refresh]` | gomobile bind → xcframework; SwiftUI renderer applies patches |
+| HTML | `htmlout.ExportHTML(node)` | a standalone document, for snapshots |
+
+Inside this repository instead, `./build.sh` + `go run ./serve` (or
+`go run ./serve -dev`) runs the interactive tutorial, and `android/build.sh
+./<pkg>` / `ios/build.sh ./<pkg>` bind an example package into the shells.
 
 The native bridge (`package mobile`) narrows everything to strings, bools and a
 one-method interface, because gomobile cannot bind functions, generics or maps:
@@ -553,6 +646,32 @@ mobile.SetDataDir(path)        // call before anything opens a store
 
 `SetDataDir` timing matters: `init` runs before the host can call it, so open
 persistent stores lazily, not in `init`.
+
+### Persistence
+
+Use `github.com/rohanthewiz/bytdb`, opened lazily on the first render pass.
+`examples/todoapp/store.go` is the reference shape:
+
+```
+first render ──▶ openStore() ──▶ read snapshot ──▶ NewState initial values
+tap / submit ──▶ mutation helper ──▶ State.Set (UI)
+                               └───▶ store write-through (disk)
+```
+
+- `openStore` reads `mobile.DataDir()`; empty (browser preview, bare tests)
+  means **run in memory** and return nil. Make every store method
+  nil-receiver-safe so the app calls them unconditionally.
+- Keep the open engine in a mutex-guarded package singleton: bytdb holds an
+  exclusive file lock, so a second `Open` of the same path fails. Reopen when
+  the directory changes (tests move to a fresh `t.TempDir()`).
+- Seed `NewState` from the snapshot rather than loading in `hooks.UseEffect`:
+  effects run on their own goroutine, so the first frame would mount empty and
+  the rows would pop in a patch later.
+- Write through synchronously in the mutation helpers — the single choke
+  point every change goes through — instead of a dirty flag or debounce.
+- A failed open logs and degrades to in-memory; losing persistence beats
+  losing the UI.
+- Tests: call `mobile.SetDataDir(t.TempDir())` before `render.New`.
 
 Patches arrive on two paths — the synchronous return of a `Trigger*` call, and
 `PatchListener` pushes for timers and goroutines. Each pass delivers its diff on
@@ -572,6 +691,8 @@ goroutine: hop to the UI thread before touching views.
 8. **`Cached` constructed inside a render**, or containing a callback or a hook.
 9. **No bindable exported symbol** in an app package, so the linker drops it.
 10. **Opening a data store in `init`**, before the host has called `SetDataDir`.
+11. **Double insets on nested containers.** The theme pads every `Column` and
+    `Row`; a nested one needs `core.Padding(0)` to line up with its parent's content.
 
 ## Where the full documentation is
 

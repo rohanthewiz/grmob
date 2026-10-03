@@ -316,6 +316,78 @@ Events and hardware calls need no manual bridge setup. See
 
 ---
 
+## Your own components
+
+A **component** is any Go value with `Render(ctx *core.Context) *core.Node`,
+built entirely out of other views. You don't register it, it has no
+lifecycle interface, and it needs no Kotlin, Swift or JavaScript, because it
+ends in primitives (`Text`, `Row`, `Button`, …) that every host already
+draws. The docs use four words, always in these senses:
+
+| Word | Means |
+|---|---|
+| **View** | the interface, `Render(ctx) *Node`. Each of the other three is a View. |
+| **Primitive** | a `core` constructor whose node type a host draws itself |
+| **Component** | a View written in Go from other Views, such as an app's screens |
+| **Widget** | a reusable component: a struct with named fields, like everything in `comps` |
+
+A widget is a struct with a `Render` method:
+
+```go
+// Tally is a labelled count with the number in a pill. No hooks.
+type Tally struct {
+    Label   string
+    Count   int
+    Variant comps.Variant    // the pill's colour role; zero is the theme's primary
+    Style   []core.StyleProp // applied after the widget's own props
+}
+
+func (w Tally) Render(ctx *core.Context) *core.Node {
+    t := ctx.Theme() // every colour and size comes from the theme
+    n := strconv.Itoa(w.Count)
+    fill := w.Variant.Color(t)
+    items := []core.PropsAndChildren{
+        core.Padding(0), // a control clears the theme's screen inset
+        core.Gap(float64(t.Spacing.SM)),
+        core.AccessibilityLabel(w.Label + ", " + n), // read as one phrase
+    }
+    for _, sp := range w.Style { // the caller's Style last, so it wins
+        items = append(items, sp)
+    }
+    items = append(items,
+        core.Text(w.Label, core.UseStyle(t.Typography.Body), core.FlexGrow(1)),
+        core.Text(n, core.UseStyle(t.Typography.Caption),
+            core.BackgroundColor(fill), core.TextColor(w.Variant.Ink(t, fill)),
+            core.PaddingHorizontal(t.Spacing.SM), core.BorderRadius(999)),
+    )
+    return core.Row(items...).Render(ctx)
+}
+```
+
+Every component keeps three correctness rules:
+
+1. Build a fresh tree, and never change a node after returning it.
+2. Use no hooks, or take every hook before any branch and render the
+   component on every pass.
+3. Never register a nil callback.
+
+A widget keeps three more:
+
+4. Take its look from the theme, and apply the caller's `Style` last.
+5. State its role, name and state for screen readers.
+6. Give every field a zero value that means something sensible.
+
+If something can't be written under these rules because it needs a node
+type, style field or role that core lacks, it is a gap in core, not a
+component. The contract is stated on [`core.View`](docs/api/core-views.md),
+and [Components](docs/concepts/components.md) walks through each rule with
+worked examples and tests. For AI coding agents,
+[`ai_docs/SKILL-component.md`](ai_docs/SKILL-component.md) is the same
+material as a skill, with the full checklist for contributing a widget to
+`comps`.
+
+---
+
 ## How a tap becomes a pixel
 
 ```mermaid
@@ -387,6 +459,8 @@ Gradle or Xcode — no global gomobile install.
   inheritance
 - **Widget library** — `comps`: buttons, cards, chips, tabs, accordions,
   form fields
+- **Your own components** — any struct with a `Render` method; no
+  registration and no platform code
 - **Forms** — validation rules, cross-field checks, reveal policies, server
   errors
 - **Navigation** — a `Navigator` with modals and toasts

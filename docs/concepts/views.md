@@ -10,10 +10,14 @@ type View interface {
 type ComponentFunc func(ctx *Context) *Node // adapts a function to a View
 ```
 
-This is the `http.HandlerFunc` pattern applied to rendering: a component is
-either a function (`ComponentFunc`) or any struct implementing `Render` (the
-idiom the [widget library](../components.md) uses). Components compose by
-calling each other; there is no registration step.
+This is the `http.HandlerFunc` pattern applied to rendering. A
+**component** is a View written in Go out of other views: a function
+returning a View, a `ComponentFunc`, or any struct implementing `Render`
+(the idiom the [widget library](../components.md) uses). Components compose
+by calling each other, and there is no registration step. The **primitives**
+this page describes (containers and leaves) are the node types every host
+draws itself. [Components](components.md) defines the vocabulary and the
+contract a component keeps.
 
 ## Containers
 
@@ -486,3 +490,5 @@ and flows down as values + closures; see
 For reusable widgets with many optional knobs, prefer the struct idiom of the
 [widget library](../components.md) — named fields scale where positional
 arguments do not, and `View`-typed fields make natural slots.
+[Components](components.md) walks through writing one, from the first field
+to its tests.

@@ -39,6 +39,7 @@ nav:
   - Concepts:
       - Architecture: concepts/architecture.md
       - Views & Composition: concepts/views.md
+      - Components: concepts/components.md
       - State & Hooks: concepts/state-and-hooks.md
       - Events & Callbacks: concepts/events.md
       - Forms & Validation: concepts/forms.md

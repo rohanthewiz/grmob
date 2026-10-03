@@ -87,6 +87,7 @@ flowchart LR
 | Understand the render pipeline | [Architecture](concepts/architecture.md) |
 | Manage state correctly | [State & Hooks](concepts/state-and-hooks.md) |
 | Validate a form | [Forms & Validation](concepts/forms.md) |
+| Write a reusable component | [Components](concepts/components.md) |
 | Ship to a phone | [Native Android & iOS](platforms/native.md) |
 | Look up an exact signature | [API Reference](api/index.md) |
 

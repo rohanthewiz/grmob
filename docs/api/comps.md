@@ -4,11 +4,11 @@
 import "github.com/rohanthewiz/grmob/comps"
 ```
 
-Package components is grmob's widget library: higher-level UI pieces built entirely on the public core API, in the idiom of element's components package (Workstream 3 of the element-lessons plan).
+Package comps is grmob's widget library: higher-level UI pieces built entirely on the public core API, in the idiom of element's components package (Workstream 3 of the element-lessons plan).
 
 ## The struct-widget idiom
 
-Every widget here is a struct implementing core.View, configured through named fields:
+Every widget here is a struct implementing core.View, configured through named fields, and keeps the component contract stated on core.View (the vocabulary there: a widget is a component built for reuse):
 
 	comps.Card{
 	    Title: "Account",
@@ -26,7 +26,7 @@ The package deliberately lives outside core and touches nothing internal: if a w
 
 A widget's Render receives the caller's Context, so the hook rules apply exactly as they do to any component: a widget that calls NewState consumes a positional slot on the caller's context and must therefore be rendered unconditionally, every pass, like any other hook user. core.SetDebugMode flags violations as cursor-drift concerns.
 
-Two widgets do: Accordion (expanded or collapsed) and DatePicker (is the sheet open, which month is being browsed). Both own state that is purely about the widget's own presentation, which is the bar — anything an application might want to read, drive or persist stays with the caller. Calendar is the counter-example worth keeping in view: the month on screen looks like private view state and is not, because a screen opening on the month of its next event has to be able to say so, so Calendar takes no hooks and DatePicker is where that state gets packaged for the form case.
+Accordion (expanded or collapsed) and DatePicker (is the sheet open, which month is being browsed) were the first to; PasswordField's reveal, ExpandableText's expansion and Snackbar's auto-dismiss timer are among those since. Each says so in its doc comment. Every one owns state that is purely about the widget's own presentation, which is the bar — anything an application might want to read, drive or persist stays with the caller. Calendar is the counter-example worth keeping in view: the month on screen looks like private view state and is not, because a screen opening on the month of its next event has to be able to say so, so Calendar takes no hooks and DatePicker is where that state gets packaged for the form case.
 
 ## Topics
 
