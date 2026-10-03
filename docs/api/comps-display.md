@@ -4,13 +4,13 @@
 import "github.com/rohanthewiz/grmob/comps"
 ```
 
-Avatars and avatar stacks, stat tiles, the compass, clocks, countdowns and alarms, an audio player, message bubbles and threads, typing indicators, reaction bars, polls, expandable text, QR codes, map panels and static maps.
+Avatars and avatar stacks, stat tiles, the compass, clocks, countdowns and alarms, an audio player, message bubbles and threads, typing indicators, reaction bars, polls, expandable text, Bible verses, QR codes, map panels and static maps.
 
-One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/avatar.go`, `comps/avatar_stack.go`, `comps/stat_tile.go`, `comps/compass.go`, `comps/clock.go`, `comps/timers.go`, `comps/alarm.go`, `comps/audio_player.go`, `comps/message_bubble.go`, `comps/message_thread.go`, `comps/typing_indicator.go`, `comps/reaction_bar.go`, `comps/poll.go`, `comps/expandable_text.go`, `comps/qr_code.go`, `comps/map_panel.go`, `comps/static_map.go`.
+One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/avatar.go`, `comps/avatar_stack.go`, `comps/stat_tile.go`, `comps/compass.go`, `comps/clock.go`, `comps/timers.go`, `comps/alarm.go`, `comps/audio_player.go`, `comps/message_bubble.go`, `comps/message_thread.go`, `comps/typing_indicator.go`, `comps/reaction_bar.go`, `comps/poll.go`, `comps/expandable_text.go`, `comps/qr_code.go`, `comps/map_panel.go`, `comps/static_map.go`, `comps/bible_verse.go`.
 
 ## Index
 
-- [Constants](#constants) — `ConcernAudioPlayerNoTrack`, `ConcernCountdownUntilUnset`, `ConcernNoMapProvider`, `ConcernPollInert`, `ConcernQRDataTooLong`, `ConcernReactionBarInert`, `ConcernStopwatchSinceUnset`, `DefaultMapHeight`, `DefaultMapPanelHeight`, `DefaultMapScale`, `DefaultMapWidth`, `DefaultMapZoom`, and 8 more
+- [Constants](#constants) — `ConcernAudioPlayerNoTrack`, `ConcernBibleVerseEmpty`, `ConcernCountdownUntilUnset`, `ConcernNoMapProvider`, `ConcernPollInert`, `ConcernQRDataTooLong`, `ConcernReactionBarInert`, `ConcernStopwatchSinceUnset`, `DefaultMapHeight`, `DefaultMapPanelHeight`, `DefaultMapScale`, `DefaultMapWidth`, and 9 more
 - [`func FitRegion`](#func-fitregion)
 - [`func GoogleMapsHandoff`](#func-googlemapshandoff)
 - [`func OSMStaticMap`](#func-osmstaticmap)
@@ -28,6 +28,9 @@ One of 7 topic pages of [package comps](comps.md), which has the package overvie
     - [`func (Avatar) Render`](#func-avatar-render)
 - [`type AvatarStack`](#type-avatarstack)
     - [`func (AvatarStack) Render`](#func-avatarstack-render)
+- [`type BibleVerse`](#type-bibleverse)
+    - [`func (BibleVerse) Render`](#func-bibleverse-render)
+- [`type BibleVerseLine`](#type-bibleverseline)
 - [`type Compass`](#type-compass)
     - [`func (Compass) Render`](#func-compass-render)
 - [`type Countdown`](#type-countdown)
@@ -170,6 +173,14 @@ const ConcernAudioPlayerNoTrack = "audio-player-no-track"
 ```
 
 <small>[comps/audio_player.go:15](https://github.com/rohanthewiz/grmob/blob/master/comps/audio_player.go#L15)</small>
+
+ConcernBibleVerseEmpty is raised, in debug builds only, when a BibleVerse has no text, no verses, no error and is not Loading. It draws a card with a reference and nothing quoted under it, which reads as a failed load that nobody reported.
+
+```go
+const ConcernBibleVerseEmpty = "bible-verse-empty"
+```
+
+<small>[comps/bible_verse.go:13](https://github.com/rohanthewiz/grmob/blob/master/comps/bible_verse.go#L13)</small>
 
 ConcernCountdownUntilUnset is raised, in debug builds only, when Until is the zero time.Time. The countdown is then permanently expired: it draws 0:00 and fires OnDone on its first pass, which on screen is exactly what a timer that has just finished looks like. So a Countdown rendered before its deadline was assigned — a struct built from a half-filled record, a field spelled differently in the caller — would otherwise announce itself as a completed timer and nobody would go looking.
 
@@ -739,6 +750,131 @@ func (s AvatarStack) Render(ctx *core.Context) *core.Node
 Render builds ZStack(ring, face, ring, face, …, ring, +N).
 
 <small>[comps/avatar_stack.go:118](https://github.com/rohanthewiz/grmob/blob/master/comps/avatar_stack.go#L118)</small>
+
+### type BibleVerse
+
+```go
+type BibleVerse struct {
+	// Reference names the passage ("John 3:16"). Drawn under the text, and
+	// the name the skeleton is announced by while Loading.
+	Reference string
+
+	// Translation is drawn after the reference, in parentheses ("KJV").
+	// Empty leaves the parentheses out.
+	Translation string
+
+	// Verses are the passage's numbered verses. They win over Text.
+	Verses []BibleVerseLine
+
+	// Text is the passage as one run, for a source without verse numbers.
+	Text string
+
+	// HideNumbers leaves out the verse numbers of a multi-verse passage.
+	HideNumbers bool
+
+	// URL is the passage's page, opened with core.OpenURL from the link.
+	// blb.Passage.URL, or blb.SearchURL(ref, translation).
+	URL string
+
+	// OnOpen handles the link instead of opening URL: an in-app reader.
+	OnOpen func()
+
+	// LinkLabel replaces "Read on Blue Letter Bible".
+	LinkLabel string
+
+	// Loading draws a skeleton in place of the text.
+	Loading bool
+
+	// Error is drawn in place of the text when it is not empty: the fetch
+	// failed. It wins over Loading, so a caller that forgets to clear
+	// Loading on failure still shows why.
+	Error string
+
+	// OnRetry adds a Retry button under Error.
+	OnRetry func()
+
+	// RetryLabel replaces "Retry".
+	RetryLabel string
+
+	// Style is applied to the card after the widget's own props.
+	Style []core.StyleProp
+}
+```
+
+BibleVerse is a passage of scripture on a card: the text, the reference under it, and a link to the passage on Blue Letter Bible. The verse of the day on a home screen, the passage a devotional opens with, a reference in a study app tapped to see what it says.
+
+	p, err := blb.Fetch(ctx, "John 3:16", "KJV") // off the render path
+	comps.BibleVerse{
+	    Reference:   p.Reference,
+	    Translation: p.Translation,
+	    Verses:      lines(p.Verses), // []blb.Verse → []comps.BibleVerseLine
+	    URL:         p.URL,
+	}
+
+	┌ Card ──────────────────────────────────────────┐
+	│  16 For God so loved the world, that he gave   │  Paragraph: a number run
+	│  his only begotten Son… 17 For God sent not    │  per verse (two or more),
+	│  his Son into the world…                       │  then the verse's text
+	│                                                │
+	│  John 3:16-17 (KJV)                            │  Text, Caption, bold
+	│  Read on Blue Letter Bible                     │  Link → URL / OnOpen
+	└────────────────────────────────────────────────┘
+
+	Loading: the Paragraph is a 3-line Skeleton.
+	Error:   the Paragraph is the message (RoleStatus) and, with OnRetry,
+	         an outlined Retry button.
+
+#### Where the text comes from
+
+The caller. The widget fetches nothing: comps is pure view code and is compiled into every browser build, where a network client would cost size for apps that never quote a verse. The blb package does the fetching, from Blue Letter Bible's ScriptTagger feed, and returns the reference, the numbered verses and the passage's address; the call above is the whole integration. Fetch in a goroutine or an effect, set Loading while it runs, and Error if it fails.
+
+Text is for a passage that arrives as one string (a stored quote, another source). When Verses has any lines it wins, as a slot wins over a simple field elsewhere in comps.
+
+#### Verse numbers
+
+Drawn before each verse when there are two or more, in the secondary text colour and bold, the way a printed Bible sets them; a single verse has no number, since the reference under it already says which one it is. HideNumbers drops them for a passage read as prose. A reader hears the number before each verse, which is how a passage is read aloud too.
+
+#### The link back
+
+Blue Letter Bible serves its text to embedders on the understanding that it links back, so the link is drawn whenever there is somewhere for it to go: OnOpen if set (an in-app reader), else URL, opened with core.OpenURL. With neither the link is left out rather than drawn inert. blb.SearchURL builds a working address from a reference alone, for the case where the fetch failed and Passage.URL never arrived.
+
+#### No hooks
+
+Everything is the caller's, so BibleVerse may be rendered conditionally.
+
+#### Theme roles read
+
+	Card         the theme's Card base, Spacing.SM between the parts
+	Verse text   Typography.Body, Colors.TextPrimary
+	Numbers      Colors.TextSecondary, bold
+	Reference    Typography.Caption, Colors.TextSecondary, bold
+	Error        Typography.Body, Colors.Error
+	Link         as Link: Colors.Primary's ink tone
+
+<small>[comps/bible_verse.go:91](https://github.com/rohanthewiz/grmob/blob/master/comps/bible_verse.go#L91)</small>
+
+#### func (BibleVerse) Render
+
+```go
+func (v BibleVerse) Render(ctx *core.Context) *core.Node
+```
+
+Render draws the card. It takes no hook slot.
+
+<small>[comps/bible_verse.go:138](https://github.com/rohanthewiz/grmob/blob/master/comps/bible_verse.go#L138)</small>
+
+### type BibleVerseLine
+
+```go
+type BibleVerseLine struct {
+	Number int
+	Text   string
+}
+```
+
+BibleVerseLine is one numbered verse of a BibleVerse. It has the shape of blb.Verse, so a fetched passage converts with a loop (see BibleVerse).
+
+<small>[comps/bible_verse.go:17](https://github.com/rohanthewiz/grmob/blob/master/comps/bible_verse.go#L17)</small>
 
 ### type Compass
 

@@ -91,6 +91,7 @@ nav:
       - forms: api/forms.md
       - richtext: api/richtext.md
       - highlight: api/highlight.md
+      - blb: api/blb.md
       - htmlout: api/htmlout.md
       - jsonout: api/jsonout.md
       - mobile: api/mobile.md

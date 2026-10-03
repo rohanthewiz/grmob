@@ -1,0 +1,14 @@
+
+		var o = {};
+		o.TTipID = 'KJV.Foo.1.1';
+		o.responseText = ''+
+		'<div id="blbTagger" class="bubble">'+
+		'	<div class="bubHead">'+
+		'		<div><h6>Blue Letter Bible - Error</h6></div>'+
+		'	</div>'+
+		'	<div class="bubBody">'+
+		'		<div>Invalid scripture reference.</div>'+
+		'	</div>'+
+		'</div>';
+		BLB.Tagger.AjaxObject.handleSuccess(o);
+	

@@ -4128,6 +4128,59 @@ comps.ExpandableText{Text: episode.Summary, Lines: 3}
 - The text node always carries the whole string. The toggle stays named "Read
   more", with `aria-expanded` saying which way it is.
 
+## BibleVerse
+
+A passage of scripture on a card: the text, the reference under it, and a
+link to the passage on Blue Letter Bible. The text comes from the `blb`
+package, which fetches it from Blue Letter Bible's ScriptTagger feed; the
+widget itself fetches nothing.
+
+```go
+// Off the render path: in a goroutine or an effect.
+p, err := blb.Fetch(ctx, "John 3:16-18", "ESV")
+
+lines := make([]comps.BibleVerseLine, len(p.Verses))
+for i, v := range p.Verses {
+    lines[i] = comps.BibleVerseLine{Number: v.Number, Text: v.Text}
+}
+comps.BibleVerse{
+    Reference:   p.Reference, // "John 3:16-18", BLB's spelling
+    Translation: p.Translation,
+    Verses:      lines,
+    URL:         p.URL,       // https://www.blueletterbible.org/esv/jhn/3/16/
+    Loading:     fetching.Get(),
+    Error:       loadErr.Get(),
+    OnRetry:     refetch,
+}
+```
+
+- **Controlled, no hooks.** The widget can be rendered conditionally. Set
+  `Loading` while the fetch runs (a three-line `Skeleton` named "Loading John
+  3:16"), and `Error` if it fails: a polite status with an outlined Retry
+  button when `OnRetry` is set. `Error` wins over `Loading`.
+- **Verse numbers** are drawn before each verse when there are two or more,
+  bold and secondary, in one wrapping `Paragraph`. A single verse has none,
+  since the reference names it. `HideNumbers` turns them off. `Text` takes a
+  passage with no numbers, and `Verses` wins when both are set.
+- **The link back** ("Read on Blue Letter Bible") goes to `OnOpen` if set,
+  else opens `URL`. With neither it is left out rather than drawn inert.
+  `blb.SearchURL(ref, translation)` builds a working link when the fetch
+  failed.
+- No text, no verses, no error and not loading raises
+  `ConcernBibleVerseEmpty` in debug builds.
+
+Other notes:
+
+- `blb.Fetch` works on Android, iOS and servers. A browser build needs a
+  same-origin proxy (`blb.Client{BaseURL: …}`), because the feed sends no
+  CORS headers.
+- BLB's feed is not a documented API. `blb` parses it narrowly and returns
+  `blb.ErrUnexpectedResponse` if the shape moves; `GRMOB_BLB_LIVE=1 go test
+  ./blb/` checks the live endpoint.
+- Footnote asterisks and the KJV's supplied-word brackets are removed unless
+  `Client.KeepMarkers` is set. Most translations other than the KJV are under
+  copyright, so show them with the link and don't store them.
+
 ## QRCode
 
 A string drawn as a QR Code, encoded in Go.

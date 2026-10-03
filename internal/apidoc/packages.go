@@ -275,9 +275,9 @@ var Packages = []Pkg{
 		}, {
 			Slug:  "display",
 			Title: "Data display & maps",
-			Blurb: "Avatars and avatar stacks, stat tiles, the compass, clocks, countdowns and alarms, an audio player, message bubbles and threads, typing indicators, reaction bars, polls, expandable text, QR codes, map panels and static maps.",
+			Blurb: "Avatars and avatar stacks, stat tiles, the compass, clocks, countdowns and alarms, an audio player, message bubbles and threads, typing indicators, reaction bars, polls, expandable text, Bible verses, QR codes, map panels and static maps.",
 			Files: []string{"avatar.go", "avatar_stack.go", "stat_tile.go", "compass.go", "clock.go", "timers.go", "alarm.go", "audio_player.go", "message_bubble.go", "message_thread.go", "typing_indicator.go", "reaction_bar.go", "poll.go", "expandable_text.go", "qr_code.go",
-				"map_panel.go", "static_map.go"},
+				"map_panel.go", "static_map.go", "bible_verse.go"},
 		}, {
 			Slug:  "charts",
 			Title: "Charts",
@@ -305,6 +305,11 @@ var Packages = []Pkg{
 		Dir:   "highlight",
 		Group: "Widgets",
 		Blurb: "Go syntax highlighting, for the code editor and the tutorial's listings.",
+	},
+	{
+		Dir:   "blb",
+		Group: "Widgets",
+		Blurb: "Bible passages from Blue Letter Bible, for comps.BibleVerse: the text, the reference and a link back.",
 	},
 	{
 		Dir:   "htmlout",
