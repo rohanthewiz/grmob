@@ -30,7 +30,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-091
+**Next ID:** N-095
 
 ## Open
 
@@ -441,6 +441,34 @@ with each item's `raised` traced back through all session docs.
   SwiftUI swap start and end for a `CanvasMirrorsRTL` canvas laid out right
   to left; only Chrome was checked (a static page with `dir="rtl"`). Lesson
   4.19's week chart does not mirror, so the tutorial never reaches the path.
+- **N-091** · raised `2026-1003-1852-stripe-checkout-bible-verse-discussion-widgets` · value medium
+  **StripeCheckout, BibleVerse and Discussion are unseen on the natives.**
+  They were checked with debug-mode tests, `AuditTree` and one headless
+  Chrome screenshot of an `htmlout` export. Nobody has looked at them on
+  Android or iOS. The parts most likely to differ: Discussion's labelled
+  header rows ("Ben, reply to Ana, 1h"), which exist for the natives' sake;
+  the 2px thread line stretched with `AlignSelf`; and the lock glyph and Like
+  chip sizing.
+- **N-092** · raised `2026-1003-1852-stripe-checkout-bible-verse-discussion-widgets` · value low
+  **`blb` has no proxy for browser builds.** BLB's ScriptTagger feed sends no
+  CORS headers, so a wasm app must set `blb.Client.BaseURL` to a same-origin
+  proxy that it writes itself. Candidate: a small handler in `webhost` or
+  `serve` that forwards `/remoteExtensions/toolTip/toolTipRemote.cfm` to
+  www.blueletterbible.org. Contingent on a browser app wanting verses.
+- **N-093** · raised `2026-1003-1852-stripe-checkout-bible-verse-discussion-widgets` · value low
+  **No gallery lessons for the three new widgets.** StripeCheckout,
+  BibleVerse and Discussion are in `docs/components.md` and the API pages
+  but not in `examples/tutorial/chapter4.go`. Adding them moves the lesson
+  counts, so the README, the `wasm/index.html` header, `internal/shotclaims`
+  and the contents screenshot all need updating too. BibleVerse's lesson
+  would need canned verses, since the tutorial cannot fetch from BLB in the
+  browser (N-092).
+- **N-094** · raised `2026-1003-1852-stripe-checkout-bible-verse-discussion-widgets` · value low (unverified)
+  **Cards overflow a 420px viewport in a bare `htmlout` export.** A stock
+  `comps.Card` and `comps.InputRow` inside `comps.Screen{Scroll: true}` ran
+  past the right edge in headless Chrome (`--window-size=420,…`), the same
+  as the new widgets. This may just be the export missing the web runtime's
+  CSS, and was not compared with `./build.sh && go run ./serve`.
 
 ## Non-goals
 
