@@ -433,16 +433,6 @@ with each item's `raised` traced back through all session docs.
   Nothing catches drift when a core or comps signature changes. Candidate: a
   test that extracts the ```go blocks under named headings into a temp
   module and builds them. The doc-gen test only matches the fence prefix.
-- **N-088** · raised 2026-10-03 · value low
-  **The tutorial page sets `viewport-fit=cover` and pads nothing.**
-  `wasm/index.html`'s viewport meta opts into drawing behind the notch and
-  home indicator, and no rule anywhere on the web side uses
-  `env(safe-area-inset-*)`. Under 520px the bezel goes away and `#app` runs
-  to the bottom edge, so on an iPhone the bottom of a lesson (a pinned tag, a
-  TabBar) may sit under the home indicator, and in landscape the page's
-  sides under the notch. Found while declining N-061; unseen on a device.
-  Candidates: pad `.screen` with the env() values in the 520px query, or
-  drop `viewport-fit=cover` if nothing relies on it.
 
 ## Non-goals
 
@@ -523,7 +513,7 @@ with each item's `raised` traced back through all session docs.
   — 4.19 can't show OnRing after a force-stop. Its alarms live in memory. The
   path works. (was #76)
 - **N-061** · raised `2026-0919-2303-safe-insets-record-inert-codeeditor-sse-cleanup`
-  · declined 2026-10-03 — the browser reports no safe-area insets, by design.
+  · declined 2026-10-03, `2026-1003-1559-n061-n088-safe-area-insets-on-the-web` — the browser reports no safe-area insets, by design.
   Zero is the true answer for a page in a browser window; the one case it is
   wrong (a page drawn behind a notch with `viewport-fit=cover`, typically an
   installed PWA) would cost a probe element and a `getComputedStyle` per
@@ -535,6 +525,21 @@ with each item's `raised` traced back through all session docs.
 
 ## Closed
 
+- **N-088** · raised `2026-1003-1559-n061-n088-safe-area-insets-on-the-web`
+  · closed 2026-10-03, `2026-1003-1559-n061-n088-safe-area-insets-on-the-web` — kept `viewport-fit=cover` and padded `body` with the
+  four `env(safe-area-inset-*)` values (`wasm/index.html`). Measured on the
+  iPhone 17 Pro simulator (iOS 26.5, Safari): portrait reports 0/0/0/0, so
+  the bottom-edge worry was unfounded there and the rule is a no-op;
+  landscape reports 0/62/20/62 (t/r/b/l), and before the fix the Dynamic
+  Island hid the header's "Docs" link. After it the header clears the island
+  and the page clears the home indicator; portrait screenshots unchanged.
+  Dropping cover was rejected: Safari reports the 20px bottom inset without
+  cover too, so the padding was needed either way. The cost is that the
+  header's panel colour no longer reaches the side edges in landscape (the
+  strips are the page background, as Safari's own letterboxing would be).
+  Rotation was driven by a throwaway XCUITest setting `XCUIDevice`
+  orientation; osascript has no assistive access here. `wasm/verify/run.sh`
+  passes.
 - **N-086** · raised `2026-1003-0453-n085-shell-surface-follows-go-tree`
   · closed 2026-10-03 — the candidate: a dark MaterialTheme scheme below
   GrMobRoot when the bars' colour is dark. `ShellMaterialTheme`
