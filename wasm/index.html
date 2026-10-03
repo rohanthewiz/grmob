@@ -77,6 +77,25 @@
     margin: 0; background: var(--bg); color: var(--fg);
     font: 14px/1.45 system-ui, sans-serif;
     display: flex; flex-direction: column;
+    /* The viewport meta's viewport-fit=cover lets the page run under the
+       notch, the Dynamic Island and the home indicator; this is the other
+       half of that bargain, keeping everything on the page out from under
+       them while body's background still paints behind them. Measured on an
+       iPhone 17 Pro simulator (iOS 26.5, Safari, not standalone):
+
+         portrait    0 / 0 / 0 / 0     Safari's own bars take the edges
+         landscape   0 / 62 / 20 / 62  top / right / bottom / left, px
+
+       so this is a no-op in portrait and on a desktop, and in landscape it
+       moves the header off the island (which hid its "Docs" link) and
+       lifts the page 20px clear of the home indicator. Safari reports the
+       20px bottom inset without cover too, so dropping cover would not have
+       made this rule unnecessary. One rule on body rather than one per
+       region: the header, the bezel, the bezel-less phone layout under
+       520px and the split all sit inside it, and each has its own padding
+       story (main's is 0 in two of the three layouts). */
+    padding: env(safe-area-inset-top) env(safe-area-inset-right)
+             env(safe-area-inset-bottom) env(safe-area-inset-left);
   }
 
   /* --- header --------------------------------------------------------------- */

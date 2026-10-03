@@ -9571,8 +9571,8 @@ const GrMob = (() => {
     // undone on purpose, not overlooked (N-061, a non-goal): a page that
     // opts into viewport-fit=cover keeps its content clear with a CSS
     // padding of the env() values on the element hosting the app, and no
-    // number has to reach Go for that. The tutorial's index.html sets cover
-    // without that padding (N-088).
+    // number has to reach Go for that. The tutorial's index.html does
+    // exactly that, on body (N-088).
     //
     // It reports on resize (a fold or unfold resizes the viewport), on a
     // change in the segment count (see the matchMedia listeners below: a
