@@ -30,7 +30,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-086
+**Next ID:** N-087
 
 ## Open
 
@@ -433,20 +433,20 @@ with each item's `raised` traced back through all session docs.
     default moves every app's layout, and a second paddingless constructor
     doubles the stack API; `core.Padding(0)` is explicit and greppable
     (38 lines in examples/tutorial today).
-- **N-085** · raised `2026-0929-0058-next-list-escape-heading-focus-dark-mode-ios-contain-grid-discard` · value medium
-  **A shell's surface and system bars follow the system's dark mode; a light
-  Go theme does not.** iOS: SwiftUI's window background is systemBackground,
-  so a light app on a dark iPhone draws its theme's dark ink on black. Seen
-  on the simulator (iOS 26.5, appearance dark) with the tutorial built before
-  N-050: 1.1's title was black on black, its prose dark grey on black.
-  Android: the window is always light (Theme.Material.Light), but
-  `enableEdgeToEdge`'s automatic bar style turns the status-bar icons white
-  in night mode, over that light window (seen on the emulator). Any app that
-  does not follow `Window.ColorScheme` has these. Candidates: the shells
-  paint the root in the Go theme's Background and pick the bar style from it
-  rather than from the system; or iOS pins the surface light as Android's is
-  (while still reading the system scheme for the record, which a
-  `preferredColorScheme` override would hide).
+- **N-086** · raised `2026-1003-0453-n085-shell-surface-follows-go-tree` · value low
+  **Android's Material chrome stays light under a dark Go page; iOS's
+  follows it.** Since N-085 the iOS shell overrides the window's interface
+  style from the colour under the bars, so SwiftUI's own chrome and any ink
+  the Go tree leaves unstated (`.primary`) turn light-on-dark over a dark
+  page. Android only sets the bar icons: the window theme stays
+  Theme.Material.Light and Compose's MaterialTheme is never given a dark
+  scheme, so Material pieces the Go tree does not colour stay light. Seen
+  2026-10-03 with the demo's Screen painted #1C1C1E on a light system: the
+  TabView's tab row was a pale Material strip on Android and dark on iOS,
+  and the header's unstated ink was black on Android, white on iOS. A
+  scheme-following app that colours everything (the tutorial) shows
+  neither. Fix if a second app hits it: provide a dark MaterialTheme
+  colour scheme below GrMobRoot when the bars' colour is dark.
 
 ## Non-goals
 
@@ -528,6 +528,41 @@ with each item's `raised` traced back through all session docs.
   path works. (was #76)
 
 ## Closed
+
+- **N-085** · raised `2026-0929-0058-next-list-escape-heading-focus-dark-mode-ios-contain-grid-discard`
+  · closed 2026-10-03, `2026-1003-0453-n085-shell-surface-follows-go-tree` — the first
+  candidate: the shells take their surface and bar style from the Go tree,
+  not the system. One rule on both (`GrMobSurface.kt`, `GrMobSurface.swift`):
+  the bars' colour is the innermost painted SafeArea's Background, else the
+  root's, else the shell page (#FFFFFF, DefaultTheme's Background); the
+  surface is the root's Background or that page; dark bars' colour (WCAG
+  luminance ≤ 0.5) means light icons. Android writes the window background
+  and both bars' icon appearance from one `ShellSurface` composable composed
+  after the tree; a painted SafeArea registers a claim instead of setting the
+  icons itself (`SystemBarIcons`, which a root-level writer would have raced
+  on a recomposition that skipped the SafeArea). The claim is read inside
+  the SideEffect, which runs after the claims' DisposableEffects in the same
+  apply, so the first frame is right. iOS paints the surface under the bars
+  behind the root, carries the SafeArea's colour up as a preference
+  (`transformPreference`, so the innermost wins) and sets the window's
+  `overrideUserInterfaceStyle` from it — status bar and native chrome
+  together, since an App cannot subclass SwiftUI's hosting controller for
+  `preferredStatusBarStyle`. The override hides the system scheme from the
+  colorScheme environment, so `AppWindowReader` now reads it from the window
+  scene's traits (`GrMobSystemScheme`, watched with
+  `registerForTraitChanges`), which overrides do not reach. Seen: the demo
+  app (follows no scheme) on a dark iPhone 17 Pro simulator (iOS 26.5) and a
+  night-mode emulator draws a white page with dark status-bar text / icons;
+  the tutorial on iOS is dark with light status text on a dark system and
+  switches live to light and back (so the scene read reaches Go through the
+  override); on Android it is dark with light icons at night and light with
+  dark icons by day; the demo with its Screen painted #1C1C1E on a light
+  system gets light icons on both. `core.ColorScheme`'s doc says the scheme
+  is the system's, not the shell's. The Material chrome left light on
+  Android is N-086.
+  - Note: the iOS half of the Renderer.swift wiring landed inside
+    `c43e3bc` (another session's commit swept the working tree); the rest
+    lands with this item's commit.
 
 - **N-073** · raised `2026-0921-1118-comps-round-four-phase-5-editable-grid`
   · closed 2026-10-03, `2026-1003-0208-keyed-callback-ids-dark-theme-chart-data` — identity-keyed IDs. `core.Keyed`

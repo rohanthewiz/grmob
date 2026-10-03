@@ -553,7 +553,7 @@ OnWindow subscribes fn to window changes. The returned function cancels the subs
 
 Process-wide like OnLifecycle, and for the same reason: one app, one window. fn runs on whichever goroutine delivered the event and must not block; writing State and calling RequestRender are fine from there.
 
-<small>[core/window.go:349](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L349)</small>
+<small>[core/window.go:362](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L362)</small>
 
 ### func ParseLatLng
 
@@ -656,7 +656,7 @@ Validation is split by what a bad value would do downstream:
 
 Received is set here, whatever the caller passed, since arriving through this function is what receiving means. A repeat of the current window is absorbed silently. Subscribers are notified outside the lock.
 
-<small>[core/window.go:380](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L380)</small>
+<small>[core/window.go:393](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L393)</small>
 
 ### func ShowUserLocation
 
@@ -962,19 +962,21 @@ func WithStyle(style Style) CameraProp
 type ColorScheme string
 ```
 
-ColorScheme is the appearance the platform is drawing its own chrome in: the system's light or dark mode, as the window currently has it.
+ColorScheme is the system's light or dark mode: what the user chose for the device, as the platform currently reports it.
+
+It is a fact for the app to act on, not a description of what is on screen. The native shells draw their surface and system bars from the Go tree rather than from this (N-085): the window behind a root that states no Background is the light page core.DefaultTheme describes, and the status bar's style follows the colour under it — the innermost painted SafeArea, else the root's Background, else that page. So an app that ignores the scheme renders as it states on a dark phone, and one that follows it paints its root (or its comps.Screen) in the dark palette's Background and gets light bar icons with it. iOS reads this value from the window scene for that reason: the window itself carries the shell's override. The web's surface is the host page's CSS.
 
 #### Why the record carries it
 
-Following the system's dark mode needs two things: the host saying which mode is on, and the app picking a palette for it. The second is the app's (core bundles no dark theme), so what the framework owes is the first, and the window record is where a host already reports a fact about its window whenever the platform says it changed. On Android a dark-mode switch is a configuration change that recreates the Activity and re-reports the window; on iOS it is a trait of the window's scene; in a browser it is a media query. Riding the record means one payload, one dedupe and hooks.UseWindow, rather than a second event and a second subscription API for one string.
+Following the system's dark mode needs two things: the host saying which mode is on, and the app picking a palette for it. The second is the app's (core.DarkTheme is one it can pick), so what the framework owes is the first, and the window record is where a host already reports a fact about its window whenever the platform says it changed. On Android a dark-mode switch is a configuration change that recreates the Activity and re-reports the window; on iOS it is a trait of the window's scene; in a browser it is a media query. Riding the record means one payload, one dedupe and hooks.UseWindow, rather than a second event and a second subscription API for one string.
 
 	app ◀──"window" {…, scheme: "dark"}── host
 	w := hooks.UseWindow(ctx)
 	if w.Dark() { ctx = ctx.WithTheme(myDark) }
 
-The empty value means no host has said: a headless run, a shell older than the field. Treat it as light, which is what every palette core bundles assumes.
+The empty value means no host has said: a headless run, a shell older than the field. Treat it as light, which is what DefaultTheme and the shells' own surface assume.
 
-<small>[core/window.go:203](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L203)</small>
+<small>[core/window.go:216](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L216)</small>
 
 ```go
 const (
@@ -1013,7 +1015,7 @@ type Fold struct {
 
 Fold is one hinge or seam crossing the window.
 
-<small>[core/window.go:211](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L211)</small>
+<small>[core/window.go:224](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L224)</small>
 
 ### type FoldOrientation
 
@@ -1454,7 +1456,7 @@ type Window struct {
 
 Window is the last report of the app window's size and fold.
 
-<small>[core/window.go:236](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L236)</small>
+<small>[core/window.go:249](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L249)</small>
 
 #### func CurrentWindow
 
@@ -1464,7 +1466,7 @@ func CurrentWindow() Window
 
 CurrentWindow reports the last window the host announced; the zero Window (Received false) until it has announced one.
 
-<small>[core/window.go:337](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L337)</small>
+<small>[core/window.go:350](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L350)</small>
 
 #### func (Window) Dark
 
@@ -1474,7 +1476,7 @@ func (w Window) Dark() bool
 
 Dark reports whether the host says the system is in dark mode. False before a report and from a host that sends no scheme.
 
-<small>[core/window.go:309](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L309)</small>
+<small>[core/window.go:322](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L322)</small>
 
 #### func (Window) HeightClass
 
@@ -1484,7 +1486,7 @@ func (w Window) HeightClass() SizeClass
 
 HeightClass is the window's height bucketed into a SizeClass. Most layouts only need WidthClass; height is what tells a landscape phone (compact height) from a tablet in landscape, which a bottom sheet or a video player cares about.
 
-<small>[core/window.go:286](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L286)</small>
+<small>[core/window.go:299](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L299)</small>
 
 #### func (Window) Posture
 
@@ -1494,7 +1496,7 @@ func (w Window) Posture() Posture
 
 Posture derives the named posture from the fold. See Posture's constants.
 
-<small>[core/window.go:297](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L297)</small>
+<small>[core/window.go:310](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L310)</small>
 
 #### func (Window) SeparatingFold
 
@@ -1504,7 +1506,7 @@ func (w Window) SeparatingFold() (Fold, bool)
 
 SeparatingFold returns the fold when content should be laid out around it, which is the one question a two-pane layout asks. A non-separating fold (a flat, continuous panel) is reported as none, since there is nothing to avoid.
 
-<small>[core/window.go:317](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L317)</small>
+<small>[core/window.go:330](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L330)</small>
 
 #### func (Window) WidthClass
 
@@ -1514,7 +1516,7 @@ func (w Window) WidthClass() SizeClass
 
 WidthClass is the window's width bucketed into a SizeClass. See the breakpoint constants above.
 
-<small>[core/window.go:272](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L272)</small>
+<small>[core/window.go:285](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L285)</small>
 
 ### type WindowRect
 

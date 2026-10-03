@@ -177,14 +177,27 @@ type SafeInsets struct {
 	Top, Bottom, Left, Right float64
 }
 
-// ColorScheme is the appearance the platform is drawing its own chrome in:
-// the system's light or dark mode, as the window currently has it.
+// ColorScheme is the system's light or dark mode: what the user chose for
+// the device, as the platform currently reports it.
+//
+// It is a fact for the app to act on, not a description of what is on
+// screen. The native shells draw their surface and system bars from the Go
+// tree rather than from this (N-085): the window behind a root that states
+// no Background is the light page core.DefaultTheme describes, and the
+// status bar's style follows the colour under it — the innermost painted
+// SafeArea, else the root's Background, else that page. So an app that
+// ignores the scheme renders as it states on a dark phone, and one that
+// follows it paints its root (or its comps.Screen) in the dark palette's
+// Background and gets light bar icons with it. iOS reads this value from the
+// window scene for that reason: the window itself carries the shell's
+// override. The web's surface is the host page's CSS.
 //
 // # Why the record carries it
 //
 // Following the system's dark mode needs two things: the host saying which
 // mode is on, and the app picking a palette for it. The second is the app's
-// (core bundles no dark theme), so what the framework owes is the first, and
+// (core.DarkTheme is one it can pick), so what the framework owes is the
+// first, and
 // the window record is where a host already reports a fact about its window
 // whenever the platform says it changed. On Android a dark-mode switch is a
 // configuration change that recreates the Activity and re-reports the
@@ -198,8 +211,8 @@ type SafeInsets struct {
 //	if w.Dark() { ctx = ctx.WithTheme(myDark) }
 //
 // The empty value means no host has said: a headless run, a shell older than
-// the field. Treat it as light, which is what every palette core bundles
-// assumes.
+// the field. Treat it as light, which is what DefaultTheme and the shells'
+// own surface assume.
 type ColorScheme string
 
 const (

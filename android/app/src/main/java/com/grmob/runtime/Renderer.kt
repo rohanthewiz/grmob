@@ -101,11 +101,6 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
-import android.app.Activity
-import android.content.Context
-import android.content.ContextWrapper
-import androidx.compose.runtime.SideEffect
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalView
 // The disclosure pair. Compose says "expanded" with actions rather than with a
@@ -119,7 +114,6 @@ import androidx.compose.ui.semantics.collectionInfo
 import androidx.compose.ui.semantics.collectionItemInfo
 import androidx.compose.ui.semantics.expand
 import androidx.compose.ui.semantics.semantics
-import androidx.core.view.WindowCompat
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.withLink
@@ -501,7 +495,12 @@ internal fun GrMobNode.isDisabled(): Boolean =
 
 @Composable
 fun GrMobRoot(runtime: GrMobRuntime) {
-    CompositionLocalProvider(LocalGrMobRuntime provides runtime) {
+    // The painted SafeAreas' claims on the system bars; see GrMobSurface.kt.
+    val barClaims = remember { systemBarClaims() }
+    CompositionLocalProvider(
+        LocalGrMobRuntime provides runtime,
+        LocalSystemBarClaims provides barClaims,
+    ) {
         // key() on the root's key, as RenderChildren does for every child. The
         // root is otherwise always the same unkeyed slot, so a "replace" of the
         // whole tree swapped the data but kept every remember{} below it —
@@ -511,6 +510,10 @@ fun GrMobRoot(runtime: GrMobRuntime) {
         // frame is a new group here and its state starts fresh. An empty key
         // (no Navigator at the root) keys on "" and behaves as before.
         runtime.store.root?.let { root -> key(root.key) { RenderNode(root) } }
+        // After the tree, so its SideEffect runs after the SafeAreas' claims
+        // have joined; see ShellSurface. The window's surface and bar icons
+        // come from the Go tree, not the system's dark mode (N-085).
+        runtime.store.root?.let { root -> ShellSurface(root, barClaims) }
     }
 }
 
@@ -837,7 +840,9 @@ private fun RenderNodeContent(node: GrMobNode, extra: Modifier) {
         // Routing through GrMobColumn also wires the gesture props, which a
         // SafeArea never had here and both DOM targets have always honored.
         "SafeArea" -> {
-            style?.background?.let { SystemBarIcons(it) }
+            // A painted SafeArea is what sits under the bars, so it decides
+            // their icons; ShellSurface writes them (GrMobSurface.kt).
+            style?.background?.let { ClaimSystemBars(it) }
             GrMobColumn(
                 node, extra,
                 outer = Modifier.windowInsetsPadding(
@@ -898,44 +903,6 @@ private fun RenderNodeContent(node: GrMobNode, extra: Modifier) {
 }
 
 /** Children of a non-flex container; keyed so reorder/replace keeps sibling state. */
-/**
- * Status-bar and navigation-bar icon colour, chosen from the SafeArea's own
- * background.
- *
- * enableEdgeToEdge picks the icon style from the *system* theme (light
- * icons in dark mode, dark icons otherwise), which has nothing to do with
- * what the app paints under the bars. A SafeArea with a dark background on
- * a phone in light mode therefore drew dark icons on a dark strip — the
- * clock and battery vanished the moment the strip stopped being light. The
- * one thing that knows the colour under the bars is this node, so it sets
- * the appearance: light icons over a dark background, dark over a light one,
- * by the same relative-luminance threshold the platform's own helpers use.
- *
- * SideEffect rather than LaunchedEffect: the window flag is not Compose
- * state and must follow every successful composition, including the first,
- * with no frame of the wrong colour in between. Cheap to repeat — the
- * controller only touches the window when the value changes.
- */
-@Composable
-private fun SystemBarIcons(background: Color) {
-    val view = LocalView.current
-    if (view.isInEditMode) return
-    val light = background.luminance() > 0.5f
-    SideEffect {
-        val window = view.context.findActivity()?.window ?: return@SideEffect
-        val controller = WindowCompat.getInsetsController(window, view)
-        controller.isAppearanceLightStatusBars = light
-        controller.isAppearanceLightNavigationBars = light
-    }
-}
-
-/** The Activity behind a Compose view's context, which may be wrapped. */
-private tailrec fun Context.findActivity(): Activity? = when (this) {
-    is Activity -> this
-    is ContextWrapper -> baseContext.findActivity()
-    else -> null
-}
-
 @Composable
 private fun RenderChildren(node: GrMobNode) {
     node.children.forEachIndexed { i, child ->

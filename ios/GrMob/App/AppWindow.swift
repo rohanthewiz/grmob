@@ -5,7 +5,7 @@ import SwiftUI
 ///
 ///     GeometryReader size          ──▶ { width, height }   (points)
 ///     GeometryReader safeAreaInsets ──▶ { insets: {…} }
-///     Environment colorScheme       ──▶ { scheme: "light" | "dark" }
+///     Window scene's interface style ──▶ { scheme: "light" | "dark" }
 ///
 /// No fold is ever reported. No iPhone or iPad has a hinge, so the payload
 /// omits the "fold" key, which is exactly what core reads as "no fold". What
@@ -35,10 +35,16 @@ import SwiftUI
 ///
 /// # The colour scheme
 ///
-/// core.Window.ColorScheme is the reader's `colorScheme` environment value,
-/// which is the window's trait: nothing in this app sets a preferred scheme,
-/// so it is the system's light or dark mode. It is watched like the insets,
-/// because a switch in Control Centre changes it with no resize.
+/// core.Window.ColorScheme is the system's light or dark mode. It used to be
+/// the reader's `colorScheme` environment value, which was the system's while
+/// nothing in the app set a scheme. Since N-085 the shell overrides the
+/// window's interface style to match the Go tree's page (GrMobSurface.swift),
+/// and the environment reports that override, so the system's scheme is read
+/// from the window scene instead (GrMobSystemScheme), which the override does
+/// not reach. The environment value is kept as the fallback for the moment
+/// before the scene has been read; no override has been applied by then.
+/// It is watched like the insets, because a switch in Control Centre changes
+/// it with no resize.
 ///
 /// Go dedupes a size it already has, so SwiftUI re-offering the same size (it
 /// does around scene connection) costs a bridge call and nothing more. The
@@ -85,7 +91,14 @@ enum AppWindow {
 /// The measuring view: a clear GeometryReader for GrMobRoot's background.
 struct AppWindowReader: View {
     let runtime: GrMobRuntime
-    @Environment(\.colorScheme) private var scheme
+    /// The window's scheme: the system's only until GrMobWindowStyle first
+    /// overrides it. See "The colour scheme".
+    @Environment(\.colorScheme) private var windowScheme
+    /// Read through Observation, so the scene's style changing re-evaluates
+    /// this body and the onChange below sees it.
+    private let system = GrMobSystemScheme.shared
+
+    private var scheme: ColorScheme { system.scheme ?? windowScheme }
 
     var body: some View {
         GeometryReader { geo in
