@@ -77,17 +77,6 @@ with each item's `raised` traced back through all session docs.
 - **N-009** · raised `2026-0916-1032-clocks-canvas-alarm` · value low
   **A Notify alarm is a banner, not a ringing screen.** The route is AlarmKit
   or full-screen intents. (was #15; lapsed@0917-1659)
-- **N-010** · raised `2026-0916-1129-charts-on-canvas` · value low (API decision)
-  **A chart's hidden data table** needs a screen-reader-only primitive. (was
-  #12; lapsed@0917-1659)
-  - Recommendation (2026-09-29, not acted on): no generic
-    screen-reader-only primitive. A visually hidden node is a web idea
-    (`clip`, 1px); what either native reader does with a zero-size or
-    transparent node is unmeasured, and cannot be measured without
-    Accessibility Inspector or a device. Per host instead: a
-    visually hidden `<table>` on the two web targets, `AXChartDescriptor`
-    (Audio Graphs, the platform's own chart data API) on iOS, and the
-    summary sentence alone on Android, which has no equivalent.
 - **N-013** · raised `2026-0916-1157-next-list-charts-on-devices-tier-e-alarms-timezone` · value low (API decision)
   **`mobile.SetTimeZone` runs once at startup.** Fixing it needs core to hold
   the location. (was #16; lapsed@0917-1659)
@@ -104,12 +93,6 @@ with each item's `raised` traced back through all session docs.
     Proportional shrink needs a custom Row measure policy (the flex solver
     iOS already has), a large change for one cover-screen look; comps that
     must fit already pin with `FlexShrink(0)` or wrap.
-- **N-018** · raised `2026-0916-1410-chart-palette-and-canvas-gradients` · value low
-  **`DefaultDarkChartColors` has no bundled consumer.** A real dark theme
-  (N-050) would be it. The tutorial's own `darkTheme`
-  (examples/tutorial/theme.go, 2026-0921-1419) now spends it and
-  `DefaultDarkSequentialColors`, but no core theme does (see N-074).
-  (was #22; lapsed@0917-1659)
 - **N-021** · raised `2026-0916-1557-small-fixes-stroke-gradients-bar-values-alarm-groups` · value medium (blocked)
   **The iOS Image floor runs high for a narrow image.** Needs a px-width box
   that can shrink (`grMobDimension`). (was #26; lapsed@0917-1659)
@@ -384,6 +367,9 @@ with each item's `raised` traced back through all session docs.
   - `AudioPlayer.Waveform` with a real stream: the strip filling as the
     status ticks, and under the finger while scrubbing.
   - Every chart's one spoken sentence on TalkBack and VoiceOver.
+  - 2026-10-03: iOS charts now carry an `AXChartDescriptor` (N-010), which
+    type-checks and survives the Release build but has not been opened in
+    VoiceOver's chart details or played as an Audio Graph.
 - **N-072** · raised `2026-0921-1118-comps-round-four-phase-5-editable-grid` · value medium
   **`EditableGrid`, unrun on a device.** Lesson 4.37 was looked at and driven
   in headless Chrome only (the look found two defects, fixed; the keyboard
@@ -433,42 +419,6 @@ with each item's `raised` traced back through all session docs.
     (the frameless `core.Select`) says "Category, row 1, Home" with no role.
   - The cost on a phone: the doc's "about 5,000 cells" is 4µs a cell measured
     on an M3, times a guess. Type into a 10 × 500 sheet on the Fold6.
-- **N-073** · raised `2026-0921-1118-comps-round-four-phase-5-editable-grid` · value low (API decision)
-  **Callback IDs are positional, and `EditableGrid` is the widget that pays.**
-  IDs are issued in render order (core/event.go, `beginPass`), so entering or
-  leaving EDIT, where the editor registers three void callbacks against the
-  box's one, re-binds the `onClick` of every cell after it: a patch per later
-  cell per transition. It is also the documented stale-event hazard made
-  likelier: an event dispatched against the tree before the transition can
-  hit a shifted ID. The fix is the one `beginPass`'s comment already names,
-  identity-keyed IDs (a keyed node's callbacks named by its key path). Until
-  then the grid could pad each cell to a fixed number of registrations, which
-  was judged too ugly to do on the way past.
-  - 2026-09-28: the hazard fired once, on the web. Chrome's blur on a focused
-    field's removal re-entered Go inside the batch with the removed field's
-    ID; the runtime now drops every element event fired during its own mount
-    or patch (`applyingTree`, closing N-084). Events that arrive after a batch
-    from a tree it replaced remain possible.
-  - Recommendation (2026-09-29, not acted on): do it, but as its own
-    session. The synchronous half of the hazard is closed on the web
-    (N-084's `applyingTree`); what remains is an event from a replaced tree
-    arriving after its batch. Keyed IDs change every wire ID, and with them
-    the transcripts and census tests that pin them.
-- **N-074** · raised `2026-0921-1419-tutorial-light-dark-theme` · value low (API decision)
-  **No bundled `core.DarkTheme`.** The tutorial's `darkTheme` lives in
-  examples/tutorial because core's palette censuses (the `*OnLight` tones,
-  the control-boundary pairs) assume a light page; in that theme the
-  `*OnLight` fields hold light inks. Promoting it means renaming or
-  re-arguing those roles and adding it to `BundledThemes`. Its contrast
-  figures were computed by hand, not by a census.
-  - 2026-09-29: the tutorial's darkTheme now also serves the natives, which
-    follow the system scheme through `core.Window.ColorScheme` (N-050), so a
-    bundled dark theme would have a consumer on every host.
-  - Recommendation (2026-09-29, not acted on): promote it now that the
-    natives follow the system scheme (N-050) and N-085 wants a palette to
-    paint shells from. Rename the four `*OnLight` fields to role names
-    (`*Ink`) with deprecated aliases, then add `DarkTheme` to
-    `BundledThemes` and let the census compute its contrast.
 - **N-083** · raised `2026-0924-1211-tutorial-overflow-sweep-web-floors-nested-scroll` · value low (API decision)
   **The theme's Row (8/16) and Column (12/16) padding lands on every plain
   stack.** It is right for a screen's outer column and wrong for nearly every
@@ -579,6 +529,43 @@ with each item's `raised` traced back through all session docs.
 
 ## Closed
 
+- **N-073** · raised `2026-0921-1118-comps-round-four-phase-5-editable-grid`
+  · closed 2026-10-03, `2026-1003-0208-keyed-callback-ids-dark-theme-chart-data` — identity-keyed IDs. `core.Keyed`
+  and each Navigator frame open an ID scope while their subtree renders
+  (`Context.keyScope`), so its callbacks are numbered under the key path
+  (`cb_r2/e0/1`) and the enclosing counters do not move; root IDs keep `cb_N`.
+  Keys are escaped (`/`, `~`, `%`) and a key repeated in one scope is told
+  apart by occurrence (`0~1`). ErrorBoundary's rollback now walks a trail of
+  registrations and key counts. EditableGrid's EDIT transitions re-bind no
+  other cell (`TestEditableGridEditMovesNoOtherCellsHandler`, which shows
+  `cb_1`→`cb_6` without the scope); a stale ID from a popped frame reaches
+  nothing; Navigator's own Pop stays outside the frame so two quick backs pop
+  twice. No host parses IDs. Mutation-tested (`core/keyed_ids_test.go`).
+- **N-074** · raised `2026-0921-1419-tutorial-light-dark-theme`
+  · closed 2026-10-03, `2026-1003-0208-keyed-callback-ids-dark-theme-chart-data` — `core.DarkTheme` (a recoloured copy of
+  DefaultTheme, `newDarkTheme`) is in `BundledThemes` and every census passes
+  over it; palette.mjs gained its rows and the browser paints them. The four
+  `*OnLight` fields are now `PrimaryInk`/`SuccessInk`/`WarningInk`/`ErrorInk`
+  with no field alias (a deprecated duplicate would make "clear the tone when
+  re-branding" a silent no-op); the resolvers and `OnLight` keep deprecated
+  wrappers, and the reverse lookup is `AsInk` (`Variant.Ink` was taken). The
+  tutorial's `darkTheme` is `core.DarkTheme`. Census figures replaced the
+  hand-computed ones (Border 1.45:1, not 1.5).
+- **N-018** · raised `2026-0916-1410-chart-palette-and-canvas-gradients`
+  · closed 2026-10-03, `2026-1003-0208-keyed-callback-ids-dark-theme-chart-data` — `core.DarkTheme` spends
+  `DefaultDarkChartColors` and `DefaultDarkSequentialColors`.
+- **N-010** · raised `2026-0916-1129-charts-on-canvas`
+  · closed 2026-10-03, `2026-1003-0208-keyed-callback-ids-dark-theme-chart-data` — per host, as recommended: no
+  screen-reader-only primitive. `core.AccessibilityChart(core.ChartData)`
+  puts the numbers on the chart's labelled RoleImg node (series of points,
+  categorical or numeric x; NaN dropped). Web runtime and htmlout write a
+  visually hidden `<table>` as leading chrome and the role as `figure` (an
+  img's children are presentational); iOS builds an `AXChartDescriptor`
+  (`GrMobChartAccessibility` on Row and Column); Android keeps the sentence.
+  Every summarising chart carries it except Sparkline and Gauge. Held across
+  languages by gen.go `chartCases` + `chart_test.mjs`; Chrome's own AX tree
+  (CDP `getFullAXTree`) shows each figure's table with row headers and cells
+  on lessons 4.20 and 4.36. The descriptor is unheard (N-070).
 - **N-069** · raised `2026-0921-1035-comps-round-four-phase-3-structure`
   · closed 2026-09-29, `2026-0929-0058-next-list-escape-heading-focus-dark-mode-ios-contain-grid-discard` — `core.Focus` now reaches a node that
   takes no input focus, per host, with no new core API: the web makes it a
