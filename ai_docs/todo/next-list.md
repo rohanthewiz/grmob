@@ -433,21 +433,6 @@ with each item's `raised` traced back through all session docs.
     default moves every app's layout, and a second paddingless constructor
     doubles the stack API; `core.Padding(0)` is explicit and greppable
     (38 lines in examples/tutorial today).
-- **N-086** · raised `2026-1003-0453-n085-shell-surface-follows-go-tree` · value low
-  **Android's Material chrome stays light under a dark Go page; iOS's
-  follows it.** Since N-085 the iOS shell overrides the window's interface
-  style from the colour under the bars, so SwiftUI's own chrome and any ink
-  the Go tree leaves unstated (`.primary`) turn light-on-dark over a dark
-  page. Android only sets the bar icons: the window theme stays
-  Theme.Material.Light and Compose's MaterialTheme is never given a dark
-  scheme, so Material pieces the Go tree does not colour stay light. Seen
-  2026-10-03 with the demo's Screen painted #1C1C1E on a light system: the
-  TabView's tab row was a pale Material strip on Android and dark on iOS,
-  and the header's unstated ink was black on Android, white on iOS. A
-  scheme-following app that colours everything (the tutorial) shows
-  neither. Fix if a second app hits it: provide a dark MaterialTheme
-  colour scheme below GrMobRoot when the bars' colour is dark.
-
 - **N-087** · raised `2026-1003-0746-component-defined-readme-docs-skill` · value low
   **The component examples are compiled by no test.** `Tally` (README and
   `docs/concepts/components.md`), `Spoiler`, the `renderDebug` /
@@ -539,6 +524,32 @@ with each item's `raised` traced back through all session docs.
   path works. (was #76)
 
 ## Closed
+
+- **N-086** · raised `2026-1003-0453-n085-shell-surface-follows-go-tree`
+  · closed 2026-10-03 — the candidate: a dark MaterialTheme scheme below
+  GrMobRoot when the bars' colour is dark. `ShellMaterialTheme`
+  (`GrMobSurface.kt`) wraps the tree in `MaterialTheme(darkColorScheme())`
+  or `lightColorScheme()` and provides LocalContentColor white or black,
+  from the same answer as the bar icons (`barsColor`, now shared with
+  ShellSurface); a derivedStateOf, so only crossing the threshold
+  recomposes. The light row is exactly the old defaults. MaterialTheme also
+  provides a ripple, selection colours and bodyLarge as LocalTextStyle
+  (read from the material3 1.3.1 bytecode), which would have changed every
+  light app's press feedback and text metrics, so their outer values are
+  provided again inside it. A Go accent's ink (Checkbox tick, Switch
+  thumb) and a Button label on a Go Background with no TextColor are pinned
+  to `OnGoColor` (the light scheme's onPrimary, white): the dark scheme's
+  onPrimary drew a deep purple thumb on the demo's blue track
+  (`TestAndroidInkOnTheAccentIsNotTheSchemes`). Seen on the emulator, demo
+  with Screen painted #1C1C1E on a light system: dark tab row, white header
+  and "Hello, stranger." ink, white tick and thumb. The unpainted demo by
+  day is pixel-identical to before apart from the status-bar icons; the
+  tutorial at night is unchanged except that an unchecked checkbox's
+  outline is the dark scheme's (light grey, was near-invisible dark grey).
+  `core.ColorScheme`'s doc names the chrome. Not covered: a dark SafeArea
+  over an unpainted root composes light for one frame (claims join after
+  the first composition), and the window theme (Theme.Material.Light)
+  still styles the classic views (the rich-text EditText, Toasts).
 
 - **N-085** · raised `2026-0929-0058-next-list-escape-heading-focus-dark-mode-ios-contain-grid-discard`
   · closed 2026-10-03, `2026-1003-0453-n085-shell-surface-follows-go-tree` — the first

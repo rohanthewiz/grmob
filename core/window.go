@@ -185,7 +185,10 @@ type SafeInsets struct {
 // tree rather than from this (N-085): the window behind a root that states
 // no Background is the light page core.DefaultTheme describes, and the
 // status bar's style follows the colour under it — the innermost painted
-// SafeArea, else the root's Background, else that page. So an app that
+// SafeArea, else the root's Background, else that page. The platform's own
+// controls follow the same colour where the tree leaves them uncoloured — a
+// TabView's strip, a menu's surface, text with no TextColor — light over a
+// light one and dark over a dark one, on both natives (N-086). So an app that
 // ignores the scheme renders as it states on a dark phone, and one that
 // follows it paints its root (or its comps.Screen) in the dark palette's
 // Background and gets light bar icons with it. iOS reads this value from the

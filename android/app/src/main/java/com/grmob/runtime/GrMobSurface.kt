@@ -4,13 +4,23 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.graphics.drawable.ColorDrawable
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.text.selection.LocalTextSelectionColors
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -50,6 +60,8 @@ import androidx.core.view.WindowCompat
  *                        ?: ShellPage (core.DefaultTheme's Background)
  *   the window surface = the root node's Background ?: ShellPage
  *   the icons          = dark over a light colour, light over a dark one
+ *   the Material scheme = dark over a dark colour, light otherwise (N-086;
+ *                        see ShellMaterialTheme)
  *
  * An app that follows the scheme already paints its root (the tutorial's
  * paintPage does, with DarkTheme's Background), so it gets light icons when
@@ -111,6 +123,23 @@ internal fun ClaimSystemBars(background: Color) {
     }
 }
 
+/** The window surface: the root node's Background, else [ShellPage]. */
+internal fun shellPage(root: GrMobNode): Color = root.style?.background ?: ShellPage
+
+/**
+ * The colour under the bars: the last (innermost) painted SafeArea's claim,
+ * else the window surface. The one answer ShellSurface's icons and
+ * ShellMaterialTheme's scheme are both taken from.
+ */
+internal fun barsColor(root: GrMobNode, claims: List<SystemBarClaim>): Color =
+    claims.lastOrNull()?.color?.takeIf { it.isSpecified } ?: shellPage(root)
+
+/**
+ * Dark means light content over it. Luminance ≤ 0.5, the complement of the
+ * > 0.5 the platform's own helpers use to pick dark content for a background.
+ */
+internal fun isDarkBars(color: Color): Boolean = color.luminance() <= 0.5f
+
 /**
  * Writes the window: its background drawable and the bar icon style. A
  * composable of its own, beside the tree rather than around it, so that a
@@ -142,8 +171,8 @@ internal fun ClaimSystemBars(background: Color) {
 internal fun ShellSurface(root: GrMobNode, claims: List<SystemBarClaim>) {
     val view = LocalView.current
     if (view.isInEditMode) return
-    val page = root.style?.background ?: ShellPage
-    fun underBars(): Color = claims.lastOrNull()?.color?.takeIf { it.isSpecified } ?: page
+    val page = shellPage(root)
+    fun underBars(): Color = barsColor(root, claims)
     underBars() // the subscribing read; see above
     SideEffect {
         val window = view.context.findActivity()?.window ?: return@SideEffect
@@ -151,7 +180,7 @@ internal fun ShellSurface(root: GrMobNode, claims: List<SystemBarClaim>) {
         if ((window.decorView.background as? ColorDrawable)?.color != argb) {
             window.setBackgroundDrawable(ColorDrawable(argb))
         }
-        val lightBars = underBars().luminance() > 0.5f
+        val lightBars = !isDarkBars(underBars())
         val controller = WindowCompat.getInsetsController(window, view)
         // "Appearance light" names the bar, not the icons: a light bar is
         // one that wants dark icons.
@@ -159,6 +188,129 @@ internal fun ShellSurface(root: GrMobNode, claims: List<SystemBarClaim>) {
         controller.isAppearanceLightNavigationBars = lightBars
     }
 }
+
+/**
+ * The Material colour scheme under the tree: dark when the colour under the
+ * bars is dark, light otherwise (N-086).
+ *
+ * # Why
+ *
+ * Material pieces the Go tree does not colour take their colours from
+ * MaterialTheme.colorScheme, and text with no stated ink from
+ * LocalContentColor. Neither was ever provided, so both stayed at their
+ * defaults — lightColorScheme() and Color.Black — whatever the page was. The
+ * iOS shell overrides the window's interface style from the same colour that
+ * picks the bar icons (GrMobSurface.swift), so SwiftUI's chrome and `.primary`
+ * ink turn light-on-dark over a dark page. Seen 2026-10-03 with the demo's
+ * Screen painted #1C1C1E on a light system: the TabView's tab row was a pale
+ * Material strip and the header's unstated ink black on Android, both dark /
+ * white on iOS. This puts Android on the same rule:
+ *
+ *   isDarkBars(barsColor)   scheme                ink with no TextColor
+ *   ─────────────────────   ───────────────────   ─────────────────────
+ *   false                   lightColorScheme()    Color.Black
+ *   true                    darkColorScheme()     Color.White
+ *
+ * The light row is exactly what composed before: the defaults of
+ * LocalColorScheme and LocalContentColor. Black and white rather than the
+ * schemes' onBackground (#1D1B20 / #E6E0E9) because the light row has to stay
+ * black to change nothing, and white is what iOS's `.primary` is when dark.
+ * Like the iOS override this is window-wide: one answer for the whole tree,
+ * not one per subtree. An app that colours everything (the tutorial) sees no
+ * difference either way; what changes is only what the Go tree left unstated.
+ *
+ * # Only the colour scheme
+ *
+ * material3's LocalColorScheme is internal, so the scheme can only be set
+ * through MaterialTheme(). MaterialTheme provides more than the scheme,
+ * though, and none of the rest was provided before (checked against the
+ * material3 1.3.1 bytecode the BOM resolves):
+ *
+ *   LocalIndication          the ripple, where clickables drew the foundation
+ *                            default
+ *   LocalTextSelectionColors the scheme's primary, where selection drew the
+ *                            foundation default
+ *   LocalTextStyle           typography.bodyLarge (16sp, 24sp line height,
+ *                            0.5sp tracking), where Text drew the default style
+ *   LocalRippleTheme         read only by the deprecated fallback ripple, which
+ *                            nothing here enables; left as MaterialTheme sets it
+ *
+ * The first three would have changed every app's press feedback and every
+ * text's metrics, light ones included. So their values are read from outside
+ * MaterialTheme and provided again inside it, which leaves the scheme as the
+ * only thing MaterialTheme changes.
+ *
+ * # Structure and recomposition
+ *
+ * MaterialTheme and the provider wrap the content in both states, so a flip
+ * between light and dark changes values, not the group structure, and the
+ * tree's remembered state survives it. `dark` is a derivedStateOf over the
+ * root's Background and the claims, so a claim joining or a restyle that does
+ * not cross the threshold recomposes nothing. One that does recomposes the
+ * whole tree: material3's LocalColorScheme is a static composition local,
+ * which invalidates everything below its provider rather than its readers.
+ * That is a page turning dark or light, rare enough to pay for in full.
+ *
+ * # The first frame
+ *
+ * Unlike ShellSurface's icons, the scheme has to be known while the tree
+ * composes, and on the first composition the SafeAreas' claims have not joined
+ * yet (they join in a DisposableEffect). So a dark SafeArea over an unpainted
+ * root composes light for one frame and then dark. A painted root — what a
+ * scheme-following app states — is known from the start and has no such frame.
+ */
+@Composable
+internal fun ShellMaterialTheme(
+    root: () -> GrMobNode?,
+    claims: List<SystemBarClaim>,
+    content: @Composable () -> Unit,
+) {
+    // `root` is a lambda over TreeStore's state, read inside derivedStateOf so
+    // that the derivation, not GrMobRoot, is subscribed to a root swap and to
+    // the root's style (both snapshot state). rememberUpdatedState keeps the
+    // remembered derivation calling the caller's latest lambda.
+    val currentRoot by rememberUpdatedState(root)
+    val dark by remember(claims) {
+        derivedStateOf { currentRoot()?.let { isDarkBars(barsColor(it, claims)) } ?: false }
+    }
+    val indication = LocalIndication.current
+    val selection = LocalTextSelectionColors.current
+    val textStyle = LocalTextStyle.current
+    MaterialTheme(colorScheme = if (dark) DarkShellScheme else LightShellScheme) {
+        CompositionLocalProvider(
+            LocalIndication provides indication,
+            LocalTextSelectionColors provides selection,
+            LocalTextStyle provides textStyle,
+            LocalContentColor provides if (dark) Color.White else Color.Black,
+            content = content,
+        )
+    }
+}
+
+/*
+ * The two schemes, built once. Material's baseline schemes, uncustomised: the
+ * light one is what LocalColorScheme defaulted to before, and the dark one is
+ * its counterpart. Shared instances keep MaterialTheme's providers equal from
+ * one recomposition to the next.
+ */
+private val LightShellScheme = lightColorScheme()
+private val DarkShellScheme = darkColorScheme()
+
+/**
+ * The ink Material draws on a colour the Go tree stated — a Button's
+ * Background, a Checkbox's or Switch's AccentColor — when the tree states no
+ * ink for it: the tick, the checked thumb, the label.
+ *
+ * Material takes that ink from the scheme's onPrimary, which pairs with the
+ * scheme's own primary, not with a Go colour. In the light scheme it is
+ * white, which is what every such control drew before ShellMaterialTheme. In
+ * the dark scheme it is a deep purple (#381E72), meant for the dark scheme's
+ * pale primary; on a Go accent it drew a dark purple thumb on the demo's blue
+ * track. So where the colour underneath is Go's, the ink stays the light
+ * scheme's onPrimary in both schemes, and only controls the Go tree leaves
+ * wholly uncoloured take the dark scheme's pair.
+ */
+internal val OnGoColor: Color = LightShellScheme.onPrimary
 
 /** The Activity behind a Compose view's context, which may be wrapped. */
 internal tailrec fun Context.findActivity(): Activity? = when (this) {

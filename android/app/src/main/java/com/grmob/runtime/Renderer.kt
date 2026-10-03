@@ -509,7 +509,13 @@ fun GrMobRoot(runtime: GrMobRuntime) {
         // keys each route's root by its stack frame (withFrameKey), so a new
         // frame is a new group here and its state starts fresh. An empty key
         // (no Navigator at the root) keys on "" and behaves as before.
-        runtime.store.root?.let { root -> key(root.key) { RenderNode(root) } }
+        //
+        // ShellMaterialTheme gives Material's own chrome (a TabRow's strip, a
+        // menu's surface) and ink the tree leaves unstated the scheme of the
+        // colour under the bars, dark over a dark page (N-086; GrMobSurface.kt).
+        ShellMaterialTheme({ runtime.store.root }, barClaims) {
+            runtime.store.root?.let { root -> key(root.key) { RenderNode(root) } }
+        }
         // After the tree, so its SideEffect runs after the SafeAreas' claims
         // have joined; see ShellSurface. The window's surface and bar icons
         // come from the Go tree, not the system's dark mode (N-085).
@@ -1430,7 +1436,10 @@ private fun GrMobMaterialButton(node: GrMobNode, extra: Modifier, compact: Boole
         border = borderStroke(s),
         colors = ButtonDefaults.buttonColors(
             containerColor = s?.background ?: Color.Unspecified,
-            contentColor = s?.textColor ?: Color.Unspecified,
+            // A label with no TextColor on a Go Background takes OnGoColor, not
+            // the scheme's onPrimary (GrMobSurface.kt). With neither stated,
+            // container and label are both the scheme's (Unspecified).
+            contentColor = s?.textColor ?: s?.background?.let { OnGoColor } ?: Color.Unspecified,
             // material3 would otherwise paint its own disabled tones (the
             // container color at 12% alpha) over whatever the Go theme chose,
             // so a widget that styles its own disabled look — comps.
@@ -1490,7 +1499,10 @@ private fun GrMobLongPressButton(node: GrMobNode, extra: Modifier) {
         ),
         shape = grMobShape(s, defaultRadius = 8f) ?: RoundedCornerShape(8.dp),
         color = s?.background ?: MaterialTheme.colorScheme.primary,
-        contentColor = s?.textColor ?: MaterialTheme.colorScheme.onPrimary,
+        // OnGoColor on a Go Background, as on the material3 path above.
+        contentColor = s?.textColor
+            ?: s?.background?.let { OnGoColor }
+            ?: MaterialTheme.colorScheme.onPrimary,
         // The same border the material3 path takes, through Surface's own slot
         // — this branch rebuilds that button by hand, so every style field it
         // honors has to be honored here too or an outlined button would lose
@@ -1666,10 +1678,12 @@ private fun GrMobCheckbox(node: GrMobNode, extra: Modifier) {
         onCheckedChange = { if (cb.isNotEmpty()) runtime.toggled(cb, it) },
         modifier = marginAndSize(node.style, extra),
         enabled = !node.isDisabled(),
-        // The theme's accent on the checked box (core.AccentColor). The tick
-        // and the unchecked outline keep Material's colours.
+        // The theme's accent on the checked box (core.AccentColor). The
+        // unchecked outline keeps Material's colour, the scheme's.
         colors = node.style?.accentColor
-            ?.let { CheckboxDefaults.colors(checkedColor = it) }
+            // The tick on it is OnGoColor rather than the scheme's onPrimary,
+            // which is meant for the scheme's own primary (GrMobSurface.kt).
+            ?.let { CheckboxDefaults.colors(checkedColor = it, checkmarkColor = OnGoColor) }
             ?: CheckboxDefaults.colors(),
     )
 }
@@ -1705,7 +1719,14 @@ private fun GrMobSwitch(node: GrMobNode, extra: Modifier) {
         modifier = marginAndSize(node.style, extra),
         enabled = !node.isDisabled(),
         colors = node.style?.accentColor
-            ?.let { SwitchDefaults.colors(checkedTrackColor = it, checkedBorderColor = it) }
+            // The thumb on that track is OnGoColor, as the Checkbox's tick is.
+            ?.let {
+                SwitchDefaults.colors(
+                    checkedTrackColor = it,
+                    checkedBorderColor = it,
+                    checkedThumbColor = OnGoColor,
+                )
+            }
             ?: SwitchDefaults.colors(),
     )
 }

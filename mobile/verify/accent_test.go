@@ -41,13 +41,34 @@ func TestBothNativesTintTheirControlsWithTheAccent(t *testing.T) {
 
 	kotlin := codeIn(t, kotlinRenderer)
 	for _, pin := range []struct{ expr, why string }{
-		{"CheckboxDefaults.colors(checkedColor = it)", "the Checkbox's checked box"},
-		{"SwitchDefaults.colors(checkedTrackColor = it", "the Switch's on track"},
+		{"CheckboxDefaults.colors(checkedColor = it", "the Checkbox's checked box"},
+		{"SwitchDefaults.colors(", "the Switch's colours"},
+		{"checkedTrackColor = it", "the Switch's on track"},
 		{"SliderDefaults.colors(", "the Slider's thumb and tracks"},
 		{"activeTrackColor = it", "the Slider's filled track"},
 	} {
 		if !strings.Contains(kotlin, pin.expr) {
 			t.Errorf("%s: %q not found — %s would stay in Material's colour", kotlinRenderer, pin.expr, pin.why)
+		}
+	}
+}
+
+// What Material draws on the accent — the Checkbox's tick, the Switch's checked
+// thumb — is pinned to OnGoColor (GrMobSurface.kt) rather than left to the
+// colour scheme. The scheme's onPrimary pairs with the scheme's own primary:
+// white in the light scheme, which is what both drew before ShellMaterialTheme
+// (N-086), but a deep purple in the dark one, which over a Go accent drew a
+// dark thumb on the demo's blue track. iOS has no counterpart: a Toggle's thumb
+// is white in both appearances.
+func TestAndroidInkOnTheAccentIsNotTheSchemes(t *testing.T) {
+	kotlin := codeIn(t, kotlinRenderer)
+	for _, pin := range []struct{ expr, why string }{
+		{"checkmarkColor = OnGoColor", "the Checkbox's tick"},
+		{"checkedThumbColor = OnGoColor", "the Switch's checked thumb"},
+	} {
+		if !strings.Contains(kotlin, pin.expr) {
+			t.Errorf("%s: %q not found — %s would take the dark scheme's onPrimary "+
+				"over a dark page", kotlinRenderer, pin.expr, pin.why)
 		}
 	}
 }
