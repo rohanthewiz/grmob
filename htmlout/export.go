@@ -459,6 +459,9 @@ func renderNode(b *element.Builder, node *core.Node, from imposed, path string) 
 		{"onRegionChange", "data-onregionchange"},
 		{"onMarkerTap", "data-onmarkertap"},
 		{"onMapTap", "data-onmaptap"},
+		// core.Shape.OnClick's one canvas-wide callback, recorded the same
+		// way: a loader that reports "x,y,w,h" to it gets Go's hit-test.
+		{"onShapeTap", "data-onshapetap"},
 	} {
 		if id, ok := node.Props[cb.prop].(string); ok {
 			attrs = append(attrs, cb.attr, id)
@@ -620,6 +623,11 @@ func renderNode(b *element.Builder, node *core.Node, from imposed, path string) 
 		renderCanvas(b, node, attrs, path)
 	case "CanvasShape":
 		renderCanvasShape(b, node, attrs, path)
+	case "CanvasText":
+		// Reached only outside a canvas (renderCanvas writes its own text
+		// children, which need to know whether it mirrors): drawn as an
+		// unmirrored canvas would draw it.
+		renderCanvasText(b, node, "", false)
 	case "CodeEditor":
 		// A box like any other container, plus the line-number gutter ahead of
 		// the rows; see codeeditor.go.

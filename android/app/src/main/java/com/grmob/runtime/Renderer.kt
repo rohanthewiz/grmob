@@ -895,8 +895,9 @@ private fun RenderNodeContent(node: GrMobNode, extra: Modifier) {
         "Canvas" -> GrMobCanvas(node, animatedStyle(style).boxModifier(extra, gestureModifier(node)))
 
         // A shape reached on its own, outside a canvas: nothing, for the reason
-        // a lone Marker is nothing.
+        // a lone Marker is nothing. A text shape (core.CanvasText) likewise.
         "CanvasShape" -> Unit
+        "CanvasText" -> Unit
 
         // Fragment and Theme are grouping nodes with no visual box of their
         // own: emit the children inline into whatever scope we're in.

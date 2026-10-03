@@ -66,21 +66,61 @@ import "math"
 // a later shape paints over an earlier one.
 //
 // Shapes take no props of their own and are never built directly by app code.
-// Behavior props (OnClick, ...) apply to the canvas as a whole.
+// Behavior props (OnClick, ...) apply to the canvas as a whole; a shape that
+// should answer a tap of its own says so with Shape.OnClick (see "Tapping a
+// shape" below).
+//
+// A shape with Shape.Text set is a run of text rather than a path, and goes
+// on the wire as a CanvasText child instead of a CanvasShape, so a slot that
+// changes between the two is replaced rather than patched. See CanvasText.
 //
 // # Accessibility
 //
-// A drawing has no text a reader could find in it. A Canvas without an
+// A drawing has no text a reader could find in it — text drawn with
+// Shape.Text included, which is paint, not a Text node. A Canvas without an
 // AccessibilityLabel is treated as decoration and hidden; one with a label is
 // a single image element that speaks it. A chart should always be given one
 // that states what the chart shows, not that it is a chart.
 //
+// # Tapping a shape
+//
+// A shape with an OnClick runs it when a tap lands on what the shape paints:
+// inside its fill (by its fill rule) or on its stroke, and inside its Clip.
+// The hit-test is done here in Go, once, the way arcs are flattened here
+// once: a host only reports where in the canvas's box the tap landed
+// ("onShapeTap", a text callback carrying "x,y,boxWidth,boxHeight" in layout
+// units, already reflected back when a CanvasMirrorsRTL drawing is
+// mirrored), and every target therefore picks the same shape for the same
+// point.
+//
+//	tap ──host──▶ "x,y,w,h" ──Go──▶ CanvasMapping⁻¹ ──▶ topmost shape hit ──▶ its OnClick
+//	                                                    └─ none ──▶ the canvas's own OnClick
+//
+// The rules, which are SVG's pointer-events="visiblePainted" with two
+// simplifications:
+//
+//   - Shapes are tried topmost first (the reverse of paint order), and only
+//     shapes with an OnClick take part: a gridline or a label drawn over a
+//     bar does not swallow the bar's tap.
+//   - A fill counts only if the shape has one; a stroke only if it has one.
+//     A transparent colour ("#00000000") still counts, so a thin line can be
+//     given a wide, invisible stroke to make it easier to hit.
+//   - The stroke is tested as if its caps and joins were round and it had no
+//     dashes, which errs by at most half the width at a corner and makes a
+//     dashed line tappable in its gaps.
+//   - A text shape is never hit: its extent depends on a font only the host
+//     has measured.
+//
+// A tap that hits no shape runs the canvas's own OnClick, if it has one. Its
+// keyboard and screen-reader activation are unchanged, and are the only way
+// to reach it without a pointer, so a canvas whose shapes do something
+// should offer the same actions somewhere a reader can find them.
+//
 // # Not in v1
 //
-// Text inside the drawing (lay labels out around it as Text nodes), clipping
-// and per-shape hit-testing. Fills and strokes are flat or a Gradient; fills
-// use the nonzero rule, every target's default, unless a shape asks for
-// FillEvenOdd.
+// Hit-testing text, clipping by even-odd, a stroke or gradient on text, and
+// text that wraps. Fills and strokes are flat or a Gradient; fills use the
+// nonzero rule, every target's default, unless a shape asks for FillEvenOdd.
 func Canvas(w, h float64, shapes []Shape, props ...PropsAndChildren) View {
 	return ComponentFunc(func(ctx *Context) *Node {
 		if w <= 0 {
@@ -105,8 +145,37 @@ func Canvas(w, h float64, shapes []Shape, props ...PropsAndChildren) View {
 
 		places := coordinatePlaces(max(w, h))
 		n.Children = make([]*Node, 0, len(shapes))
+		var hits []canvasHitShape
 		for _, s := range shapes {
-			n.Children = append(n.Children, s.node(places))
+			child := s.node(places)
+			n.Children = append(n.Children, child)
+			// Collected from the wire form rather than the Shape, so the
+			// hit-test sees the rounded coordinates the hosts drew and the
+			// same "is there a fill" answer the wire gives (a gradient that
+			// degenerated to nothing paints nothing, and is not hit).
+			if s.OnClick != nil && child.Type == "CanvasShape" {
+				hits = append(hits, canvasHitShapeOf(child.Props, s.OnClick))
+			}
+		}
+		// Registered after leafNode has applied the props, so the canvas's
+		// scale (a CanvasScale prop) and its own onClick are known, and
+		// only when a shape can be hit: a canvas without shape handlers sends
+		// exactly the wire it always did. A disabled canvas takes no taps,
+		// as a disabled node's OnClick takes none on any host.
+		if len(hits) > 0 && !n.Style.Disabled {
+			scale, _ := n.Props["scale"].(string)
+			canvasClick, _ := n.Props["onClick"].(string)
+			n.Props["onShapeTap"] = ctx.registerTextCallback(func(at string) {
+				bx, by, bw, bh, ok := parseCanvasTap(at)
+				if !ok {
+					return
+				}
+				if i := canvasHit(hits, w, h, CanvasScale(scale), bx, by, bw, bh); i >= 0 {
+					hits[i].onClick()
+				} else if canvasClick != "" {
+					ctx.TriggerCallback(canvasClick)
+				}
+			})
 		}
 		return n
 	})
@@ -298,12 +367,178 @@ type Shape struct {
 	// Dash alternates dash and gap lengths, in layout units like StrokeWidth.
 	// Nil for a solid line.
 	Dash []float64
+
+	// Clip confines the shape's paint (fill, stroke, or text) to the inside
+	// of this path, in viewBox units like Path. Nil for no clip. Inside is
+	// decided by the nonzero rule. A stroke is clipped like everything else,
+	// so a stroke along the clip's own edge shows only its inner half.
+	//
+	//	core.Shape{Path: area, Fill: fade, Clip: core.Rect(0, 0, w, h)}
+	//
+	// Per shape rather than per canvas: a chart clips its plot to the plot
+	// area while its axis strokes run along that area's edge, unclipped.
+	//
+	//	SVG       <clipPath clipPathUnits="userSpaceOnUse"> in the leading
+	//	          <defs>, referred to by clip-path="url(#…)"
+	//	Compose   DrawScope.clipPath around the shape's draws
+	//	SwiftUI   GraphicsContext.clip(to:) on a copy of the context
+	Clip *Path
+
+	// Text, when set, makes the shape a run of text instead of a path: Path,
+	// the stroke fields, Dash and the gradients are ignored, and Fill is the
+	// colour of the glyphs (as SVG's <text> paints with fill). "" for Fill
+	// paints nothing, as it does for a path. Clip still applies. See
+	// CanvasText.
+	Text *CanvasText
+
+	// OnClick runs when a tap lands on what this shape paints. See "Tapping
+	// a shape" on Canvas for the rules. Ignored on a text shape.
+	OnClick func()
+}
+
+// CanvasText is a single line of text drawn inside a Canvas, set on a
+// Shape's Text field.
+//
+//	core.Shape{Fill: t.Colors.Text, Text: &core.CanvasText{
+//	    X: 50, Y: 12, Content: "12", Size: 14, Bold: true,
+//	    Align: core.CanvasAlignMiddle,
+//	}}
+//
+// # The anchor is in viewBox units, the size is not
+//
+// (X, Y) is a point of the drawing and goes through the canvas's mapping like
+// every other point, so a label stays on the tick it names in any box. Size
+// is in layout units, as StrokeWidth is: 12 is a 12 px (dp, pt) font at every
+// scale, so a chart's labels read the same on a phone and a tablet, and a
+// stretched canvas does not stretch its glyphs.
+//
+// The web target can only counter-scale text from script, so the live
+// runtime measures the canvas and corrects the text's scale as the canvas
+// resizes. htmlout's static export has no script and draws the text as if one
+// viewBox unit were one layout unit: right in size for a canvas drawn at its
+// viewBox's own size, and scaled with the drawing otherwise.
+//
+// # Alignment
+//
+// Align places the text's start, middle or end on X; VAlign its top, middle
+// or bottom on Y. The vertical edges are the font's line box (ascent and
+// descent), not the ink of the particular glyphs, so a row of labels with
+// the same VAlign shares one baseline whatever letters they hold.
+//
+// In a CanvasMirrorsRTL canvas laid out right to left, the anchor point
+// mirrors with the drawing and the glyphs do not (mirrored text would be
+// unreadable). Align follows the reading direction there: Start is the text's
+// right-hand end, which keeps a label on the same side of its tick as the
+// rest of the mirrored drawing.
+//
+//	target    element
+//	SVG       <text> with text-anchor, dominant-baseline, and a CSS scale
+//	          about the anchor for the size and the mirror
+//	Compose   TextMeasurer + DrawScope.drawText at the aligned top-left
+//	SwiftUI   GraphicsContext.draw(Text, at:, anchor:)
+type CanvasText struct {
+	// X and Y are the anchor point, in viewBox units.
+	X, Y float64
+
+	// Content is the text. A newline does not start a new line; it is drawn
+	// as the platform draws a newline inside one line.
+	Content string
+
+	// Size is the font size in layout units; 0 means 12.
+	Size float64
+
+	// Bold draws the text in the platform font's bold weight.
+	Bold bool
+
+	// Align is the horizontal anchor; the zero value is CanvasAlignStart.
+	Align CanvasAlign
+
+	// VAlign is the vertical anchor; the zero value is CanvasVAlignMiddle,
+	// which centres the line on Y.
+	VAlign CanvasVAlign
+}
+
+// CanvasAlign is which part of a CanvasText sits on its X.
+type CanvasAlign string
+
+const (
+	CanvasAlignStart  CanvasAlign = "start" // the default
+	CanvasAlignMiddle CanvasAlign = "middle"
+	CanvasAlignEnd    CanvasAlign = "end"
+)
+
+// CanvasVAlign is which part of a CanvasText's line sits on its Y.
+type CanvasVAlign string
+
+const (
+	CanvasVAlignMiddle CanvasVAlign = "middle" // the default
+	CanvasVAlignTop    CanvasVAlign = "top"
+	CanvasVAlignBottom CanvasVAlign = "bottom"
+)
+
+// textNode is the wire form of a text shape. As with node, only set fields
+// are written:
+//
+//	text     the content, always present
+//	at       [x, y] in viewBox units, rounded to the canvas's places
+//	size     layout units, always present (12 when unset)
+//	fill     the glyphs' colour; absent paints nothing
+//	bold     true, only when set
+//	align    "middle" | "end", absent for start
+//	valign   "top" | "bottom", absent for middle
+//	clip     path ops, as Shape.Clip
+func (s Shape) textNode(places int) *Node {
+	t := s.Text
+	scale := math.Pow(10, float64(places))
+	round := func(v float64) float64 { return math.Round(v*scale) / scale }
+	size := t.Size
+	if size <= 0 {
+		size = 12
+	}
+	props := map[string]any{
+		"text": t.Content,
+		"at":   []float64{round(t.X), round(t.Y)},
+		"size": size,
+	}
+	if s.Fill != "" {
+		props["fill"] = s.Fill
+	}
+	if t.Bold {
+		props["bold"] = true
+	}
+	if t.Align == CanvasAlignMiddle || t.Align == CanvasAlignEnd {
+		props["align"] = string(t.Align)
+	}
+	if t.VAlign == CanvasVAlignTop || t.VAlign == CanvasVAlignBottom {
+		props["valign"] = string(t.VAlign)
+	}
+	s.writeClip(props, places)
+	return &Node{Type: "CanvasText", Props: props}
+}
+
+// writeClip writes the "clip" key for a shape with a Clip. A Clip with no
+// ops is written as an empty list rather than left out: an empty clip path
+// encloses nothing, so it hides the shape, which is what SVG paints for a
+// <clipPath> with no children and what the natives' clip to an empty path
+// does. Leaving it out would have drawn the shape unclipped instead.
+func (s Shape) writeClip(props map[string]any, places int) {
+	if s.Clip == nil {
+		return
+	}
+	c := s.Clip.wire(places)
+	if c == nil {
+		c = []float64{}
+	}
+	props["clip"] = c
 }
 
 // node is the wire form of one shape. Only set fields are written, so an
 // unchanged shape compares equal across passes and a solid, unfilled line
 // costs four keys.
 func (s Shape) node(places int) *Node {
+	if s.Text != nil {
+		return s.textNode(places)
+	}
 	props := map[string]any{}
 	var d []float64
 	if s.Path != nil {
@@ -370,6 +605,7 @@ func (s Shape) node(places int) *Node {
 			props["dash"] = append([]float64(nil), s.Dash...)
 		}
 	}
+	s.writeClip(props, places)
 	return &Node{Type: "CanvasShape", Props: props}
 }
 

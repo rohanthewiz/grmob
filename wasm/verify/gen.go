@@ -426,19 +426,27 @@ type canvasCase struct {
 	// Scale is the <svg>'s CSS scale: the core.CanvasMirrorsRTL reflection,
 	// or "" for a canvas that does not mirror.
 	Scale string `json:"scale"`
-	// Shapes is each <path>'s attributes as htmlout writes them, in order.
+	// Shapes is each child's attributes as htmlout writes them, in order:
+	// a <path>'s for a CanvasShape, the inner <text>'s for a CanvasText.
 	Shapes [][]string `json:"shapes"`
-	// Gradients is the leading <defs>'s paint servers as htmlout writes them,
-	// in order; empty when no shape has a gradient (and then no <defs>).
+	// Groups is, for a CanvasText child, its wrapper <g>'s attributes (the
+	// clip), and nil for a CanvasShape. Texts is a CanvasText's content.
+	Groups [][]string `json:"groups"`
+	Texts  []string   `json:"texts"`
+	// Gradients is the leading <defs>'s servers as htmlout writes them, in
+	// order: paint servers and clip paths. Empty when no shape has either
+	// (and then no <defs>).
 	Gradients []canvasGradientCase `json:"gradients"`
 }
 
-// canvasGradientCase is one paint server: its tag, attributes, and each
-// <stop>'s attributes.
+// canvasGradientCase is one server in the <defs>: its tag, attributes, and
+// each child's attributes. A gradient's children are <stop>s; a clip's is
+// its one <path>, which Child names.
 type canvasGradientCase struct {
 	Tag   string     `json:"tag"`
 	Attrs []string   `json:"attrs"`
 	Stops [][]string `json:"stops"`
+	Child string     `json:"child,omitempty"`
 }
 
 // canvasCases covers every opcode, both scales, every optional stroke
@@ -458,17 +466,46 @@ func canvasCases() []canvasCase {
 		}
 		// The runtime test mounts the canvas as the first child of a root
 		// Column, so it sits at "root/0" and its gradient ids are scoped so.
+		mirror := n.Props["mirror"] == true
 		for i, shape := range n.Children {
 			fillID := htmlout.CanvasGradientID("root/0", i)
 			strokeID := htmlout.CanvasStrokeGradientID("root/0", i)
-			c.Shapes = append(c.Shapes, htmlout.CanvasShapeAttrs(shape.Props, fillID, strokeID))
-			// A shape's fill server, then its stroke server: htmlout's order.
+			clipID := htmlout.CanvasClipID("root/0", i)
+			clip := func() {
+				if d, ok := htmlout.CanvasClip(shape.Props); ok {
+					c.Gradients = append(c.Gradients, canvasGradientCase{
+						Tag:   "clipPath",
+						Attrs: []string{"id", clipID, "clipPathUnits", "userSpaceOnUse"},
+						Stops: [][]string{{"d", d}},
+						Child: "path",
+					})
+				}
+			}
+			if shape.Type == "CanvasText" {
+				group, text := htmlout.CanvasTextAttrs(shape.Props, clipID, mirror)
+				// Non-nil, so the JSON tells a text with no clip ([]) from
+				// a path (null).
+				if group == nil {
+					group = []string{}
+				}
+				c.Shapes = append(c.Shapes, text)
+				c.Groups = append(c.Groups, group)
+				c.Texts = append(c.Texts, shape.Props["text"].(string))
+				clip()
+				continue
+			}
+			c.Shapes = append(c.Shapes, htmlout.CanvasShapeAttrs(shape.Props, fillID, strokeID, clipID))
+			c.Groups = append(c.Groups, nil)
+			c.Texts = append(c.Texts, "")
+			// A shape's fill server, then its stroke server, then its clip:
+			// htmlout's order.
 			if tag, attrs, stops := htmlout.CanvasGradient(shape.Props, fillID); tag != "" {
-				c.Gradients = append(c.Gradients, canvasGradientCase{tag, attrs, stops})
+				c.Gradients = append(c.Gradients, canvasGradientCase{tag, attrs, stops, ""})
 			}
 			if tag, attrs, stops := htmlout.CanvasStrokeGradient(shape.Props, strokeID); tag != "" {
-				c.Gradients = append(c.Gradients, canvasGradientCase{tag, attrs, stops})
+				c.Gradients = append(c.Gradients, canvasGradientCase{tag, attrs, stops, ""})
 			}
+			clip()
 		}
 		return c
 	}
@@ -514,6 +551,23 @@ func canvasCases() []canvasCase {
 			{Path: core.Circle(50, 25, 20), FillGradient: core.RadialGradientFill(50, 25, 20, core.Stop(0, "#ffffff"), core.Stop(1, "#1baf7a")), StrokeGradient: core.RadialGradientFill(50, 25, 22, core.Stop(0, "#4a3aa7"), core.Stop(1, "#e34948")), StrokeWidth: 2},
 			{Path: core.Rect(0, 0, 10, 10), StrokeGradient: core.RadialGradientFill(5, 5, 0, core.Stop(0, "#000000"), core.Stop(1, "#654321"))},
 		})),
+		// Clips and text: a clipped gradient area (its fill server, then its
+		// clip), a clipped stroke, a text of every alignment with one clipped
+		// and one bold, and an empty clip that hides its shape.
+		build("clips and text, fit", core.Canvas(100, 50, []core.Shape{
+			{Path: core.Rect(0, 0, 100, 50), FillGradient: core.LinearGradientFill(0, 0, 0, 50, core.Stop(0, "#2a78d6"), core.Stop(1, "#2a78d600")), Clip: core.Rect(10, 5, 80, 40)},
+			{Path: core.Polyline(0, 40, 50, 0, 100, 30), Stroke: "#eb6834", StrokeWidth: 2, Clip: core.Circle(50, 25, 20)},
+			{Fill: "#111111", Text: &core.CanvasText{X: 0, Y: 50, Content: "Jan", VAlign: core.CanvasVAlignBottom}},
+			{Fill: "#222222", Clip: core.Rect(0, 0, 50, 50), Text: &core.CanvasText{X: 50, Y: 25, Content: "Mid <b>&", Size: 16, Bold: true, Align: core.CanvasAlignMiddle}},
+			{Fill: "#333333", Text: &core.CanvasText{X: 100, Y: 0, Content: "Dec", Align: core.CanvasAlignEnd, VAlign: core.CanvasVAlignTop}},
+			{Path: core.Rect(0, 0, 10, 10), Fill: "#000000", Clip: core.NewPath()},
+		})),
+		// A mirrored canvas's text: no pinned direction, and the x scale
+		// carries the reflection.
+		build("text in a mirrored stretched canvas", core.Canvas(100, 50, []core.Shape{
+			{Path: core.Line(0, 25, 100, 25), Stroke: "#000000"},
+			{Fill: "#000000", Text: &core.CanvasText{X: 10, Y: 25, Content: "start"}},
+		}, core.CanvasStretch, core.CanvasMirrorsRTL)),
 	}
 }
 

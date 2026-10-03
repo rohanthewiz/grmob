@@ -222,6 +222,8 @@ struct RenderNode: View {
             // A shape reached on its own, outside a canvas: nothing, for the
             // reason a lone Marker is nothing.
             case "CanvasShape": EmptyView()
+            // A text shape (core.CanvasText) likewise: data for its canvas.
+            case "CanvasText": EmptyView()
 
             // Fragment and Theme are grouping nodes with no visual box of
             // their own: Group flattens the children into whatever stack
@@ -2598,12 +2600,31 @@ let grMobCanvasMiterLimit: CGFloat = 4
 /// Width was given, and take the viewBox's aspect ratio when no Height was.
 /// SwiftUI's Canvas clips to its frame, unlike the web's overflow:visible, so
 /// the drawing is laid out over an outset and translated back (see body).
+///
+/// # Text, clips and taps
+///
+/// A CanvasText child is a Text drawn with GraphicsContext.draw(_:at:anchor:)
+/// at its mapped anchor, the anchor being the aligned share of the text's own
+/// box (start/middle/end × top/middle/bottom; start is the right-hand end in a
+/// mirrored drawing, see core.CanvasText). Its size is a fixed point size, not
+/// a Dynamic Type style: a drawing's labels must not outgrow the drawing.
+///
+/// A shape's core.Shape.Clip is applied to a copy of the context, so it
+/// bounds that shape alone.
+///
+/// A canvas carrying onShapeTap (some shape has a core.Shape.OnClick) lays a
+/// clear tap layer over its box that reports "x,y,w,h" in points for Go to
+/// hit-test. The layer is a child of the box grMobBox puts its own tap on,
+/// and SwiftUI gives a child's gesture precedence, so a tap is the layer's
+/// alone and Go runs the canvas's onClick itself on a miss. VoiceOver's
+/// activation goes to the box's accessibility action, never through here.
 private struct GrMobCanvas: View {
     let node: GrMobNode
     let grow: GrMobGrow
     // core.CanvasMirrorsRTL reads it. A SwiftUI Canvas does not mirror its
     // drawing under RTL by itself, so the viewport is reflected by hand.
     @Environment(\.layoutDirection) private var layoutDirection
+    @Environment(\.grMobRuntime) private var runtime
 
     var body: some View {
         let vw = node.doubleProp("vw") > 0 ? node.doubleProp("vw") : 100
@@ -2614,7 +2635,7 @@ private struct GrMobCanvas: View {
         let mirror = node.boolProp("mirror") && layoutDirection == .rightToLeft
         let fillWidth = (node.style?.width ?? "").isEmpty
         let keepRatio = (node.style?.height ?? "").isEmpty
-        let shapes = node.children.map(\.props)
+        let shapes = node.children.map { (type: $0.type, props: $0.props) }
 
         // A SwiftUI Canvas clips to its frame, but the other three targets do
         // not: htmlout's <svg> is overflow:visible and Compose's drawBehind has
@@ -2642,7 +2663,20 @@ private struct GrMobCanvas: View {
         // pinned to 4 below, which is what bounds the miter case at all.
         // Layout, hit-testing and the viewport arithmetic all still see the
         // unpadded box.
-        let outset = CGFloat(shapes.reduce(0.0) { acc, props in
+        //
+        // A text shape's reach past its anchor is its width, which only a
+        // measurement knows. It is estimated instead, generously, from the
+        // character count at 0.6 em a character (wider than the average
+        // glyph of the system font) plus one em, and capped: a label that
+        // overruns its drawing by more than the cap is cut here where the
+        // other targets would draw it.
+        let outset = CGFloat(shapes.reduce(0.0) { acc, shape in
+            let props = shape.props
+            if shape.type == "CanvasText" {
+                let size = (props["size"] as? NSNumber)?.doubleValue ?? 12
+                let chars = Double((props["text"] as? String)?.count ?? 0)
+                return max(acc, min(160, size * (0.6 * chars + 1)))
+            }
             guard props["stroke"] != nil || props["strokeGradient"] != nil else { return acc }
             let w = (props["strokeWidth"] as? NSNumber)?.doubleValue ?? 1
             let join = props["join"] as? String
@@ -2660,20 +2694,23 @@ private struct GrMobCanvas: View {
             let base = GrMobCanvasViewport(vw: vw, vh: vh, width: Double(size.width),
                                            height: Double(size.height), stretch: stretch)
             let vp = mirror ? base.mirrored(width: Double(size.width)) : base
-            for props in shapes {
-                guard let ops = props["d"] as? [Any] else { continue }
-                var path = Path()
-                grMobDecodeCanvasPath(ops, vp) { call in
-                    switch call {
-                    case let .move(x, y): path.move(to: CGPoint(x: x, y: y))
-                    case let .line(x, y): path.addLine(to: CGPoint(x: x, y: y))
-                    case let .cubic(x1, y1, x2, y2, x, y):
-                        path.addCurve(to: CGPoint(x: x, y: y),
-                                      control1: CGPoint(x: x1, y: y1),
-                                      control2: CGPoint(x: x2, y: y2))
-                    case .close: path.closeSubpath()
-                    }
+            for shape in shapes {
+                let props = shape.props
+                // core.Shape.Clip, on a copy of the context so it bounds this
+                // shape alone. GraphicsContext copies share their target and
+                // differ in state, which is what a clip is. An empty clip
+                // path encloses nothing and hides the shape, as the web's
+                // empty <clipPath> does.
+                var ctx = ctx
+                if let clip = props["clip"] as? [Any] {
+                    ctx.clip(to: grMobCanvasPath(clip, vp))
                 }
+                if shape.type == "CanvasText" {
+                    grMobDrawCanvasText(in: ctx, props: props, viewport: vp, mirrored: mirror)
+                    continue
+                }
+                guard let ops = props["d"] as? [Any] else { continue }
+                let path = grMobCanvasPath(ops, vp)
                 // Fill first, then the stroke over it: SVG's paint order.
                 // Go writes "fill" or the gradient keys, never both.
                 // core.FillEvenOdd; nonzero is FillStyle's default.
@@ -2728,6 +2765,8 @@ private struct GrMobCanvas: View {
         // "no ratio" but "the child's ideal size's ratio", and a Canvas's ideal
         // size is an arbitrary placeholder that would squash a canvas whose
         // author set a Height.
+        let onShapeTap = node.stringProp("onShapeTap")
+        let onLongPress = node.stringProp("onLongPress")
         Group {
             if keepRatio {
                 drawing.aspectRatio(CGFloat(vw / vh), contentMode: .fit)
@@ -2735,11 +2774,84 @@ private struct GrMobCanvas: View {
                 drawing
             }
         }
+        .overlay {
+            if !onShapeTap.isEmpty {
+                GeometryReader { box in
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture(coordinateSpace: .local) { at in
+                            let w = box.size.width, h = box.size.height
+                            guard w > 0, h > 0 else { return }
+                            // Reflected back to the drawing's own x, as the
+                            // viewport reflects the drawing.
+                            let x = mirror ? w - at.x : at.x
+                            runtime?.textChanged(onShapeTap, "\(Double(x)),\(Double(at.y)),\(Double(w)),\(Double(h))")
+                        }
+                        // Taken here as well, because the layer's tap would
+                        // otherwise stand between a press and the box's own
+                        // long-press gesture.
+                        .onLongPressGesture {
+                            if !onLongPress.isEmpty { runtime?.click(onLongPress) }
+                        }
+                }
+            }
+        }
         .frame(maxWidth: fillWidth ? .infinity : nil)
         .grMobBox(node.style, grow: grow,
                   onTap: node.stringProp("onClick"),
                   onLongPress: node.stringProp("onLongPress"))
     }
+}
+
+/// core's path opcodes, mapped through the viewport, as a SwiftUI Path.
+func grMobCanvasPath(_ ops: [Any], _ vp: GrMobCanvasViewport) -> Path {
+    var path = Path()
+    grMobDecodeCanvasPath(ops, vp) { call in
+        switch call {
+        case let .move(x, y): path.move(to: CGPoint(x: x, y: y))
+        case let .line(x, y): path.addLine(to: CGPoint(x: x, y: y))
+        case let .cubic(x1, y1, x2, y2, x, y):
+            path.addCurve(to: CGPoint(x: x, y: y),
+                          control1: CGPoint(x: x1, y: y1),
+                          control2: CGPoint(x: x2, y: y2))
+        case .close: path.closeSubpath()
+        }
+    }
+    return path
+}
+
+/// One core.CanvasText: a single-line Text at a fixed point size, drawn with
+/// its anchor at the mapped (x, y).
+///
+///   align   start 0 · middle ½ · end 1 of the text's width; 1 − share in a
+///           mirrored drawing, where start is the right-hand end
+///   valign  top 0 · middle ½ · bottom 1 of its line box
+///
+/// No fill paints nothing, as for a path.
+func grMobDrawCanvasText(in ctx: GraphicsContext, props: [String: Any],
+                         viewport vp: GrMobCanvasViewport, mirrored: Bool) {
+    guard let color = GrMobStyle.parseColor(props["fill"] as? String),
+          let content = props["text"] as? String else { return }
+    let at = ((props["at"] as? [Any]) ?? []).compactMap { ($0 as? NSNumber)?.doubleValue }
+    let x = at.count == 2 ? at[0] : 0, y = at.count == 2 ? at[1] : 0
+    let raw = (props["size"] as? NSNumber)?.doubleValue ?? 12
+    let size = raw > 0 ? raw : 12
+    var share: CGFloat = switch props["align"] as? String {
+    case "middle": 0.5
+    case "end": 1
+    default: 0
+    }
+    if mirrored { share = 1 - share }
+    let drop: CGFloat = switch props["valign"] as? String {
+    case "top": 0
+    case "bottom": 1
+    default: 0.5
+    }
+    let text = Text(content)
+        .font(.system(size: size, weight: props["bold"] as? Bool == true ? .bold : .regular))
+        .foregroundColor(color)
+    ctx.draw(text, at: CGPoint(x: x * vp.scaleX + vp.offsetX, y: y * vp.scaleY + vp.offsetY),
+             anchor: UnitPoint(x: share, y: drop))
 }
 
 /// A core.Gradient fill, decoded from a shape's gradient keys: the geometry in

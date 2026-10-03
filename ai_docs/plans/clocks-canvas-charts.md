@@ -224,7 +224,11 @@ always label it and may add a hidden data table.
 
 Text inside a canvas (labels and legends are ordinary `Text` around it —
 platform text rendering in a canvas is where the three targets disagree most),
-gradient strokes, clipping, hit-testing individual shapes. (The even-odd fill
+gradient strokes, clipping, hit-testing individual shapes. (All of these have
+since landed: gradient strokes as `Shape.StrokeGradient`; and on 2026-10-03,
+N-007, text as `Shape.Text`/`core.CanvasText` sized in layout units, clipping
+as `Shape.Clip`, and per-shape taps as `Shape.OnClick`, hit-tested once in Go
+from the box point each host reports.) (The even-odd fill
 rule was added as `Shape.FillRule` / `core.FillEvenOdd`, 2026-09-16, and seen
 on the emulator, simulator and Chrome in 4.19's ring pair. Gradient *fills*
 were added the same day as `Shape.FillGradient` with

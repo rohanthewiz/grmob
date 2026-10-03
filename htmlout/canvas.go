@@ -132,17 +132,162 @@ func renderCanvas(b *element.Builder, node *core.Node, attrs []string, path stri
 		}
 		_ = b.WriteString("</" + tag + ">")
 	}
+	// A clip is a <clipPath> holding one <path>, written after the shape's
+	// gradients. clipPathUnits is spelled out although userSpaceOnUse is its
+	// default, so a reader of the export sees the unit core.Shape.Clip
+	// documents without knowing SVG's defaults.
+	clip := func(id string, d string, ok bool) {
+		if !ok {
+			return
+		}
+		if !open {
+			defs, open = b.Ele("defs", "data-grmob-chrome", "gradients"), true
+		}
+		writeSVGOpen(b, "clipPath", []string{"id", id, "clipPathUnits", "userSpaceOnUse"})
+		b.Ele("path", "d", d).R()
+		_ = b.WriteString("</clipPath>")
+	}
 	for i, c := range node.Children {
 		server(CanvasGradient(c.Props, CanvasGradientID(path, i)))
 		server(CanvasStrokeGradient(c.Props, CanvasStrokeGradientID(path, i)))
+		id := CanvasClipID(path, i)
+		d, ok := CanvasClip(c.Props)
+		clip(id, d, ok)
 	}
 	if open {
 		defs.R()
 	}
+	mirror := node.Props["mirror"] == true
 	for i, c := range node.Children {
+		if c.Type == "CanvasText" {
+			// Directly rather than through renderNode, because a text's
+			// attributes depend on the canvas (whether it mirrors), which
+			// renderNode's per-node view cannot see. A text shape has no
+			// style, label or callbacks for renderNode to add.
+			renderCanvasText(b, c, CanvasClipID(path, i), mirror)
+			continue
+		}
 		renderNode(b, c, imposed{}, childPath(path, i))
 	}
 	e.R()
+}
+
+// CanvasClipID is the document id of shape i's <clipPath>, scoped by the
+// canvas's node path as CanvasGradientID is: "grmob-root-0-clip-2". The
+// runtime restates it as canvasGradientId with the "clip" kind.
+func CanvasClipID(canvasPath string, i int) string {
+	return tabScope(canvasPath) + "-clip-" + strconv.Itoa(i)
+}
+
+// CanvasClip is the path data of a shape's clip (core.Shape.Clip) and
+// whether it has one. An empty clip is still a clip, of nothing: its
+// <clipPath> holds a <path d=""> and hides the shape, which is what core
+// writes an empty list to mean.
+func CanvasClip(props map[string]any) (d string, ok bool) {
+	v, ok := props["clip"]
+	if !ok {
+		return "", false
+	}
+	return PathData(floats(v)), true
+}
+
+// renderCanvasText writes one CanvasText: a <g> carrying the clip, around the
+// <text>. See CanvasTextAttrs for why there are two elements.
+func renderCanvasText(b *element.Builder, node *core.Node, clipID string, mirror bool) {
+	group, text := CanvasTextAttrs(node.Props, clipID, mirror)
+	b.Ele("g", group...).R(
+		b.Ele("text", text...).TE(getStr(node.Props["text"])),
+	)
+}
+
+// CanvasTextAttrs is the attribute lists for one CanvasText's wrapper <g>
+// and its <text>, as name/value pairs in a fixed order. Exported so
+// wasm/verify can hold the runtime's canvasTextAttrs to it.
+//
+//	<g clip-path="url(#grmob-root-0-clip-3)">          ← the clip, if any
+//	  <text x="50" y="12" font-size="14" text-anchor="middle"
+//	        dominant-baseline="central" fill="#222" direction="ltr"
+//	        style="transform-box:view-box; transform-origin:50px 12px;
+//	               scale:var(--grmob-canvas-ix, 1) var(--grmob-canvas-iy, 1)">12</text>
+//	</g>
+//
+// # Why the size is a CSS scale
+//
+// Inside the <svg>, every length is in viewBox units and is scaled by the
+// viewBox mapping, font-size included. core.CanvasText's Size is in layout
+// units, as a stroke's width is, and SVG has no non-scaling-size that any
+// browser implements. So the font is written at its layout size and the
+// <text> is scaled back by the inverse of the mapping, about its own anchor
+// point: the anchor stays where the drawing put it and the glyphs come out at
+// Size. --grmob-canvas-ix and -iy are 1/sx and 1/sy; the live runtime keeps
+// them on the <svg> as it resizes (syncCanvasTextScale). A static export has
+// no script to measure with, so they are unset and fall back to 1.
+//
+// # Why the clip is on a wrapper
+//
+// clip-path with clipPathUnits="userSpaceOnUse" is resolved in the user
+// space of the element that references it, *after* that element's own
+// transform. On the <text> it would be scaled by the counter-scale above and
+// land somewhere else (checked headless: a clip at x ≤ 50 cut a centred label
+// on both sides). The <g> has no transform, so its user space is the
+// canvas's and the clip lands where core.Shape.Clip put it.
+//
+// # Mirroring
+//
+// In a core.CanvasMirrorsRTL canvas the <svg> is reflected by a CSS scale of
+// var(--grmob-inline, 1). Text multiplies its own x scale by the same
+// variable, which reflects the glyphs back about the anchor, and it inherits
+// the document's direction, which makes text-anchor's start the right-hand
+// end under dir="rtl". Together: the anchor mirrors, the glyphs read
+// normally, and a start-aligned label grows away from its tick in reading
+// order, which is what core.CanvasText documents. A canvas that does not
+// mirror pins direction="ltr", so its labels sit where they were drawn in
+// either document direction.
+func CanvasTextAttrs(props map[string]any, clipID string, mirror bool) (group, text []string) {
+	if _, ok := CanvasClip(props); ok {
+		group = []string{"clip-path", "url(#" + clipID + ")"}
+	}
+	at := floats(props["at"])
+	x, y := 0.0, 0.0
+	if len(at) == 2 {
+		x, y = at[0], at[1]
+	}
+	num := func(v float64) string { return strconv.FormatFloat(v, 'g', -1, 64) }
+	anchor := "start"
+	switch getStr(props["align"]) {
+	case "middle", "end":
+		anchor = getStr(props["align"])
+	}
+	baseline := "central"
+	switch getStr(props["valign"]) {
+	case "top":
+		baseline = "text-before-edge"
+	case "bottom":
+		baseline = "text-after-edge"
+	}
+	text = []string{
+		"x", num(x), "y", num(y),
+		"font-size", formatNumber(props["size"]),
+		"text-anchor", anchor,
+		"dominant-baseline", baseline,
+	}
+	if props["bold"] == true {
+		text = append(text, "font-weight", "700")
+	}
+	fill := getStr(props["fill"])
+	if fill == "" {
+		fill = "none"
+	}
+	text = append(text, "fill", fill)
+	sx := "var(--grmob-canvas-ix, 1)"
+	if mirror {
+		sx = "calc(var(--grmob-inline, 1) * var(--grmob-canvas-ix, 1))"
+	} else {
+		text = append(text, "direction", "ltr")
+	}
+	text = append(text, "style", "transform-box:view-box; transform-origin:"+num(x)+"px "+num(y)+"px; scale:"+
+		sx+" var(--grmob-canvas-iy, 1)")
+	return group, text
 }
 
 // writeSVGOpen writes an opening tag whose name keeps its case. Attribute
@@ -170,7 +315,7 @@ func renderCanvasShape(b *element.Builder, node *core.Node, attrs []string, path
 		i, _ = strconv.Atoi(path[slash+1:])
 	}
 	b.Ele("path", withLead(attrs, CanvasShapeAttrs(node.Props,
-		CanvasGradientID(canvas, i), CanvasStrokeGradientID(canvas, i))...)...).R()
+		CanvasGradientID(canvas, i), CanvasStrokeGradientID(canvas, i), CanvasClipID(canvas, i))...)...).R()
 }
 
 // CanvasGradientID is the document id of the gradient shape i of the canvas
@@ -276,8 +421,14 @@ func strs(v any) []string {
 // reference to it. A malformed one falls to fill="none" (or no stroke), as no
 // element is written for it and a reference to nothing would paint black in
 // some engines rather than nothing.
-func CanvasShapeAttrs(props map[string]any, fillID, strokeID string) []string {
+//
+// clipID is the id of the shape's <clipPath> (CanvasClipID); a shape with a
+// clip refers to it right after its path data.
+func CanvasShapeAttrs(props map[string]any, fillID, strokeID, clipID string) []string {
 	out := []string{"d", PathData(floats(props["d"]))}
+	if _, ok := CanvasClip(props); ok {
+		out = append(out, "clip-path", "url(#"+clipID+")")
+	}
 	fill := getStr(props["fill"])
 	if tag, _, _ := CanvasGradient(props, fillID); tag != "" {
 		fill = "url(#" + fillID + ")"

@@ -30,7 +30,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-089
+**Next ID:** N-091
 
 ## Open
 
@@ -71,9 +71,6 @@ with each item's `raised` traced back through all session docs.
 - **N-006** · raised `2026-0916-1032-clocks-canvas-alarm` · value low
   **Alarm sound and haptics are unheard,** and so is the Notify banner's
   default sound. Needs a person holding a phone. (was #9; lapsed@0917-1659)
-- **N-007** · raised `2026-0916-1032-clocks-canvas-alarm` · value low
-  **Canvas still omits** text, clipping and per-shape hit-testing. (was #10;
-  lapsed@0917-1659)
 - **N-009** · raised `2026-0916-1032-clocks-canvas-alarm` · value low
   **A Notify alarm is a banner, not a ringing screen.** The route is AlarmKit
   or full-screen intents. (was #15; lapsed@0917-1659)
@@ -433,6 +430,17 @@ with each item's `raised` traced back through all session docs.
   Nothing catches drift when a core or comps signature changes. Candidate: a
   test that extracts the ```go blocks under named headings into a temp
   module and builds them. The doc-gen test only matches the fence prefix.
+- **N-089** · raised `2026-1003-1659-n007-canvas-text-clip-shape-taps` · value medium
+  **`ios/verify/run.sh` does not compile.** `GrMobSurface.swift` (N-085,
+  `6fda8ec`) imports UIKit, and the harness builds the runtime's files with
+  the macOS `swiftc`, so it stops at `no such module 'UIKit'`. Fails the same
+  way on a clean checkout of HEAD. Every check the harness holds (canvas
+  mapping, stack, text edits, the widget census) is unrun until it builds.
+- **N-090** · raised `2026-1003-1659-n007-canvas-text-clip-shape-taps` · value low
+  **Mirrored canvas text under RTL is unseen on the natives.** Compose and
+  SwiftUI swap start and end for a `CanvasMirrorsRTL` canvas laid out right
+  to left; only Chrome was checked (a static page with `dir="rtl"`). Lesson
+  4.19's week chart does not mirror, so the tutorial never reaches the path.
 
 ## Non-goals
 
@@ -524,6 +532,23 @@ with each item's `raised` traced back through all session docs.
   comment. The tutorial page that does set cover is N-088.
 
 ## Closed
+
+- **N-007** · raised `2026-0916-1032-clocks-canvas-alarm`
+  · closed 2026-10-03, `2026-1003-1659-n007-canvas-text-clip-shape-taps` — all three added to `core.Canvas`:
+  `Shape.Text` (`core.CanvasText`: anchor in viewBox units, size in layout
+  units, start/middle/end × top/middle/bottom, start following a mirrored
+  drawing's reading direction), `Shape.Clip` (a path, nonzero) and
+  `Shape.OnClick`. Taps are hit-tested in Go (`core/canvas_hit.go`): hosts
+  report "x,y,w,h" in the box to one `onShapeTap` text callback, shapes are
+  tried topmost first and only those with a handler take part, a miss runs
+  the canvas's own OnClick. Web: `<clipPath>` in the leading `<defs>`, text
+  as `<g clip-path><text>` counter-scaled by `--grmob-canvas-ix/-iy` from a
+  ResizeObserver (htmlout's static export leaves them at 1). Seen in lesson
+  4.19's new week chart on Chrome (headless CDP), the iPhone 17 Pro simulator
+  (new `TutorialCanvasTapUITests`) and the Android emulator: the same four
+  taps picked Tue, missed on the clipped-off pill end, picked Thu, cleared.
+  Not seen on a device: a mirrored canvas's text under RTL on the natives
+  (checked on the web only). Text is not hit-testable.
 
 - **N-088** · raised `2026-1003-1559-n061-n088-safe-area-insets-on-the-web`
   · closed 2026-10-03, `2026-1003-1559-n061-n088-safe-area-insets-on-the-web` — kept `viewport-fit=cover` and padded `body` with the

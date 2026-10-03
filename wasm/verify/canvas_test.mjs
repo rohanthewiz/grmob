@@ -62,23 +62,121 @@ for (const c of canvases ?? []) {
                 const server = defs.children[i];
                 assert.equal(server.namespaceURI, SVG_NS);
                 assert.equal(server.tagName, g.tag);
-                assert.deepEqual(pairs(drawn(server)), pairs(g.attrs), `gradient ${i} of ${c.what}`);
+                assert.deepEqual(pairs(drawn(server)), pairs(g.attrs), `server ${i} of ${c.what}`);
                 assert.equal(server.children.length, g.stops.length);
                 g.stops.forEach((stop, j) => {
-                    assert.equal(server.children[j].tagName, "stop");
+                    // A gradient's <stop>s, or a clip's one <path>.
+                    assert.equal(server.children[j].tagName, g.child || "stop");
                     assert.deepEqual(pairs(drawn(server.children[j])), pairs(stop));
                 });
             });
         }
+        // Element attributes as comparable pairs, less the accessibility
+        // bookkeeping every node gets.
+        const own = (el) => new Map([...pairs(drawn(el))]
+            .filter(([name]) => !name.startsWith("aria-") && name !== "role"));
         paths.forEach((path, i) => {
             assert.equal(path.namespaceURI, SVG_NS, `shape ${i} is an SVG element`);
+            const group = c.groups?.[i];
+            if (Array.isArray(group)) {
+                // A CanvasText: a <g> with the clip, around one <text>.
+                assert.equal(path.tagName, "g", `text shape ${i} is a group`);
+                assert.deepEqual(own(path), pairs(group), `text group ${i} of ${c.what}`);
+                assert.equal(path.children.length, 1);
+                const text = path.children[0];
+                assert.equal(text.namespaceURI, SVG_NS);
+                assert.equal(text.tagName, "text");
+                assert.deepEqual(own(text), pairs(c.shapes[i]), `text ${i} of ${c.what}`);
+                assert.equal(text.textContent, c.texts[i]);
+                return;
+            }
             assert.equal(path.tagName, "path");
-            const attrs = new Map([...pairs(drawn(path))]
-                .filter(([name]) => !name.startsWith("aria-") && name !== "role"));
-            assert.deepEqual(attrs, pairs(c.shapes[i]), `shape ${i} of ${c.what}`);
+            assert.deepEqual(own(path), pairs(c.shapes[i]), `shape ${i} of ${c.what}`);
         });
     });
 }
+
+// A text shape's props patch rewrites its <text> in place and drops what it
+// lost; a clip added later appears in the <defs> under the shape's slot.
+test("an update-props on a text shape rewrites it and its clip", () => {
+    const tree = JSON.stringify({
+        Type: "Canvas",
+        Props: { vw: 100, vh: 50, scale: "fit" },
+        Children: [
+            { Type: "CanvasShape", Props: { d: [0, 0, 0, 1, 10, 10], stroke: "#000", strokeWidth: 1 } },
+            { Type: "CanvasText", Props: { text: "Jan", at: [10, 20], size: 12, fill: "#111", bold: true, align: "end" } },
+        ],
+    });
+    const { rt, svg } = mount(tree);
+    const group = svg.children[1];
+    const text = () => group.children[0];
+    assert.equal(text().textContent, "Jan");
+    assert.equal(text().getAttribute("font-weight"), "700");
+    assert.equal(text().getAttribute("text-anchor"), "end");
+    assert.equal(group.getAttribute("clip-path"), null);
+
+    rt.GrMob.patch(JSON.stringify([{
+        Type: "update-props",
+        TargetID: "root/0/1",
+        Changes: { text: "Feb", at: [30, 20], size: 14, clip: [0, 0, 0, 1, 50, 0, 1, 50, 50, 3] },
+    }]));
+    rt.drainFrames();
+
+    assert.equal(svg.children[2], group, "the text is patched in place, not rebuilt");
+    assert.equal(group.children.length, 1, "still one <text>");
+    assert.equal(text().textContent, "Feb");
+    assert.equal(text().getAttribute("x"), "30");
+    assert.equal(text().getAttribute("font-size"), "14");
+    assert.equal(text().getAttribute("font-weight"), null, "bold went with the props");
+    assert.equal(text().getAttribute("text-anchor"), "start");
+    assert.equal(text().getAttribute("fill"), "none", "no fill paints nothing");
+    assert.equal(group.getAttribute("clip-path"), "url(#grmob-root-0-clip-1)");
+    const defs = svg.children[0];
+    assert.equal(defs.getAttribute("data-grmob-chrome"), "gradients");
+    assert.equal(defs.children[0].tagName, "clipPath");
+    assert.equal(defs.children[0].getAttribute("id"), "grmob-root-0-clip-1");
+    assert.equal(defs.children[0].children[0].getAttribute("d"), "M0 0L50 0L50 50Z");
+});
+
+// A pointer click on a canvas with a tappable shape reports where it landed,
+// in the box, and does not also fire the canvas's onClick; a keyboard click
+// (detail 0) fires onClick alone. A mirrored canvas under rtl reports the
+// drawing's x, reflected back.
+test("a click on a canvas with onShapeTap reports its box point", () => {
+    const tree = (mirror) => JSON.stringify({
+        Type: "Canvas",
+        Props: { vw: 100, vh: 50, scale: "fit", onClick: "cb_1", onShapeTap: "txt_cb_1", ...(mirror ? { mirror: true } : {}) },
+        Children: [{ Type: "CanvasShape", Props: { d: [0, 0, 0, 1, 10, 10], fill: "#000" } }],
+    });
+    const place = (svg) => {
+        svg.getBoundingClientRect = () => ({ left: 10, top: 20, width: 200, height: 100 });
+        svg.clientWidth = 200;
+        svg.clientHeight = 100;
+    };
+
+    let { rt, svg } = mount(tree(false));
+    place(svg);
+    svg.dispatch("click", { detail: 1, clientX: 60, clientY: 45 });
+    svg.dispatch("click", { detail: 0 });
+    assert.deepEqual(rt.dispatched, [
+        { id: "txt_cb_1", payload: { value: "50,25,200,100" } },
+        { id: "cb_1", payload: {} },
+    ]);
+
+    ({ rt, svg } = mount(tree(true)));
+    place(svg);
+    rt.sandbox.getComputedStyle = () => ({ getPropertyValue: (name) => name === "--grmob-inline" ? " -1" : "" });
+    svg.dispatch("click", { detail: 1, clientX: 60, clientY: 45 });
+    assert.deepEqual(rt.dispatched, [{ id: "txt_cb_1", payload: { value: "150,25,200,100" } }]);
+
+    // Losing the last tappable shape gives pointer clicks back to onClick.
+    rt.GrMob.patch(JSON.stringify([{
+        Type: "update-props", TargetID: "root/0", Changes: { vw: 100, vh: 50, scale: "fit", onClick: "cb_1" },
+    }]));
+    rt.drainFrames();
+    svg.dispatch("click", { detail: 1, clientX: 60, clientY: 45 });
+    assert.deepEqual(rt.dispatched.at(-1), { id: "cb_1", payload: {} });
+});
 
 test("an update-props on a shape rewrites its paint and drops what it lost", () => {
     const tree = JSON.stringify({

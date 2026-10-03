@@ -26,8 +26,8 @@ func TestPathDataSpellsEachOpcode(t *testing.T) {
 
 // The JSON-decoded form of the props ([]any, not []float64) draws the same.
 func TestCanvasShapeAttrsAcceptDecodedProps(t *testing.T) {
-	typed := CanvasShapeAttrs(map[string]any{"d": []float64{0, 1, 2}, "stroke": "#000", "strokeWidth": 2.0, "dash": []float64{4, 2}}, "g", "s")
-	decoded := CanvasShapeAttrs(map[string]any{"d": []any{0.0, 1.0, 2.0}, "stroke": "#000", "strokeWidth": 2.0, "dash": []any{4.0, 2.0}}, "g", "s")
+	typed := CanvasShapeAttrs(map[string]any{"d": []float64{0, 1, 2}, "stroke": "#000", "strokeWidth": 2.0, "dash": []float64{4, 2}}, "g", "s", "c")
+	decoded := CanvasShapeAttrs(map[string]any{"d": []any{0.0, 1.0, 2.0}, "stroke": "#000", "strokeWidth": 2.0, "dash": []any{4.0, 2.0}}, "g", "s", "c")
 	if strings.Join(typed, "|") != strings.Join(decoded, "|") {
 		t.Errorf("typed %v != decoded %v", typed, decoded)
 	}
@@ -150,7 +150,7 @@ func TestCanvasStrokeGradientExport(t *testing.T) {
 	// Malformed stroke keys draw no stroke, not a reference to nothing.
 	bad := CanvasShapeAttrs(map[string]any{"d": []float64{0, 0, 0}, "strokeGradient": "linear",
 		"strokeGradientAt": []float64{0, 0, 1}, "strokeGradientStops": []float64{0, 1},
-		"strokeGradientColors": []string{"#000", "#fff"}, "strokeWidth": 1.0}, "g", "s")
+		"strokeGradientColors": []string{"#000", "#fff"}, "strokeWidth": 1.0}, "g", "s", "c")
 	if strings.Contains(strings.Join(bad, " "), "stroke") {
 		t.Errorf("malformed stroke gradient still stroked: %v", bad)
 	}
@@ -187,5 +187,70 @@ func TestCanvasGradientExportIsXMLCased(t *testing.T) {
 		if !seen[name] {
 			t.Errorf("an XML reader found no <%s>; saw %v", name, seen)
 		}
+	}
+}
+
+// Clips go in the leading <defs> as <clipPath>s, in their exact SVG case, and
+// a shape refers to its own by slot; a text shape is a <g> carrying its clip
+// around a <text> carrying the counter-scale, with its content escaped.
+func TestCanvasClipAndTextExport(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+	out := ExportHTML(core.Canvas(100, 50, []core.Shape{
+		{Path: core.Rect(0, 0, 100, 50), Fill: "#eee", Clip: core.Rect(0, 0, 50, 50)},
+		{Fill: "#111", Clip: core.Rect(0, 0, 50, 50), Text: &core.CanvasText{
+			X: 25, Y: 10, Content: "<b>&", Bold: true, Align: core.CanvasAlignMiddle, VAlign: core.CanvasVAlignTop,
+		}},
+		{Fill: "#222", Text: &core.CanvasText{X: 100, Y: 50, Content: "Dec", Size: 9, Align: core.CanvasAlignEnd}},
+	}).Render(ctx))
+	for _, want := range []string{
+		`<clipPath id="grmob-root-clip-0" clipPathUnits="userSpaceOnUse">`,
+		`<clipPath id="grmob-root-clip-1" clipPathUnits="userSpaceOnUse">`,
+		`<path d="M0 0L50 0L50 50L0 50Z"`,
+		`<path d="M0 0L100 0L100 50L0 50Z" clip-path="url(#grmob-root-clip-0)" fill="#eee"`,
+		`<g clip-path="url(#grmob-root-clip-1)">`,
+		`<text x="25" y="10" font-size="12" text-anchor="middle" dominant-baseline="text-before-edge" font-weight="700" fill="#111" direction="ltr" style="transform-box:view-box; transform-origin:25px 10px; scale:var(--grmob-canvas-ix, 1) var(--grmob-canvas-iy, 1)">`,
+		`&lt;b&gt;&amp;`,
+		`<text x="100" y="50" font-size="9" text-anchor="end" dominant-baseline="central" fill="#222" direction="ltr"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("export missing %s\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "grmob-root-clip-2") {
+		t.Error("an unclipped text wrote a clip")
+	}
+	start, end := strings.Index(out, "<svg"), strings.LastIndex(out, "</svg>")
+	dec := xml.NewDecoder(strings.NewReader(out[start : end+len("</svg>")]))
+	seen := map[string]bool{}
+	for {
+		tok, err := dec.Token()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatalf("the exported <svg> is not well-formed XML: %v", err)
+		}
+		if se, ok := tok.(xml.StartElement); ok {
+			seen[se.Name.Local] = true
+		}
+	}
+	for _, name := range []string{"clipPath", "g", "text"} {
+		if !seen[name] {
+			t.Errorf("an XML reader found no <%s>; saw %v", name, seen)
+		}
+	}
+}
+
+// In a mirroring canvas a text inherits the document's direction and folds
+// --grmob-inline into its x scale, so its glyphs reflect back about the anchor.
+func TestCanvasTextExportInAMirroredCanvas(t *testing.T) {
+	_, text := CanvasTextAttrs(map[string]any{"text": "a", "at": []float64{10, 5}, "size": 12.0}, "", true)
+	got := strings.Join(text, " ")
+	if strings.Contains(got, "direction") {
+		t.Errorf("a mirrored canvas's text pins its direction: %s", got)
+	}
+	if !strings.Contains(got, "scale:calc(var(--grmob-inline, 1) * var(--grmob-canvas-ix, 1)) var(--grmob-canvas-iy, 1)") {
+		t.Errorf("a mirrored canvas's text does not reflect back: %s", got)
 	}
 }

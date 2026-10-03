@@ -127,6 +127,9 @@ var tags = map[string]string{
 	// See canvas.go.
 	"Canvas":      "svg",
 	"CanvasShape": "path",
+	// A text shape (core.CanvasText) is a <g> holding a <text>: the group
+	// carries the clip, the text its counter-scale. See CanvasTextAttrs.
+	"CanvasText": "g",
 }
 
 // defaultTag is what an unrecognized node type renders as. A div is the

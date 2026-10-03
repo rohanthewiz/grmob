@@ -270,6 +270,10 @@ const GrMob = (() => {
                     // keydown listener (handleEscape) picks the innermost.
                     el.dataset.listener_onEscape = value;
                     escapeClaimants.add(el);
+                } else if (key === "onShapeTap") {
+                    // core.Shape.OnClick. No "shapetap" DOM event: it is a
+                    // click, located. See "Canvas taps".
+                    attachShapeTap(el, value);
                 } else if (key.startsWith("on")) {
                     const event = mapEventName(key);
                     el.dataset[`listener_${key}`] = value;
@@ -4145,13 +4149,22 @@ const GrMob = (() => {
     // and Z. canvasPathData and canvasShapeAttrs restate htmlout's PathData and
     // CanvasShapeAttrs; wasm/verify's canvas test holds the two to each other.
     const SVG_NS = "http://www.w3.org/2000/svg";
-    const SVG_TAGS = new Set(["svg", "path"]);
+    // A text shape (core.CanvasText) is a <g> around a <text>; see
+    // canvasTextAttrs.
+    const SVG_TAGS = new Set(["svg", "path", "g", "text"]);
 
     // The attributes a shape manages, so a patch that drops one (a shape that
     // loses its stroke) can remove it rather than leave the old paint behind.
     const CANVAS_SHAPE_ATTRS = [
-        "d", "fill", "fill-rule", "stroke", "stroke-width", "vector-effect",
+        "d", "clip-path", "fill", "fill-rule", "stroke", "stroke-width", "vector-effect",
         "stroke-linecap", "stroke-linejoin", "stroke-dasharray",
+    ];
+
+    // The same for a text shape's <text>. Its wrapper <g> manages only
+    // clip-path.
+    const CANVAS_TEXT_ATTRS = [
+        "x", "y", "font-size", "text-anchor", "dominant-baseline", "font-weight",
+        "fill", "direction", "style",
     ];
 
     // Opcode → [SVG letter, operand count]. A truncated or unknown operation
@@ -4179,8 +4192,11 @@ const GrMob = (() => {
     //
     // fillId and strokeId are the ids this shape's paint servers carry (see
     // canvasGradientId); a well-formed gradient paints by reference to one.
-    function canvasShapeAttrs(props, fillId, strokeId) {
+    // clipId is its <clipPath>'s, referred to right after the path data when
+    // the shape has a clip (core.Shape.Clip).
+    function canvasShapeAttrs(props, fillId, strokeId, clipId) {
         const out = [["d", canvasPathData(props.d)]];
+        if (canvasClip(props) !== null) out.push(["clip-path", `url(#${clipId})`]);
         let fill = props.fill ? String(props.fill) : "";
         if (canvasGradient(props, fillId, "")) fill = `url(#${fillId})`;
         out.push(["fill", fill || "none"]);
@@ -4198,6 +4214,193 @@ const GrMob = (() => {
             out.push(["stroke-dasharray", props.dash.map(String).join(" ")]);
         }
         return out;
+    }
+
+    // htmlout's CanvasClip: the path data of a shape's clip, or null for a
+    // shape without one. An empty clip is "" — a clip of nothing, which hides
+    // the shape, as core writes an empty list to mean.
+    function canvasClip(props) {
+        return Array.isArray(props.clip) ? canvasPathData(props.clip) : null;
+    }
+
+    // htmlout's CanvasTextAttrs: the wrapper <g>'s pairs and the <text>'s,
+    // in the same order. The reasoning is all there; in short:
+    //
+    //   - the font is written at its layout size and the <text> is scaled by
+    //     the inverse of the viewBox mapping (--grmob-canvas-ix/-iy, kept on
+    //     the <svg> by syncCanvasTextScale) about its own anchor, because SVG
+    //     scales font-size with the viewBox and core.CanvasText's Size is in
+    //     layout units;
+    //   - the clip sits on the <g>, because a clip-path is resolved after the
+    //     referencing element's own transform and the <text> has one;
+    //   - a mirroring canvas multiplies the x scale by --grmob-inline (the
+    //     glyphs reflect back) and lets direction inherit (start becomes the
+    //     right-hand end under rtl); any other canvas pins direction="ltr".
+    function canvasTextAttrs(props, clipId, mirror) {
+        const group = canvasClip(props) !== null ? [["clip-path", `url(#${clipId})`]] : [];
+        const at = Array.isArray(props.at) && props.at.length === 2 ? props.at : [0, 0];
+        const x = String(at[0]), y = String(at[1]);
+        const anchor = props.align === "middle" || props.align === "end" ? props.align : "start";
+        const baseline = props.valign === "top" ? "text-before-edge"
+            : props.valign === "bottom" ? "text-after-edge" : "central";
+        const text = [
+            ["x", x], ["y", y],
+            ["font-size", String(props.size)],
+            ["text-anchor", anchor],
+            ["dominant-baseline", baseline],
+        ];
+        if (props.bold === true) text.push(["font-weight", "700"]);
+        text.push(["fill", props.fill ? String(props.fill) : "none"]);
+        let sx = "var(--grmob-canvas-ix, 1)";
+        if (mirror) {
+            sx = "calc(var(--grmob-inline, 1) * var(--grmob-canvas-ix, 1))";
+        } else {
+            text.push(["direction", "ltr"]);
+        }
+        text.push(["style", `transform-box:view-box; transform-origin:${x}px ${y}px; scale:${sx} var(--grmob-canvas-iy, 1)`]);
+        return { group, text };
+    }
+
+    // Writes a text shape: the <g>'s clip and the <text>'s pairs, removing
+    // the managed ones it no longer carries, and the content. The <text> is
+    // the group's one child, made on first use; nothing else adds children to
+    // a CanvasText, which has no node children of its own.
+    function applyCanvasTextAttrs(el, props, clipId, mirror) {
+        const { group, text } = canvasTextAttrs(props, clipId, mirror);
+        if (group.length) el.setAttribute("clip-path", group[0][1]);
+        else el.removeAttribute("clip-path");
+        let t = el.children[0];
+        if (!t) {
+            t = document.createElementNS(SVG_NS, "text");
+            el.appendChild(t);
+        }
+        const written = new Set(text.map(([name]) => name));
+        for (const name of CANVAS_TEXT_ATTRS) {
+            if (!written.has(name)) t.removeAttribute(name);
+        }
+        for (const [name, value] of text) t.setAttribute(name, value);
+        const content = props.text == null ? "" : String(props.text);
+        if (t.textContent !== content) t.textContent = content;
+    }
+
+    // core.CanvasMapping's scale, restated: the layout units one viewBox unit
+    // spans on each axis. Only the scale is needed here, for the text's
+    // counter-scale; the offsets are SVG's to apply.
+    function canvasScale(vw, vh, w, h, stretch) {
+        vw = vw > 0 ? vw : 100;
+        vh = vh > 0 ? vh : 100;
+        const sx = w / vw, sy = h / vh;
+        if (stretch) return [sx, sy];
+        const k = Math.min(sx, sy);
+        return [k, k];
+    }
+
+    // The canvases whose text is kept at layout size, watched for a change of
+    // box. A ResizeObserver rather than a window resize listener: a canvas's
+    // box changes with its container (a split pane, a rotated phone, a
+    // sidebar opening) far more often than with the window.
+    const canvasTextObserver = typeof ResizeObserver === "function"
+        ? new ResizeObserver((entries) => {
+            for (const entry of entries) applyCanvasTextScale(entry.target);
+        })
+        : null;
+
+    // Writes --grmob-canvas-ix/-iy, the inverse of the viewBox scale, onto
+    // the <svg> for its text to read. A box with no area yet (detached, or
+    // not laid out) writes nothing; the observer fires again once it has one.
+    function applyCanvasTextScale(svg) {
+        const props = svg[CANVAS_PROPS];
+        const w = svg.clientWidth, h = svg.clientHeight;
+        if (!props || !(w > 0) || !(h > 0)) return;
+        const [sx, sy] = canvasScale(Number(props.vw), Number(props.vh), w, h, props.scale === "stretch");
+        if (!(sx > 0) || !(sy > 0)) return;
+        svg.style.setProperty("--grmob-canvas-ix", String(1 / sx));
+        svg.style.setProperty("--grmob-canvas-iy", String(1 / sy));
+        svg.__grmobTextScaled = true;
+    }
+
+    // Starts or stops keeping a canvas's text at layout size, as the canvas
+    // gains or loses its last text shape.
+    function syncCanvasTextScale(svg, hasText) {
+        if (hasText) {
+            applyCanvasTextScale(svg);
+            if (canvasTextObserver && !svg.__grmobTextObserved) {
+                canvasTextObserver.observe(svg);
+                svg.__grmobTextObserved = true;
+            }
+            return;
+        }
+        if (svg.__grmobTextObserved) {
+            canvasTextObserver.unobserve(svg);
+            svg.__grmobTextObserved = false;
+        }
+        // Only a canvas that wrote them has anything to take back, which is
+        // also every canvas that never held text skipping the style writes.
+        if (svg.__grmobTextScaled) {
+            svg.style.removeProperty("--grmob-canvas-ix");
+            svg.style.removeProperty("--grmob-canvas-iy");
+            svg.__grmobTextScaled = false;
+        }
+    }
+
+    // ── Canvas taps (core.Shape.OnClick) ──
+    //
+    // Go hit-tests; the page reports where the tap landed. A canvas with a
+    // tappable shape carries onShapeTap, a text callback that takes
+    // "x,y,w,h": the point in the canvas's box and the box's size, in CSS px,
+    // with a mirrored drawing's reflection undone (see "Tapping a shape" on
+    // core.Canvas).
+    //
+    // A pointer click goes to onShapeTap and not to the canvas's own onClick
+    // (Go runs that one itself when the tap hits no shape). A keyboard or
+    // assistive-technology activation (a click with detail 0) still goes to
+    // onClick, which is the only way to reach it without a pointer.
+    function attachShapeTap(el, cbId) {
+        el.dataset.listener_onShapeTap = cbId;
+        if (el.dataset.has_listener_onShapeTap) return;
+        el.dataset.has_listener_onShapeTap = "true";
+        el.addEventListener("click", (e) => {
+            const latest = el.dataset.listener_onShapeTap;
+            if (!latest || !(e.detail > 0)) return;
+            // One gesture, one handler, as eventQualifies keeps it for
+            // onClick: a press that already fired onLongPress is not also a
+            // tap. Consumed here, because a canvas with onShapeTap leaves the
+            // flag for this listener (see eventQualifies).
+            if (el.dataset.longPressFired) {
+                delete el.dataset.longPressFired;
+                return;
+            }
+            const at = canvasTapPoint(el, e);
+            if (at) dispatchFromElement(el, "onShapeTap", latest, { value: at });
+        });
+    }
+
+    // The "x,y,w,h" of a click on a canvas, or null for a canvas with no box.
+    //
+    // clientWidth is the canvas's layout size; the bounding rect is where it
+    // is drawn, which differs from it only by a transform (Style.Rotate or
+    // Scale, never the mirror: a reflection keeps the rect). Scaling the
+    // offset by their ratio maps a click on a scaled canvas back into layout
+    // units. A mirrored canvas is reflected about its centre, so its drawing's
+    // x is the width minus the offset.
+    function canvasTapPoint(svg, e) {
+        const rect = svg.getBoundingClientRect();
+        const w = svg.clientWidth || rect.width, h = svg.clientHeight || rect.height;
+        if (!(w > 0) || !(h > 0) || !(rect.width > 0) || !(rect.height > 0)) return null;
+        let x = (e.clientX - rect.left) * (w / rect.width);
+        const y = (e.clientY - rect.top) * (h / rect.height);
+        if (canvasMirrored(svg)) x = w - x;
+        return `${x},${y},${w},${h}`;
+    }
+
+    // Whether a canvas's drawing is reflected right now: it mirrors
+    // (core.CanvasMirrorsRTL) and --grmob-inline, the variable its CSS scale
+    // reads, is -1 where it sits. Read from the same variable as the
+    // reflection, so the two cannot disagree.
+    function canvasMirrored(svg) {
+        const props = svg[CANVAS_PROPS];
+        if (!props || props.mirror !== true) return false;
+        return getComputedStyle(svg).getPropertyValue("--grmob-inline").trim() === "-1";
     }
 
     // ── Canvas gradients ──
@@ -4281,22 +4484,44 @@ const GrMob = (() => {
             }
         }
         const servers = [];
+        const mirror = (svg[CANVAS_PROPS] || {}).mirror === true;
+        let hasText = false;
         let i = 0;
         for (const child of svg.children) {
             if (child.getAttribute("data-node-path") === null) continue;
             const props = child[SHAPE_PROPS];
             const fillId = canvasGradientId(canvasPath, i, "fill");
-            const strokeId = canvasGradientId(canvasPath, i++, "stroke");
+            const strokeId = canvasGradientId(canvasPath, i, "stroke");
+            const clipId = canvasGradientId(canvasPath, i++, "clip");
             if (!props) continue;
+            const clip = canvasClip(props);
+            // A clip is a <clipPath> holding one <path>, after the shape's
+            // gradients: htmlout's order. Shaped like a gradient server so
+            // one loop below builds both.
+            const clipServer = clip === null ? null : {
+                tag: "clipPath",
+                attrs: [["id", clipId], ["clipPathUnits", "userSpaceOnUse"]],
+                children: [["path", [["d", clip]]]],
+            };
+            if (child.dataset.nodeType === "CanvasText") {
+                hasText = true;
+                if (clipServer) servers.push(clipServer);
+                // Always rewritten: the clip id is a function of the slot and
+                // the text's direction a function of the canvas.
+                applyCanvasTextAttrs(child, props, clipId, mirror);
+                continue;
+            }
             const fill = canvasGradient(props, fillId, "");
             const stroke = canvasGradient(props, strokeId, "stroke");
-            if (!fill && !stroke) continue;
+            if (!fill && !stroke && !clipServer) continue;
             if (fill) servers.push(fill);
             if (stroke) servers.push(stroke);
+            if (clipServer) servers.push(clipServer);
             // The paints are written again because the ids they point at are
             // a function of this slot.
-            applyCanvasShapeAttrs(child, props, fillId, strokeId);
+            applyCanvasShapeAttrs(child, props, fillId, strokeId, clipId);
         }
+        syncCanvasTextScale(svg, hasText);
         if (servers.length === 0) {
             if (defs) svg.removeChild(defs);
             return;
@@ -4309,9 +4534,11 @@ const GrMob = (() => {
         for (const g of servers) {
             const server = document.createElementNS(SVG_NS, g.tag);
             for (const [name, value] of g.attrs) server.setAttribute(name, value);
-            for (const stop of g.stops) {
-                const el = document.createElementNS(SVG_NS, "stop");
-                for (const [name, value] of stop) el.setAttribute(name, value);
+            // A gradient's children are its <stop>s; a clip's, its <path>.
+            const children = g.children || (g.stops || []).map((stop) => ["stop", stop]);
+            for (const [tag, attrs] of children) {
+                const el = document.createElementNS(SVG_NS, tag);
+                for (const [name, value] of attrs) el.setAttribute(name, value);
                 server.appendChild(el);
             }
             defs.appendChild(server);
@@ -4327,7 +4554,8 @@ const GrMob = (() => {
         const done = new Set();
         for (const el of touched) {
             if (!el || !el.dataset) continue;
-            const svg = el.dataset.nodeType === "CanvasShape" ? el.parentNode : el;
+            const shape = el.dataset.nodeType === "CanvasShape" || el.dataset.nodeType === "CanvasText";
+            const svg = shape ? el.parentNode : el;
             if (!svg || !svg.dataset || svg.dataset.nodeType !== "Canvas" || done.has(svg)) continue;
             done.add(svg);
             syncCanvasGradients(svg);
@@ -4336,8 +4564,8 @@ const GrMob = (() => {
 
     // Writes a shape's attribute set, removing the managed ones it no longer
     // carries (an update-props carries the whole new map).
-    function applyCanvasShapeAttrs(el, props, fillId, strokeId) {
-        const attrs = canvasShapeAttrs(props, fillId, strokeId);
+    function applyCanvasShapeAttrs(el, props, fillId, strokeId, clipId) {
+        const attrs = canvasShapeAttrs(props, fillId, strokeId, clipId);
         const written = new Set(attrs.map(([name]) => name));
         for (const name of CANVAS_SHAPE_ATTRS) {
             if (!written.has(name)) el.removeAttribute(name);
@@ -4347,8 +4575,14 @@ const GrMob = (() => {
         }
     }
 
+    // A canvas's own props, kept on its <svg> for the passes that need them
+    // after the fact: the text counter-scale (its viewBox and scale) and the
+    // tap's mirror test.
+    const CANVAS_PROPS = "__grmobCanvasProps";
+
     function applyCanvasProps(el, props, nodeType) {
         if (nodeType === "Canvas") {
+            el[CANVAS_PROPS] = props;
             el.setAttribute("viewBox", `0 0 ${props.vw} ${props.vh}`);
             el.setAttribute("preserveAspectRatio",
                 props.scale === "stretch" ? "none" : "xMidYMid meet");
@@ -4372,7 +4606,7 @@ const GrMob = (() => {
             }
             return;
         }
-        if (nodeType !== "CanvasShape") return;
+        if (nodeType !== "CanvasShape" && nodeType !== "CanvasText") return;
         el[SHAPE_PROPS] = props;
         // The id from the shape's current slot when it has one. On the create
         // path it has none yet, and syncCanvasGradients writes the real one
@@ -4380,9 +4614,15 @@ const GrMob = (() => {
         const path = el.getAttribute("data-node-path") || "";
         const slash = path.lastIndexOf("/");
         const canvasPath = path.slice(0, slash), slot = path.slice(slash + 1);
-        applyCanvasShapeAttrs(el, props,
-            slash < 0 ? "" : canvasGradientId(canvasPath, slot, "fill"),
-            slash < 0 ? "" : canvasGradientId(canvasPath, slot, "stroke"));
+        const id = (kind) => slash < 0 ? "" : canvasGradientId(canvasPath, slot, kind);
+        if (nodeType === "CanvasText") {
+            // The canvas's mirror is unknown until the text is in it; the
+            // sync after the tree settles writes the final direction.
+            const svg = el.parentNode;
+            applyCanvasTextAttrs(el, props, id("clip"), !!(svg && svg[CANVAS_PROPS] && svg[CANVAS_PROPS].mirror === true));
+            return;
+        }
+        applyCanvasShapeAttrs(el, props, id("fill"), id("stroke"), id("clip"));
     }
 
     // A MapView's region and a Marker's position, as dataset entries.
@@ -7561,6 +7801,9 @@ const GrMob = (() => {
             // SVG namespace (SVG_TAGS). See the canvas section.
             Canvas: "svg",
             CanvasShape: "path",
+            // A text shape: a <g> carrying the clip around the <text> that
+            // carries the counter-scale. See canvasTextAttrs.
+            CanvasText: "g",
 
             // The z-stack. A div like the rest — what makes it an overlay is
             // the single-cell grid styleFromGrMob gives it and the grid-area
@@ -7832,6 +8075,13 @@ const GrMob = (() => {
     // Every other event maps one-to-one onto a DOM event and qualifies
     // unconditionally.
     function eventQualifies(propKey, e, el) {
+        if (propKey === "onClick" && el && el.dataset.listener_onShapeTap && e && e.detail > 0) {
+            // A pointer click on a canvas with tappable shapes is the shape
+            // tap's (attachShapeTap), and Go runs this onClick itself when
+            // the tap hits no shape. Checked before the long-press flag so
+            // that flag is left for the shape tap's listener to consume.
+            return false;
+        }
         if (propKey === "onClick" && el && el.dataset.longPressFired) {
             // One gesture, one handler: the press already fired onLongPress
             // (see attachLongPress), and the browser's synthetic click on
@@ -8558,6 +8808,10 @@ const GrMob = (() => {
                             // drops a prop that went away, ending the claim.
                             el.dataset.listener_onEscape = v;
                             escapeClaimants.add(el);
+                        } else if (k === "onShapeTap") {
+                            // As on the create path; pruneStaleListeners
+                            // drops it when no shape is tappable any more.
+                            attachShapeTap(el, v);
                         } else if (k.startsWith("on")) {
                             const event = mapEventName(k);
                             el.dataset[`listener_${k}`] = v;

@@ -3572,6 +3572,8 @@ func lessonClocksAndDrawing() Lesson {
 				{ID: "run", Hour: 7, Minute: 15, Label: "Run", Days: alarm.Weekend},
 			})
 			added := core.NewState(ctx, 0)
+			// The tapped bar of the week chart, or -1 for none.
+			picked := core.NewState(ctx, -1)
 
 			setEnabled := func(id string, on bool) {
 				next := slices.Clone(alarms.Get())
@@ -3647,6 +3649,45 @@ func lessonClocksAndDrawing() Lesson {
 					Fill: slices3[i],
 				})
 				start += sweep
+			}
+
+			// The week chart: a bar per day, each a pill clipped flat at the
+			// baseline, with its value above it and its day below, both
+			// drawn as canvas text. A tap on a bar picks it; a tap anywhere
+			// else on the canvas clears the pick, through the canvas's own
+			// OnClick.
+			const weekW, weekH, base = 120.0, 64.0, 50.0
+			weekDays := []string{"Mon", "Tue", "Wed", "Thu", "Fri"}
+			weekValues := []float64{30, 42, 18, 36, 24}
+			plot := core.Rect(0, 0, weekW, base)
+			var week []core.Shape
+			for i, v := range weekValues {
+				x := 8 + float64(i)*23
+				top := base - v
+				// A pill from top to past the baseline: round at both ends,
+				// and the clip cuts the bottom end off flat.
+				pill := core.NewPath().MoveTo(x, top+8).Arc(x+8, top+8, 8, 180, 180).
+					LineTo(x+16, base+8).Arc(x+8, base+8, 8, 0, 180).Close()
+				fill := hue(0)
+				if picked.Get() == i {
+					fill = hue(1)
+				}
+				week = append(week,
+					core.Shape{Path: pill, Fill: fill, Clip: plot, OnClick: func() { picked.Set(i) }},
+					core.Shape{Fill: t.Colors.TextPrimary, Text: &core.CanvasText{
+						X: x + 8, Y: top - 2, Content: fmt.Sprint(v), Size: 11, Bold: picked.Get() == i,
+						Align: core.CanvasAlignMiddle, VAlign: core.CanvasVAlignBottom,
+					}},
+					core.Shape{Fill: t.Colors.TextSecondary, Text: &core.CanvasText{
+						X: x + 8, Y: base + 3, Content: weekDays[i], Size: 11,
+						Align: core.CanvasAlignMiddle, VAlign: core.CanvasVAlignTop,
+					}},
+				)
+			}
+			week = append(week, core.Shape{Path: core.Line(0, base, weekW, base), Stroke: t.Colors.BorderColor()})
+			weekNote := "Tap a bar."
+			if i := picked.Get(); i >= 0 && i < len(weekDays) {
+				weekNote = fmt.Sprintf("%s: %.0f. Tap outside the bars to clear.", weekDays[i], weekValues[i])
 			}
 
 			var ringPanel core.View = caption("No alarm is ringing.")
@@ -3770,6 +3811,23 @@ comps.DigitalClock{Time: now, ShowSeconds: true, ShowDate: true}`),
 							core.AccessibilityLabel("A dashed zigzag fading blue to aqua beside a ring shading orange to red")),
 						caption("StrokeGradient: the same constructors on an outline; the width stays in layout units."),
 					),
+				),
+				prose("A canvas can also carry text, clip a shape to a path, and take a tap on one shape. "+
+					"Text is placed in the drawing's units but sized in layout units, like a stroke, so "+
+					"labels read the same on any screen. A tap is hit-tested in Go against what each "+
+					"shape paints, topmost first, and a miss falls to the canvas's own OnClick."),
+				codeBlock(`core.Shape{Path: pill, Fill: blue, Clip: plot, OnClick: func() { picked.Set(i) }},
+core.Shape{Fill: ink, Text: &core.CanvasText{
+    X: x + 8, Y: top - 2, Content: "42", Size: 11,
+    Align: core.CanvasAlignMiddle, VAlign: core.CanvasVAlignBottom,
+}},`),
+				// A fixed title: the panel is keyed by it, and a title that
+				// changed with the pick would rebuild the canvas on every tap.
+				demoPanel("Tap the bars. Each label is canvas text; each bar a clipped pill.",
+					core.Canvas(weekW, weekH, week, core.Height("160px"),
+						core.OnClick(func() { picked.Set(-1) }),
+						core.AccessibilityLabel("Bar chart: Monday 30, Tuesday 42, Wednesday 18, Thursday 36, Friday 24")),
+					caption(weekNote),
 				),
 				prose("An alarm is the time arithmetic in package alarm, a hook that checks it every second, "+
 					"and two widgets. The hook asks whether each alarm fell due since the last check, not "+

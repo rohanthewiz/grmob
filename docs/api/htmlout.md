@@ -15,12 +15,15 @@ Package htmlout exports a rendered core.Node tree as a standalone HTML document.
 - [`func AriaOrientationDefaults`](#func-ariaorientationdefaults)
 - [`func AriaOrientationFor`](#func-ariaorientationfor)
 - [`func BorderResetTypes`](#func-borderresettypes)
+- [`func CanvasClip`](#func-canvasclip)
+- [`func CanvasClipID`](#func-canvasclipid)
 - [`func CanvasGradient`](#func-canvasgradient)
 - [`func CanvasGradientID`](#func-canvasgradientid)
 - [`func CanvasMirrorScale`](#func-canvasmirrorscale)
 - [`func CanvasShapeAttrs`](#func-canvasshapeattrs)
 - [`func CanvasStrokeGradient`](#func-canvasstrokegradient)
 - [`func CanvasStrokeGradientID`](#func-canvasstrokegradientid)
+- [`func CanvasTextAttrs`](#func-canvastextattrs)
 - [`func CarriesOwnRole`](#func-carriesownrole)
 - [`func ChartDataOf`](#func-chartdataof)
 - [`func ChartTableRows`](#func-charttablerows)
@@ -148,7 +151,27 @@ func BorderResetTypes() []string
 
 BorderResetTypes returns those node types, sorted so that a test looping over them reports in a stable order. Exported for the reason GenericTags is: the WASM conformance test has to compare set against set.
 
-<small>[htmlout/tag.go:459](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L459)</small>
+<small>[htmlout/tag.go:462](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L462)</small>
+
+### func CanvasClip
+
+```go
+func CanvasClip(props map[string]any) (d string, ok bool)
+```
+
+CanvasClip is the path data of a shape's clip (core.Shape.Clip) and whether it has one. An empty clip is still a clip, of nothing: its \<clipPath> holds a \<path d=""> and hides the shape, which is what core writes an empty list to mean.
+
+<small>[htmlout/canvas.go:186](https://github.com/rohanthewiz/grmob/blob/master/htmlout/canvas.go#L186)</small>
+
+### func CanvasClipID
+
+```go
+func CanvasClipID(canvasPath string, i int) string
+```
+
+CanvasClipID is the document id of shape i's \<clipPath>, scoped by the canvas's node path as CanvasGradientID is: "grmob-root-0-clip-2". The runtime restates it as canvasGradientId with the "clip" kind.
+
+<small>[htmlout/canvas.go:178](https://github.com/rohanthewiz/grmob/blob/master/htmlout/canvas.go#L178)</small>
 
 ### func CanvasGradient
 
@@ -160,7 +183,7 @@ CanvasGradient is the paint-server element for a shape's gradient props (see cor
 
 gradientUnits="userSpaceOnUse" puts the geometry in viewBox units, which is the contract core.Gradient states; SVG's default, objectBoundingBox, would read (0, 0)–(1, 1) as the shape's own bounds.
 
-<small>[htmlout/canvas.go:202](https://github.com/rohanthewiz/grmob/blob/master/htmlout/canvas.go#L202)</small>
+<small>[htmlout/canvas.go:347](https://github.com/rohanthewiz/grmob/blob/master/htmlout/canvas.go#L347)</small>
 
 ### func CanvasGradientID
 
@@ -170,7 +193,7 @@ func CanvasGradientID(canvasPath string, i int) string
 
 CanvasGradientID is the document id of the gradient shape i of the canvas at canvasPath fills with: the canvas's tab-style scope plus "-fill-i", so "root/0" shape 2 is "grmob-root-0-fill-2". Scoped by node path because a path is unique in the document, which an id must be, and because it is the one name both web targets can derive without talking to each other. The runtime restates it as canvasGradientId.
 
-<small>[htmlout/canvas.go:182](https://github.com/rohanthewiz/grmob/blob/master/htmlout/canvas.go#L182)</small>
+<small>[htmlout/canvas.go:327](https://github.com/rohanthewiz/grmob/blob/master/htmlout/canvas.go#L327)</small>
 
 ### func CanvasMirrorScale
 
@@ -185,7 +208,7 @@ CanvasMirrorScale is the value of a Canvas's CSS \`scale\` property: the reflect
 ### func CanvasShapeAttrs
 
 ```go
-func CanvasShapeAttrs(props map[string]any, fillID, strokeID string) []string
+func CanvasShapeAttrs(props map[string]any, fillID, strokeID, clipID string) []string
 ```
 
 CanvasShapeAttrs is the SVG attribute list for one CanvasShape's props, as name/value pairs in a fixed order. Exported so wasm/verify can hold the runtime's copy to it.
@@ -194,7 +217,9 @@ fill="none" is written for a shape with no fill because SVG's default fill is bl
 
 fillID and strokeID are the ids CanvasGradient's and CanvasStrokeGradient's elements carry for this shape (see CanvasGradientID and CanvasStrokeGradientID); a shape with a well-formed gradient paints with a reference to it. A malformed one falls to fill="none" (or no stroke), as no element is written for it and a reference to nothing would paint black in some engines rather than nothing.
 
-<small>[htmlout/canvas.go:279](https://github.com/rohanthewiz/grmob/blob/master/htmlout/canvas.go#L279)</small>
+clipID is the id of the shape's \<clipPath> (CanvasClipID); a shape with a clip refers to it right after its path data.
+
+<small>[htmlout/canvas.go:427](https://github.com/rohanthewiz/grmob/blob/master/htmlout/canvas.go#L427)</small>
 
 ### func CanvasStrokeGradient
 
@@ -206,7 +231,7 @@ CanvasStrokeGradient is CanvasGradient for the shape's stroke gradient keys (str
 
 userSpaceOnUse holds for a stroke under vector-effect="non-scaling-stroke" too: Chrome maps the gradient in the viewBox's space while keeping the stroke's width unscaled (checked headless, including a radial under preserveAspectRatio="none"), which is the split core.Shape documents.
 
-<small>[htmlout/canvas.go:214](https://github.com/rohanthewiz/grmob/blob/master/htmlout/canvas.go#L214)</small>
+<small>[htmlout/canvas.go:359](https://github.com/rohanthewiz/grmob/blob/master/htmlout/canvas.go#L359)</small>
 
 ### func CanvasStrokeGradientID
 
@@ -216,7 +241,36 @@ func CanvasStrokeGradientID(canvasPath string, i int) string
 
 CanvasStrokeGradientID is CanvasGradientID's twin for the shape's stroke gradient: "-stroke-i" in place of "-fill-i", so one shape can carry both. The runtime restates it as canvasGradientId with the "stroke" kind.
 
-<small>[htmlout/canvas.go:189](https://github.com/rohanthewiz/grmob/blob/master/htmlout/canvas.go#L189)</small>
+<small>[htmlout/canvas.go:334](https://github.com/rohanthewiz/grmob/blob/master/htmlout/canvas.go#L334)</small>
+
+### func CanvasTextAttrs
+
+```go
+func CanvasTextAttrs(props map[string]any, clipID string, mirror bool) (group, text []string)
+```
+
+CanvasTextAttrs is the attribute lists for one CanvasText's wrapper \<g> and its \<text>, as name/value pairs in a fixed order. Exported so wasm/verify can hold the runtime's canvasTextAttrs to it.
+
+	<g clip-path="url(#grmob-root-0-clip-3)">          ← the clip, if any
+	  <text x="50" y="12" font-size="14" text-anchor="middle"
+	        dominant-baseline="central" fill="#222" direction="ltr"
+	        style="transform-box:view-box; transform-origin:50px 12px;
+	               scale:var(--grmob-canvas-ix, 1) var(--grmob-canvas-iy, 1)">12</text>
+	</g>
+
+#### Why the size is a CSS scale
+
+Inside the \<svg>, every length is in viewBox units and is scaled by the viewBox mapping, font-size included. core.CanvasText's Size is in layout units, as a stroke's width is, and SVG has no non-scaling-size that any browser implements. So the font is written at its layout size and the \<text> is scaled back by the inverse of the mapping, about its own anchor point: the anchor stays where the drawing put it and the glyphs come out at Size. --grmob-canvas-ix and -iy are 1/sx and 1/sy; the live runtime keeps them on the \<svg> as it resizes (syncCanvasTextScale). A static export has no script to measure with, so they are unset and fall back to 1.
+
+#### Why the clip is on a wrapper
+
+clip-path with clipPathUnits="userSpaceOnUse" is resolved in the user space of the element that references it, \*after\* that element's own transform. On the \<text> it would be scaled by the counter-scale above and land somewhere else (checked headless: a clip at x ≤ 50 cut a centred label on both sides). The \<g> has no transform, so its user space is the canvas's and the clip lands where core.Shape.Clip put it.
+
+#### Mirroring
+
+In a core.CanvasMirrorsRTL canvas the \<svg> is reflected by a CSS scale of var(--grmob-inline, 1). Text multiplies its own x scale by the same variable, which reflects the glyphs back about the anchor, and it inherits the document's direction, which makes text-anchor's start the right-hand end under dir="rtl". Together: the anchor mirrors, the glyphs read normally, and a start-aligned label grows away from its tick in reading order, which is what core.CanvasText documents. A canvas that does not mirror pins direction="ltr", so its labels sit where they were drawn in either document direction.
+
+<small>[htmlout/canvas.go:246](https://github.com/rohanthewiz/grmob/blob/master/htmlout/canvas.go#L246)</small>
 
 ### func CarriesOwnRole
 
@@ -228,7 +282,7 @@ CarriesOwnRole reports whether a node type states its own ARIA role, with no cor
 
 Exported because the TabView wiring has to know: the role attribute has one slot per element, and a page whose type already filled it must not be given role="tabpanel" on top.
 
-<small>[htmlout/tag.go:295](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L295)</small>
+<small>[htmlout/tag.go:298](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L298)</small>
 
 ### func ChartDataOf
 
@@ -341,7 +395,7 @@ func FieldFloorTypes() []string
 
 FieldFloorTypes returns those node types, sorted, for the WASM conformance test to compare set against set (BorderResetTypes' reason).
 
-<small>[htmlout/tag.go:441](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L441)</small>
+<small>[htmlout/tag.go:444](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L444)</small>
 
 ### func GenericTags
 
@@ -351,7 +405,7 @@ func GenericTags() []string
 
 GenericTags returns the role-free tags, sorted so that a test looping over them reports in a stable order. Exported for the reason Tags and TransparentTypes are: the WASM conformance test has to compare set against set, and a hand-written list there would be exactly the untracked second copy this file exists to remove.
 
-<small>[htmlout/tag.go:203](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L203)</small>
+<small>[htmlout/tag.go:206](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L206)</small>
 
 ### func InputModeFor
 
@@ -361,7 +415,7 @@ func InputModeFor(kind string) string
 
 InputModeFor maps a core.KeyboardKind to HTML's inputmode: the attribute a mobile browser reads to choose its software keyboard. "" is no attribute, the browser's text keyboard. Exported for the WASM runtime's table to be checked against, as InputTypeFor is.
 
-<small>[htmlout/export.go:896](https://github.com/rohanthewiz/grmob/blob/master/htmlout/export.go#L896)</small>
+<small>[htmlout/export.go:904](https://github.com/rohanthewiz/grmob/blob/master/htmlout/export.go#L904)</small>
 
 ### func InputTypeFor
 
@@ -393,7 +447,7 @@ func IsGenericTag(tag string) bool
 
 IsGenericTag reports whether a tag's implicit ARIA role is \`generic\`, and so whether a role= attribute may be written onto it. See genericTags.
 
-<small>[htmlout/tag.go:194](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L194)</small>
+<small>[htmlout/tag.go:197](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L197)</small>
 
 ### func IsOverlay
 
@@ -413,7 +467,7 @@ func IsTransparent(nodeType string) bool
 
 IsTransparent reports whether a node type renders its children directly into the parent, with no element of its own.
 
-<small>[htmlout/tag.go:246](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L246)</small>
+<small>[htmlout/tag.go:249](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L249)</small>
 
 ### func ModalChassis
 
@@ -429,7 +483,7 @@ display and background are deliberately not in it. Both are prop-driven, and the
 
 A copy, not the slice itself, for the reason StackAxes returns one: a package-level slice is reachable and writable by any importer.
 
-<small>[htmlout/export.go:1242](https://github.com/rohanthewiz/grmob/blob/master/htmlout/export.go#L1242)</small>
+<small>[htmlout/export.go:1250](https://github.com/rohanthewiz/grmob/blob/master/htmlout/export.go#L1250)</small>
 
 ### func ObjectFitFor
 
@@ -475,7 +529,7 @@ OwnRoleFor returns the ARIA role a node type states for itself, or "" for a type
 
 Exported for the reason Tags is: the WASM runtime has the same two node types to answer for and cannot ask Go at runtime, so wasm/verify holds its copy against this one rather than against a list written twice.
 
-<small>[htmlout/tag.go:306](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L306)</small>
+<small>[htmlout/tag.go:309](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L309)</small>
 
 ### func PathData
 
@@ -485,7 +539,7 @@ func PathData(ops []float64) string
 
 PathData turns core's flat path opcodes into an SVG path string. The opcodes are core.PathMove, PathLine, PathCubic and PathClose, and SVG has a command letter for each with the same operands in the same order, so this is a spelling change and nothing else. A truncated or unknown operation ends the path there: a renderer must not fail a drawing over one bad shape.
 
-<small>[htmlout/canvas.go:327](https://github.com/rohanthewiz/grmob/blob/master/htmlout/canvas.go#L327)</small>
+<small>[htmlout/canvas.go:478](https://github.com/rohanthewiz/grmob/blob/master/htmlout/canvas.go#L478)</small>
 
 ### func ResetsUABorder
 
@@ -495,7 +549,7 @@ func ResetsUABorder(nodeType string) bool
 
 ResetsUABorder reports whether a node type needs an explicit "no border" written for it when the style declares none. See borderResetTypes.
 
-<small>[htmlout/tag.go:452](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L452)</small>
+<small>[htmlout/tag.go:455](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L455)</small>
 
 ### func StackAxes
 
@@ -563,7 +617,7 @@ TagFor returns the HTML tag a node type renders as.
 
 Fragment and Theme are not in the table and must not be asked: see transparentTypes. The lookup answers \*which element\*, never \*whether an element\*, and a caller that has not made the transparency decision first gets defaultTag — a box those two node types are not supposed to have.
 
-<small>[htmlout/tag.go:143](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L143)</small>
+<small>[htmlout/tag.go:146](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L146)</small>
 
 ### func Tags
 
@@ -575,7 +629,7 @@ Tags returns a copy of the whole table, for the callers that must enumerate it r
 
 A copy, not the map itself, for the reason InputTypes returns one: a package-level map is reachable and writable by any importer.
 
-<small>[htmlout/tag.go:157](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L157)</small>
+<small>[htmlout/tag.go:160](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L160)</small>
 
 ### func TextAlignFor
 
@@ -609,7 +663,7 @@ func TransparentTypes() []string
 
 TransparentTypes returns the transparent node types, sorted so that a test looping over them reports in a stable order. Exported for the same reason Tags is: the WASM conformance test has to know which types are excluded from the tag comparison, and a hand-written list there would be exactly the untracked second copy this file exists to remove.
 
-<small>[htmlout/tag.go:255](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L255)</small>
+<small>[htmlout/tag.go:258](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L258)</small>
 
 ### func ZeroesFieldFloor
 
@@ -619,5 +673,5 @@ func ZeroesFieldFloor(nodeType string) bool
 
 ZeroesFieldFloor reports whether a node type gets min-width:0 when its style states no MinWidth. See fieldFloorTypes.
 
-<small>[htmlout/tag.go:435](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L435)</small>
+<small>[htmlout/tag.go:438](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L438)</small>
 
