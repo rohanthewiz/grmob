@@ -30,7 +30,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-087
+**Next ID:** N-088
 
 ## Open
 
@@ -447,6 +447,17 @@ with each item's `raised` traced back through all session docs.
   scheme-following app that colours everything (the tutorial) shows
   neither. Fix if a second app hits it: provide a dark MaterialTheme
   colour scheme below GrMobRoot when the bars' colour is dark.
+
+- **N-087** · raised `2026-1003-0746-component-defined-readme-docs-skill` · value low
+  **The component examples are compiled by no test.** `Tally` (README and
+  `docs/concepts/components.md`), `Spoiler`, the `renderDebug` /
+  `renderPass` harness and the concern snippet appear in the README, the
+  concept page and `ai_docs/SKILL-component.md`, which says "it compiles as
+  written". That was checked by hand on 2026-10-03, by extracting the
+  blocks into a throwaway package and running `go vet` and `go test` on it.
+  Nothing catches drift when a core or comps signature changes. Candidate: a
+  test that extracts the ```go blocks under named headings into a temp
+  module and builds them. The doc-gen test only matches the fence prefix.
 
 ## Non-goals
 
