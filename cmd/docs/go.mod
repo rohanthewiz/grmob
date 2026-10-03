@@ -4,7 +4,7 @@
 // inherits. See main.go.
 module github.com/rohanthewiz/grmob/cmd/docs
 
-go 1.26.1
+go 1.26.8
 
 require (
 	github.com/rohanthewiz/gkdocs v0.1.4

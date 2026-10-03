@@ -89,7 +89,10 @@ func AppName() string { return "Counter" }
 
 ## Run it
 
-GrMob is a Go module and needs Go 1.26+.
+GrMob is a Go module and needs Go 1.26+. The recommended version is
+**Go 1.26.8**, the version `go.mod` declares and CI tests against. An older
+1.26 release still works: with the default `GOTOOLCHAIN=auto`, the `go`
+command downloads 1.26.8 the first time it builds GrMob.
 
 ### Start your own app
 

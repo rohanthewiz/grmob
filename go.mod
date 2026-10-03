@@ -1,6 +1,6 @@
 module github.com/rohanthewiz/grmob
 
-go 1.26.1
+go 1.26.8
 
 require github.com/rohanthewiz/bytdb v0.11.0
 

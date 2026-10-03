@@ -62,7 +62,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          # Reads 1.26.1 from the `go` line rather than repeating it here, so
+          # Reads 1.26.8 from the `go` line rather than repeating it here, so
           # the toolchain bump happens in one place. setup-go caches the
           # module and build caches by default.
           go-version-file: go.mod
