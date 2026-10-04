@@ -232,6 +232,36 @@ func TestDiscussionMaxDepth(t *testing.T) {
 	}
 }
 
+// The column beside each thread line may shrink below its content's
+// min-content width. Without MinWidth 0 a Composer drawn one level down (an
+// input's intrinsic width plus its button) pushed the whole level of replies
+// past a phone's right edge on the web, as lesson 4.40 showed.
+func TestDiscussionIndentedRepliesMayShrink(t *testing.T) {
+	_, n := renderDebug(t, Discussion{
+		Comments:   sampleDiscussion(),
+		ReplyingTo: "b",
+		Composer:   InputRow{Value: "", OnChange: func(string) {}, Button: Button{Label: "Post"}},
+	})
+	columns := 0
+	var walk func(*core.Node)
+	walk = func(x *core.Node) {
+		// The row holding a thread line: its second child is the replies.
+		if len(x.Children) == 2 && x.Children[0].Style.Width == "2px" {
+			columns++
+			if got := x.Children[1].Style.MinWidth; got != "0" {
+				t.Errorf("the replies column beside a thread line has MinWidth %q, want \"0\"", got)
+			}
+		}
+		for _, c := range x.Children {
+			walk(c)
+		}
+	}
+	walk(n)
+	if columns != 2 {
+		t.Errorf("found %d indented reply columns, want 2 (under Ana and under Ben)", columns)
+	}
+}
+
 func TestDiscussionEmpty(t *testing.T) {
 	_, n := renderDebug(t, Discussion{})
 	if findText(n, "No comments yet.") == nil {

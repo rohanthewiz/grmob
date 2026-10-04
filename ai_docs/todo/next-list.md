@@ -30,7 +30,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-095
+**Next ID:** N-096
 
 ## Open
 
@@ -455,20 +455,18 @@ with each item's `raised` traced back through all session docs.
   proxy that it writes itself. Candidate: a small handler in `webhost` or
   `serve` that forwards `/remoteExtensions/toolTip/toolTipRemote.cfm` to
   www.blueletterbible.org. Contingent on a browser app wanting verses.
-- **N-093** · raised `2026-1003-1852-stripe-checkout-bible-verse-discussion-widgets` · value low
-  **No gallery lessons for the three new widgets.** StripeCheckout,
-  BibleVerse and Discussion are in `docs/components.md` and the API pages
-  but not in `examples/tutorial/chapter4.go`. Adding them moves the lesson
-  counts, so the README, the `wasm/index.html` header, `internal/shotclaims`
-  and the contents screenshot all need updating too. BibleVerse's lesson
-  would need canned verses, since the tutorial cannot fetch from BLB in the
-  browser (N-092).
 - **N-094** · raised `2026-1003-1852-stripe-checkout-bible-verse-discussion-widgets` · value low (unverified)
   **Cards overflow a 420px viewport in a bare `htmlout` export.** A stock
   `comps.Card` and `comps.InputRow` inside `comps.Screen{Scroll: true}` ran
   past the right edge in headless Chrome (`--window-size=420,…`), the same
   as the new widgets. This may just be the export missing the web runtime's
   CSS, and was not compared with `./build.sh && go run ./serve`.
+- **N-095** · raised `2026-1003-2008-n093-gallery-lessons-checkout-verse-discussion` · value low (unverified)
+  **The contents card's progress track vanishes in dark mode.** Retaking
+  `tutorial-contents.png` on a Mac in dark mode (before `shot.mjs` pinned
+  light) drew "0 of 83 lessons opened" over no visible track at all; the
+  light shot shows a pale one. Only seen at 0% in headless Chrome, so the
+  track may be there at too low a contrast against the dark Card.
 
 ## Non-goals
 
@@ -560,6 +558,24 @@ with each item's `raised` traced back through all session docs.
   comment. The tutorial page that does set cover is N-088.
 
 ## Closed
+
+- **N-093** · raised `2026-1003-1852-stripe-checkout-bible-verse-discussion-widgets`
+  · closed 2026-10-03, `2026-1003-2008-n093-gallery-lessons-checkout-verse-discussion` — lessons 4.38 "Checkout with Stripe", 4.39 "Quoting
+  a Bible passage" and 4.40 "Threaded comments", each with a test driving it
+  through the app. 4.38 plays Stripe's page and the server's answer with two
+  buttons (paid / declined) and shows the same minor units in USD, JPY and
+  KWD. 4.39 uses three canned KJV passages in `blb.Passage`'s shape, with
+  segments playing the fetch (loaded / loading / failed); the tutorial does
+  not import `blb`, which would add net/http to the wasm build. 4.40 is a
+  working thread with MaxDepth 2. Counts moved to 83 lessons and 40 in
+  chapter 4 (README, `docs/tutorial-interactive.md`, `wasm/index.html`,
+  `internal/shotclaims`), and `tutorial-contents.png` was retaken. Two
+  fixes the work turned up: `comps.Discussion`'s indented replies column
+  now has `MinWidth("0")` (a Composer one level down pushed the whole level
+  past a 414px phone's edge on the web), and `wasm/shots/shot.mjs` emulates
+  `prefers-color-scheme: light`, since the tutorial follows the system scheme
+  and a dark-mode Mac took a dark shot. Seen in headless Chrome at 414px.
+  Not seen on Android or iOS.
 
 - **N-007** · raised `2026-0916-1032-clocks-canvas-alarm`
   · closed 2026-10-03, `2026-1003-1659-n007-canvas-text-clip-shape-taps` — all three added to `core.Canvas`:

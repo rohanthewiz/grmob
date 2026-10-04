@@ -3361,3 +3361,234 @@ func TestEditableGridLesson(t *testing.T) {
 	}
 	assertNoConcerns(t)
 }
+
+// 4.38. The whole pretend payment, through the app: the total follows the
+// cart and the currency, Pay goes pending and disabled, a decline comes back
+// as an alert with the button live again, and a success leaves the summary
+// as a disabled receipt.
+func TestStripeCheckoutLesson(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Checkout with Stripe")
+
+	payButton := func() *node {
+		t.Helper()
+		n := findNode(tree(t, mgr), func(n *node) bool {
+			l, _ := n.Props["label"].(string)
+			return n.Type == "Button" && (strings.HasPrefix(l, "Pay") || strings.HasPrefix(l, "Redirecting"))
+		})
+		if n == nil {
+			t.Fatal("no Pay button")
+		}
+		return n
+	}
+	payLabel := func() string { return payButton().Props["label"].(string) }
+	disabled := func() bool { n := payButton(); return n.Style != nil && n.Style.Disabled }
+
+	// 4500 + 2 × 650 + 500 shipping.
+	if got := payLabel(); got != "Pay $63.00" {
+		t.Fatalf("opening Pay label = %q", got)
+	}
+	if !hasText(tree(t, mgr), "2 × $6.50") {
+		t.Error("a quantity above one should draw quantity × unit price as the detail line")
+	}
+	toggleCheckbox(t, mgr, 0, true)
+	if got := payLabel(); got != "Pay $58.00" {
+		t.Errorf("with the discount, Pay label = %q", got)
+	}
+
+	// The same minor units in the other two kinds of currency.
+	tap(t, mgr, "JPY")
+	if got := payLabel(); got != "Pay ¥5,800" {
+		t.Errorf("in yen, Pay label = %q", got)
+	}
+	tap(t, mgr, "KWD")
+	if got := payLabel(); got != "Pay KWD 5.800" {
+		t.Errorf("in dinars, Pay label = %q", got)
+	}
+	tap(t, mgr, "USD")
+
+	// Pay → pending → declined.
+	mgr.DispatchCallback(payButton().Props["onClick"].(string))
+	if got := payLabel(); got != "Redirecting to Stripe…" || !disabled() {
+		t.Errorf("while redirecting the button should say so and be disabled; got %q, disabled %v", got, disabled())
+	}
+	tap(t, mgr, "Card declined")
+	if !hasText(tree(t, mgr), "Your card was declined. Nothing was charged.") {
+		t.Error("a decline should come back as the Error line")
+	}
+	if got := payLabel(); got != "Pay $58.00" || disabled() {
+		t.Errorf("after a decline Pay should be live again; got %q, disabled %v", got, disabled())
+	}
+
+	// Pay again → pending → paid.
+	mgr.DispatchCallback(payButton().Props["onClick"].(string))
+	if hasText(tree(t, mgr), "Your card was declined. Nothing was charged.") {
+		t.Error("a new attempt should clear the last attempt's error")
+	}
+	tap(t, mgr, "Payment succeeded")
+	n := findNode(tree(t, mgr), func(n *node) bool { return n.Type == "Button" && n.Props["label"] == "Paid" })
+	if n == nil || n.Style == nil || !n.Style.Disabled {
+		t.Errorf("once paid, the button should read Paid and be disabled, got %+v", n)
+	}
+	tap(t, mgr, "Start over")
+	if got := payLabel(); got != "Pay $58.00" {
+		t.Errorf("Start over should bring Pay back, got %q", got)
+	}
+	assertNoConcerns(t)
+}
+
+// paragraphText joins a Paragraph's runs, and says whether any run is bold:
+// in 4.39 the bold runs are the verse numbers.
+func paragraphText(n *node) (text string, bold bool) {
+	runs, _ := n.Props["runs"].([]any)
+	var b strings.Builder
+	for _, r := range runs {
+		m, _ := r.(map[string]any)
+		s, _ := m["t"].(string)
+		b.WriteString(s)
+		if _, ok := m["b"]; ok {
+			bold = true
+		}
+	}
+	return b.String(), bold
+}
+
+// 4.39. The canned passages and the three fetch states: numbers for two
+// verses and none for one, the switch that hides them, a skeleton named by
+// the reference, and an error whose Retry brings the passage back.
+func TestBibleVerseLesson(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Quoting a Bible passage")
+
+	passage := func() (string, bool) {
+		t.Helper()
+		n := findNode(tree(t, mgr), func(n *node) bool {
+			if n.Type != "Paragraph" {
+				return false
+			}
+			s, _ := paragraphText(n)
+			return strings.Contains(s, "LORD") || strings.Contains(s, "God so loved")
+		})
+		if n == nil {
+			return "", false
+		}
+		return paragraphText(n)
+	}
+
+	// Psalm 23 opens: two verses, so numbered, and BLB's spelling under it.
+	text, bold := passage()
+	if !strings.HasPrefix(text, "1 A Psalm of David.") || !strings.Contains(text, "2 He maketh me") || !bold {
+		t.Errorf("Psalm 23:1-2 should be numbered, got %q (bold runs: %v)", text, bold)
+	}
+	if !hasText(tree(t, mgr), "Psalms 23:1-2 (KJV)") {
+		t.Error("the reference line should be BLB's spelling with the translation")
+	}
+	if findNode(tree(t, mgr), func(n *node) bool {
+		return n.Type == "Button" && n.Props["label"] == "Read on Blue Letter Bible"
+	}) == nil && !hasText(tree(t, mgr), "Read on Blue Letter Bible") {
+		t.Error("the link back to Blue Letter Bible should be drawn")
+	}
+
+	toggleCheckbox(t, mgr, 0, true)
+	if text, bold := passage(); strings.HasPrefix(text, "1") || bold {
+		t.Errorf("Hide verse numbers should drop them, got %q", text)
+	}
+	toggleCheckbox(t, mgr, 0, false)
+
+	// One verse: no number, whatever the switch says.
+	tap(t, mgr, "John 3:16")
+	if text, bold := passage(); !strings.HasPrefix(text, "For God so loved") || bold {
+		t.Errorf("a single verse should have no number, got %q", text)
+	}
+
+	tap(t, mgr, "Loading")
+	if findNode(tree(t, mgr), func(n *node) bool {
+		return n.Style != nil && n.Style.AccessibilityLabel == "Loading John 3:16"
+	}) == nil {
+		t.Error("Loading should draw a skeleton named by the reference")
+	}
+	if text, _ := passage(); text != "" {
+		t.Error("the passage should not be drawn while loading")
+	}
+
+	tap(t, mgr, "Failed")
+	if !hasTextContaining(tree(t, mgr), "Couldn't reach Blue Letter Bible") {
+		t.Error("Failed should draw the error")
+	}
+	tap(t, mgr, "Retry")
+	if text, _ := passage(); !strings.HasPrefix(text, "For God so loved") {
+		t.Errorf("Retry should bring the passage back, got %q", text)
+	}
+	assertNoConcerns(t)
+}
+
+// 4.40. The thread through the app: a like flips the chip and its count, a
+// reply puts the composer under the comment and the new comment under it
+// too, a fold hides a thread, and a reply past MaxDepth still counts its
+// level.
+func TestDiscussionLesson(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Threaded comments")
+
+	if !hasText(tree(t, mgr), "6 comments") {
+		t.Fatal("the thread should open on 6 comments")
+	}
+	// The deleted line is an italic run, so a Paragraph rather than a Text.
+	if findNode(tree(t, mgr), func(n *node) bool {
+		s, _ := paragraphText(n)
+		return n.Type == "Paragraph" && s == "This comment was deleted."
+	}) == nil {
+		t.Error("Dev's comment should be drawn deleted, in its place")
+	}
+
+	// Ana's like: ♡ 3, not mine → ♥ 4, mine.
+	tapLabelled(t, mgr, "Like, 3")
+	if findNode(tree(t, mgr), func(n *node) bool {
+		return n.Style != nil && n.Style.AccessibilityLabel == "Like, 4" && n.Style.AccessibilitySelected == "true"
+	}) == nil {
+		t.Error("liking Ana's comment should make it Like, 4 and selected")
+	}
+
+	// Reply to Chen, who is already two levels down: past MaxDepth 2.
+	tapLabelled(t, mgr, "Reply to Chen")
+	if n := findNode(tree(t, mgr), func(n *node) bool { return n.Type == "Input" }); n == nil || n.Props["placeholder"] != "Reply to Chen…" {
+		t.Fatalf("the composer should be answering Chen, got %+v", n)
+	}
+	typeInto(t, mgr, "Thanks, both.")
+	tap(t, mgr, "Post")
+	if !hasText(tree(t, mgr), "7 comments") || !hasText(tree(t, mgr), "Thanks, both.") {
+		t.Fatal("posting should add the reply and count it")
+	}
+	mine := findNode(tree(t, mgr), func(n *node) bool {
+		return n.Style != nil && n.Style.AccessibilityLabel == "You, reply to Chen, now"
+	})
+	if mine == nil {
+		t.Fatal("the reply should be named as a reply to Chen")
+	}
+	item := findNode(tree(t, mgr), func(n *node) bool {
+		return n.Style != nil && n.Style.AccessibilityNestingLevel == 4 && hasText(n, "Thanks, both.")
+	})
+	if item == nil {
+		t.Error("a reply past MaxDepth should still be a level deeper in the outline (level 4)")
+	}
+	if n := findNode(tree(t, mgr), func(n *node) bool { return n.Type == "Input" }); n == nil || n.Props["placeholder"] != "Add a comment…" {
+		t.Error("after posting, the composer should go back to the top")
+	}
+
+	// Fold Ana's thread: Ben's comment goes, Ana's stays.
+	fold := findNode(tree(t, mgr), func(n *node) bool {
+		_, ok := n.Props["onClick"].(string)
+		return ok && hasText(n, "2 replies")
+	})
+	if fold == nil {
+		t.Fatal("no fold for Ana's two replies")
+	}
+	mgr.DispatchCallback(fold.Props["onClick"].(string))
+	if hasText(tree(t, mgr), "It does on my Pixel. I haven't tried an iPhone.") {
+		t.Error("folding Ana's thread should hide Ben's reply")
+	}
+	if !hasText(tree(t, mgr), "Does the new build stop the keyboard covering the message box?") {
+		t.Error("folding should keep Ana's own comment")
+	}
+	assertNoConcerns(t)
+}

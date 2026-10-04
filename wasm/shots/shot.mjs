@@ -416,6 +416,15 @@ async function main() {
         await session.send("Page.enable");
         await session.send("Runtime.enable");
 
+        // Light, whatever the photographer's machine is set to. Since the
+        // tutorial follows the system scheme (N-050), a headless Chrome on a
+        // Mac in dark mode reports prefers-color-scheme: dark and the shot
+        // comes out dark beside the light ones already in docs/images. Set
+        // before the navigation, so the first render already sees it.
+        await session.send("Emulation.setEmulatedMedia", {
+            features: [{ name: "prefers-color-scheme", value: "light" }],
+        });
+
         const evaluate = async (expression) => {
             const r = await session.send("Runtime.evaluate", {
                 expression, returnByValue: true, awaitPromise: true,

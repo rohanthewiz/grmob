@@ -458,6 +458,8 @@ Other notes:
 - Neither `OnPay` nor `CheckoutURL` (and not `Disabled`) raises
   `ConcernStripeCheckoutInert`. A non-https `CheckoutURL` raises
   `ConcernStripeCheckoutInsecureURL`.
+- Lesson 4.38 in the interactive tutorial walks a pretend payment: pending,
+  declined and paid, in three currencies.
 
 ## InputRow
 
@@ -4213,6 +4215,8 @@ Other notes:
 - `Key` must be stable (a server ID): it keys each item and names the
   comment to every callback.
 - For a chat transcript, use `MessageThread` instead.
+- Lesson 4.40 in the interactive tutorial is a working thread to like,
+  reply in and fold.
 
 ## ExpandableText
 
@@ -4284,6 +4288,8 @@ Other notes:
 - Footnote asterisks and the KJV's supplied-word brackets are removed unless
   `Client.KeepMarkers` is set. Most translations other than the KJV are under
   copyright, so show them with the link and don't store them.
+- Lesson 4.39 in the interactive tutorial shows it with canned KJV passages,
+  since the browser build cannot reach the feed.
 
 ## QRCode
 

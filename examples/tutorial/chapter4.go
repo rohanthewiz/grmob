@@ -70,6 +70,9 @@ func chapter4() Chapter {
 			lessonTreeAndWizard(),
 			lessonFourMoreCharts(),
 			lessonEditableGrid(),
+			lessonStripeCheckout(),
+			lessonBibleVerse(),
+			lessonDiscussion(),
 		},
 	}
 }
@@ -6414,6 +6417,542 @@ func lessonEditableGrid() Lesson {
 					"Key gives rows an identity, so an insert or delete cannot re-pair rows or move an open editor.",
 					"No formulas and no undo inside: every commit passes through the caller, so both are a few lines there.",
 					"EditableGrid holds hooks: render it in a stable position, never inside core.If.",
+				),
+			)
+		},
+	}
+}
+
+// checkoutPhase is where lesson 4.38's pretend payment has got to. The real
+// sequence has a browser and a server in it; the lesson stands in for both
+// with two buttons, so every state the widget draws can be reached on a
+// screen that never talks to Stripe.
+//
+//	ready ──Pay──▶ redirecting ──"Payment succeeded"──▶ paid ──Start over──▶ ready
+//	  ▲                 │
+//	  └──"Card declined"┘ (declined: ready again, with an Error)
+type checkoutPhase int
+
+const (
+	checkoutReady checkoutPhase = iota
+	checkoutRedirecting
+	checkoutPaid
+	checkoutDeclined
+)
+
+// checkoutCurrencies are 4.38's currency segments. One of each of Stripe's
+// three kinds of minor unit: cents, none (the yen), and thousandths (the
+// Kuwaiti dinar). The amounts in the cart are not converted when the segment
+// changes, which is the point: the same int64 is a different sum of money in
+// each, and FormatMoney is what knows how.
+var checkoutCurrencies = []string{"USD", "JPY", "KWD"}
+
+// 4.38 — StripeCheckout. A lesson about a boundary more than a widget: the
+// order is the app's, the card is Stripe's, and the line between them is one
+// button. The demo stops at that line on purpose, with the browser trip and
+// the server's answer played by two buttons, because a tutorial that opened
+// a real Payment Link would be a tutorial that can take money.
+//
+// Appended at the end of the chapter for the reason 4.25 was.
+func lessonStripeCheckout() Lesson {
+	return Lesson{
+		Title:   "Checkout with Stripe",
+		Summary: "comps.StripeCheckout: an order summary whose one button hands the payment to Stripe, and never takes a card itself.",
+		Body: func(ctx *core.Context) core.View {
+			currency := core.NewState(ctx, 0)
+			discount := core.NewState(ctx, false)
+			phase := core.NewState(ctx, checkoutReady)
+
+			// The cart. Amounts are minor units, written once; switching
+			// currency changes what they mean, not what they are.
+			adjustments := []comps.CheckoutAdjustment{{Label: "Shipping", Amount: 500}}
+			if discount.Get() {
+				adjustments = append(adjustments, comps.CheckoutAdjustment{Label: "WELCOME discount", Amount: -500})
+			}
+
+			checkout := comps.StripeCheckout{
+				Items: []comps.CheckoutItem{
+					{Label: "Pour-over kettle", Detail: "Matte black", UnitAmount: 4500},
+					{Label: "Filters (100)", Quantity: 2, UnitAmount: 650},
+				},
+				Adjustments: adjustments,
+				Currency:    checkoutCurrencies[currency.Get()],
+				// In an app this asks your server for a Checkout Session and
+				// opens its url. Here it only moves the phase.
+				OnPay:   func() { phase.Set(checkoutRedirecting) },
+				Pending: phase.Get() == checkoutRedirecting,
+			}
+			switch phase.Get() {
+			case checkoutDeclined:
+				checkout.Error = "Your card was declined. Nothing was charged."
+			case checkoutPaid:
+				// Disabled rather than removed: the summary is still the
+				// receipt of what was bought.
+				checkout.Disabled = true
+				checkout.PayLabel = "Paid"
+			}
+
+			// What stands in for Stripe's page and your server: shown only
+			// while the widget is Pending, as the browser would be.
+			var stripe core.View = core.Fragment()
+			switch phase.Get() {
+			case checkoutRedirecting:
+				stripe = core.Column(
+					core.Padding(0),
+					core.Gap(6),
+					caption("Stripe's page would be open now. Come back from it as:"),
+					core.Row(
+						core.Padding(0),
+						core.Gap(8),
+						core.FlexWrap(true),
+						comps.Button{Label: "Payment succeeded", Emphasis: comps.EmphasisOutlined,
+							OnTap: func() { phase.Set(checkoutPaid) }},
+						comps.Button{Label: "Card declined", Emphasis: comps.EmphasisOutlined,
+							OnTap: func() { phase.Set(checkoutDeclined) }},
+					),
+				)
+			case checkoutPaid:
+				stripe = core.Column(
+					core.Padding(0),
+					core.Gap(6),
+					core.Text("Your server asked Stripe, and the payment went through.",
+						core.AccessibilityRole(core.RoleStatus)),
+					comps.Button{Label: "Start over", Emphasis: comps.EmphasisGhost,
+						OnTap: func() { phase.Set(checkoutReady) }},
+				)
+			}
+
+			return core.Column(
+				core.Gap(14),
+				prose("A checkout screen is where an app is most tempted to do too much. StripeCheckout "+
+					"draws the order, works out the total, and has one button that sends the reader to "+
+					"Stripe. It has no card field, and that is the most important thing about it."),
+
+				codeBlock(`comps.StripeCheckout{
+    Items: []comps.CheckoutItem{
+        {Label: "Pour-over kettle", Detail: "Matte black", UnitAmount: 4500},
+        {Label: "Filters (100)", Quantity: 2, UnitAmount: 650}, // "2 × $6.50"
+    },
+    Adjustments: []comps.CheckoutAdjustment{{Label: "Shipping", Amount: 500}},
+    Currency:    "usd",
+    OnPay:       startCheckout,     // your server makes a Session; then core.OpenURL
+    Pending:     redirecting.Get(), // "Redirecting to Stripe…", disabled
+    Error:       payErr.Get(),
+}`),
+				demoPanel("Pay, then come back from the pretend Stripe page either way. Change the currency: the numbers stay, the money doesn't.",
+					comps.SegmentedControl{
+						Style:     segWrap,
+						Labels:    checkoutCurrencies,
+						Selected:  currency.Get(),
+						OnSelect:  func(i int) { currency.Set(i) },
+						KeyPrefix: "checkout-currency-",
+					},
+					checkRow("Apply the WELCOME discount", discount),
+					checkout,
+					stripe,
+				),
+				prose("A card number typed into your own text field passes through your app's memory, "+
+					"logs and crash reports, and that puts the app in PCI DSS scope. Stripe's answer is "+
+					"to collect the card on a page it hosts: Checkout, or a Payment Link. So the widget's "+
+					"job ends at the hand-off. CheckoutURL is a link made once in the dashboard, for a "+
+					"fixed product, and a tap opens it in the browser. OnPay wins when set, and it is "+
+					"what a cart needs: a Session for a cart is created with the secret key, and the "+
+					"secret key lives on your server, never in an app anyone can unpack."),
+				prose("Coming back is the half the widget cannot see. Stripe redirects to the Session's "+
+					"success or cancel URL, which on a phone is a deep link into the app, and the app "+
+					"asks its server whether the payment went through. The two buttons above are that "+
+					"round trip. Pending covers the wait, and disables the button so a second tap cannot "+
+					"start a second Session. Error is an alert, because the reader is waiting for it."),
+				prose("Amounts are int64 minor units, as in Stripe's API. 4500 is $45.00, ¥4,500 and "+
+					"KWD 4.500: the yen has no minor unit and the dinar has three. FormatMoney follows "+
+					"Stripe's lists of zero- and three-decimal currencies, so what the summary says is "+
+					"what Stripe will charge. The total is summed from the lines in front of you, so the "+
+					"button cannot disagree with the list. It is still the Session, made on your server, "+
+					"that decides the charge."),
+				prose("Each line is one spoken phrase, \"Filters (100), 2 × $6.50, $13.00\", so a reader "+
+					"hears an item with its price instead of a column of names and then a column of "+
+					"numbers. The Pay button says the total. StripeCheckout has no hooks, so it can sit "+
+					"inside core.If."),
+				keyPoints(
+					"No card field, on purpose: Stripe's hosted page takes the card and keeps the app out of PCI scope.",
+					"CheckoutURL for a fixed Payment Link; OnPay (which wins) to ask your server for a Session.",
+					"Pending while the Session is fetched or the browser opens; Error when the attempt failed.",
+					"Amounts are int64 minor units; FormatMoney knows the zero- and three-decimal currencies.",
+					"Whether it was paid is your server's answer after the redirect back, never the widget's.",
+				),
+			)
+		},
+	}
+}
+
+// cannedPassage is one of lesson 4.39's passages, in the shape blb.Passage
+// has: what blb.Fetch would have returned for it. The text is the KJV's,
+// which is in the public domain, with the markers blb strips by default
+// (the supplied-word brackets) already gone.
+type cannedPassage struct {
+	segment   string // the segment's label: short, a phone has three of them in a row
+	reference string // BLB's spelling, which is why the Psalms are plural
+	url       string // blb.Passage.URL: the s_ deep-link segment dropped
+	verses    []comps.BibleVerseLine
+}
+
+// tutorialPassages are canned because the tutorial runs in a browser, and
+// Blue Letter Bible's feed sends no CORS headers: blb.Fetch from a page
+// fails before it starts, and the proxy that would fix that does not exist
+// yet (N-092). They are also canned because the blb package would bring
+// net/http into the browser build for three passages that never change.
+//
+// One verse, two, and a whole short chapter, because the widget draws verse
+// numbers for two or more and none for one.
+var tutorialPassages = []cannedPassage{{
+	segment:   "John 3:16",
+	reference: "John 3:16",
+	url:       "https://www.blueletterbible.org/kjv/jhn/3/16/",
+	verses: []comps.BibleVerseLine{{Number: 16, Text: "For God so loved the world, that he gave his " +
+		"only begotten Son, that whosoever believeth in him should not perish, but have everlasting life."}},
+}, {
+	segment:   "Psalm 23",
+	reference: "Psalms 23:1-2",
+	url:       "https://www.blueletterbible.org/kjv/psa/23/1/",
+	verses: []comps.BibleVerseLine{
+		{Number: 1, Text: "A Psalm of David. The LORD is my shepherd; I shall not want."},
+		{Number: 2, Text: "He maketh me to lie down in green pastures: he leadeth me beside the still waters."},
+	},
+}, {
+	segment:   "Psalm 117",
+	reference: "Psalms 117",
+	url:       "https://www.blueletterbible.org/kjv/psa/117/1/",
+	verses: []comps.BibleVerseLine{
+		{Number: 1, Text: "O praise the LORD, all ye nations: praise him, all ye people."},
+		{Number: 2, Text: "For his merciful kindness is great toward us: and the truth of the LORD " +
+			"endureth for ever. Praise ye the LORD."},
+	},
+}}
+
+// verseStates are 4.39's second row of segments: the three things a fetch
+// can be doing, which the widget draws from two fields (Loading, Error).
+var verseStates = []string{"Loaded", "Loading", "Failed"}
+
+// 4.39 — BibleVerse. The lesson's subject is that the widget fetches
+// nothing: comps is view code compiled into every browser build, and the
+// fetching lives in the blb package. Here the fetch is played by a segment,
+// which is honest about the one thing the browser tutorial cannot do and
+// still reaches every state the widget draws.
+//
+// Appended at the end of the chapter for the reason 4.25 was.
+func lessonBibleVerse() Lesson {
+	return Lesson{
+		Title:   "Quoting a Bible passage",
+		Summary: "comps.BibleVerse and the blb package: a passage on a card, its loading and failed states, and the link back to Blue Letter Bible.",
+		Body: func(ctx *core.Context) core.View {
+			which := core.NewState(ctx, 1)
+			state := core.NewState(ctx, 0)
+			hideNumbers := core.NewState(ctx, false)
+
+			p := tutorialPassages[which.Get()]
+			verse := comps.BibleVerse{
+				Reference:   p.reference,
+				Translation: "KJV",
+				Verses:      p.verses,
+				URL:         p.url,
+				HideNumbers: hideNumbers.Get(),
+				Loading:     state.Get() == 1,
+				// Retry is where an app would fetch again. The canned
+				// passage cannot fail twice, so it just comes back.
+				OnRetry: func() { state.Set(0) },
+			}
+			if state.Get() == 2 {
+				verse.Error = "Couldn't reach Blue Letter Bible. Check your connection and try again."
+			}
+
+			return core.Column(
+				core.Gap(14),
+				prose("BibleVerse is a passage on a card: the text, the reference under it, and a link "+
+					"to the passage on Blue Letter Bible. A verse of the day, the passage a devotional "+
+					"opens with, a reference in a study app tapped to see what it says."),
+
+				codeBlock(`// Off the render path, in a goroutine or an effect:
+p, err := blb.Fetch(ctx, "Psalm 23:1-2", "KJV")
+
+lines := make([]comps.BibleVerseLine, len(p.Verses))
+for i, v := range p.Verses {
+    lines[i] = comps.BibleVerseLine{Number: v.Number, Text: v.Text}
+}
+comps.BibleVerse{
+    Reference:   p.Reference, // "Psalms 23:1-2", BLB's spelling
+    Translation: p.Translation,
+    Verses:      lines,
+    URL:         p.URL,
+    Loading:     fetching.Get(),
+    Error:       loadErr.Get(),
+    OnRetry:     refetch,
+}`),
+				demoPanel("Pick a passage, then play the fetch: loading shows a skeleton, failing shows a Retry. These passages are canned; see below.",
+					comps.SegmentedControl{
+						Style:     segWrap,
+						Labels:    passageSegments(),
+						Selected:  which.Get(),
+						OnSelect:  func(i int) { which.Set(i) },
+						KeyPrefix: "verse-passage-",
+					},
+					comps.SegmentedControl{
+						Style:     segWrap,
+						Labels:    verseStates,
+						Selected:  state.Get(),
+						OnSelect:  func(i int) { state.Set(i) },
+						KeyPrefix: "verse-state-",
+					},
+					checkRow("Hide verse numbers", hideNumbers),
+					verse,
+				),
+				prose("The widget fetches nothing. comps is view code and goes into every browser "+
+					"build, where a network client would cost size in apps that never quote a verse. "+
+					"The blb package does the fetching, from the feed Blue Letter Bible's free "+
+					"ScriptTagger embed uses, and returns BLB's spelling of the reference, the "+
+					"numbered verses and the passage's address. The call in the code above is the "+
+					"whole integration. Set Loading while it runs and Error if it fails. Error wins over "+
+					"Loading, so a caller that forgets to clear Loading still shows why."),
+				prose("This page cannot make that call. The feed sends no CORS headers, so a fetch from "+
+					"a browser is refused before it leaves, and a browser build needs a same-origin "+
+					"proxy (blb.Client.BaseURL). Android, iOS and servers call it directly. So the three "+
+					"passages here are typed in, in the shape blb.Passage has, and the segments play the "+
+					"fetch. They are the King James Version, which is in the public domain. Most other "+
+					"translations are under copyright: show them with the link, and don't store them."),
+				prose("Verse numbers are drawn when there are two or more verses, bold and in the "+
+					"secondary colour, as a printed Bible sets them. A single verse has none, because "+
+					"the reference under it already says which one it is. The passage is one "+
+					"Paragraph, so the verses wrap as a single run, and a reader hears each number "+
+					"before its verse, as the passage would be read aloud."),
+				prose("The link back is drawn whenever there is somewhere for it to go: OnOpen if set, "+
+					"for an in-app reader, otherwise URL. BLB serves its text to embedders on the "+
+					"understanding that they link back, so leave it in. blb.SearchURL builds a working "+
+					"link from the reference alone when the fetch failed. BibleVerse has no hooks."),
+				keyPoints(
+					"BibleVerse fetches nothing: blb.Fetch does, off the render path, on Android, iOS and servers.",
+					"A browser build needs a same-origin proxy for blb, because the feed sends no CORS headers.",
+					"Loading draws a skeleton; Error a status with Retry when OnRetry is set; Error wins.",
+					"Verse numbers for two or more verses; HideNumbers for prose; Text for a passage with no numbers.",
+					"The link back goes to OnOpen, else URL, and is left out when there is neither.",
+				),
+			)
+		},
+	}
+}
+
+// passageSegments are the segment labels of tutorialPassages.
+func passageSegments() []string {
+	labels := make([]string, len(tutorialPassages))
+	for i, p := range tutorialPassages {
+		labels[i] = p.segment
+	}
+	return labels
+}
+
+// tutorialComments is the discussion lesson 4.40 opens on. The shape is
+// chosen to show every feature once:
+//
+//	Ana       a question, liked 3 times, two replies
+//	├ Ben     liked by you; one reply, so the chain is three deep
+//	│ └ Chen  depth 2: replying here goes past MaxDepth 2
+//	└ (deleted, by Dev)   keeps its place and its reply
+//	  └ Ana
+//	Chen      a second thread with no replies and no likes
+func tutorialComments() []comps.DiscussionComment {
+	return []comps.DiscussionComment{{
+		Key: "ana-1", Author: "Ana", Time: "2h", Likes: 3,
+		Body: "Does the new build stop the keyboard covering the message box?",
+		Replies: []comps.DiscussionComment{{
+			Key: "ben-1", Author: "Ben", Time: "1h", Likes: 1, Liked: true,
+			Body: "It does on my Pixel. I haven't tried an iPhone.",
+			Replies: []comps.DiscussionComment{{
+				Key: "chen-1", Author: "Chen", Time: "45m",
+				Body: "Fixed on iOS too.",
+			}},
+		}, {
+			Key: "dev-1", Author: "Dev", Time: "40m", Deleted: true,
+			Replies: []comps.DiscussionComment{{
+				Key: "ana-2", Author: "Ana", Time: "30m",
+				Body: "Fair point. That's a separate bug; I've filed it.",
+			}},
+		}},
+	}, {
+		Key: "chen-2", Author: "Chen", Time: "20m",
+		Body: "Is there a changelog for this build?",
+	}}
+}
+
+// editComment returns the tree with fn applied to the comment named key. The
+// whole tree is copied, not just the path to the comment: it is a handful of
+// comments, and a partial copy would leave the state slot sharing slices with
+// the slices the last pass's closures hold.
+func editComment(cs []comps.DiscussionComment, key string, fn func(*comps.DiscussionComment)) []comps.DiscussionComment {
+	out := slices.Clone(cs)
+	for i := range out {
+		if out[i].Key == key {
+			fn(&out[i])
+		}
+		if len(out[i].Replies) > 0 {
+			out[i].Replies = editComment(out[i].Replies, key, fn)
+		}
+	}
+	return out
+}
+
+// findComment is the comment named key, or nil.
+func findComment(cs []comps.DiscussionComment, key string) *comps.DiscussionComment {
+	for i := range cs {
+		if cs[i].Key == key {
+			return &cs[i]
+		}
+		if c := findComment(cs[i].Replies, key); c != nil {
+			return c
+		}
+	}
+	return nil
+}
+
+// countComments counts every comment in the tree, deleted ones included:
+// they still hold a place in the thread.
+func countComments(cs []comps.DiscussionComment) int {
+	n := len(cs)
+	for _, c := range cs {
+		n += countComments(c.Replies)
+	}
+	return n
+}
+
+// 4.40 — Discussion. The lesson is the division of state: the comments,
+// likes and the reply target are the caller's (server data, and a decision
+// about where the composer goes), and the folds are the widget's. The demo
+// is a working thread, with posting, so the composer can be seen moving and
+// a reply can be pushed past MaxDepth.
+//
+// Appended at the end of the chapter for the reason 4.25 was.
+func lessonDiscussion() Lesson {
+	return Lesson{
+		Title:   "Threaded comments",
+		Summary: "comps.Discussion: replies under a thread line, Like and Reply on each, folds the widget keeps, and a composer that moves to the comment you answer.",
+		Body: func(ctx *core.Context) core.View {
+			comments := core.NewState(ctx, tutorialComments())
+			replyingTo := core.NewState(ctx, "")
+			draft := core.NewState(ctx, "")
+
+			like := func(key string) {
+				comments.Set(editComment(comments.Get(), key, func(c *comps.DiscussionComment) {
+					if c.Liked {
+						c.Likes--
+					} else {
+						c.Likes++
+					}
+					c.Liked = !c.Liked
+				}))
+			}
+			post := func() {
+				text := strings.TrimSpace(draft.Get())
+				if text == "" {
+					return
+				}
+				// Comments are only ever added here, so the count is a key
+				// that has never been used.
+				c := comps.DiscussionComment{
+					Key:    "you-" + strconv.Itoa(countComments(comments.Get())),
+					Author: "You", Time: "now", Body: text,
+				}
+				if to := replyingTo.Get(); to == "" {
+					comments.Set(append(slices.Clone(comments.Get()), c))
+				} else {
+					comments.Set(editComment(comments.Get(), to, func(p *comps.DiscussionComment) {
+						p.Replies = append(slices.Clone(p.Replies), c)
+					}))
+				}
+				draft.Set("")
+				replyingTo.Set("")
+			}
+
+			// The composer is hook-free, as Discussion requires: a plain
+			// InputRow over this lesson's draft, and a Cancel only while it
+			// is answering someone. It moves through the tree as ReplyingTo
+			// changes, and a hook inside it would move with it.
+			placeholder := "Add a comment…"
+			composer := []core.PropsAndChildren{core.Padding(0), core.Gap(6)}
+			if to := findComment(comments.Get(), replyingTo.Get()); to != nil {
+				placeholder = "Reply to " + to.Author + "…"
+			}
+			composer = append(composer, comps.InputRow{
+				Value:       draft.Get(),
+				Placeholder: placeholder,
+				OnChange:    draft.Set,
+				OnSubmit:    post,
+				Button:      comps.Button{Label: "Post"},
+			})
+			if replyingTo.Get() != "" {
+				composer = append(composer, comps.Button{
+					Label:    "Cancel reply",
+					Emphasis: comps.EmphasisGhost,
+					OnTap:    func() { replyingTo.Set("") },
+					Style:    []core.StyleProp{core.AlignSelf(core.AlignItemsStart)},
+				})
+			}
+
+			return core.Column(
+				core.Gap(14),
+				prose("Discussion is a comment section: comments, replies indented under a thread "+
+					"line, Reply and Like on each, and threads that fold away. Comments under an "+
+					"article, a forum topic, the questions on a course lesson. For a chat transcript, "+
+					"MessageThread is the widget."),
+
+				codeBlock(`comps.Discussion{
+    Title:      "6 comments",
+    Comments:   comments.Get(),       // []comps.DiscussionComment, each with Replies
+    OnReply:    replyingTo.Set,       // the Key of the comment answered
+    OnLike:     like,                 // the Key; flip Liked and Likes in your data
+    ReplyingTo: replyingTo.Get(),     // where the Composer goes; "" is the top
+    Composer: comps.InputRow{
+        Value: draft.Get(), OnChange: draft.Set, OnSubmit: post,
+        Button: comps.Button{Label: "Post"},
+    },
+    MaxDepth: 2,                      // the indent stops growing here
+}`),
+				demoPanel("Like, reply, fold a thread. Reply to Chen under Ben: that reply is a level deeper than the indent goes.",
+					comps.Discussion{
+						Title:      fmt.Sprintf("%d comments", countComments(comments.Get())),
+						Comments:   comments.Get(),
+						OnReply:    replyingTo.Set,
+						OnLike:     like,
+						ReplyingTo: replyingTo.Get(),
+						Composer:   core.Column(composer...),
+						// Two rather than the default four, so that a phone's
+						// demo panel shows the cap after one reply.
+						MaxDepth: 2,
+					},
+				),
+				prose("The comments are yours. They are server data that other people change, as a "+
+					"Poll's counts are. OnLike and OnReply report a comment's Key, and the caller "+
+					"updates its data or sets ReplyingTo. The composer is drawn under the comment "+
+					"ReplyingTo names, or at the top when it is empty, for a new thread. The widget "+
+					"never sees the draft: posting is the composer's business, and here it adds your "+
+					"comment to the tree and clears ReplyingTo."),
+				prose("Which threads are folded is the widget's own state, as an Accordion's open "+
+					"sections are: no application wants to store it. That is one hook, so Discussion "+
+					"must be rendered on every pass and never inside core.If. The composer moves from "+
+					"comment to comment, so it must have no hooks of its own. A thread that holds the "+
+					"comment being answered is always drawn open, so the composer can never be folded "+
+					"away under the reader. InitiallyCollapsed starts every thread folded."),
+				prose("MaxDepth caps the indent, so a long chain does not walk off a phone's screen. A "+
+					"reply past it is drawn at the capped indent but is still a level deeper in the "+
+					"outline. Each level is a list of list items with a nesting level, which the web "+
+					"reads out as \"level 3\". Android and iOS cannot say a level, so each header is "+
+					"also named with what the indent shows: \"Chen, reply to Ben, 45m\"."),
+				prose("Like is a Chip, a toggle with one stable name, \"Like, 3\", and a selected "+
+					"state. Reply is named \"Reply to Ana\", because a column of identical Reply "+
+					"buttons is no help to someone moving from control to control. A deleted comment "+
+					"keeps its place and its replies, since it is the context they were written in."),
+				keyPoints(
+					"The comments, likes and ReplyingTo are the caller's; OnLike and OnReply report a Key.",
+					"The folds are the widget's one hook: render Discussion every pass, never inside core.If.",
+					"Composer is drawn under ReplyingTo's comment (or at the top), so it must be hook-free.",
+					"MaxDepth caps the indent; the nesting level, and the natives' \"reply to\" names, keep counting.",
+					"Deleted comments keep their place and replies; Keys must be stable, like server IDs.",
 				),
 			)
 		},

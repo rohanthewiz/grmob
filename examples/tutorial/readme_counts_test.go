@@ -49,7 +49,7 @@ func TestReadmeChapterTableMatchesTheCurriculum(t *testing.T) {
 
 func TestDocsLessonTotalsMatchTheCurriculum(t *testing.T) {
 	want := fmt.Sprintf("%d lessons across %d chapters", len(flatLessons), len(Chapters))
-	// The screenshot's alt text ("0 of 80 lessons opened") describes a
+	// The screenshot's alt text ("0 of 83 lessons opened") describes a
 	// picture taken on a day, so it is left out: it is right as long as the
 	// image is, and re-taking the image is a separate job.
 	for _, doc := range []string{"README.md", "docs/tutorial-interactive.md"} {

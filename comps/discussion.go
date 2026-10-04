@@ -359,7 +359,13 @@ func (r discussionRender) comment(c DiscussionComment, depth int, parent string)
 					core.BackgroundColor(t.Colors.Border),
 					core.AccessibilityHidden(),
 				),
-				core.Column(core.Padding(0), core.FlexGrow(1), core.FlexBasis("0"), replies),
+				// MinWidth 0: on the web a flex item will not shrink below
+				// its content's min-content width, and a Composer drawn
+				// in here is a text field whose intrinsic width (about
+				// 20 characters) plus its Post button outgrows a phone at
+				// one indent. Without it the whole level of replies ran
+				// past the right edge as soon as Reply was tapped.
+				core.Column(core.Padding(0), core.FlexGrow(1), core.FlexBasis("0"), core.MinWidth("0"), replies),
 			)
 		}
 		items = append(items, replies)
