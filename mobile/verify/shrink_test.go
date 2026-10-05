@@ -390,12 +390,24 @@ func TestIOSFlexHonoursAZeroBasis(t *testing.T) {
 	renderer := valuesIn(t, swiftRenderer)
 	for _, want := range []string{
 		".layoutValue(key: GrMobFlexZeroBasis.self, value: zeroBasisPadding(child.style))",
-		"if definite, padding >= 0, automatic.isFinite {",
-		"return max(zeroBasis ? automatic : min(automatic, bases[i]), floors[i])",
+		"if definite, padding >= 0 {",
+		"guard zeroBasis else { return max(min(automatic, bases[i]), floors[i]) }",
+		// N-022, definite extent: a Column child's `.infinity` verdict is
+		// resolved by measuring, so its base can still be its padding.
+		": contentMain(subview, crossBound: crossBound, floor: 0)",
+		// N-022, ideal-size query: the second pass lays the children out
+		// from zero bases inside the length the content gave the container.
+		"let bases = definite ? measured : zeroBased(measured, subviews)",
 	} {
 		if !strings.Contains(renderer, want) {
 			t.Errorf("Renderer.swift: missing %q", want)
 		}
+	}
+	// The guard N-022 removed: with it, a zero-basis Column child whose
+	// floor is the `.infinity` verdict kept its content height as its base,
+	// and a weighted Column of them was content-biased.
+	if strings.Contains(renderer, "if definite, padding >= 0, automatic.isFinite {") {
+		t.Errorf("Renderer.swift: a zero basis is again honoured only when its automatic minimum is finite (N-022)")
 	}
 	// The basis is the box's whole inset, a drawn border included, as CSS
 	// counts it; padding alone left EditableGrid's ringed editing cell 4pt

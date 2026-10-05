@@ -93,13 +93,6 @@ with each item's `raised` traced back through all session docs.
 - **N-021** · raised `2026-0916-1557-small-fixes-stroke-gradients-bar-values-alarm-groups` · value medium (blocked)
   **The iOS Image floor runs high for a narrow image.** Needs a px-width box
   that can shrink (`grMobDimension`). (was #26; lapsed@0917-1659)
-- **N-022** · raised `2026-0916-1557-small-fixes-stroke-gradients-bar-values-alarm-groups` · value low
-  **A zero basis is honoured on iOS only with a definite main extent.**
-  Proposed as a non-goal; kept open by the user 2026-09-25. (was #27;
-  lapsed@0917-1659)
-  - Recommendation (2026-09-29, not acted on): keep open but low; the
-    workaround (state an extent) is one prop, and the proper fix is a
-    two-pass measure in `GrMobFlexZeroBasis` that no bundled screen needs.
 - **N-024** · raised `2026-0916-1557-small-fixes-stroke-gradients-bar-values-alarm-groups` · value low
   **`barValueRoom` is still an estimate.** Exact needs host measurement of the
   plot. (was #30)
@@ -558,6 +551,25 @@ with each item's `raised` traced back through all session docs.
   comment. The tutorial page that does set cover is N-088.
 
 ## Closed
+
+- **N-022** · raised `2026-0916-1557-small-fixes-stroke-gradients-bar-values-alarm-groups`
+  · closed 2026-10-04, `2026-1004-2022-n022-zero-basis-two-pass-measure-ios` — the two-pass measure, in `GrMobFlexLayout`
+  (Renderer.swift). The real gap at placement was a zero-basis Column child
+  whose `min-height: auto` is the `.infinity` verdict: it kept its measured
+  content height as its base, so a weighted Column was content-biased.
+  `minMains` now measures that child's content and passes it as the minimum,
+  so `baseMains` can start it at its padding. Under an ideal-size query,
+  `sizeThatFits` still sizes the container from content (pass 1), then lays
+  the children out inside that length from zero bases (pass 2, `zeroBased`),
+  so the cross size is measured at the mains placement draws. Seen on the
+  iPhone 17 Pro simulator with a throwaway app (deleted): a 300pt Column
+  with two weight-1 zero-basis cells, 1 and 4 lines tall, went from 247/384px
+  to 315/316px. Pass 2 made no visible difference there, because the outer
+  Row measures the inner one again at a definite width; no screen was found
+  that shows it. `TestIOSFlexHonoursAZeroBasis` pins both halves.
+  `TutorialZeroBasisAndGradientsUITests` (calendar, StatTiles, gradients)
+  and `TutorialChartsUITests` pass. Not seen on Android or the web, which
+  were not affected. (was #27; lapsed@0917-1659)
 
 - **N-093** · raised `2026-1003-1852-stripe-checkout-bible-verse-discussion-widgets`
   · closed 2026-10-03, `2026-1003-2008-n093-gallery-lessons-checkout-verse-discussion` — lessons 4.38 "Checkout with Stripe", 4.39 "Quoting

@@ -954,8 +954,24 @@ private struct GrMobFlexMin: LayoutValueKey {
 /// only a child whose share falls short of it. (A first version folded the
 /// floor into the base, which is the content width again; lesson 4.9's
 /// calendar showed it, with "10" and "31" in wider columns than "8".) A Column's verdict (.infinity, "floor at your
-/// content") cannot be clamped against without a measurement, so a
-/// zero-basis Column child with that verdict keeps its measured base.
+/// content") cannot be clamped against without a measurement, so minMains
+/// measures a zero-basis Column child with that verdict and passes the
+/// content height as its minimum.
+///
+/// # The two passes (N-022)
+///
+/// The basis is honoured whether or not the main extent is definite:
+///
+/// ```
+///   definite extent    base = padding, min = content floor   (one pass)
+///   ideal-size query   pass 1: base = content -> container's length
+///                      pass 2: base = padding, laid out in that length
+/// ```
+///
+/// Pass 1 is CSS's intrinsic sizing: a container asked for its ideal size is
+/// as long as its items' content. Pass 2 makes the mains sizeThatFits
+/// measures cross sizes at the same ones placeSubviews draws. Until both
+/// existed, the workaround was to give such a container a definite extent.
 private struct GrMobFlexZeroBasis: LayoutValueKey {
     static let defaultValue: CGFloat = -1
 }
@@ -1027,13 +1043,34 @@ private struct GrMobFlexLayout: Layout {
         let offered = mainOf(proposal)
         let floors = percentFloors(subviews, extent: offered)
         let caps = percentCaps(subviews, extent: offered)
-        let bases = GrMobFlexSolver.capped(
-            baseMains(subviews, crossBound: crossBound, floors: floors,
-                      definite: GrMobFlexSolver.definite(offered) != nil),
+        let definite = GrMobFlexSolver.definite(offered) != nil
+        let measured = GrMobFlexSolver.capped(
+            baseMains(subviews, crossBound: crossBound, floors: floors, definite: definite),
             by: caps)
         let weights = subviews.map { $0[GrMobFlexWeight.self] }
-        let main = solver.containerMain(offered: offered, bases: bases, weights: weights,
+        let main = solver.containerMain(offered: offered, bases: measured, weights: weights,
                                         percentCapped: caps.contains { $0 != nil })
+        // The second pass of a zero basis under an ideal-size query.
+        //
+        // Pass one (above) sized the container from its children's content,
+        // since a zero basis has no length of its own to size anything from.
+        // Pass two lays the children out in that length the way placement
+        // will, sharing it out by weight from zero bases. Without it, the
+        // cross size below was measured at content mains while placeSubviews
+        // drew at zero-basis mains. A wrapping child whose share came out
+        // narrower than its content then reported a height for a width it
+        // was never drawn at.
+        //
+        // ```
+        //   pass 1   bases = content     -> main = natural(content)
+        //   pass 2   bases = padding     -> mains = resolve(main, ...)
+        //            (zero-basis only)      cross = measured at those mains
+        // ```
+        //
+        // A definite offer needs no second pass: baseMains already started
+        // zero-basis children at their padding. Nothing is measured twice;
+        // pass two only swaps entries that pass one measured.
+        let bases = definite ? measured : zeroBased(measured, subviews)
         // The container's own size is unchanged by the floor, and that is the
         // CSS shape: a flex container that cannot fit its children OVERFLOWS
         // them — it does not report itself bigger and take the room from its
@@ -1043,7 +1080,7 @@ private struct GrMobFlexLayout: Layout {
         let resolved = solver.resolve(
             main: main, bases: bases, weights: weights,
             shrinks: subviews.map { $0[GrMobFlexShrink.self] },
-            mins: minMains(subviews, bases: bases, floors: floors))
+            mins: minMains(subviews, bases: bases, floors: floors, crossBound: crossBound))
 
         // Cross size is re-measured at each child's *final* main size: a Text
         // that had to shrink wraps to more lines, and asking it before the
@@ -1074,7 +1111,7 @@ private struct GrMobFlexLayout: Layout {
         let resolved = solver.resolve(
             main: mainOf(bounds.size), bases: bases, weights: weights,
             shrinks: subviews.map { $0[GrMobFlexShrink.self] },
-            mins: minMains(subviews, bases: bases, floors: floors))
+            mins: minMains(subviews, bases: bases, floors: floors, crossBound: containerCross))
         // The same read FlexChildren makes, and it has to be the same one:
         // an unset value stretches on the vertical axis (the CSS default the
         // DOM targets have always drawn) and packs on the horizontal one.
@@ -1142,17 +1179,46 @@ private struct GrMobFlexLayout: Layout {
     /// row of zero-basis boxes would otherwise report the sum of their
     /// paddings and be laid out at nearly nothing; CSS sizes such a container
     /// from its items' content contributions, which is the measured base.
-    /// placeSubviews always has definite bounds, and sharing those bounds out
-    /// by weight from zero bases fills them exactly as the measured ones did.
+    /// sizeThatFits then runs a second pass from zero bases inside that
+    /// length (see zeroBased), so the children it measures for the cross size
+    /// have the mains placement will give them. placeSubviews always has
+    /// definite bounds and shares them out by weight from zero bases.
+    ///
+    /// That holds on both axes. A Column child whose automatic minimum is
+    /// the `.infinity` verdict ("floor at your content height") used to keep
+    /// its measured base even with a definite extent, because the floor had
+    /// no number until the child was measured. minMains now measures it, so
+    /// the base can be the padding here.
     private func baseMains(_ subviews: Subviews, crossBound: CGFloat?, floors: [CGFloat],
                            definite: Bool) -> [CGFloat] {
         subviews.enumerated().map { i, subview in
             let padding = subview[GrMobFlexZeroBasis.self]
-            let automatic = subview[GrMobFlexMin.self]
-            if definite, padding >= 0, automatic.isFinite {
+            if definite, padding >= 0 {
                 return padding
             }
-            return max(mainOf(subview.sizeThatFits(proposed(main: nil, cross: crossBound))), floors[i])
+            return contentMain(subview, crossBound: crossBound, floor: floors[i])
+        }
+    }
+
+    /// One child's content size along the main axis (CSS `flex-basis:
+    /// auto`), raised to its percentage floor. It is unspecified on the main
+    /// axis and bounded on the cross axis; see baseMains for why.
+    private func contentMain(_ subview: LayoutSubview, crossBound: CGFloat?,
+                             floor: CGFloat) -> CGFloat {
+        max(mainOf(subview.sizeThatFits(proposed(main: nil, cross: crossBound))), floor)
+    }
+
+    /// `measured` with every zero-basis child's entry swapped for its padding
+    /// (its CSS base size). This is the second pass of sizeThatFits under an
+    /// ideal-size query: the container's length comes from the measured
+    /// bases, and the children are laid out inside it from these.
+    ///
+    /// No cap is re-applied. A padding is never above the content it
+    /// replaces, so it cannot pass a cap that the measured entry kept under.
+    private func zeroBased(_ measured: [CGFloat], _ subviews: Subviews) -> [CGFloat] {
+        subviews.enumerated().map { i, subview in
+            let padding = subview[GrMobFlexZeroBasis.self]
+            return padding >= 0 ? padding : measured[i]
         }
     }
 
@@ -1193,15 +1259,38 @@ private struct GrMobFlexLayout: Layout {
     /// A zero-basis child is the exception to the clamp: its base is its
     /// padding, below its content, and the content floor is exactly what the
     /// solver must still honour once the free space is shared. So its min is
-    /// passed whole (when finite; a Column's `.infinity` verdict keeps its
-    /// measured base in baseMains and takes the clamp like any other child).
-    /// When the extent is not definite baseMains measured the base, which is
-    /// at or above the floor, and the clamp is a no-op either way.
-    private func minMains(_ subviews: Subviews, bases: [CGFloat], floors: [CGFloat]) -> [CGFloat] {
+    /// passed whole.
+    ///
+    /// A Column's `.infinity` verdict has no number to pass: for any other
+    /// child, the clamp to the base supplies it. A zero-basis child's base is
+    /// its padding, so here the verdict is resolved by measuring the content
+    /// height at the cross bound. That is the same measurement baseMains
+    /// makes for a content-sized child, and the floor CSS's `min-height:
+    /// auto` names. This is the half of the two-pass measure that a definite
+    /// extent needs:
+    ///
+    /// ```
+    ///   Column, Height 300, two children FlexGrow(1) FlexBasis("0"),
+    ///   contents 40 and 100 tall
+    ///
+    ///                       base     min    size
+    ///   before (measured)   40/100   =base  120/180   content-biased
+    ///   now   (padding)     0/0      40/100 150/150   CSS, Chrome
+    /// ```
+    ///
+    /// The measurement happens only for that combination (zero basis, Column
+    /// verdict), which no bundled screen has. Every other child pays nothing
+    /// new.
+    private func minMains(_ subviews: Subviews, bases: [CGFloat], floors: [CGFloat],
+                          crossBound: CGFloat?) -> [CGFloat] {
         subviews.enumerated().map { i, subview in
             let automatic = subview[GrMobFlexMin.self]
-            let zeroBasis = subview[GrMobFlexZeroBasis.self] >= 0 && automatic.isFinite
-            return max(zeroBasis ? automatic : min(automatic, bases[i]), floors[i])
+            let zeroBasis = subview[GrMobFlexZeroBasis.self] >= 0
+            guard zeroBasis else { return max(min(automatic, bases[i]), floors[i]) }
+            let floor = automatic.isFinite
+                ? automatic
+                : contentMain(subview, crossBound: crossBound, floor: 0)
+            return max(floor, floors[i])
         }
     }
 
