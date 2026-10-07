@@ -30,7 +30,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-096
+**Next ID:** N-097
 
 ## Open
 
@@ -424,18 +424,22 @@ with each item's `raised` traced back through all session docs.
   proxy that it writes itself. Candidate: a small handler in `webhost` or
   `serve` that forwards `/remoteExtensions/toolTip/toolTipRemote.cfm` to
   www.blueletterbible.org. Contingent on a browser app wanting verses.
-- **N-094** · raised `2026-1003-1852-stripe-checkout-bible-verse-discussion-widgets` · value low (unverified)
-  **Cards overflow a 420px viewport in a bare `htmlout` export.** A stock
-  `comps.Card` and `comps.InputRow` inside `comps.Screen{Scroll: true}` ran
-  past the right edge in headless Chrome (`--window-size=420,…`), the same
-  as the new widgets. This may just be the export missing the web runtime's
-  CSS, and was not compared with `./build.sh && go run ./serve`.
 - **N-095** · raised `2026-1003-2008-n093-gallery-lessons-checkout-verse-discussion` · value low (unverified)
   **The contents card's progress track vanishes in dark mode.** Retaking
   `tutorial-contents.png` on a Mac in dark mode (before `shot.mjs` pinned
   light) drew "0 of 83 lessons opened" over no visible track at all; the
   light shot shows a pale one. Only seen at 0% in headless Chrome, so the
   track may be there at too low a contrast against the dark Card.
+- **N-096** · raised `2026-1007-0210-n094-headless-window-minimum-not-overflow` · value low
+  **`htmlout.ExportHTML` writes no viewport `<meta>`.** Opened on a phone,
+  or under CDP mobile emulation, an export lays out at the 980px desktop
+  fallback and is drawn zoomed out. Measured 2026-10-07: `innerWidth` 980
+  for the export, 420 for the same tree in the `grmob new` host page, which
+  has `width=device-width, initial-scale=1, viewport-fit=cover`. The export
+  writes a `<head>` only when the tree needs a motion or border-box rule
+  (`motionStylesheet`), so adding the meta changes every export's bytes and
+  makes the head unconditional. Candidate: an always-present head with the
+  same meta the scaffold uses.
 
 ## Non-goals
 
@@ -527,6 +531,23 @@ with each item's `raised` traced back through all session docs.
   comment. The tutorial page that does set cover is N-088.
 
 ## Closed
+
+- **N-094** · raised `2026-1003-1852-stripe-checkout-bible-verse-discussion-widgets`
+  · closed 2026-10-07, `2026-1007-0210-n094-headless-window-minimum-not-overflow` — not a bug: the premise was a headless Chrome
+  artifact. `--headless=new --window-size=420,900` lays the page out at
+  Chrome's minimum window width, 500px (`innerWidth` 500), while
+  `--screenshot` saves a 420px-wide PNG of it. That crop cuts off the right
+  80px, which is what looked like overflow. Re-run on 2026-10-07 with one
+  `comps.Screen{Scroll: true}` holding a stock `comps.Card` and
+  `comps.InputRow`. It was rendered both as `htmlout.ExportHTML` and as the
+  runtime's JSON mounted by `GrMob.mount` in the `grmob new` host page, then
+  measured over CDP with `Emulation.setDeviceMetricsOverride` pinning a true
+  420px viewport. Both reported `scrollWidth` 420 and no element past the
+  right edge, and the screenshot shows both widgets inside the frame. Real
+  differences seen, neither an overflow: the export keeps `<body>`'s
+  default 8px margin, and it has no viewport `<meta>` (raised as N-096). A
+  check at a phone width should pin the viewport over CDP, as
+  `wasm/shots/shot.mjs` does with its clip, not rely on `--window-size`.
 
 - **N-087** · raised `2026-1003-0746-component-defined-readme-docs-skill`
   · closed 2026-10-07, `2026-1007-0204-n087-docsnippets-compile-component-docs` — `internal/docsnippets`. Its test takes the ```go
