@@ -21,6 +21,7 @@ One of 11 topic pages of [package core](core.md), which has the package overview
 - [`func Divider`](#func-divider)
 - [`func Fragment`](#func-fragment)
 - [`func GroupingContainers`](#func-groupingcontainers)
+- [`func HBox`](#func-hbox)
 - [`func Horizontal`](#func-horizontal)
 - [`func JustifyContents`](#func-justifycontents)
 - [`func KeyboardAware`](#func-keyboardaware)
@@ -100,7 +101,7 @@ The two roles are not split into two Go types because that would be a breaking c
 func BorderColor(hex string) StyleProp
 ```
 
-<small>[core/layout.go:354](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L354)</small>
+<small>[core/layout.go:405](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L405)</small>
 
 ### func BorderWidth
 
@@ -108,7 +109,7 @@ func BorderColor(hex string) StyleProp
 func BorderWidth(px float64) StyleProp
 ```
 
-<small>[core/layout.go:359](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L359)</small>
+<small>[core/layout.go:410](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L410)</small>
 
 ### func Box
 
@@ -122,7 +123,7 @@ It is not an overlay, on any target. Both natives used to draw it as one (a Comp
 
 ZStack, below, is the container that does overlay — and it exists because this one stopped. The two are the same argument from both ends: one shape per node type, stated once, rather than a container whose meaning depended on which renderer was reading it.
 
-<small>[core/layout.go:261](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L261)</small>
+<small>[core/layout.go:269](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L269)</small>
 
 ### func Card
 
@@ -130,7 +131,7 @@ ZStack, below, is the container that does overlay — and it exists because this
 func Card(stylePropsAndChildren ...PropsAndChildren) View
 ```
 
-<small>[core/layout.go:135](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L135)</small>
+<small>[core/layout.go:139](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L139)</small>
 
 ### func Column
 
@@ -138,7 +139,9 @@ func Card(stylePropsAndChildren ...PropsAndChildren) View
 func Column(stylePropsAndChildren ...PropsAndChildren) View
 ```
 
-<small>[core/layout.go:239](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L239)</small>
+Column is the vertical flex stack. It starts from the theme's Components.Column style, a 12/16 inset in every bundled theme, which is what a screen's outer column wants. A nested stack usually does not; Box is the same column with no theme base.
+
+<small>[core/layout.go:247](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L247)</small>
 
 ### func Divider
 
@@ -146,7 +149,7 @@ func Column(stylePropsAndChildren ...PropsAndChildren) View
 func Divider(height int, color string) View
 ```
 
-<small>[core/layout.go:347](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L347)</small>
+<small>[core/layout.go:398](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L398)</small>
 
 ### func Fragment
 
@@ -154,7 +157,7 @@ func Divider(height int, color string) View
 func Fragment(children ...View) View
 ```
 
-<small>[core/layout.go:227](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L227)</small>
+<small>[core/layout.go:231](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L231)</small>
 
 ### func GroupingContainers
 
@@ -165,6 +168,36 @@ func GroupingContainers() []string
 GroupingContainers returns the transparent node types, sorted. See groupingContainers.
 
 <small>[core/stack_align.go:198](https://github.com/rohanthewiz/grmob/blob/master/core/stack_align.go#L198)</small>
+
+### func HBox
+
+```go
+func HBox(stylePropsAndChildren ...PropsAndChildren) View
+```
+
+HBox is Box's horizontal twin: a Row with no theme base. Children are laid out exactly as in a Row, and nothing insets or paints the strip but the caller.
+
+	core.HBox(core.Gap(8), core.AlignItemsProp(core.AlignItemsCenter),
+	    icon,
+	    label,
+	)
+
+is what the core.Row(core.Padding(0), …) idiom says, without the zero.
+
+#### Why it exists
+
+The theme's Row base (8/16 in every bundled theme) suits a screen-level strip and is wrong for nearly every row nested inside an inset parent, so nested rows across the tutorial and comps have cancelled it with Padding(0) one call site at a time. Removing the base from the theme would retire that idiom too, but it would move the layout of every app built on Row, so the inset stays where it is and this is the opt-out by name. Column already had one in Box.
+
+#### Why the node is a "Row", when Box has a type of its own
+
+The theme base is applied here in Go, by the constructor, and travels as ordinary style on the node. No renderer looks a theme up by node type. So a Row node with an empty base is already a paddingless row on all four targets, and every per-type rule a Row has (flex direction, the cross-axis fallback, min-content sizing, labelled-container semantics, the native row-fill offers) applies to it with no renderer change. A new node type would have to be added to each of those tables on each target, which is exactly the kind of drift the Box/ZStack history above records.
+
+Box keeps its own type for a historical reason: it began as a different shape (an overlay on the natives) and only later became a stack.
+
+	Row(...)  ──► Node{Type: "Row", Style: theme.Components.Row ⊕ props}
+	HBox(...) ──► Node{Type: "Row", Style: Style{}             ⊕ props}
+
+<small>[core/layout.go:312](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L312)</small>
 
 ### func Horizontal
 
@@ -203,7 +236,7 @@ A vertical Scroll emits no overflow on the web at all: the page scrolls, and the
 
 It is not a horizontal List. core.List's laziness, its cross-axis stretch and its FlexGrow contract are all written for a vertical main axis on both natives, and nothing yet asks for a lazily-materialized carousel. A strip of chips or a handful of cards is short by construction, which is what Scroll is for.
 
-<small>[core/layout.go:436](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L436)</small>
+<small>[core/layout.go:487](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L487)</small>
 
 ### func JustifyContents
 
@@ -355,7 +388,9 @@ Sorted for the reason htmlout's OverlayTypes is: a test looping over a map repor
 func Row(stylePropsAndChildren ...PropsAndChildren) View
 ```
 
-<small>[core/layout.go:129](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L129)</small>
+Row is the horizontal flex stack. It starts from the theme's Components.Row style, which in every bundled theme is an 8/16 inset: right for a screen-level strip, and wrong for most rows nested inside something that is already inset. HBox is the same row with no theme base, for those.
+
+<small>[core/layout.go:133](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L133)</small>
 
 ### func SafeArea
 
@@ -371,7 +406,7 @@ Like Scroll it has no theme base: the theme Column's screen padding would otherw
 
 Below the inset it is a Column, on every target: children stack and, with no cross-axis alignment set, stretch to its width. Both natives used to draw it as an overlay (a Compose Box, a SwiftUI ZStack), which stacked two children on top of each other and let a lone one — a screen's whole content column, usually — hug its widest child instead of filling the screen.
 
-<small>[core/layout.go:221](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L221)</small>
+<small>[core/layout.go:225](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L225)</small>
 
 ### func Scroll
 
@@ -393,7 +428,7 @@ A vertical Scroll whose parent is itself a vertical scroll has no viewport to be
 
 The same shape sideways: a Horizontal() Scroll, a TextGrid or a CodeEditor inside a Horizontal() Scroll. Compose's horizontal scroll throws under an infinite width just as the vertical one does, so the renderer caps that axis too, and on an emulator the inner regions draw at their content width while the outer strip pans. SwiftUI's sideways nesting has not been measured.
 
-<small>[core/layout.go:191](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L191)</small>
+<small>[core/layout.go:195](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L195)</small>
 
 ### func Spacer
 
@@ -401,7 +436,7 @@ The same shape sideways: a Horizontal() Scroll, a TextGrid or a CodeEditor insid
 func Spacer(size int) View
 ```
 
-<small>[core/layout.go:141](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L141)</small>
+<small>[core/layout.go:145](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L145)</small>
 
 ### func StackAlign
 
@@ -526,7 +561,7 @@ That holds on all four targets including a stack with a placed layer, which it d
 
 Like Box and Scroll it carries no theme base — a theme Column's screen inset applied to an overlay would offset every layer by 16px and change nothing about their relationship.
 
-<small>[core/layout.go:341](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L341)</small>
+<small>[core/layout.go:392](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L392)</small>
 
 ## Types
 

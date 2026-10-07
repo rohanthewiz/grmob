@@ -169,7 +169,8 @@ Points to notice:
   a styling tweak cannot re-enable a disabled button.
 - **`core.Padding(0)` on a nested Row or Column.** The theme insets both for
   use as screen bands. A control nested in something already padded would
-  otherwise be indented twice. `core.Box` carries no theme base at all.
+  otherwise be indented twice. `core.Box` and `core.HBox` (its Row twin)
+  carry no theme base at all.
 - **The zero value is the existing look** (rule 6). `Variant`'s zero is
   primary, and a nil `Format` falls back to `strconv.Itoa`. When a zero
   would be a trap, rename the field so that zero is safe: `comps.Poll` has

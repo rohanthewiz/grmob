@@ -126,6 +126,10 @@ func leafNode(ctx *Context, typ string, base Style, props map[string]any, items 
 	return n
 }
 
+// Row is the horizontal flex stack. It starts from the theme's
+// Components.Row style, which in every bundled theme is an 8/16 inset: right
+// for a screen-level strip, and wrong for most rows nested inside something
+// that is already inset. HBox is the same row with no theme base, for those.
 func Row(stylePropsAndChildren ...PropsAndChildren) View {
 	return ComponentFunc(func(ctx *Context) *Node {
 		return containerNode(ctx, "Row", ctx.Theme().Components.Row, stylePropsAndChildren)
@@ -236,6 +240,10 @@ func Fragment(children ...View) View {
 	})
 }
 
+// Column is the vertical flex stack. It starts from the theme's
+// Components.Column style, a 12/16 inset in every bundled theme, which is
+// what a screen's outer column wants. A nested stack usually does not; Box is
+// the same column with no theme base.
 func Column(stylePropsAndChildren ...PropsAndChildren) View {
 	return ComponentFunc(func(ctx *Context) *Node {
 		return containerNode(ctx, "Column", ctx.Theme().Components.Column, stylePropsAndChildren)
@@ -261,6 +269,49 @@ func Column(stylePropsAndChildren ...PropsAndChildren) View {
 func Box(stylePropsAndChildren ...PropsAndChildren) View {
 	return ComponentFunc(func(ctx *Context) *Node {
 		return containerNode(ctx, "Box", Style{}, stylePropsAndChildren)
+	})
+}
+
+// HBox is Box's horizontal twin: a Row with no theme base. Children are laid
+// out exactly as in a Row, and nothing insets or paints the strip but the
+// caller.
+//
+//	core.HBox(core.Gap(8), core.AlignItemsProp(core.AlignItemsCenter),
+//	    icon,
+//	    label,
+//	)
+//
+// is what the core.Row(core.Padding(0), …) idiom says, without the zero.
+//
+// # Why it exists
+//
+// The theme's Row base (8/16 in every bundled theme) suits a screen-level
+// strip and is wrong for nearly every row nested inside an inset parent, so
+// nested rows across the tutorial and comps have cancelled it with
+// Padding(0) one call site at a time. Removing the base from the theme would
+// retire that idiom too, but it would move the layout of every app built on
+// Row, so the inset stays where it is and this is the opt-out by name.
+// Column already had one in Box.
+//
+// # Why the node is a "Row", when Box has a type of its own
+//
+// The theme base is applied here in Go, by the constructor, and travels as
+// ordinary style on the node. No renderer looks a theme up by node type. So
+// a Row node with an empty base is already a paddingless row on all four
+// targets, and every per-type rule a Row has (flex direction, the cross-axis
+// fallback, min-content sizing, labelled-container semantics, the native
+// row-fill offers) applies to it with no renderer change. A new node type
+// would have to be added to each of those tables on each target, which is
+// exactly the kind of drift the Box/ZStack history above records.
+//
+// Box keeps its own type for a historical reason: it began as a different
+// shape (an overlay on the natives) and only later became a stack.
+//
+//	Row(...)  ──► Node{Type: "Row", Style: theme.Components.Row ⊕ props}
+//	HBox(...) ──► Node{Type: "Row", Style: Style{}             ⊕ props}
+func HBox(stylePropsAndChildren ...PropsAndChildren) View {
+	return ComponentFunc(func(ctx *Context) *Node {
+		return containerNode(ctx, "Row", Style{}, stylePropsAndChildren)
 	})
 }
 

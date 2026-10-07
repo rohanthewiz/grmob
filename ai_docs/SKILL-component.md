@@ -206,7 +206,8 @@ a `# Theme roles read` table.
   behaviour that must not be overridable. Button appends `core.Disabled(true)`
   after the caller's Style, so a styling tweak cannot re-enable it.
 - **`core.Row` and `core.Column` carry the theme's screen inset.** A widget
-  that is a control inside something else adds `core.Padding(0)`. Use
+  that is a control inside something else adds `core.Padding(0)`, or uses
+  `core.HBox` (a Row with no theme base) in place of the Row. Use
   `core.Box` for a wrapper that must be geometrically invisible, since Box has
   no theme base. Box does not centre its child on the natives; centre with a
   Row plus `Justify` / `AlignItemsProp`.
@@ -551,8 +552,8 @@ and most of them fail the build if missed. Work through these in order:
 2. **Hard-coded colours or sizes** instead of theme roles. They break under
    `DarkTheme` and every custom theme.
 3. **Caller `Style` applied before the defaults**, so the override loses.
-4. **A nested Row or Column without `core.Padding(0)`**, which shows as a
-   double inset.
+4. **A nested Row or Column without `core.Padding(0)`** (or built as
+   `core.HBox` / `core.Box`), which shows as a double inset.
 5. **A nil callback registered**, which panics on the first native tap.
 6. **A zero value that means something surprising.** Rename the field so zero
    is safe.

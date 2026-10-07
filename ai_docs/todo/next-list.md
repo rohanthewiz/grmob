@@ -399,20 +399,6 @@ with each item's `raised` traced back through all session docs.
     (the frameless `core.Select`) says "Category, row 1, Home" with no role.
   - The cost on a phone: the doc's "about 5,000 cells" is 4µs a cell measured
     on an M3, times a guess. Type into a 10 × 500 sheet on the Fold6.
-- **N-083** · raised `2026-0924-1211-tutorial-overflow-sweep-web-floors-nested-scroll` · value low (API decision)
-  **The theme's Row (8/16) and Column (12/16) padding lands on every plain
-  stack.** It is right for a screen's outer column and wrong for nearly every
-  nested one. The tutorial states `core.Padding(0)` in about 25 places, and
-  `2026-0924-1211` added seven more after the base overflowed four demos and
-  the split's panes, where it also beat the host page's CSS. Counted
-  2026-09-25: 28 lines with `core.Padding(0)` and 38 with `Padding(0)` in
-  any form in examples/tutorial. An API that gave
-  only the screen-level stack its inset (or a paddingless stack
-  constructor) would retire the idiom, but it changes every app's layout.
-  - Recommendation (2026-09-29, not acted on): decline. Changing the theme
-    default moves every app's layout, and a second paddingless constructor
-    doubles the stack API; `core.Padding(0)` is explicit and greppable
-    (38 lines in examples/tutorial today).
 - **N-087** · raised `2026-1003-0746-component-defined-readme-docs-skill` · value low
   **The component examples are compiled by no test.** `Tally` (README and
   `docs/concepts/components.md`), `Spoiler`, the `renderDebug` /
@@ -551,6 +537,24 @@ with each item's `raised` traced back through all session docs.
   comment. The tutorial page that does set cover is N-088.
 
 ## Closed
+
+- **N-083** · raised `2026-0924-1211-tutorial-overflow-sweep-web-floors-nested-scroll`
+  · closed 2026-10-07, `2026-1007-0157-n083-hbox-paddingless-row` — added `core.HBox`, a Row with no theme base,
+  as the horizontal twin of `core.Box`. The 2026-09-29 recommendation was to
+  decline, on the grounds that a paddingless constructor would double the
+  stack API. But `Box` has always been the paddingless Column, so only the Row
+  half was missing. `HBox` emits an ordinary `Row` node: the theme base is
+  applied in Go by the constructor and no renderer looks one up by type, so no
+  target changed. The theme default stays as it is, so no app's layout moves.
+  The existing `Padding(0)` sites were not migrated. An AST count found 66
+  `core.Row`/`core.Column` calls with a literal `Padding(0)` argument (22 in
+  examples/tutorial, 42 in comps) out of about 435, plus slice-built ones it
+  does not see. The grep counts are larger (42 lines in examples/tutorial,
+  256 in non-test Go) because they include other nodes. Pinned by
+  `TestHBoxIsARowNode` and `TestHBoxCarriesNoThemeBase`. Row and Column
+  gained doc comments pointing at HBox and Box. `docs/concepts/views.md`,
+  `docs/concepts/components.md` and both `ai_docs/SKILL*.md` mention it, and
+  `docs/api` is regenerated. Not seen on a device, since no renderer changed.
 
 - **N-022** · raised `2026-0916-1557-small-fixes-stroke-gradients-bar-values-alarm-groups`
   · closed 2026-10-04, `2026-1004-2022-n022-zero-basis-two-pass-measure-ios` — the two-pass measure, in `GrMobFlexLayout`

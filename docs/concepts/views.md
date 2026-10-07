@@ -21,7 +21,7 @@ contract a component keeps.
 
 ## Containers
 
-The flex-style containers — `Row`, `Column`, `Card`, `Box`, `List` — share
+The flex-style containers — `Row`, `Column`, `Card`, `Box`, `HBox`, `List` — share
 one argument contract: a mixed variadic list of **style props**, **behavior
 props**, and **child views**, in any order.
 
@@ -43,6 +43,12 @@ core.Row(
   down the page in a browser. `ZStack` below is where that behaviour went, as
   a node type of its own.) Reach for it when you want a styled container and
   none of the theme's opinions.
+- `HBox` — `Box`'s horizontal twin: a `Row` with no theme base. The theme's
+  Row inset (8/16) suits a screen-level strip and is wrong for most rows
+  nested inside an inset parent, which is what `core.Row(core.Padding(0), …)`
+  has been spelling out. `HBox(…)` says the same without the zero. It emits an
+  ordinary `Row` node, because the theme base is applied in Go and no renderer
+  looks one up by type, so it lays out exactly as a `Row` on every target.
 - `List` — the virtualized sibling of `Column`: children are laid out lazily
   by the native renderer (Compose `LazyColumn`, SwiftUI `LazyVStack`), so a
   thousand-row feed composes only what is on screen. Use `Column` + `Scroll`
@@ -403,7 +409,7 @@ limits:
   not a substitute for an `if` around work that would be expensive or panic on
   the false path.
 - It returns `PropsAndChildren` (i.e. `any`), so it only fits the container
-  builders — `Row`, `Column`, `Card`, `Box`, `List`. `Text` and `Button` take
+  builders — `Row`, `Column`, `Card`, `Box`, `HBox`, `List`. `Text` and `Button` take
   `...StyleProp` and will not accept it.
 
 Use `If` where the alternative is a whole branch of the tree; use `MaybeProp`

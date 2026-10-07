@@ -46,7 +46,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
 | Topic | What it covers | Declares |
 | --- | --- | --- |
 | [Views & state](core-views.md) | View, Node, Context and state slots; text and inline runs; conditionals, caching, error boundaries and debug-mode concerns. | 12 types, 60 functions and methods |
-| [Layout](core-layout.md) | Rows, columns, stacks, scrolls and lists, and the alignment vocabulary they are placed with. | 2 types, 27 functions and methods |
+| [Layout](core-layout.md) | Rows, columns, stacks, scrolls and lists, and the alignment vocabulary they are placed with. | 2 types, 28 functions and methods |
 | [Styling: the Style struct](core-style.md) | Style and the value types its fields take: alignment, flex, position, weights and edge insets. | 11 types, 12 functions and methods |
 | [Styling: style props](core-style-props.md) | The StyleProp constructors: spacing and per-side insets, flex, typography, colour, borders, per-corner radii and animation. | 2 types, 73 functions and methods |
 | [Theming](core-theme.md) | Themes, palettes, typography and spacing scales, and per-component defaults. | 5 types, 22 functions and methods |
@@ -115,6 +115,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
     - [`func Divider`](core-layout.md#func-divider)
     - [`func Fragment`](core-layout.md#func-fragment)
     - [`func GroupingContainers`](core-layout.md#func-groupingcontainers)
+    - [`func HBox`](core-layout.md#func-hbox)
     - [`func Horizontal`](core-layout.md#func-horizontal)
     - [`func JustifyContents`](core-layout.md#func-justifycontents)
     - [`func KeyboardAware`](core-layout.md#func-keyboardaware)

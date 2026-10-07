@@ -692,7 +692,8 @@ goroutine: hop to the UI thread before touching views.
 9. **No bindable exported symbol** in an app package, so the linker drops it.
 10. **Opening a data store in `init`**, before the host has called `SetDataDir`.
 11. **Double insets on nested containers.** The theme pads every `Column` and
-    `Row`; a nested one needs `core.Padding(0)` to line up with its parent's content.
+    `Row`; a nested one needs `core.Padding(0)` to line up with its parent's content,
+    or is built as `core.HBox` (a Row) / `core.Box` (a Column), which carry no theme base.
 
 ## Where the full documentation is
 
