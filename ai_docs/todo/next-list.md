@@ -424,12 +424,6 @@ with each item's `raised` traced back through all session docs.
   proxy that it writes itself. Candidate: a small handler in `webhost` or
   `serve` that forwards `/remoteExtensions/toolTip/toolTipRemote.cfm` to
   www.blueletterbible.org. Contingent on a browser app wanting verses.
-- **N-095** · raised `2026-1003-2008-n093-gallery-lessons-checkout-verse-discussion` · value low (unverified)
-  **The contents card's progress track vanishes in dark mode.** Retaking
-  `tutorial-contents.png` on a Mac in dark mode (before `shot.mjs` pinned
-  light) drew "0 of 83 lessons opened" over no visible track at all; the
-  light shot shows a pale one. Only seen at 0% in headless Chrome, so the
-  track may be there at too low a contrast against the dark Card.
 - **N-096** · raised `2026-1007-0210-n094-headless-window-minimum-not-overflow` · value low
   **`htmlout.ExportHTML` writes no viewport `<meta>`.** Opened on a phone,
   or under CDP mobile emulation, an export lays out at the 980px desktop
@@ -531,6 +525,24 @@ with each item's `raised` traced back through all session docs.
   comment. The tutorial page that does set cover is N-088.
 
 ## Closed
+
+- **N-095** · raised `2026-1003-2008-n093-gallery-lessons-checkout-verse-discussion`
+  · closed 2026-10-07, `2026-1007-0216-n095-progress-track-border-role` — confirmed and fixed in `comps.ProgressBar`, not
+  the tutorial. The default track was `Colors.Surface`, and DarkTheme's
+  Card fill *is* Surface (#2C2C2E), so a stock bar in a stock dark Card had
+  a 1:1 track: absent, not faint. The default is now
+  `Colors.BorderColor()`, which `comps.Gauge`'s track already used. Measured
+  against every `palette.Backdrops` fill of every bundled theme, the old
+  default was 1.00:1 on each theme's Surface, on DarkTheme's Card and on
+  Amber's Input and TextArea. Border's lowest is 1.13:1 (DefaultTheme on
+  Surface). `TestProgressBarDefaultTrackShowsOnEveryBackdrop` holds the
+  default to a 1.1:1 floor on every pair; it fails 7 pairs with the old
+  default. Seen before and after in headless Chrome at a pinned 420px: the
+  tutorial's card shape under DarkTheme, runtime-mounted. At 0% the old
+  default drew the caption over nothing, and the new one draws a full-width
+  #38383A groove. Light themes' tracks get darker too (DefaultTheme #F2F2F7
+  → #E5E5EA), so `docs/images/tutorial-contents.png` is now a shade off; it
+  was not retaken. `wasm/verify/run.sh` and `go test ./...` pass.
 
 - **N-094** · raised `2026-1003-1852-stripe-checkout-bible-verse-discussion-widgets`
   · closed 2026-10-07, `2026-1007-0210-n094-headless-window-minimum-not-overflow` — not a bug: the premise was a headless Chrome

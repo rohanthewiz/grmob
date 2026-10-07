@@ -712,7 +712,8 @@ type ProgressBar struct {
 	Thickness float64
 
 	// Color is the fill; empty uses the theme's Primary. TrackColor is the
-	// groove behind it; empty uses the theme's Surface.
+	// groove behind it; empty uses the theme's Border role, as Gauge's track
+	// does. See the track default in Render for why not Surface.
 	Color      string
 	TrackColor string
 
@@ -791,7 +792,7 @@ Even at Value 0, where it is zero pixels wide. Keeping the child count fixed mea
 func (p ProgressBar) Render(ctx *core.Context) *core.Node
 ```
 
-<small>[comps/progress_bar.go:111](https://github.com/rohanthewiz/grmob/blob/master/comps/progress_bar.go#L111)</small>
+<small>[comps/progress_bar.go:112](https://github.com/rohanthewiz/grmob/blob/master/comps/progress_bar.go#L112)</small>
 
 ### type SheetAction
 

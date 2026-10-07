@@ -60,7 +60,8 @@ type ProgressBar struct {
 	Thickness float64
 
 	// Color is the fill; empty uses the theme's Primary. TrackColor is the
-	// groove behind it; empty uses the theme's Surface.
+	// groove behind it; empty uses the theme's Border role, as Gauge's track
+	// does. See the track default in Render for why not Surface.
 	Color      string
 	TrackColor string
 
@@ -130,9 +131,30 @@ func (p ProgressBar) Render(ctx *core.Context) *core.Node {
 	if fill == "" {
 		fill = t.Colors.Primary
 	}
+	// The default groove is the divider role, not Surface. The bar cannot
+	// know what it is drawn on, so the default has to be visible on every
+	// fill a theme offers (palette.Backdrops), and Surface is one of those
+	// fills: a Surface groove on a Surface panel is 1:1, i.e. not there.
+	// DarkTheme makes the clash ordinary rather than rare, because its Card
+	// fill IS Surface, so a stock bar in a stock Card drew no track at all
+	// (N-095, the tutorial's progress card in dark mode). Amber's Input fill
+	// is its Surface too.
+	//
+	// Border clears every backdrop of every bundled theme, at 1.13:1 at the
+	// least (DefaultTheme on Surface), against the 1.12:1 the old Surface
+	// groove had on a white Card. A groove is a divider-weight element, so
+	// the role with no 3:1 floor is the right one: the value is carried by
+	// the fill, which is Primary. TestProgressBarDefaultTrackShowsOnEveryBackdrop
+	// holds the default to every pair.
+	//
+	//	      Surface groove                 Border groove
+	//	┌ Card (DarkTheme #2C2C2E) ┐   ┌ Card (DarkTheme #2C2C2E) ┐
+	//	│ ████████                 │   │ ████████▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒ │
+	//	└──────────────────────────┘   └──────────────────────────┘
+	//	  fill, then nothing             fill, then a #38383A groove
 	track := p.TrackColor
 	if track == "" {
-		track = t.Colors.Surface
+		track = t.Colors.BorderColor()
 	}
 
 	// Rounded to hundredths of a percent before formatting, because %g on a

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/rohanthewiz/grmob/core"
+	"github.com/rohanthewiz/grmob/internal/palette"
 )
 
 // fillOf returns the track's fill child.
@@ -29,8 +30,8 @@ func TestProgressBarStructureAndDefaults(t *testing.T) {
 	if n.Style.Padding != (core.EdgeInsets{}) {
 		t.Errorf("a 6px groove cannot carry the theme Row's 8px inset; got %+v", n.Style.Padding)
 	}
-	if n.Style.Background != theme.Colors.Surface {
-		t.Errorf("track = %q, want theme Surface %q", n.Style.Background, theme.Colors.Surface)
+	if n.Style.Background != theme.Colors.BorderColor() {
+		t.Errorf("track = %q, want theme Border %q", n.Style.Background, theme.Colors.BorderColor())
 	}
 	if n.Style.BorderRadius != 3 {
 		t.Errorf("BorderRadius = %v, want half the thickness for pill ends", n.Style.BorderRadius)
@@ -202,5 +203,42 @@ func TestProgressBarStyleOverridesDefaults(t *testing.T) {
 	}
 	if n.Style.Background != "#000000" {
 		t.Errorf("caller Style must be applied last and win, got %q", n.Style.Background)
+	}
+}
+
+// The default groove must be visible on every fill a bar can be drawn on, in
+// every bundled theme. The bar cannot see its parent, so the only default
+// that works is one that clears them all; palette.Backdrops is the same list
+// the ControlBorder census measures, derived from the theme rather than
+// named here, so a new filled component joins this check without an edit.
+//
+// The floor is visibility, not WCAG's 3:1: a groove is divider-weight and
+// the value is carried by the Primary fill. 1.1:1 is just under what the
+// old Surface groove had on DefaultTheme's white Card (1.12:1), the pale
+// track the light tutorial shot shows, so it reads as "at least as visible
+// as the track nobody missed". The old default failed it at 1:1 on every
+// theme's Surface, on DarkTheme's Card (N-095) and on Amber's Input.
+func TestProgressBarDefaultTrackShowsOnEveryBackdrop(t *testing.T) {
+	const floor = 1.1
+	for name, theme := range core.BundledThemes() {
+		ctx := core.NewContext().WithTheme(theme)
+		ctx.BeginRenderPass()
+		track := ProgressBar{Value: 0.5}.Render(ctx).Style.Background
+
+		lt, ok := palette.Luminance(track)
+		if !ok {
+			t.Fatalf("%s: the default track %q is not a hex this check can measure", name, track)
+		}
+		for _, b := range palette.Backdrops(theme) {
+			lb, ok := palette.Luminance(b.Hex)
+			if !ok {
+				t.Errorf("%s: backdrop %s %q is not a measurable hex", name, b.What, b.Hex)
+				continue
+			}
+			if r := palette.Ratio(lt, lb); r < floor {
+				t.Errorf("%s: a default ProgressBar on %s (%s) draws its %s track at %.2f:1, "+
+					"under the %.2f:1 visibility floor; the groove is not there", name, b.What, b.Hex, track, r, floor)
+			}
+		}
 	}
 }
