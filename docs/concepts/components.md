@@ -87,7 +87,9 @@ The rest of this page covers each rule as it comes up.
 
 ## Writing a leaf widget
 
-A complete widget that holds no state. It compiles as written:
+A complete widget that holds no state. It compiles as written, and
+`internal/docsnippets` builds it, with this page's Spoiler and test, on every
+`go test`:
 
 ```go
 package ui

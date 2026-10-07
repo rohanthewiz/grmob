@@ -83,7 +83,9 @@ from `comps.Button{Emphasis: comps.EmphasisOutlined}` rather than drawing its ow
 
 ## 2. Anatomy of a struct widget
 
-A complete leaf widget. It compiles as written against the current API:
+A complete leaf widget. It compiles as written against the current API, and
+`internal/docsnippets` builds it, with the §6 and §8 blocks, on every
+`go test`:
 
 ```go
 package ui

@@ -399,16 +399,6 @@ with each item's `raised` traced back through all session docs.
     (the frameless `core.Select`) says "Category, row 1, Home" with no role.
   - The cost on a phone: the doc's "about 5,000 cells" is 4µs a cell measured
     on an M3, times a guess. Type into a 10 × 500 sheet on the Fold6.
-- **N-087** · raised `2026-1003-0746-component-defined-readme-docs-skill` · value low
-  **The component examples are compiled by no test.** `Tally` (README and
-  `docs/concepts/components.md`), `Spoiler`, the `renderDebug` /
-  `renderPass` harness and the concern snippet appear in the README, the
-  concept page and `ai_docs/SKILL-component.md`, which says "it compiles as
-  written". That was checked by hand on 2026-10-03, by extracting the
-  blocks into a throwaway package and running `go vet` and `go test` on it.
-  Nothing catches drift when a core or comps signature changes. Candidate: a
-  test that extracts the ```go blocks under named headings into a temp
-  module and builds them. The doc-gen test only matches the fence prefix.
 - **N-089** · raised `2026-1003-1659-n007-canvas-text-clip-shape-taps` · value medium
   **`ios/verify/run.sh` does not compile.** `GrMobSurface.swift` (N-085,
   `6fda8ec`) imports UIKit, and the harness builds the runtime's files with
@@ -537,6 +527,25 @@ with each item's `raised` traced back through all session docs.
   comment. The tutorial page that does set cover is N-088.
 
 ## Closed
+
+- **N-087** · raised `2026-1003-0746-component-defined-readme-docs-skill`
+  · closed 2026-10-07, `2026-1007-0204-n087-docsnippets-compile-component-docs` — `internal/docsnippets`. Its test takes the ```go
+  fences under a fixed table of headings in the README ("Your own
+  components"), `docs/concepts/components.md` (leaf widget, owned state,
+  accessibility, testing) and `ai_docs/SKILL-component.md` (§2, §6, §8). It
+  writes one package per doc into a scratch module that `replace`s grmob with
+  this checkout, then runs `go vet` and `go test -v` there. A fence with no
+  package clause gets one plus imports for the qualifiers it uses. The concern
+  snippet is pasted into a method body on Tally. The concept page's
+  `findFirst`/`findText`, which its prose describes but does not show, are
+  supplied as `given_test.go`. `//line` directives make errors name the
+  markdown line. The table's fence counts fail a renamed heading, and every
+  `func Test…` a fence declares must PASS once per doc. Mutation-checked:
+  a renamed symbol failed at `components.md:310`, an inverted reveal at
+  `SKILL-component.md:436`, and a renamed README heading failed the count. It
+  takes about a second. Not behind `-short`. Both docs now say the check
+  exists. Also bumped wasm/verify's tracked-Go-file figure from 688 to 691;
+  the N-083 commit's `hbox_test.go` had already left it stale.
 
 - **N-083** · raised `2026-0924-1211-tutorial-overflow-sweep-web-floors-nested-scroll`
   · closed 2026-10-07, `2026-1007-0157-n083-hbox-paddingless-row` — added `core.HBox`, a Row with no theme base,
