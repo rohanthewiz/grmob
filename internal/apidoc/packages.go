@@ -331,6 +331,11 @@ var Packages = []Pkg{
 		Group: "Platform",
 		Blurb: "Asking the platform for the camera, the microphone, location, the media store.",
 	},
+	{
+		Dir:   "keystore",
+		Group: "Platform",
+		Blurb: "Small secrets — a bearer token, an API key — in the iOS Keychain and the Android Keystore.",
+	},
 }
 
 // Loaded is one package's parsed documentation, plus the fileset its positions

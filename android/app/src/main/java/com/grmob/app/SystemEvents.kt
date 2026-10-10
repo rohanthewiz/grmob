@@ -26,6 +26,7 @@ import org.json.JSONObject
  *   core.*Clipboard ──▶ "clipboard" ──▶ Clipboard (ClipboardManager)
  *   core.Haptic     ──▶ "haptic"    ──▶ Haptics (Vibrator)
  *   core.*Notification ▶ "notification" ▶ Notifications (NotificationCompat)
+ *   keystore.*      ──▶ "keystore"  ──▶ Keystore (AndroidKeyStore + SharedPreferences)
  *
  * Before this existed the events were emitted into a nil Go handler and
  * vanished on both natives — only the WASM host had a sink — so an app
@@ -60,6 +61,7 @@ object SystemEvents {
         HeadingSensor.attach(appContext, runtime::hostEvent)
         LocationSensor.attach(appContext, runtime::hostEvent)
         Clipboard.attach(appContext, runtime::hostEvent)
+        Keystore.attach(appContext, runtime::hostEvent)
         Haptics.attach(appContext)
         // Creates the notification channel. The tap comes back through
         // MainActivity, which is the component the notification launches.
@@ -105,6 +107,10 @@ object SystemEvents {
             // Write is fire-and-forget; a read is answered over the host-event
             // channel with the id it carried (core/clipboard.go).
             "clipboard" -> Clipboard.handle(data)
+            // Save, get or delete one secret; every command is answered over
+            // the host-event channel with the id it carried, from Keystore's
+            // own worker thread (keystore/keystore.go).
+            "keystore" -> Keystore.handle(data)
             // Fire-and-forget, one named effect (core/haptics.go).
             "haptic" -> Haptics.handle(data)
             // Post or cancel; a tap comes back through MainActivity, the

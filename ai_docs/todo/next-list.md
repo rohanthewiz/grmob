@@ -30,7 +30,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-097
+**Next ID:** N-098
 
 ## Open
 
@@ -434,6 +434,23 @@ with each item's `raised` traced back through all session docs.
   (`motionStylesheet`), so adding the meta changes every export's bytes and
   makes the head unconditional. Candidate: an always-present head with the
   same meta the scaffold uses.
+
+## Validate
+
+- **N-097** · raised `2026-1010-1728-keystore-binding` · value low
+  **The keystore is unrun on physical hardware.** Checked with a throwaway
+  probe on the API 36 emulator and the iOS 26.5 simulator. Covered: save,
+  read, overwrite, a non-ASCII value, an empty value, a double delete, a
+  20-call burst, persistence across relaunch, a tampered entry, a simulated
+  lost key (a renamed alias), and iOS items outliving uninstall until the
+  fresh install's wipe. Unchecked:
+  - A hardware-backed key: the Fold6's TEE/StrongBox, and the Mi Max 3 on
+    Android 10, the oldest Keystore GCM-with-AAD in reach.
+  - A real Auto Backup restore (`bmgr`) instead of the renamed alias.
+  - An iOS background launch before first unlock, which should answer
+    errSecInteractionNotAllowed (-25308) rather than hang.
+
+  church_mobile's N-004 swap is the natural first real consumer.
 
 ## Non-goals
 

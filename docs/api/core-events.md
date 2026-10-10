@@ -129,7 +129,7 @@ OnHostEvent subscribes fn to host events named name. The returned function cance
 
 Subscriptions are process-wide, like the system-event handler and for the same reason: the thing on the far side of the channel is one physical device with one audio output, one keystore, one location, so there is no context tree to scope them to. A component that subscribes during render must therefore guard against subscribing again on the next pass — hooks.UseAudio shows the pattern (a hook slot remembers that it did).
 
-<small>[core/host_events.go:60](https://github.com/rohanthewiz/grmob/blob/master/core/host_events.go#L60)</small>
+<small>[core/host_events.go:61](https://github.com/rohanthewiz/grmob/blob/master/core/host_events.go#L61)</small>
 
 ### func ReceiveHostEvent
 
@@ -141,7 +141,7 @@ ReceiveHostEvent delivers one event from the host. Names core owns are consumed 
 
 An event nobody consumes is logged rather than dropped silently — unlike an unknown system event, which a host drops because a newer app may legitimately send what an older shell does not understand, an unknown host event means the shell is sending traffic the app never asked for, which is worth a line in the log during development.
 
-<small>[core/host_events.go:93](https://github.com/rohanthewiz/grmob/blob/master/core/host_events.go#L93)</small>
+<small>[core/host_events.go:94](https://github.com/rohanthewiz/grmob/blob/master/core/host_events.go#L94)</small>
 
 ### func ScrollIntoView
 

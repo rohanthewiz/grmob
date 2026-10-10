@@ -96,3 +96,4 @@ nav:
       - jsonout: api/jsonout.md
       - mobile: api/mobile.md
       - permission: api/permission.md
+      - keystore: api/keystore.md

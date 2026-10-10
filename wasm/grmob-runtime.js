@@ -9743,6 +9743,34 @@ const GrMob = (() => {
         return { handle };
     })();
 
+    // The browser half of Go's keystore package (keystore/keystore.go), which
+    // is a refusal on purpose. A page has no secure store: localStorage,
+    // IndexedDB and script-readable cookies are all open to any script on the
+    // origin, which is exactly the XSS threat a keystore exists to keep a
+    // token away from. So every save, get and delete is answered ok:false
+    // with the reserved reason "unavailable", which Go turns into
+    // keystore.ErrUnavailable, and the app picks its own fallback knowing
+    // what it is choosing. The value a save carries is dropped here unread.
+    //
+    // Answered in a microtask rather than inside this call: the natives always
+    // reply later, from their own queue, and a caller should not find its
+    // callback run on one host before the call has returned and after it on
+    // the others. Every request is answered, because Go holds the callback
+    // until its id comes back and has no timeout.
+    const keystore = (() => {
+        function handle(data) {
+            if (!data.id) return;
+            const host = window.GrMobWASM;
+            if (!host || typeof host.HostEvent !== "function") return;
+            const reply = JSON.stringify({ "id": data.id, "ok": false, "error": "unavailable" });
+            // Promise.resolve().then rather than queueMicrotask: the same
+            // microtask, from a language builtin rather than a web API, so a
+            // vm sandbox with no window globals (wasm/verify) has it too.
+            Promise.resolve().then(() => host.HostEvent("keystore", reply));
+        }
+        return { handle };
+    })();
+
     // The browser half of core.Haptic (core/haptics.go). The Vibration API
     // takes milliseconds only, so each kind is a small pattern, the same
     // timings Haptics.kt uses below API 29. Absent in Safari (so on every
@@ -10126,6 +10154,7 @@ const GrMob = (() => {
         heading,
         permission,
         clipboard,
+        keystore,
         haptics,
         notifications,
         windowMetrics,
@@ -10163,6 +10192,12 @@ window.GrMobSystemEvent = function (name, payloadJSON) {
         // core's clipboard (core/clipboard.go): a write, or a read answered
         // over GrMobWASM.HostEvent with the id it carried.
         GrMob.clipboard.handle(JSON.parse(payloadJSON));
+        return;
+    }
+    if (name === "keystore") {
+        // Go's keystore package (keystore/keystore.go): refused, with every
+        // request answered "unavailable" over GrMobWASM.HostEvent.
+        GrMob.keystore.handle(JSON.parse(payloadJSON));
         return;
     }
     if (name === "haptic") {

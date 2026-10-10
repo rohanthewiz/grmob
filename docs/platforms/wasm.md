@@ -138,7 +138,10 @@ more: the `"audio"` system event is handled inside `grmob-runtime.js`
 `"clipboard"` system event goes to the async Clipboard API with a read's
 answer coming back as the `"clipboard"` host event (`ok: false` outside a
 secure context or on a refusal, which a page can report and the natives
-cannot), the `"haptic"` system event plays a short `navigator.vibrate`
+cannot), the `"keystore"` system event is refused — every save, get and
+delete is answered `ok: false` with the reason `unavailable`, because a page
+has no store that script on its origin cannot read — the `"haptic"` system
+event plays a short `navigator.vibrate`
 pattern where the Vibration API exists (Safari has none, so every iOS
 browser is silent), the `"notification"` system event posts a `Notification`
 (tagged with its id) when the page holds the permission, reporting a click
@@ -146,6 +149,7 @@ as the `"notification_tap"` host event, and consumers' state writes reach the
 screen through the push channel. See [Native — Audio](native.md#audio),
 [Native — Lifecycle](native.md#lifecycle),
 [Native — Clipboard](native.md#clipboard),
+[Native — Keystore](native.md#keystore),
 [Native — Haptics](native.md#haptics) and
 [Native — Notifications](native.md#notifications) for the shapes.
 

@@ -13,6 +13,7 @@ import UIKit
 ///     core.*Clipboard ──▶ "clipboard" ──▶ Clipboard (UIPasteboard)
 ///     core.Haptic     ──▶ "haptic"    ──▶ Haptics (UIKit feedback generators)
 ///     core.*Notification ▶ "notification" ▶ Notifications (UNUserNotificationCenter)
+///     keystore.*      ──▶ "keystore"  ──▶ Keystore (Keychain Services)
 ///
 /// Before this existed the events were emitted into a nil Go handler and
 /// vanished on both natives — only the WASM host had a sink — so an app
@@ -37,6 +38,7 @@ enum SystemEvents {
         LocationSensor.shared.report = { name, payload in runtime.hostEvent(name, payload) }
         Permissions.shared.report = { name, payload in runtime.hostEvent(name, payload) }
         Clipboard.shared.report = { name, payload in runtime.hostEvent(name, payload) }
+        Keystore.shared.report = { name, payload in runtime.hostEvent(name, payload) }
         Notifications.shared.report = { name, payload in runtime.hostEvent(name, payload) }
         // Here rather than lazily: the notification center's delegate has to be
         // in place before launch finishes, or a tap that cold-launched the app
@@ -81,6 +83,10 @@ enum SystemEvents {
         // Write is fire-and-forget; a read is answered over the host-event
         // channel with the id it carried (core/clipboard.go).
         case "clipboard": Clipboard.shared.handle(object)
+        // Save, get or delete one secret; every command is answered over the
+        // host-event channel with the id it carried, after the Keychain call
+        // has run on Keystore's own queue (keystore/keystore.go).
+        case "keystore": Keystore.shared.handle(object)
         // Fire-and-forget, one named effect (core/haptics.go).
         case "haptic": Haptics.handle(object)
         // Post or cancel; a tap comes back through the notification center's

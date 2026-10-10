@@ -777,7 +777,7 @@
 - [x] Host events — the reverse of system events: `core.ReceiveHostEvent` /
       `core.OnHostEvent`, `mobile.ReportHostEvent`, `GrMobWASM.HostEvent`.
       Audio status was the first traffic and the app lifecycle the second;
-      keystore results and location fixes have their channel ready
+      keystore results and location fixes now travel on it too
 - [x] App lifecycle events — `core.CurrentLifecycle` / `core.OnLifecycle` /
       `hooks.UseLifecycle` over the `"lifecycle"` host event; active /
       inactive / background from `ProcessLifecycleOwner`, `scenePhase` and
@@ -803,6 +803,15 @@
       event under the id it carried (core's first reply to one request rather
       than a record); `ClipboardManager`, `UIPasteboard` and the async
       Clipboard API. cats-mobile's composer pastes with it
+- [x] Keystore — `keystore.Save` / `keystore.Get` / `keystore.Delete` over
+      the `"keystore"` system event, each answered by the `"keystore"` host
+      event under its id (the clipboard's reply shape): Keychain items
+      (`AfterFirstUnlockThisDeviceOnly`, wiped on a fresh install) on iOS,
+      AES-256-GCM under an `AndroidKeyStore` key on Android, and a deliberate
+      `keystore.ErrUnavailable` in the browser, which has no store script
+      cannot read. Async only — a blocking read would deadlock the event path
+      its own reply arrives on. Unblocks church_mobile's N-004 and
+      cats-mobile's token, both still in bytdb
 - [x] Haptics — `core.Haptic` with seven named kinds (`core.HapticKinds`)
       over the `"haptic"` system event: UIKit's feedback generators, Android's
       predefined `VibrationEffect`s (waveforms below API 29, `VIBRATE` in the
@@ -1487,8 +1496,10 @@
 
 ### Native Bridge (Planned for Android/iOS)
 
-- [ ] Keystore (Secure): `Keystore.Save()`, `Keystore.Get()` — the church app
-      keeps its bearer token in bytdb for want of this; see its README
+- [x] Keystore (Secure): `keystore.Save()`, `keystore.Get()`,
+      `keystore.Delete()` — see the Keystore entry under the done list. The
+      church app and cats-mobile still keep their tokens in bytdb until they
+      swap their store files over
 - [ ] URL-scheme deep links (`cats://pair` from a QR lands in the app)
 - [ ] Device Storage (Plain): `DeviceStorage.Set()`, `DeviceStorage.Get()`
 - [ ] Bluetooth: `Scan`, `Connect`, `Send`

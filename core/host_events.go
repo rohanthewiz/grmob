@@ -19,8 +19,9 @@ import (
 // The channel is generic on purpose. Audio status was its first traffic and
 // the app lifecycle (lifecycle.go) its second, but the shape — a name and a
 // JSON-ish payload, delivered to whoever asked for that name — is the same
-// one every later platform bridge on the roadmap needs (a keystore result,
-// a location fix), and
+// one every later platform bridge has needed (a location fix here in core,
+// a keystore result in the keystore package, which subscribes from outside
+// core like permission does), and
 // adding a bridge function per feature would grow the gomobile surface for
 // no gain. Each host therefore exposes exactly one entry point
 // (mobile.ReportHostEvent on the natives, GrMobWASM.HostEvent in the

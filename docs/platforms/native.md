@@ -53,8 +53,8 @@ consistent. Patch semantics — positional paths, ordering rules — are in
 | `RenderInitial()` | Full tree JSON for the first mount |
 | `TriggerCallback(id)` / `TriggerTextCallback` / `TriggerBoolCallback` / `TriggerIntCallback` | Event dispatch; returns the resulting patches |
 | `RenderAgain()` | Escape hatch for shells that drive rendering themselves |
-| `SetSystemEventListener(l)` | Sink for app→host system events (`toast`, `open_url`, `audio`, `clipboard`, `haptic`, `notification`); `OnSystemEvent(name, payloadJSON)` |
-| `ReportHostEvent(name, payloadJSON)` | Host→app events that answer no callback (`audio_status`, `lifecycle`, `clipboard`, `notification_tap`); returns the resulting patches like `Trigger*` |
+| `SetSystemEventListener(l)` | Sink for app→host system events (`toast`, `open_url`, `audio`, `clipboard`, `keystore`, `haptic`, `notification`); `OnSystemEvent(name, payloadJSON)` |
+| `ReportHostEvent(name, payloadJSON)` | Host→app events that answer no callback (`audio_status`, `lifecycle`, `clipboard`, `keystore`, `notification_tap`); returns the resulting patches like `Trigger*` |
 
 ## Building — Android
 
@@ -260,6 +260,63 @@ read, and Android 13 draws its own "Copied" confirmation on a write, so
 neither is something an app should duplicate. `mobile/verify` holds the
 three shells' spellings of the event, the commands and the reply keys to
 core's, and requires each dispatcher's arm.
+
+## Keystore
+
+The `keystore` package keeps small secrets — a bearer token, an API key — in
+the platform's secure store instead of the app's files. `Save`, `Get` and
+`Delete` each call their callback exactly once, from any goroutine, and take
+no Context:
+
+```go
+// At launch: ask, and show a splash until the answer arrives.
+keystore.Get("token", func(tok string, found bool, err error) {
+    switch {
+    case errors.Is(err, keystore.ErrUnavailable):
+        // The browser or a headless run: use the app's own fallback.
+    case err != nil:
+        log.Printf("reading the token: %v", err) // the key, never the value
+    case found:
+        session.Set(tok)
+    }
+    booted.Set(true)
+})
+
+// At sign-in and sign-out.
+keystore.Save("token", tok, func(err error) { … })
+keystore.Delete("token", nil) // nil: a failure is logged
+```
+
+There is no blocking read. A reply comes back on the same serial path a
+render pass runs on, so a `Get` that waited for it from a handler would wait
+forever; a screen that needs a secret at launch asks on mount and renders a
+placeholder until the callback sets its state.
+
+Each call is the `"keystore"` system event with a `command` (`save`, `get`,
+`delete`), an `id` and the `key` — and the `value`, for a save only. The
+shell answers with the `"keystore"` host event carrying that `id`, `ok`, and
+for a get `found` and `value`; a failure carries an `error` reason instead,
+and the reserved reason `unavailable` becomes `keystore.ErrUnavailable`.
+Deleting a key that holds nothing succeeds.
+
+| Shell | Where the value lives | Survives | Gone after |
+|---|---|---|---|
+| iOS | Keychain generic password, service `grmob.keystore`, `AfterFirstUnlockThisDeviceOnly` | relaunch, update, reboot (readable after the first unlock) | uninstall (wiped on the next fresh install's first call), a move to new hardware |
+| Android | AES-256-GCM under a key in `AndroidKeyStore`, sealed into the private `grmob_keystore` preferences file | relaunch, update, reboot | uninstall, a move to new hardware (a restored file whose key did not come with it is discarded) |
+| Browser | nowhere: every call answers `unavailable` | — | — |
+| Headless | nowhere: `ErrUnavailable` at once, on the caller's goroutine | — | — |
+
+The browser refuses on purpose. Everything a page can store is readable by
+any script on its origin, which is the threat a keystore exists to keep a
+token away from; a web build that wants a session should get it from an
+HttpOnly cookie. Both natives run the platform calls on a serial queue of
+their own — they are IPC to a system daemon and must not stall the main
+thread — so a `Save` followed by a `Get` reads what was saved. Every shell
+answers every call, failures included, because Go holds the callback until
+the id comes back and has no timeout. `mobile/verify` holds the three
+shells' spellings of the event, the commands and the keys to the Go
+package's, requires each dispatcher's arm and each native's reporter, and
+pins both natives' storage policy.
 
 ## Haptics
 
