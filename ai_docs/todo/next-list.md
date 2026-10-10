@@ -21,56 +21,34 @@ with each item's `raised` traced back through all session docs.
     does not exist.
   - A qualifier in parentheses (`API decision`, `user's decision`, `blocked`,
     `delete?`, `non-goal?`) says what the item waits on.
-- **Nothing leaves Open** without a line in Closed (done or merged) or
-  Non-goals (declined, with the reason).
-- **Open stays in ID order.** New items are appended with **Next ID**, which is
-  then bumped.
+- **Open** is the next build work (code, a defect, a decision). **Validate**
+  is the next testing: run, look, hear, measure, or write or repair a test,
+  with no product change planned unless the check finds a defect. An item
+  that mixes a fix with a check stays in Open until the fix lands.
+- **Nothing leaves Open or Validate** without a line in Closed (done or
+  merged) or Non-goals (declined, with the reason). A move between them is
+  not a lapse.
+- **Open and Validate stay in ID order.** New items are appended with
+  **Next ID**, which is then bumped.
 - `lapsed@<doc>` marks an item that once fell off a hand-carried list without
   being done; kept as history.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-098
+**Next ID:** N-100
 
 ## Open
 
-- **N-002** · raised `2026-0912-1821-tier-a-comps-landed` · value medium
-  **Lessons on hardware, and checks still open.**
-  - Done on Compose (2026-0919-1254): radio, StepIndicator and aria-current
-    heard; AccessibilityHidden behind a Drawer heard; `core.Focus` on a Button
-    and a keyboard reaching a shut panel fixed.
-  - Screen readers: combobox active option, "pop-up" triggers, CodeEditor
-    toolbar role on Compose, SearchableSelect on the natives.
-  - Fixed but unheard (2026-0919-2146): the Stepper group's and the Drawer
-    panel's utterances on Compose. The duplicate is gone from the
-    accessibility tree, measured on the emulator; a group node is not
-    reachable by Tab and TalkBack's reading-order keys ignore `adb input`, so
-    hearing the line needs the Fold6's HID keyboard (Meta+Right).
-  - iOS: sheet Dialog and ActionSheet filler, Drawer under Reduce Motion, RTL
-    for Drawer and CodeEditor, the sideways editor, 4.6's list; `core.Focus`
-    on a Button and Inert (an iPad keyboard still reaches a shut panel).
-  - Pinning: `Screen.Footer`, 100% layers in a pinned ZStack.
-  - Android: predictive back, MaxWidth where it binds on a tablet, RTL capped
-    child.
-  - Devices: the Mi Max 3 (Android 10, input locked without a SIM). (was #1;
-    lapsed@0917-1659)
-- **N-003** · raised `2026-0913-2140-next-list-hooks-shortcuts-strips-bidi-and-floors` · value medium
+- **N-003** · raised `2026-0913-2140-next-list-hooks-shortcuts-strips-bidi-and-floors` · value low
   **`.claude/settings.json` cannot be edited from a session**
   (`[Self-Modification]`). Worth an upstream report. Not re-checked since
   2026-09-15. (was #2; lapsed@0917-1659)
-- **N-004** · raised `2026-0913-2250-next-list-hook-blame-cell-elements-f-keys-and-a-row-that-fills` · value low
-  **F-keys through GameController have never reached the app from XCUITest.**
-  Needs a real iPad keyboard. (was #3)
-  - 2026-09-29: bare Escape joins it (N-057): XCUITest's Escape reaches no
-    SwiftUI keyboardShortcut on the simulator, so core.OnEscape on iOS, and
-    whether a Modal closes on it there, wait on the same keyboard.
-- **N-005** · raised `2026-0914-2319-next-list-row-hug-box-chords-and-a-strip-that-divides` · value low
-  **iOS chords.** Page-global chords were verified once, and the chord gate
-  (behind a modal, inside a shut Drawer panel) is unheard. (was #6;
-  lapsed@0917-1659)
-- **N-006** · raised `2026-0916-1032-clocks-canvas-alarm` · value low
-  **Alarm sound and haptics are unheard,** and so is the Notify banner's
-  default sound. Needs a person holding a phone. (was #9; lapsed@0917-1659)
+  - Re-rated 2026-10-10 from medium: nothing waits on a settings edit. The
+    hook that hit it landed when the user pasted the entry (`bbf5fed`,
+    2026-09-15). Claude Code now ships an `update-config` skill as its route
+    for settings.json edits; whether the classifier still refuses through it
+    is untried. Try that route the next time a hook changes, and file the
+    report only if it is still refused.
 - **N-009** · raised `2026-0916-1032-clocks-canvas-alarm` · value low
   **A Notify alarm is a banner, not a ringing screen.** The route is AlarmKit
   or full-screen intents. (was #15; lapsed@0917-1659)
@@ -90,9 +68,19 @@ with each item's `raised` traced back through all session docs.
     Proportional shrink needs a custom Row measure policy (the flex solver
     iOS already has), a large change for one cover-screen look; comps that
     must fit already pin with `FlexShrink(0)` or wrap.
-- **N-021** · raised `2026-0916-1557-small-fixes-stroke-gradients-bar-values-alarm-groups` · value medium (blocked)
+- **N-021** · raised `2026-0916-1557-small-fixes-stroke-gradients-bar-values-alarm-groups` · value medium
   **The iOS Image floor runs high for a narrow image.** Needs a px-width box
   that can shrink (`grMobDimension`). (was #26; lapsed@0917-1659)
+  - No longer blocked (re-checked 2026-10-10): that box exists.
+    `grMobDimension`'s `relativeCap` arm draws a points Width as
+    `frame(minWidth: 0, idealWidth: w, maxWidth: w)` (`0f23f7f`, N-080), but
+    only under a percentage MaxWidth (GrMobStyle.swift `relativeCap:`), so
+    an Image's px Width is still a rigid `frame(width:)`. The floor is
+    unchanged: `GrMobMinContent.width` floors an Image with a `src` and a px
+    Width at the declared width, pinned at 110 by ios/verify/mincontent.swift.
+    What remains: a natural size for the image (`GrMobImage` is a plain
+    `AsyncImage` and reports none), a floor that uses it, and the flexible
+    arm for an Image's Width.
 - **N-024** · raised `2026-0916-1557-small-fixes-stroke-gradients-bar-values-alarm-groups` · value low
   **`barValueRoom` is still an estimate.** Exact needs host measurement of the
   plot. (was #30)
@@ -108,22 +96,15 @@ with each item's `raised` traced back through all session docs.
   lapsed@0917-1659)
   - Recommendation (2026-09-29, not acted on): decline. The lesson's prose
     already names the missing term; a hard-coded Origin.X would teach a guess.
-- **N-028** · raised `2026-0917-0227-foldables-window-record-and-two-pane` · value low
-  **iOS `AppWindowReader` is type-checked only.** Not run in Split View or
-  Stage Manager. (was #37; lapsed@0917-1659)
-- **N-030** · raised `2026-0917-0227-foldables-window-record-and-two-pane` · value low
-  **Folding shut onto the outer display** needs Samsung's "Continue apps on
-  cover screen". Unseen. (was #39; lapsed@0917-1659)
-- **N-040** · raised `2026-0918-0910-next-list-copy-strip-edit-epochs-accent-and-the-lost-first-key` · value medium
-  **The first hardware key after launch is lost on the iOS 26.5 simulator.**
-  Worked around by `primeKeyboard`. Unchecked on a real iPad. (was #50)
 - **N-043** · raised `2026-0918-1310-next-list-paragraph-corners-scroll-to-one-field-pin` · value low
   **iOS UIKit field: a queued key during the caret correction.** Not observed.
   Candidate fix: drain through `input.inputDelegate` before `replace`. (was
   #53)
-- **N-044** · raised `2026-0918-2002-next-list-thread-widget-caret-fixes-boot-frame-proof` · value low
-  **iOS Paragraph link colours on the iOS 17 floor.** No iOS 17 runtime is
-  installed. (was #55)
+  - Re-checked 2026-10-10: `write()` in GrMobTextInput.swift still calls
+    `input.replace(range, withText:)` and then `setCaret`, and nothing under
+    ios/ uses `inputDelegate`. Since `carryPlan` (N-065) the common case
+    (caret at or after the change) needs no correction, so the window is
+    narrower than when this was raised.
 - **N-045** · raised `2026-0918-2002-next-list-thread-widget-caret-fixes-boot-frame-proof` · value low (by design)
   The web's thread place-keeping applies only when the List is its own scroll
   box. (was #56)
@@ -142,10 +123,6 @@ with each item's `raised` traced back through all session docs.
     premise holds. N-077's closure and the comment at `Renderer.kt:349`
     call the overwrite a "Compose 1.10" defect, but it was heard on the app's
     1.7.6. The 1.10.0 jars in the Gradle cache are not on the classpath.
-- **N-049** · raised `2026-0918-2310-mi-max-3-android-10-force-dark-theme-sweep` · value low
-  **A below-the-fold sweep on Android 10.** Needs the Mi Max 3 unlocked, or a
-  person scrolling (or an API 29 emulator image). The HID keyboard
-  (2026-0919-1254 §1) may drive it. (was #65)
 - **N-051** · raised `2026-0918-2310-mi-max-3-android-10-force-dark-theme-sweep` · value low
   **Why the decor-view force-dark flag stopped holding after an AndroidView
   attached is undiagnosed.** Moot for this app. (was #68)
@@ -166,6 +143,108 @@ with each item's `raised` traced back through all session docs.
     "‹ Contents"; an earlier Enter on Next advanced the step with nothing
     logged, so whether it was Next that Enter pressed is unknown. Injected
     taps do not reach the emulator's touch explorer either.
+- **N-092** · raised `2026-1003-1852-stripe-checkout-bible-verse-discussion-widgets` · value low
+  **`blb` has no proxy for browser builds.** BLB's ScriptTagger feed sends no
+  CORS headers, so a wasm app must set `blb.Client.BaseURL` to a same-origin
+  proxy that it writes itself. Candidate: a small handler in `webhost` or
+  `serve` that forwards `/remoteExtensions/toolTip/toolTipRemote.cfm` to
+  www.blueletterbible.org. Contingent on a browser app wanting verses.
+- **N-096** · raised `2026-1007-0210-n094-headless-window-minimum-not-overflow` · value low
+  **`htmlout.ExportHTML` writes no viewport `<meta>`.** Opened on a phone,
+  or under CDP mobile emulation, an export lays out at the 980px desktop
+  fallback and is drawn zoomed out. Measured 2026-10-07: `innerWidth` 980
+  for the export, 420 for the same tree in the `grmob new` host page, which
+  has `width=device-width, initial-scale=1, viewport-fit=cover`. The export
+  writes a `<head>` only when the tree needs a motion or border-box rule
+  (`motionStylesheet`), so adding the meta changes every export's bytes and
+  makes the head unconditional. Candidate: an always-present head with the
+  same meta the scaffold uses.
+- **N-098** · raised `2026-0922-0204-n076-logical-insets-hidden-fill-ios-carry-talkback-sweep` · value medium (API decision)
+  **The disclosure chevron does not mirror under RTL.** A collapsed "▸"
+  points right, against the reading direction, on all three hosts: seen on
+  TreeView in headless Chrome and on the Compose emulator (2026-09-21), and
+  on the iOS simulator (2026-09-22, `testTreeViewUnderArabic`). The glyph
+  is a plain `core.Text` made by the shared `disclosure` helper
+  (`comps/disclosure.go`), so Accordion, Discussion and the grouping
+  widgets draw it too. A Text cannot mirror. The API decision is a
+  mirror-under-RTL prop for Text, like `CanvasMirrorsRTL`. Split out of
+  N-068 on 2026-10-10, where it sat inside a list of device checks.
+- **N-099** · raised `2026-0919-1254-fold6-talkback-hid-harness-focus-after-navigation-inert-named-controls` · value low
+  **SwiftUI does not read `Inert`.** Compose reads its keyboard half
+  (2026-0919-1254 §5). On iOS a hardware keyboard can still Tab into a
+  Drawer's shut panel. Documented on `core.Style.Inert` and in
+  `comps/drawer.go`. Nobody has hit it on a device. Split out of N-002 on
+  2026-10-10, where it sat as a check whose answer was already known. N-001
+  declines composing the shut panel differently. This item is only the
+  focus gate.
+
+## Validate
+
+Items whose remaining work is purely testing: run, look, hear, measure, or
+write or repair a test. No product change is planned unless a check finds a
+defect, which then becomes its own Open item.
+
+- **N-002** · raised `2026-0912-1821-tier-a-comps-landed` · value medium
+  **Lessons on hardware, and checks still open.**
+  - Done on Compose (2026-0919-1254): radio, StepIndicator and aria-current
+    heard; AccessibilityHidden behind a Drawer heard; `core.Focus` on a Button
+    and a keyboard reaching a shut panel fixed.
+  - Screen readers: combobox active option, "pop-up" triggers, CodeEditor
+    toolbar role on Compose, SearchableSelect on the natives.
+  - Fixed but unheard (2026-0919-2146): the Stepper group's and the Drawer
+    panel's utterances on Compose. The duplicate is gone from the
+    accessibility tree, measured on the emulator; a group node is not
+    reachable by Tab and TalkBack's reading-order keys ignore `adb input`, so
+    hearing the line needs the Fold6's HID keyboard (Meta+Right).
+  - iOS: sheet Dialog and ActionSheet filler, Drawer under Reduce Motion, RTL
+    for Drawer and CodeEditor, the sideways editor, 4.6's list; `core.Focus`
+    on a Button. Inert is not a check there: SwiftUI does not read it
+    (`core.Style.Inert`'s doc), so an iPad keyboard reaching a shut panel is
+    a known gap, split out as N-099 (2026-10-10).
+  - Pinning: `Screen.Footer`, 100% layers in a pinned ZStack.
+  - Android: predictive back, MaxWidth where it binds on a tablet, RTL capped
+    child.
+  - Devices: the Mi Max 3 (Android 10, input locked without a SIM). (was #1;
+    lapsed@0917-1659)
+- **N-004** · raised `2026-0913-2250-next-list-hook-blame-cell-elements-f-keys-and-a-row-that-fills` · value low
+  **F-keys through GameController have never reached the app from XCUITest.**
+  Needs a real iPad keyboard. (was #3)
+  - 2026-09-29: bare Escape joins it (N-057): XCUITest's Escape reaches no
+    SwiftUI keyboardShortcut on the simulator, so core.OnEscape on iOS, and
+    whether a Modal closes on it there, wait on the same keyboard.
+  - 2026-10-10: `testEscapeClosesTheDrawerAndTheDialog` checks the drawer
+    only and never opens 6.6's dialog, despite its name. An iOS Modal still
+    has no Escape claim of its own (`core.OnEscape`'s doc), so for a Modal
+    the check is whether SwiftUI's own dismissal answers a real Escape.
+- **N-005** · raised `2026-0914-2319-next-list-row-hug-box-chords-and-a-strip-that-divides` · value low
+  **iOS chords.** Page-global chords were verified once, and the chord gate
+  (behind a modal, inside a shut Drawer panel) is unheard. (was #6;
+  lapsed@0917-1659)
+- **N-006** · raised `2026-0916-1032-clocks-canvas-alarm` · value low
+  **Alarm sound and haptics are unheard,** and so is the Notify banner's
+  default sound. Needs a person holding a phone. (was #9; lapsed@0917-1659)
+- **N-028** · raised `2026-0917-0227-foldables-window-record-and-two-pane` · value low
+  **iOS `AppWindowReader` is unrun in Split View or Stage Manager.** (was
+  #37; lapsed@0917-1659)
+  - Corrected 2026-10-10: it was "type-checked only", which is stale. It is
+    mounted on every launch (`GrMobApp.swift`'s `.background`), the
+    tutorial's theme reads its scheme, and that report was seen live on the
+    26.5 simulator (N-050, N-085). Still unseen: the size and insets it
+    reports changing under Split View, Stage Manager or rotation. No UI test
+    asserts on them.
+- **N-030** · raised `2026-0917-0227-foldables-window-record-and-two-pane` · value low
+  **Folding shut onto the outer display** needs Samsung's "Continue apps on
+  cover screen". Unseen. (was #39; lapsed@0917-1659)
+- **N-040** · raised `2026-0918-0910-next-list-copy-strip-edit-epochs-accent-and-the-lost-first-key` · value medium
+  **The first hardware key after launch is lost on the iOS 26.5 simulator.**
+  Worked around by `primeKeyboard`. Unchecked on a real iPad. (was #50)
+- **N-044** · raised `2026-0918-2002-next-list-thread-widget-caret-fixes-boot-frame-proof` · value low
+  **iOS Paragraph link colours on the iOS 17 floor.** No iOS 17 runtime is
+  installed. (was #55)
+- **N-049** · raised `2026-0918-2310-mi-max-3-android-10-force-dark-theme-sweep` · value low
+  **A below-the-fold sweep on Android 10.** Needs the Mi Max 3 unlocked, or a
+  person scrolling (or an API 29 emulator image). The HID keyboard
+  (2026-0919-1254 §1) may drive it. (was #65)
 - **N-062** · raised `2026-0921-0912-comps-round-four-phase-1-chat-family` · value medium
   **Phase 1's chat widgets, unrun on a device.** Lesson 4.34 and
   `examples/chat` were looked at in headless Chrome only.
@@ -186,7 +265,8 @@ with each item's `raised` traced back through all session docs.
   - That a `core.Opacity` `Transition` on a 6pt `Box` eases: seen on
     Compose (2026-09-23): at normal scale the dots' centre pixels passed
     through 34, 47, 59, 73, 87, 111… between rest (145) and full (4–9).
-    SwiftUI unseen. Lesson 4.34's prose still said the fade was the
+    SwiftUI seen too (2026-09-28): the 17–18 values in the bullet above.
+    Lesson 4.34's prose still said the fade was the
     background colour because "core.Style has no opacity"; it now names
     `core.Opacity` and the reduced-motion blink.
   - `TypingIndicator`'s `RoleStatus` appearing from `Display none`: heard on
@@ -201,7 +281,6 @@ with each item's `raised` traced back through all session docs.
   - `Poll` results: one stop per option, with the hidden `ProgressBar` and
     texts not reachable by swipe. Not reached by the emulator's Tab sweep of
     4.34 (N-058's gap), so still unheard.
-
 - **N-064** · raised `2026-0921-0935-core-opacity-and-typing-indicator-fade` · value medium
   **`core.Opacity` is unrun on a device.** It
   compiles on all four targets and its call sites, layer order and sentinel
@@ -229,7 +308,6 @@ with each item's `raised` traced back through all session docs.
   - Its first consumer is `TypingIndicator`'s dots (looked at in headless
     Chrome only), so N-062's device checks are this field's too. No lesson
     teaches the prop itself.
-
 - **N-065** · raised `2026-0921-1019-comps-round-four-phase-2-inputs` · value medium
   **The caret carry and the mask, unrun on iOS and on hardware.**
   - Android: `carryCaret` replaced "keep the raw offset" in `GrMobTextField`.
@@ -276,7 +354,9 @@ with each item's `raised` traced back through all session docs.
     injected drag of Minimum from $20 to past $80 on the emulator left both
     thumbs and readouts at $115; XCUITest's adjust on the simulator left the
     two sliders' values equal. A real finger is untried. Its values are now
-    the readouts (N-079, closed); the combine over its group is N-078.
+    the readouts (N-079, closed). Its group is a container since N-078
+    (closed 2026-09-29): "Price" holds Slider "Minimum" $20 and "Maximum"
+    $80 on the simulator.
   - The lock-screen dots' `RoleStatus` line: heard on the emulator's TalkBack
     per key (2026-09-22), "Passcode, 1 of 4 entered", then 2 and 3.
     VoiceOver is expected to say nothing (the known live-region gap,
@@ -302,18 +382,19 @@ with each item's `raised` traced back through all session docs.
     (2026-09-22, `testTreeViewUnderArabic`; `-AppleLanguages (ar)` alone did
     not flip the app, the two forced writing-direction defaults did). On all
     three the collapsed chevron "▸" still points right, against the
-    reading direction; a glyph has no way to mirror (an API decision: a
-    mirror-under-RTL prop for Text, like `CanvasMirrorsRTL`).
+    reading direction: split out as N-098 (2026-10-10), since the fix is an
+    API decision and it is not TreeView's alone.
   - Heard on the emulator's TalkBack: "expanded. docs. Expands or collapses
     the branch, Button", "Selected, guide.md, Button", "collapsed. api. …".
     TalkBack skipped src, assets and README.md on Tab although Compose's own
     focus visits all six rows (N-058's gap).
   - `Wizard`: the `RoleStatus` line heard on a step change on TalkBack (tried
     on the emulator 2026-09-23 and blocked by N-058; the Fold6's HID harness
-    is the route) and in a browser's screen reader; where TalkBack's focus lands after Next (on the web and iOS it is
-  now the title, N-069; Compose cannot move it)
-    replaces the body (the keyed body is a replacement, and Compose clears
-    View focus when the focused node leaves: 2026-0919-1254 §2).
+    is the route) and in a browser's screen reader; and where TalkBack's
+    focus lands when Next replaces the body (the keyed body is a
+    replacement, and Compose clears View focus when the focused node leaves:
+    2026-0919-1254 §2). On the web and iOS focus now goes to the title
+    (N-069); Compose cannot move it.
   - `Wizard.Footer()` in `Screen.Footer` above the keyboard is N-002's
     pinning check with a consumer now; no bundled screen does it yet.
 - **N-070** · raised `2026-0921-1057-comps-round-four-phase-4-charts` · value medium
@@ -379,9 +460,11 @@ with each item's `raised` traced back through all session docs.
     tried 2026-09-28 and opens its editor, but that simulator had a hardware
     keyboard connected, so the soft keyboard was off screen (its frame at y
     952 of 874) and covered nothing: still unjudged on iOS.
-  - On iOS the grid is one static text "Budget" to VoiceOver, and its text
-    cells are not in the accessibility tree at all: N-078.
-  - TalkBack and VoiceOver (VoiceOver now waits on N-078): a cell heard as "Amount, row 2, $310.50, button",
+  - On iOS the grid was one static text "Budget" with its text cells out of
+    the accessibility tree. N-078 (closed 2026-09-29) made it a container
+    whose every cell is a Button ("Amount, row 1, $1200.00"), seen in
+    XCUITest's tree; VoiceOver itself is unheard.
+  - TalkBack and VoiceOver: a cell heard as "Amount, row 2, $310.50, button",
     the editor's name, the `RoleAlert` message heard on a refused commit
     (TalkBack; VoiceOver is expected to say nothing), and the row menu.
     Heard on the emulator (2026-09-21): "Amount, row 2, $310.50. Edits the
@@ -389,17 +472,15 @@ with each item's `raised` traced back through all session docs.
     (the frameless `core.Select`) says "Category, row 1, Home" with no role.
   - The cost on a phone: the doc's "about 5,000 cells" is 4µs a cell measured
     on an M3, times a guess. Type into a 10 × 500 sheet on the Fold6.
-- **N-089** · raised `2026-1003-1659-n007-canvas-text-clip-shape-taps` · value medium
-  **`ios/verify/run.sh` does not compile.** `GrMobSurface.swift` (N-085,
-  `6fda8ec`) imports UIKit, and the harness builds the runtime's files with
-  the macOS `swiftc`, so it stops at `no such module 'UIKit'`. Fails the same
-  way on a clean checkout of HEAD. Every check the harness holds (canvas
-  mapping, stack, text edits, the widget census) is unrun until it builds.
 - **N-090** · raised `2026-1003-1659-n007-canvas-text-clip-shape-taps` · value low
   **Mirrored canvas text under RTL is unseen on the natives.** Compose and
   SwiftUI swap start and end for a `CanvasMirrorsRTL` canvas laid out right
   to left; only Chrome was checked (a static page with `dir="rtl"`). Lesson
   4.19's week chart does not mirror, so the tutorial never reaches the path.
+  - 2026-10-10: no example and no bundled chart combines the two (the
+    mirroring comps draw no `CanvasText`); only wasm/verify/gen.go does, on
+    the web. `TutorialRoundFourUITests` already forces right-to-left by
+    launch arguments, which a native check could reuse.
 - **N-091** · raised `2026-1003-1852-stripe-checkout-bible-verse-discussion-widgets` · value medium
   **StripeCheckout, BibleVerse and Discussion are unseen on the natives.**
   They were checked with debug-mode tests, `AuditTree` and one headless
@@ -408,25 +489,6 @@ with each item's `raised` traced back through all session docs.
   header rows ("Ben, reply to Ana, 1h"), which exist for the natives' sake;
   the 2px thread line stretched with `AlignSelf`; and the lock glyph and Like
   chip sizing.
-- **N-092** · raised `2026-1003-1852-stripe-checkout-bible-verse-discussion-widgets` · value low
-  **`blb` has no proxy for browser builds.** BLB's ScriptTagger feed sends no
-  CORS headers, so a wasm app must set `blb.Client.BaseURL` to a same-origin
-  proxy that it writes itself. Candidate: a small handler in `webhost` or
-  `serve` that forwards `/remoteExtensions/toolTip/toolTipRemote.cfm` to
-  www.blueletterbible.org. Contingent on a browser app wanting verses.
-- **N-096** · raised `2026-1007-0210-n094-headless-window-minimum-not-overflow` · value low
-  **`htmlout.ExportHTML` writes no viewport `<meta>`.** Opened on a phone,
-  or under CDP mobile emulation, an export lays out at the 980px desktop
-  fallback and is drawn zoomed out. Measured 2026-10-07: `innerWidth` 980
-  for the export, 420 for the same tree in the `grmob new` host page, which
-  has `width=device-width, initial-scale=1, viewport-fit=cover`. The export
-  writes a `<head>` only when the tree needs a motion or border-box rule
-  (`motionStylesheet`), so adding the meta changes every export's bytes and
-  makes the head unconditional. Candidate: an always-present head with the
-  same meta the scaffold uses.
-
-## Validate
-
 - **N-097** · raised `2026-1010-1728-keystore-binding` · value low
   **The keystore is unrun on physical hardware.** Checked with a throwaway
   probe on the API 36 emulator and the iOS 26.5 simulator. Covered: save,
@@ -542,6 +604,26 @@ with each item's `raised` traced back through all session docs.
   comment. The tutorial page that does set cover is N-088.
 
 ## Closed
+
+- **N-089** · raised `2026-1003-1659-n007-canvas-text-clip-shape-taps`
+  · closed 2026-10-10, `2026-1010-1749-next-list-validate-sort-n089-ios-verify-macos-arm` — `GrMobSurface.swift` now takes
+  the shape the other UIKit runtime files do. `import UIKit` sits behind
+  `canImport(UIKit)`, with AppKit as the macOS import. `GrMobSystemScheme`
+  and `GrMobWindowStyle` are UIKit-only, and the `#else` arm is a
+  `GrMobWindowStyle` stub that draws nothing (GrMobRoot names the type on
+  every platform). `GrMobSystemScheme` has no macOS arm, since only
+  App/AppWindow.swift names it and the App layer is checked against the
+  iOS SDK alone. `grMobIsDark`'s luminance rule stays shared; only the read
+  of the colour's components is per platform (UIColor `getRed` as before,
+  NSColor in extended sRGB on macOS), so both passes compile the rule that
+  must match Android. The iOS behaviour is unchanged. `ios/verify/run.sh`
+  exits 0 with all 16 passes OK, including the view-layer typecheck, the
+  `-O -wmo` Release guard and the iOS-SDK typecheck of Runtime and App,
+  where it had stopped at `no such module 'UIKit'`. A throwaway macOS probe
+  ran `grMobIsDark` on seven colours: #FFFFFF, #F2F2F7 and #BCBCBC (just
+  over 0.5) read light; #1C1C1E, #2C2C2E, black and #2A78D6 read dark.
+  Not run in the simulator or on a device. The file's header gained a
+  "The macOS build" section.
 
 - **N-095** · raised `2026-1003-2008-n093-gallery-lessons-checkout-verse-discussion`
   · closed 2026-10-07, `2026-1007-0216-n095-progress-track-border-role` — confirmed and fixed in `comps.ProgressBar`, not

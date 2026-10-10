@@ -1,6 +1,10 @@
 import Observation
 import SwiftUI
+#if canImport(UIKit)
 import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
 
 // The shell's surface and the status bar, both taken from the Go tree rather
 // than from the system's dark mode (N-085).
@@ -51,6 +55,28 @@ import UIKit
 // the hierarchy, though, not up: the window scene above the window still
 // carries the system's style. GrMobSystemScheme reads it there, and watches
 // it, so the report is unchanged by anything this file does to the window.
+//
+// # The macOS build
+//
+// ios/verify type-checks Runtime/*.swift for macOS, and Release-compiles it
+// with -O -wmo, using only the Command Line Tools. UIKit does not exist there
+// (N-089: this file's bare `import UIKit` stopped both passes). The pure
+// SwiftUI parts (the bars' preference, the shell page) compile as they are.
+// The UIKit parts sit behind canImport(UIKit), the shape GrMobRichText.swift
+// and the other UIKit files take:
+//
+//   grMobIsDark        the luminance rule is shared; only the read of the
+//                      colour's components is per platform (UIColor here,
+//                      NSColor there), so the rule that must match Android
+//                      is compiled by both passes
+//   GrMobWindowStyle   a stub that draws nothing: there is no UIWindow to
+//                      style, and nothing runs that build. It exists because
+//                      GrMobRoot names the type on every platform
+//   GrMobSystemScheme  no macOS arm. Only App/AppWindow.swift names it, and
+//                      the App layer is type-checked against the iOS SDK alone
+//
+// The UIKit half is covered by run.sh's iOS-SDK typecheck of Runtime and App
+// together, which runs wherever Xcode is installed.
 
 /// The page colour behind a tree whose root states none: core.DefaultTheme's
 /// Background (#FFFFFF), and the colour of every light bundled theme's page.
@@ -84,15 +110,35 @@ extension View {
 /// the threshold Compose's `luminance()` is compared with on Android, so the
 /// two shells call the same colours dark.
 func grMobIsDark(_ color: Color) -> Bool {
-    var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-    guard UIColor(color).getRed(&r, green: &g, blue: &b, alpha: &a) else { return false }
+    guard let c = grMobSRGBComponents(color) else { return false }
     // sRGB to linear light, then the Rec. 709 weights.
     func linear(_ c: CGFloat) -> CGFloat {
         c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
     }
-    let luminance = 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
+    let luminance = 0.2126 * linear(c.r) + 0.7152 * linear(c.g) + 0.0722 * linear(c.b)
     return luminance <= 0.5
 }
+
+#if canImport(UIKit)
+/// A colour's extended-sRGB components, nil when UIColor cannot give them
+/// (getRed answers false for a colour outside an RGB-compatible space, which
+/// grMobIsDark reads as light, as it always has).
+private func grMobSRGBComponents(_ color: Color) -> (r: CGFloat, g: CGFloat, b: CGFloat)? {
+    var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+    guard UIColor(color).getRed(&r, green: &g, blue: &b, alpha: &a) else { return nil }
+    return (r, g, b)
+}
+#elseif canImport(AppKit)
+/// The macOS read (see "The macOS build" above). Extended sRGB, because that
+/// is the space UIColor's getRed reports in, so both arms hand the shared rule
+/// the same numbers.
+private func grMobSRGBComponents(_ color: Color) -> (r: CGFloat, g: CGFloat, b: CGFloat)? {
+    guard let c = NSColor(color).usingColorSpace(.extendedSRGB) else { return nil }
+    return (c.redComponent, c.greenComponent, c.blueComponent)
+}
+#endif
+
+#if canImport(UIKit)
 
 /// The system's own light or dark mode, read from the window scene so that
 /// the window override GrMobWindowStyle applies cannot hide it (see "The
@@ -176,3 +222,17 @@ struct GrMobWindowStyle: UIViewRepresentable {
         }
     }
 }
+
+#else
+
+/// The non-iOS build: no UIWindow to style, and nothing runs it. GrMobRoot
+/// (Renderer.swift) names this type on every platform, and ios/verify
+/// type-checks the runtime for macOS, so the type has to exist there. See
+/// "The macOS build" above.
+struct GrMobWindowStyle: View {
+    let dark: Bool
+
+    var body: some View { EmptyView() }
+}
+
+#endif
