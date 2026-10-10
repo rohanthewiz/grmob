@@ -114,16 +114,6 @@ with each item's `raised` traced back through all session docs.
 - **N-030** · raised `2026-0917-0227-foldables-window-record-and-two-pane` · value low
   **Folding shut onto the outer display** needs Samsung's "Continue apps on
   cover screen". Unseen. (was #39; lapsed@0917-1659)
-- **N-031** · raised `2026-0917-0227-foldables-window-record-and-two-pane` · value low
-  **Housekeeping.**
-  - The `GrMob_Foldable` AVD is still installed. Delete it? (User's call.)
-  - The Mi Max 3 still has `stay_on_while_plugged_in` 7 (was 0) and
-    auto-rotate off (was on).
-  - The emulator's GrMob app has POST_NOTIFICATIONS and SCHEDULE_EXACT_ALARM
-    granted.
-  - New: the Fold6's Samsung TalkBack now has READ_PHONE_STATE granted (was
-    denied), kept for the harness; "Display speech output" is still on. (was
-    #40; lapsed@0917-1659)
 - **N-040** · raised `2026-0918-0910-next-list-copy-strip-edit-epochs-accent-and-the-lost-first-key` · value medium
   **The first hardware key after launch is lost on the iOS 26.5 simulator.**
   Worked around by `primeKeyboard`. Unchecked on a real iPad. (was #50)
@@ -489,6 +479,16 @@ with each item's `raised` traced back through all session docs.
 - **N-023** · declined
   `2026-0916-1557-small-fixes-stroke-gradients-bar-values-alarm-groups` —
   Renaming a `NotifyGroup` strands its schedules. (was #28; lapsed@0917-1659)
+- **N-031** · declined 2026-10-04 · raised `2026-0917-0227-foldables-window-record-and-two-pane`
+  — **Housekeeping.**
+  - The `GrMob_Foldable` AVD is still installed. Delete it? (User's call.)
+  - The Mi Max 3 still has `stay_on_while_plugged_in` 7 (was 0) and
+    auto-rotate off (was on).
+  - The emulator's GrMob app has POST_NOTIFICATIONS and SCHEDULE_EXACT_ALARM
+    granted.
+  - New: the Fold6's Samsung TalkBack now has READ_PHONE_STATE granted (was
+    denied), kept for the harness; "Display speech output" is still on. (was
+    #40; lapsed@0917-1659)
 - **N-032** · declined `2026-0917-0227-foldables-window-record-and-two-pane` —
   More than one fold; a static HTML export of a TwoPane. (was #41;
   lapsed@0917-1659)
