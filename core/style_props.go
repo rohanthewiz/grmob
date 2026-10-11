@@ -29,6 +29,14 @@ func FlexBasis(value string) StyleProp {
 		s.FlexBasis = value
 	})
 }
+
+// AlignSelf places this child across its Row's or Column's line, in place of
+// the container's AlignItems: CSS align-self, on all four targets. See
+// Style.AlignSelf for how the natives size a child that places or stretches
+// itself.
+//
+//	core.Text("Terms", core.AlignSelf(core.AlignItemsStart))               // hugs in a stretching Column
+//	core.Box(core.Width("2px"), core.AlignSelf(core.AlignItemsStretch)) // a rule as tall as its Row
 func AlignSelf(value AlignItems) StyleProp {
 	return styleFunc(func(s *Style) {
 		s.AlignSelf = value

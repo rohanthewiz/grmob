@@ -587,8 +587,11 @@ private struct GrMobWrapLayout: Layout {
             for i in line {
                 // The non-wrapping row's own cross-axis rule, applied per line.
                 // "stretch" places at the top here, as it always has: nothing
-                // proposes a wrapped child its line's height.
-                let dy = GrMobFlexSolver.crossOffset(align: crossAlign, child: sizes[i].height, extent: height)
+                // proposes a wrapped child its line's height. A child's own
+                // AlignSelf places it in its line the same way (N-100), and
+                // its "stretch" is the top for the same reason.
+                let align = GrMobFlexSolver.selfAlign(subviews[i][GrMobFlexAlignSelf.self], container: crossAlign)
+                let dy = GrMobFlexSolver.crossOffset(align: align, child: sizes[i].height, extent: height)
                 subviews[i].place(at: CGPoint(x: x, y: y + dy), anchor: .topLeading,
                                   proposal: ProposedViewSize(sizes[i]))
                 x += sizes[i].width + spacing
@@ -780,9 +783,12 @@ private struct GrMobStackLayout: Layout {
 /// Two channels carry the same number, and both are required. The layout
 /// value is what GrMobFlexStack reads to divide leftover space; the
 /// GrMobGrow flags are what make the child actually accept the size it is
-/// then proposed (see GrMobGrow). Cross-axis stretch rides the second
-/// channel only — it is a property of the container, so the layout already
-/// knows it.
+/// then proposed (see GrMobGrow). Cross-axis stretch is mostly a property of
+/// the container, which the layout already knows, so the container's half
+/// rides the second channel only. A child's own AlignSelf is the exception
+/// (N-100): the layout cannot see the node, so it gets the value as a layout
+/// value (GrMobFlexAlignSelf), and both sides apply GrMobFlexSolver's
+/// selfStretches to it.
 private struct FlexChildren: View {
     let node: GrMobNode
     let axis: Axis
@@ -816,6 +822,12 @@ private struct FlexChildren: View {
             // fillWidth). Vertical only, since that is the only axis with
             // a stretch default — see hugsContent.
             let hugs = axis == .vertical && hugsContent(child.style)
+            // core.Style.AlignSelf overrides the container's verdict for this
+            // child alone (N-100), on both channels again: the fill frame
+            // here and the proposal in GrMobFlexLayout, which reads the same
+            // value back through GrMobFlexAlignSelf and the same rule.
+            let own = child.style?.alignSelf ?? ""
+            let stretches = GrMobFlexSolver.selfStretches(own, containerStretches: stretch)
             // A percentage floor along this stack's axis, resolved by the
             // layout against its own extent (GrMobFlexSolver.percentFloors).
             let floor = GrMobMinSize.fraction(axis == .horizontal ? (child.style?.minWidth ?? "")
@@ -824,7 +836,7 @@ private struct FlexChildren: View {
             // main axis is height, and MaxWidth is not read there.
             let cap = axis == .horizontal && resolvesPercentCaps
                 ? GrMobMinSize.fraction(child.style?.maxWidth ?? "") ?? 0 : 0
-            RenderNode(node: child, grow: fill(weight: weight, floored: floor > 0, stretch: stretch && !hugs,
+            RenderNode(node: child, grow: fill(weight: weight, floored: floor > 0, stretches: stretches && !hugs,
                                                squeezable: axis == .horizontal
                                                    && GrMobMinContent.isReplacedImage(child)))
                 // Tells the child's GrMobMaxWidthModifier to stand down; set
@@ -840,6 +852,7 @@ private struct FlexChildren: View {
                 .layoutValue(key: GrMobFlexShrink.self,
                              value: child.style?.shrinkFactor ?? 1)
                 .layoutValue(key: GrMobFlexHugs.self, value: hugs)
+                .layoutValue(key: GrMobFlexAlignSelf.self, value: own)
                 // A zero flex-basis, carried as the child's padding along
                 // this axis (its whole CSS base size), or -1 for the default
                 // content-sized basis. See GrMobFlexZeroBasis.
@@ -891,13 +904,13 @@ private struct FlexChildren: View {
     ///
     /// `squeezable` is a Row's image child, whose Width the solver may narrow
     /// to its natural-size floor; see GrMobGrow.squeezesWidth.
-    private func fill(weight: CGFloat, floored: Bool, stretch: Bool, squeezable: Bool = false) -> GrMobGrow {
+    private func fill(weight: CGFloat, floored: Bool, stretches: Bool, squeezable: Bool = false) -> GrMobGrow {
         var g = GrMobGrow()
         g.squeezesWidth = squeezable
         if weight > 0 || floored {
             if axis == .horizontal { g.fillWidth = true } else { g.fillHeight = true }
         }
-        if stretch {
+        if stretches {
             if axis == .horizontal { g.fillHeight = true } else { g.fillWidth = true }
         }
         return g
@@ -949,6 +962,16 @@ private struct GrMobFlexShrink: LayoutValueKey {
 /// has to make when it proposes the cross size.
 private struct GrMobFlexHugs: LayoutValueKey {
     static let defaultValue = false
+}
+
+/// A child's core.Style.AlignSelf as written, "" for none: its own
+/// cross-axis placement, overriding the container's AlignItems (N-100).
+/// GrMobFlexLayout reads it for where to place the child and whether to
+/// propose it the whole cross extent; GrMobWrapLayout for where it sits in
+/// its line. Both go through GrMobFlexSolver.selfAlign and selfStretches,
+/// the rule FlexChildren applies to the fill frame.
+private struct GrMobFlexAlignSelf: LayoutValueKey {
+    static let defaultValue = ""
 }
 
 /// This child's automatic minimum size along the container's main axis — CSS
@@ -1141,11 +1164,31 @@ private struct GrMobFlexLayout: Layout {
 
         // Cross size is re-measured at each child's *final* main size: a Text
         // that had to shrink wraps to more lines, and asking it before the
-        // main axis was settled would under-report its height.
+        // main axis was settled would under-report its height. A self-placed
+        // child is asked at its fit-content cross size, as placeSubviews
+        // lays it out, so it cannot report a container-filling width here
+        // and draw narrower there.
         let cross = zip(subviews, GrMobFlexSolver.capped(resolved.mains, by: caps))
-            .map { crossOf($0.sizeThatFits(proposed(main: $1, cross: crossBound))) }
+            .map { subview, childMain -> CGFloat in
+                let own = subview[GrMobFlexAlignSelf.self]
+                let bound = GrMobFlexSolver.isSelfPlaced(own)
+                    ? fitCross(subview, main: childMain, bound: crossBound) : crossBound
+                return crossOf(subview.sizeThatFits(proposed(main: childMain, cross: bound)))
+            }
             .max() ?? 0
         return size(main: main, cross: cross)
+    }
+
+    /// CSS's fit-content across the line for a self-placed child: its ideal
+    /// cross size (asked with no cross proposal, at its main size), capped at
+    /// `bound` when there is one. A Text reports the width of its longest
+    /// line, so a short label hugs and a long one wraps at the cap. A
+    /// container whose children stretch reports its widest child's ideal,
+    /// where proposing the cap would have had it fill the cap.
+    private func fitCross(_ subview: LayoutSubview, main: CGFloat, bound: CGFloat?) -> CGFloat? {
+        let ideal = crossOf(subview.sizeThatFits(proposed(main: main, cross: nil)))
+        guard let bound, bound.isFinite else { return ideal }
+        return min(ideal, bound)
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
@@ -1184,14 +1227,28 @@ private struct GrMobFlexLayout: Layout {
             // child carries a flexible frame from FlexChildren and accepts
             // the whole extent, an unstretched one — or one that hugs its
             // content by its own style — takes what it needs.
-            let childProposal = proposed(main: childMain, cross: containerCross)
-            let childCross = stretch && !subview[GrMobFlexHugs.self]
+            // The child's own AlignSelf, when it states one, in place of the
+            // container's value on both counts (N-100).
+            let own = subview[GrMobFlexAlignSelf.self]
+            let stretches = GrMobFlexSolver.selfStretches(own, containerStretches: stretch)
+            // A self-placed child is fit-content across, as CSS sizes a flex
+            // item that is not stretched: its ideal cross size, capped at the
+            // container's. Proposing it the whole extent instead let a
+            // container whose own children stretch (comps.Link's Box, its
+            // Text filling the box) report the whole extent back, so the
+            // child "hugged" nothing. Only for a stated AlignSelf, so no tree
+            // without one moves; see fitCross.
+            let childProposal = !stretches && GrMobFlexSolver.isSelfPlaced(own)
+                ? proposed(main: childMain, cross: fitCross(subview, main: childMain, bound: containerCross))
+                : proposed(main: childMain, cross: containerCross)
+            let childCross = stretches && !subview[GrMobFlexHugs.self]
                 ? containerCross
                 : crossOf(subview.sizeThatFits(childProposal))
 
             let mainPos = mainOf(bounds.origin) + offset
             let crossPos = crossOf(bounds.origin) + GrMobFlexSolver.crossOffset(
-                align: crossAlign, child: childCross, extent: containerCross)
+                align: GrMobFlexSolver.selfAlign(own, container: crossAlign),
+                child: childCross, extent: containerCross)
             subview.place(
                 at: axis == .horizontal ? CGPoint(x: mainPos, y: crossPos)
                                         : CGPoint(x: crossPos, y: mainPos),

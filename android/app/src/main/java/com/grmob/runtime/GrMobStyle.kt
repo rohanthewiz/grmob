@@ -161,6 +161,14 @@ data class GrMobStyle(
     val columnGap: Float,
     val justifyContent: String,
     val alignItems: String,
+    /**
+     * core.Style.AlignSelf: this child's cross-axis placement in its Row or
+     * Column, overriding the container's AlignItems for it alone (CSS
+     * `align-self`). "" defers to the container. Read by RowChildren and
+     * ColumnChildren in Renderer.kt, where the cross axis has an identity
+     * (N-100).
+     */
+    val alignSelf: String = "",
     val flexGrow: Float,
     /**
      * core.Style.FlexShrink, as written — which is NOT the shrink factor.
@@ -414,6 +422,7 @@ data class GrMobStyle(
                 columnGap = obj.optDouble("ColumnGap", 0.0).toFloat(),
                 justifyContent = obj.optString("JustifyContent"),
                 alignItems = obj.optString("AlignItems"),
+                alignSelf = obj.optString("AlignSelf"),
                 flexGrow = obj.optDouble("FlexGrow", 0.0).toFloat(),
                 flexShrink = obj.optDouble("FlexShrink", 0.0).toFloat(),
                 flexWrap = obj.optString("FlexWrap"),

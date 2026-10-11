@@ -2206,11 +2206,11 @@ private fun GrMobRow(node: GrMobNode, extra: Modifier) {
             modifier = s.boxModifier(extra, gestureModifier(node)),
             horizontalArrangement = horizontalArrangement(s),
             verticalArrangement = packedVertically(s),
-        ) { RowChildren(node, lineAlign = lineAlign) }
+        ) { RowChildren(node, lineAlign = lineAlign, wrapping = true) }
         return
     }
     Row(
-        modifier = s.boxModifier(extra.then(stretchRowHeight(s)), gestureModifier(node)),
+        modifier = s.boxModifier(extra.then(stretchRowHeight(s, node)), gestureModifier(node)),
         horizontalArrangement = horizontalArrangement(s),
         // Held to core.AlignItemsValues() by
         // TestKotlinRowAlignmentCoversEveryAlignItems in mobile/verify: one arm
@@ -2232,7 +2232,7 @@ private fun GrMobRow(node: GrMobNode, extra: Modifier) {
             "stretch" -> Alignment.Top
             else -> Alignment.Top
         },
-    ) { RowChildren(node, intrinsicHeight = isStretch(s) && s?.height.isNullOrEmpty()) }
+    ) { RowChildren(node, intrinsicHeight = rowPinsHeight(s, node)) }
 }
 
 /**
@@ -2365,6 +2365,10 @@ private fun RowScope.RowChildren(
     // container cannot say so itself: a FlowRow's alignItems. Null leaves
     // the placement to the container (a Row's verticalAlignment).
     lineAlign: Alignment.Vertical? = null,
+    // A FlowRow's children. A child's own AlignSelf(stretch) is not given
+    // the line's height there, for the reason a stretched FlowRow's children
+    // are placed at the top (see GrMobRow): it sits at the top instead.
+    wrapping: Boolean = false,
 ) {
     val stretch = isStretch(node.style)
     // A Row pinned to its tallest child (stretchRowHeight) measures every
@@ -2401,8 +2405,23 @@ private fun RowScope.RowChildren(
                     hug = hugsRowOffer(child),
                 )
             }
-            if (stretch) m = m.fillMaxHeight()
-            if (lineAlign != null) m = m.align(lineAlign)
+            // core.Style.AlignSelf overrides the row's verdict for this child
+            // alone (N-100): its own value decides whether it fills the
+            // height and where it sits, and "" defers to the row. A
+            // self-stretched child has a height to fill because the Row
+            // pinned itself to its tallest child (rowPinsHeight).
+            val own = child.style?.alignSelf.orEmpty()
+            // A self-stretched child fills only a definite height: the one
+            // rowPinsHeight measured (intrinsicHeight), or the Row's own
+            // Height. Without either, fillMaxHeight would fill whatever the
+            // PARENT handed down, the whole screen in a bounded column, so the
+            // child keeps its own height instead (rowPinsHeight declines when
+            // a sibling cannot answer an intrinsic query).
+            val selfFills = !wrapping && (intrinsicHeight || !node.style?.height.isNullOrEmpty())
+            val stretches = if (own == "stretch") selfFills else selfStretches(own, stretch)
+            if (stretches) m = m.fillMaxHeight()
+            val placed = rowSelfAlignment(own) ?: lineAlign
+            if (placed != null) m = m.align(placed)
             if (rebound) {
                 CompositionLocalProvider(LocalGrMobUnboundedHeight provides false) { RenderNode(child, m) }
             } else {
@@ -2585,6 +2604,30 @@ private fun isPlainStrip(child: GrMobNode): Boolean =
  * is the cheap half of a measurement Compose is about to do anyway, and the
  * alternative is a floor that misses every Button in a row.
  */
+/**
+ * CSS's fit-content width for a Column child placed by its own AlignSelf
+ * (N-100): its max-content width, capped at what the column offers. The
+ * measure rowChildWidth's `hug` takes for a Row child, without the floor
+ * (a column's child is not shrunk along this axis, so there is no
+ * min-content to keep it above) and without the percentage cap arithmetic
+ * (widthModifier's own MaxWidth applies inside it, against the same offer).
+ *
+ * Only asked of the containers and only when the subtree answers
+ * intrinsics (ColumnChildren's guard is rowChildWidth's: hugsRowOffer and
+ * sizedByRow), so a leaf keeps its own measure and a List never sees the
+ * query.
+ */
+private fun Modifier.fitContentWidth(): Modifier = layout { measurable, constraints ->
+    if (!constraints.hasBoundedWidth) {
+        val placeable = measurable.measure(constraints)
+        return@layout layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+    }
+    val content = measurable.maxIntrinsicWidth(constraints.maxHeight)
+    val maxW = minOf(constraints.maxWidth, maxOf(content, constraints.minWidth))
+    val placeable = measurable.measure(constraints.copy(maxWidth = maxW))
+    layout(placeable.width, placeable.height) { placeable.placeRelative(0, 0) }
+}
+
 private fun Modifier.rowChildWidth(minWidth: String, maxWidth: String, hug: Boolean): Modifier {
     val floor = parseWidthCap(minWidth)
     val cap = parseWidthCap(maxWidth)
@@ -2727,7 +2770,24 @@ private fun ColumnScope.ColumnChildren(
             // condition as the Row's, and for the same reason: a weighted
             // child's main axis is already both fixed and asked for.
             if (grow <= 0f && child.style?.shrinkPinned == true) m = m.pinMainAxis(horizontal = false)
-            if (stretch && !hugsContent(child.style)) m = m.fillMaxWidth()
+            // core.Style.AlignSelf overrides the column's verdict for this
+            // child alone (N-100). AlignSelf(start) takes a child out of the
+            // stretch and puts it at the start, as comps.Link asks so that a
+            // tap beside "Terms" is not a tap on the link; "" defers to the
+            // column. A fixed Width still exempts a self-stretched child, as
+            // CSS never stretches an item with a definite cross size.
+            val own = child.style?.alignSelf.orEmpty()
+            if (selfStretches(own, stretch) && !hugsContent(child.style)) m = m.fillMaxWidth()
+            columnSelfAlignment(own)?.let { placed ->
+                m = m.align(placed)
+                // Fit-content across, as CSS sizes an item that is not
+                // stretched. A container child would otherwise fill the
+                // column anyway, through its own stretched children
+                // (comps.Link's Box: its Text's fillMaxWidth took the whole
+                // offer), and "start" would place a box as wide as the line.
+                // The containers and the intrinsic guard are rowChildWidth's.
+                if (hugsRowOffer(child) && sizedByRow(child)) m = m.fitContentWidth()
+            }
             // A Modal's overlay centres its content on the web
             // (align-items: center) and SwiftUI's sheet centres a narrower
             // VStack, so a capped child — a DatePicker card at its 360 cap in
@@ -3237,8 +3297,68 @@ private fun hugsContent(s: GrMobStyle?): Boolean =
  *    FlexGrow inside a *Row* parent sets width, where the intrinsic height is
  *    still exactly right.
  */
-private fun stretchRowHeight(s: GrMobStyle?): Modifier =
-    if (isStretch(s) && s?.height.isNullOrEmpty()) Modifier.height(IntrinsicSize.Max) else Modifier
+private fun stretchRowHeight(s: GrMobStyle?, node: GrMobNode): Modifier =
+    if (rowPinsHeight(s, node)) Modifier.height(IntrinsicSize.Max) else Modifier
+
+/**
+ * Whether a Row pins itself to its tallest child (stretchRowHeight): when it
+ * stretches its children (AlignItems stretch), and also when any one child
+ * stretches itself with AlignSelf(stretch) (N-100), since that child needs
+ * the same definite height to fill. comps.Discussion's thread line is the
+ * case: an empty 2px Box beside the replies, which a bare fillMaxHeight in a
+ * scrolled page left at no height at all. The caveats on stretchRowHeight
+ * apply to both triggers. An explicit Height is still the early exit.
+ */
+private fun rowPinsHeight(s: GrMobStyle?, node: GrMobNode): Boolean =
+    s?.height.isNullOrEmpty() &&
+        (isStretch(s) ||
+            // The new trigger is guarded where the old one is only documented:
+            // an intrinsic query on a List or a vertical Scroll throws
+            // (answersIntrinsicWidth; the same SubcomposeLayout refuses height
+            // queries too), and a crash is a worse answer than a line that
+            // does not stretch.
+            (node.children.any { it.style?.alignSelf == "stretch" } && answersIntrinsicWidth(node)))
+
+/**
+ * Whether one child fills the cross axis: its own AlignSelf decides when it
+ * states one, the container's verdict when it does not (CSS `align-self:
+ * auto`). The same rule as GrMobFlexSolver.selfStretches on iOS. A Column's
+ * unset-means-stretch default stays the container's: a child's explicit
+ * value never reads as unset.
+ */
+private fun selfStretches(alignSelf: String, containerStretches: Boolean): Boolean =
+    if (alignSelf.isEmpty()) containerStretches else alignSelf == "stretch"
+
+/**
+ * core.Style.AlignSelf as a Row child's vertical placement (N-100), or null
+ * to leave it to the row: for "" (defer) and for "stretch", which is a fill
+ * (RowChildren's fillMaxHeight) rather than a placement.
+ *
+ * Held to core.AlignItemsValues() by TestKotlinAlignSelfCoversEveryAlignItems
+ * in mobile/verify: one arm per line, string literals first, `else ->` last.
+ */
+private fun rowSelfAlignment(alignSelf: String): Alignment.Vertical? = when (alignSelf) {
+    "flex-start" -> Alignment.Top
+    "center" -> Alignment.CenterVertically
+    "flex-end" -> Alignment.Bottom
+    "stretch" -> null
+    else -> null
+}
+
+/**
+ * core.Style.AlignSelf as a Column child's horizontal placement (N-100), or
+ * null to leave it to the column; see rowSelfAlignment. Start and End are the
+ * layout-direction-aware pair, as the column's own alignment is.
+ *
+ * Held to core.AlignItemsValues() by TestKotlinAlignSelfCoversEveryAlignItems.
+ */
+private fun columnSelfAlignment(alignSelf: String): Alignment.Horizontal? = when (alignSelf) {
+    "flex-start" -> Alignment.Start
+    "center" -> Alignment.CenterHorizontally
+    "flex-end" -> Alignment.End
+    "stretch" -> null
+    else -> null
+}
 
 /**
  * The virtualized sibling of GrMobColumn: LazyColumn composes only the rows

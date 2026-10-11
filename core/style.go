@@ -207,8 +207,25 @@ type Style struct {
 	ColumnGap      float64        `json:",omitzero"`
 	RowGap         float64        `json:",omitzero"`
 	FlexWrap       string         `json:",omitzero"`
-	AlignSelf      AlignItems     `json:",omitzero"`
-	FlexBasis      string         `json:",omitzero"`
+
+	// AlignSelf is CSS's align-self: this child's place across its Row's or
+	// Column's line, overriding the container's AlignItems for it alone. ""
+	// defers to the container. All four targets honour it since N-100
+	// (2026-10-10): the two DOM targets write the property, and each native
+	// container reads it for the child (Compose's Modifier.align and a fill;
+	// SwiftUI's flex layout through a layout value).
+	//
+	// A child placed at the start, centre or end is sized fit-content across
+	// the line, as CSS sizes an item that is not stretched: its own content
+	// width, capped at the line. "stretch" fills the line: a Column's width,
+	// or the Row's height, which on Compose means the Row measures its
+	// tallest child first (as AlignItems(stretch) already does), and skips
+	// that when a child is a List or a vertical Scroll, which cannot be
+	// measured that way. In a wrapping Row a stretched child sits at the top
+	// of its line on the natives, as AlignItems(stretch) does there. A List's
+	// lazy rows do not read it.
+	AlignSelf AlignItems `json:",omitzero"`
+	FlexBasis string     `json:",omitzero"`
 
 	// FlexShrink is a flex item's shrink factor, and it is the one number in
 	// this struct whose zero is not its own value. Read it through
@@ -227,8 +244,9 @@ type Style struct {
 	//
 	// It sits with the flex fields because it is the same kind of thing — a
 	// child's say in its own placement — and deliberately not next to them in
-	// meaning: those are read by the two DOM targets alone, and this one is
-	// honoured on all four.
+	// meaning: AlignSelf places a flex item on one axis, across its line, and
+	// this places a layer inside a ZStack on both. Both are honoured on all
+	// four targets (AlignSelf since N-100).
 	StackAlign StackAlignment `json:",omitzero"`
 
 	// Accessibility semantics. These live on Style rather than Props so every

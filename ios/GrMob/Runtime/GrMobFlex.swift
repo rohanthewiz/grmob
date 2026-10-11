@@ -481,6 +481,46 @@ struct GrMobFlexSolver {
         default: return 0
         }
     }
+
+    /// A child's own cross-axis alignment: its core.Style.AlignSelf, or the
+    /// container's when it states none (CSS `align-self: auto`). The result
+    /// is what crossOffset is asked to place (N-100).
+    ///
+    /// ```
+    ///   AlignSelf    container   placed as
+    ///   ---------    ---------   ---------
+    ///   ""           any         the container's
+    ///   "flex-end"   any         flex-end
+    ///   "stretch"    flex-start  stretch (sized to the line, see below)
+    /// ```
+    static func selfAlign(_ alignSelf: String, container: String) -> String {
+        alignSelf.isEmpty ? container : alignSelf
+    }
+
+    /// Whether one child is stretched across the cross axis: its own
+    /// AlignSelf decides when it states one, and the container's verdict
+    /// (columnStretches for a Column, "stretch" for a Row) when it does not.
+    /// FlexChildren reads this to give the child its fill frame, and
+    /// GrMobFlexLayout to propose it the whole cross extent. The two must
+    /// agree, or the layout promises a fill no frame accepts.
+    ///
+    /// A Column's unset-means-stretch default is the container's alone: a
+    /// child's "" defers to it, and a child's explicit value never reads as
+    /// unset. So `AlignSelf(start)` takes a child out of a stretching Column
+    /// (comps.Link hugs its text), and `AlignSelf(stretch)` stretches a child
+    /// of a Row that packs (comps.Discussion's thread line).
+    static func selfStretches(_ alignSelf: String, containerStretches: Bool) -> Bool {
+        alignSelf.isEmpty ? containerStretches : alignSelf == "stretch"
+    }
+
+    /// Whether a child places itself across the line, at the start, centre
+    /// or end, by its own AlignSelf. Such a child is sized fit-content
+    /// across (GrMobFlexLayout.fitCross), as CSS sizes a flex item that is
+    /// not stretched. A child with no AlignSelf is sized as it always was,
+    /// so no tree without one moves.
+    static func isSelfPlaced(_ alignSelf: String) -> Bool {
+        !alignSelf.isEmpty && alignSelf != "stretch"
+    }
 }
 
 /// Line breaking for a Row with core.FlexWrap(true) — CSS `flex-wrap: wrap`

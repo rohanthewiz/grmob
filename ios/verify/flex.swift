@@ -310,6 +310,45 @@ func checkFlexSolver() -> [String] {
           GrMobFlexSolver.crossOffset(align: "center", child: 200, extent: 100),
           0, into: &problems)
 
+    // --- a child's own AlignSelf (N-100) ----------------------------------
+    //
+    // CSS `align-self`: the child's value when it states one, the
+    // container's when it does not. The placement and the stretch verdict
+    // follow the same rule, so FlexChildren's fill frame and the layout's
+    // proposal cannot disagree about one child.
+    let selfCases: [(own: String, container: String, want: String)] = [
+        ("", "center", "center"),
+        ("flex-end", "center", "flex-end"),
+        ("flex-start", "stretch", "flex-start"),
+        ("stretch", "flex-start", "stretch"),
+        ("", "", ""),
+    ]
+    for c in selfCases where GrMobFlexSolver.selfAlign(c.own, container: c.container) != c.want {
+        problems.append("selfAlign(\(c.own.debugDescription), container: \(c.container.debugDescription)) = "
+            + "\(GrMobFlexSolver.selfAlign(c.own, container: c.container).debugDescription), want \(c.want.debugDescription)")
+    }
+    let stretchCases: [(own: String, container: Bool, want: Bool, why: String)] = [
+        ("", true, true, "an unset AlignSelf keeps a stretching Column's verdict"),
+        ("", false, false, "an unset AlignSelf keeps a packing Row's verdict"),
+        ("flex-start", true, false, "AlignSelf(start) takes a child out of a stretching Column (comps.Link)"),
+        ("center", true, false, "AlignSelf(center) does not stretch either"),
+        ("stretch", false, true, "AlignSelf(stretch) stretches a child of a packing Row (Discussion's thread line)"),
+    ]
+    for c in stretchCases where GrMobFlexSolver.selfStretches(c.own, containerStretches: c.container) != c.want {
+        problems.append("selfStretches(\(c.own.debugDescription), \(c.container)): want \(c.want): \(c.why)")
+    }
+    // Which children are sized fit-content across: a stated start, centre
+    // or end. "" keeps the old sizing, and "stretch" fills.
+    for (own, want) in [("", false), ("stretch", false), ("flex-start", true), ("center", true), ("flex-end", true)]
+    where GrMobFlexSolver.isSelfPlaced(own) != want {
+        problems.append("isSelfPlaced(\(own.debugDescription)) should be \(want)")
+    }
+    // The offset a self-aligned child is placed at, through crossOffset.
+    check("self end in a centring container",
+          GrMobFlexSolver.crossOffset(align: GrMobFlexSolver.selfAlign("flex-end", container: "center"),
+                                      child: 20, extent: 100),
+          80, into: &problems)
+
     // --- degenerate input -------------------------------------------------
     if !plain.resolve(main: 100, bases: [], weights: []).mains.isEmpty {
         problems.append("empty child list produced sizes")

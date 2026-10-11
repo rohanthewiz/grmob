@@ -139,6 +139,12 @@ struct GrMobStyle: Equatable {
     var columnGap: CGFloat = 0
     var justifyContent: String = ""
     var alignItems: String = ""
+    /// core.Style.AlignSelf: this child's cross-axis placement inside its
+    /// Row or Column, overriding the container's AlignItems for it alone
+    /// (CSS `align-self`). "" defers to the container. Read by
+    /// GrMobFlexLayout and GrMobWrapLayout through FlexChildren, which is
+    /// where the cross axis has an identity (N-100).
+    var alignSelf: String = ""
     var flexGrow: CGFloat = 0
 
     /// core.FlexBasis, as written. Only a zero basis is read (see zeroBasis):
@@ -323,6 +329,7 @@ struct GrMobStyle: Equatable {
         s.columnGap = num("ColumnGap")
         s.justifyContent = str("JustifyContent")
         s.alignItems = str("AlignItems")
+        s.alignSelf = str("AlignSelf")
         s.flexGrow = num("FlexGrow")
         s.flexBasis = str("FlexBasis")
         s.flexShrink = num("FlexShrink")

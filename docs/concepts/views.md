@@ -92,12 +92,12 @@ core.Row(
   string, so an unset `Style.StackAlign` *is* it and a layer that says nothing
   is placed exactly as every layer was before the prop existed.
 
-  It is honoured on all four targets, which is what separates it from the
-  flexbox `AlignSelf` in the
-  [style reference](styling-and-theming.md#what-each-target-honors): a SwiftUI
-  `Alignment`, a Compose `Alignment` and a CSS grid item's
-  `justify-self`/`align-self` turn out to be the same nine values, so the prop
-  could be portable rather than a CSS property two renderers ignore.
+  It is honoured on all four targets: a SwiftUI `Alignment`, a Compose
+  `Alignment` and a CSS grid item's `justify-self`/`align-self` turn out to be
+  the same nine values. The flexbox `AlignSelf` in the
+  [style reference](styling-and-theming.md#what-each-target-honors) is the
+  one-axis counterpart for a `Row` or `Column` child, honoured on all four too
+  since 2026-10-10.
 
   !!! note "It is the stack that places the layer, not the layer itself"
       On the web the declaration is written by the *container* onto each child

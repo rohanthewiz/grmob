@@ -46,8 +46,8 @@ difference is structural rather than an oversight:
 
 | group | Android | iOS | WASM DOM | `htmlout` |
 |---|---|---|---|---|
-| typography, color, box model, borders, `Shadow`, `Gap`, `RowGap`/`ColumnGap`, `Justify`, `AlignItems`, `FlexWrap`, `StackAlign`, `Transition`, `Rotate`, `Spin`, `Translate`, `Opacity`, accessibility, `Disabled` | yes | yes | yes | yes |
-| `Position` + `Top`/`Right`/`Bottom`/`Left`/`ZIndex`, `MaxHeight`, `WhiteSpace`, `AlignSelf`, `FlexBasis`, `FlexDirection`, `Inert` | — | — | yes | yes |
+| typography, color, box model, borders, `Shadow`, `Gap`, `RowGap`/`ColumnGap`, `Justify`, `AlignItems`, `AlignSelf`, `FlexWrap`, `StackAlign`, `Transition`, `Rotate`, `Spin`, `Translate`, `Opacity`, accessibility, `Disabled` | yes | yes | yes | yes |
+| `Position` + `Top`/`Right`/`Bottom`/`Left`/`ZIndex`, `MaxHeight`, `WhiteSpace`, `FlexBasis`, `FlexDirection`, `Inert` | — | — | yes | yes |
 | `MinWidth`, `MinHeight` | px, % | px, % | yes | yes |
 | `Overflow` | `hidden` only | `hidden` only | yes | yes |
 | `FlexShrink` | `0` only | yes | yes | yes |
@@ -79,15 +79,33 @@ device. The third row merges correctly on `Style` and is read by nothing: an
 inline style cannot express a pseudo-state, so the web targets need a
 generated stylesheet, not another declaration.
 
-`StackAlign` sits in the first row and `AlignSelf` in the second, which looks
-odd for two props that both let a child place itself and is the whole of why
-`StackAlign` is a type of its own. `AlignSelf` is CSS's flexbox property: one
-axis, whose identity depends on the container's direction, and neither native
-has a model for it. `StackAlign` names both axes at once, applies only inside a
-[`ZStack`](views.md#containers), and is the same nine values as a SwiftUI
-`Alignment` and a Compose `Alignment` — so every renderer can answer for it.
-See [`ZStack`](views.md#containers) for the grid of placements and for why the
+`StackAlign` and `AlignSelf` both let a child place itself, and they are two
+props because they answer different containers. `AlignSelf` is CSS's flexbox
+property: one axis, across the line of a `Row` or `Column`, whose identity
+depends on the container's direction. `StackAlign` names both axes at once,
+applies only inside a [`ZStack`](views.md#containers), and is the same nine
+values as a SwiftUI `Alignment` and a Compose `Alignment`. See
+[`ZStack`](views.md#containers) for the grid of placements and for why the
 stack imposes them rather than the layer writing them.
+
+`AlignSelf` moved into the first row on 2026-10-10 (N-100). It had been
+listed with the out-of-flow CSS, but each native container knows its own axis
+when it lays a child out, which is all the property needs: Compose places the
+child with `Modifier.align` or fills it, and SwiftUI's flex layout reads the
+value per child. comps had been leaning on it already — `comps.Link` hugs its
+text with `AlignSelf(start)` and `comps.Discussion`'s thread line is an empty
+box with `AlignSelf(stretch)` — and on both phones the link took taps across
+the whole card and the line was not drawn at all. What the natives do with it:
+
+- **start, center, end** place the child and size it fit-content across the
+  line (its content's width, capped at the line), as CSS sizes an item that is
+  not stretched. A child with no `AlignSelf` is sized as it always was.
+- **stretch** fills the line. In a `Row` that needs the row's height first, so
+  Compose measures its tallest child (as `AlignItems(stretch)` does) and skips
+  that when a child is a `List` or a vertical `Scroll`, which cannot be
+  measured that way; the child then keeps its own height.
+- In a wrapping `Row` a stretched child sits at the top of its line, as
+  `AlignItems(stretch)` does there. A `List`'s lazy rows do not read it.
 
 `RowGap` and `ColumnGap` moved up into the first row once the natives learned
 to read them, and `FlexWrap` with them: both are things a stack can express
