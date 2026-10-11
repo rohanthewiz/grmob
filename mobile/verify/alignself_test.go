@@ -140,3 +140,18 @@ func TestAlignSelfRuleIsCheckedOnMacOS(t *testing.T) {
 		}
 	}
 }
+
+// A Modal centres a capped child on Compose even when the child states its
+// own Width (N-107). centreCapped's wrapContentWidth centres only inside a
+// minimum the column forced with fillMaxWidth, which a child with a Width
+// does not get (hugsContent), so comps.ActionSheet's card (Width 100% under
+// a caller's 520px cap) and comps.Menu's panel sat at the start of a
+// landscape window while the web centres them. The column's alignment now
+// places such a child, and a child's own AlignSelf still wins.
+func TestComposeModalCentresACappedChildWithAWidth(t *testing.T) {
+	code := codeOf(t, kotlinRenderer, "fun ColumnScope.ColumnChildren(")
+	if !strings.Contains(code, "if (own.isEmpty()) m = m.align(Alignment.CenterHorizontally)") {
+		t.Errorf("%s: ColumnChildren's centreCapped no longer aligns a capped child to the centre; "+
+			"a card with Width 100%% and a MaxWidth sits at the start of a wide Modal", kotlinRenderer)
+	}
+}

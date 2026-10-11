@@ -2809,6 +2809,15 @@ private fun ColumnScope.ColumnChildren(
             // line and the centring moves nothing.
             if (centreCapped && child.style?.maxWidth?.isNotEmpty() == true) {
                 m = m.wrapContentWidth(Alignment.CenterHorizontally)
+                // wrapContentWidth centres only inside a minimum the parent
+                // forced, and that minimum is the fillMaxWidth above, which a
+                // child with its own Width does not get (hugsContent). Such a
+                // child, comps.ActionSheet's card at Width 100% and a caller's
+                // 520px cap, was measured at the cap and left at the start of
+                // the line: bottom-left in a landscape window (N-107, the
+                // emulator at 914dp). The column's own alignment places it
+                // instead. A child's own AlignSelf still wins.
+                if (own.isEmpty()) m = m.align(Alignment.CenterHorizontally)
             }
             // A grow child given the viewport as a minimum has a height its own
             // FlexGrow children can divide, even inside a scroll's content.
