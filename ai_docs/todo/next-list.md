@@ -68,19 +68,6 @@ with each item's `raised` traced back through all session docs.
     Proportional shrink needs a custom Row measure policy (the flex solver
     iOS already has), a large change for one cover-screen look; comps that
     must fit already pin with `FlexShrink(0)` or wrap.
-- **N-021** · raised `2026-0916-1557-small-fixes-stroke-gradients-bar-values-alarm-groups` · value medium
-  **The iOS Image floor runs high for a narrow image.** Needs a px-width box
-  that can shrink (`grMobDimension`). (was #26; lapsed@0917-1659)
-  - No longer blocked (re-checked 2026-10-10): that box exists.
-    `grMobDimension`'s `relativeCap` arm draws a points Width as
-    `frame(minWidth: 0, idealWidth: w, maxWidth: w)` (`0f23f7f`, N-080), but
-    only under a percentage MaxWidth (GrMobStyle.swift `relativeCap:`), so
-    an Image's px Width is still a rigid `frame(width:)`. The floor is
-    unchanged: `GrMobMinContent.width` floors an Image with a `src` and a px
-    Width at the declared width, pinned at 110 by ios/verify/mincontent.swift.
-    What remains: a natural size for the image (`GrMobImage` is a plain
-    `AsyncImage` and reports none), a floor that uses it, and the flexible
-    arm for an Image's Width.
 - **N-024** · raised `2026-0916-1557-small-fixes-stroke-gradients-bar-values-alarm-groups` · value low
   **`barValueRoom` is still an estimate.** Exact needs host measurement of the
   plot. (was #30)
@@ -143,22 +130,6 @@ with each item's `raised` traced back through all session docs.
     "‹ Contents"; an earlier Enter on Next advanced the step with nothing
     logged, so whether it was Next that Enter pressed is unknown. Injected
     taps do not reach the emulator's touch explorer either.
-- **N-092** · raised `2026-1003-1852-stripe-checkout-bible-verse-discussion-widgets` · value low
-  **`blb` has no proxy for browser builds.** BLB's ScriptTagger feed sends no
-  CORS headers, so a wasm app must set `blb.Client.BaseURL` to a same-origin
-  proxy that it writes itself. Candidate: a small handler in `webhost` or
-  `serve` that forwards `/remoteExtensions/toolTip/toolTipRemote.cfm` to
-  www.blueletterbible.org. Contingent on a browser app wanting verses.
-- **N-096** · raised `2026-1007-0210-n094-headless-window-minimum-not-overflow` · value low
-  **`htmlout.ExportHTML` writes no viewport `<meta>`.** Opened on a phone,
-  or under CDP mobile emulation, an export lays out at the 980px desktop
-  fallback and is drawn zoomed out. Measured 2026-10-07: `innerWidth` 980
-  for the export, 420 for the same tree in the `grmob new` host page, which
-  has `width=device-width, initial-scale=1, viewport-fit=cover`. The export
-  writes a `<head>` only when the tree needs a motion or border-box rule
-  (`motionStylesheet`), so adding the meta changes every export's bytes and
-  makes the head unconditional. Candidate: an always-present head with the
-  same meta the scaffold uses.
 - **N-098** · raised `2026-0922-0204-n076-logical-insets-hidden-fill-ios-carry-talkback-sweep` · value medium (API decision)
   **The disclosure chevron does not mirror under RTL.** A collapsed "▸"
   points right, against the reading direction, on all three hosts: seen on
@@ -604,6 +575,48 @@ defect, which then becomes its own Open item.
   comment. The tutorial page that does set cover is N-088.
 
 ## Closed
+
+- **N-096** · raised `2026-1007-0210-n094-headless-window-minimum-not-overflow`
+  · closed 2026-10-10, `2026-1010-1919-next-list-n096-export-viewport-n092-blb-proxy-n021-ios-image-floor` — every export now has a `<head>`
+  (`documentHead`): `<meta charset="utf-8">` first, then a viewport of
+  `width=device-width, initial-scale=1`, then motionStylesheet's conditional
+  `<style>`s. The scaffold's `viewport-fit=cover` is left out on purpose: an
+  export pads nothing by `env(safe-area-inset-*)`, so cover would run it under
+  the notch in landscape. Measured with a scratch CDP probe on
+  `examples/layout`'s export, 420px with mobile emulation: innerWidth 980 at
+  scale 0.43 before, 420 at scale 1 after. The three "no head" tests now
+  assert "no `<style>`", their real point; new tests pin the metas' order and
+  keep viewport-fit out. `2c50935`.
+
+- **N-092** · raised `2026-1003-1852-stripe-checkout-bible-verse-discussion-widgets`
+  · closed 2026-10-10, `2026-1010-1919-next-list-n096-export-viewport-n092-blb-proxy-n021-ios-image-floor` — `blb.Proxy` (an `http.Handler`) and
+  `Proxy.Forward` (the same without net/http) forward `blb.EndpointPath` to
+  Blue Letter Bible. It is narrow on purpose, since it fronts a third party:
+  fixed upstream and path, GET and HEAD only, only `id`, `style` and `target`
+  (each at most 256 bytes), none of the caller's headers, and a reply over
+  1 MiB refused rather than cut. `serve` mounts it in both modes, so a
+  `./dev.sh` app gets it with no setup; the app sets `Client.BaseURL` to the
+  page's origin. rweb's `Server.Proxy` was not used because it forwards
+  everything. Checked live: curl through `serve` got John 3:16 (KJV), and a
+  scratch wasm build in headless Chrome fetched "Psalms 23:1-2" (2 verses and
+  the link). Lesson 4.39 stays canned (GitHub Pages is static); its prose and
+  `docs/components.md` name the proxy. `2be6c39`.
+
+- **N-021** · raised `2026-0916-1557-small-fixes-stroke-gradients-bar-values-alarm-groups`
+  · closed 2026-10-10, `2026-1010-1919-next-list-n096-export-viewport-n092-blb-proxy-n021-ios-image-floor` — GrMobImage is no longer an AsyncImage. It
+  loads with URLSession, decodes a UIImage, and records the natural size in
+  `GrMobImageSizes` (@Observable, by src). `GrMobMinContent.imageFloor` is
+  CSS's min(declared width, natural width carried through a points Height),
+  falling back to the declared width while loading or on failure. A Row marks
+  an image child squeezable (`GrMobGrow.squeezesWidth`), so its points Width
+  is the flexible frame `relativeCap` uses, clamped by a points MaxWidth.
+  Checked on the iOS 26.5 simulator with a temporary demo, not committed:
+  three 200px padded Rows, each with an Image (110×40 box, 50×50 PNG) beside
+  a pinned box of 180, 130 or 60. iOS drew 40, 40 and 108pt; Chrome's export
+  of the same tree gave 40, 40 and 108px; the old runtime kept 110 in all
+  three. TutorialNativeFloorsUITests 6/6, and 4.27's receipt loads through
+  the new loader. ios/verify has six floor cases (mutation-tested), and
+  mobile/verify pins the wiring. Not on a real iPhone. `dfd2ee6`.
 
 - **N-089** · raised `2026-1003-1659-n007-canvas-text-clip-shape-taps`
   · closed 2026-10-10, `2026-1010-1749-next-list-validate-sort-n089-ios-verify-macos-arm` — `GrMobSurface.swift` now takes
