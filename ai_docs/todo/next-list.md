@@ -35,7 +35,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-105
+**Next ID:** N-107
 
 ## Open
 
@@ -176,6 +176,20 @@ defect, which then becomes its own Open item.
     on a Button. Inert is not a check there: SwiftUI does not read it
     (`core.Style.Inert`'s doc), so an iPad keyboard reaching a shut panel is
     a known gap, split out as N-099 (2026-10-10).
+  - iOS looks done 2026-10-10 on the 26.5 simulator, with a scratch XCUITest
+    in LTR and in forced RTL.
+    - The sheet Dialog (6.6) and the ActionSheet (6.7) draw as GrMobModal
+      documents: a medium-detent sheet with the card at its top, and the
+      filler zero-height.
+    - RTL: the Drawer's panel comes from the right, with its title and rows
+      mirrored. CodeEditor keeps its code left to right with the gutter on
+      the left, and only the toolbar mirrors.
+    - The sideways editor pans its long lines under a fixed gutter.
+    - 4.6's banded list draws its month band and rows.
+    - Drawer under Reduce Motion snaps (a simctl screen recording, one jump).
+      But it also snapped without Reduce Motion, on both natives: N-106,
+      fixed. It now slides with motion on and still snaps under the setting.
+    `core.Focus` on a Button is still open.
   - Pinning: `Screen.Footer`, 100% layers in a pinned ZStack.
   - Android: predictive back, MaxWidth where it binds on a tablet, RTL capped
     child.
@@ -666,6 +680,30 @@ defect, which then becomes its own Open item.
   comment. The tutorial page that does set cover is N-088.
 
 ## Closed
+
+- **N-106** · raised `2026-1010-2139-next-list-n002-ios-looks-n106-native-view-identity`
+  · closed 2026-10-10, `2026-1010-2139-next-list-n002-ios-looks-n106-native-view-identity` — found by N-002's Reduce Motion check:
+  comps.Drawer's documented slide never ran on either native. The iOS
+  recording went from shut to open in one 60fps frame; the emulator at 10×
+  animator scale was fully open in the first frame. Each renderer expressed
+  a flipping flag as a branch around the content, so the subtree was built
+  again instead of updated. That restarted its animation at the target, and
+  on every open and close it also lost any state in the screen behind.
+  Three fixes:
+  - iOS `grMobAccessibility`: AccessibilityHidden is now an argument, not an
+    if/else arm.
+  - iOS `GrMobEscapeClaim`: the condition is inside the background.
+  - Android RenderNode: one CompositionLocalProvider call site, with an
+    empty provider when nothing changes.
+  Results:
+  - iOS needed both of its fixes. With both, the recording shows the slide
+    (seven intermediate positions over about 300ms), and it still snaps
+    under Reduce Motion.
+  - Android's 10× frames show the panel and scrim moving step by step.
+  - All 13 Tutorial UI test classes pass (55 tests), and ios/verify (with
+    the WMO guard), android/verify and mobile/verify pass, with new pins in
+    viewidentity_test.go.
+  `3f9e9c1`.
 
 - **N-104** · raised `2026-1010-2039-next-list-n004-rename-n065-gboard-n064-n104-compose-shadow-alpha`
   · closed 2026-10-10, `2026-1010-2039-next-list-n004-rename-n065-gboard-n064-n104-compose-shadow-alpha` — found by N-064's shadow check: on
