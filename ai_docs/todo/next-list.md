@@ -279,6 +279,14 @@ defect, which then becomes its own Open item.
   - `TypingIndicator`'s `RoleStatus` appearing from `Display none`: heard on
     TalkBack? VoiceOver is expected to say nothing (the known live-region
     gap, core/role.go).
+    Heard on the emulator's TalkBack (2026-10-10). A temporary probe flipped
+    4.34's indicator every 4s, then alternated the name (reverted). With the
+    harness listening, TalkBack said "Ben is typing" and "Ana is typing" as
+    the indicator appeared. It did not repeat a name it had just said: with
+    one fixed name it spoke once in a minute of flips. That is TalkBack
+    suppressing a repeated announcement, not the node's fault. A version of
+    the widget whose region stayed in the tree while hidden gave the same
+    pattern, and was dropped.
   - `ReactionBar` chips: emoji glyphs drawn in a `Button` label on both
     natives. The selected state is done: heard on the emulator's TalkBack
     (2026-09-22) as "Selected, thumbs up, 3 reactions, Button" and, after a
@@ -320,6 +328,9 @@ defect, which then becomes its own Open item.
     with a fill still drew the fill. It now shares the Opacity layer
     (`layerAlpha`), as iOS's `.opacity` already did; pinned from source by
     `TestComposeHidesTheWholePaintedBox`. Compiled, not watched.
+    Watched 2026-10-10 on the emulator, with a temporary probe (reverted). A
+    DisplayHidden Box with a fill, a 3px border and a shadow, between two
+    visible ones, drew nothing and kept its space.
   - Seen once on Compose (2026-09-21, the emulator): `NumberPad`'s unpainted
     corner key is `Opacity(0)` and draws nothing, so the sentinel reaches
     `Modifier.alpha` as 0. A static zero only; no fade has been watched.
@@ -432,6 +443,9 @@ defect, which then becomes its own Open item.
     `testRoundFourChartsDraw`): `Waveform`'s bars are round-capped and even
     on both (the stroke is unscaled under `CanvasStretch`); the doji draws;
     the funnel draws. The half-px silent bar as a dot was not looked for.
+    Looked for 2026-10-10, on both natives: a run of ten zero peaks draws as
+    a row of dots (four after bucketing) on the emulator and the iOS 26.5
+    simulator.
   - `RadarChart` on SwiftUI was drawn 62pt left of centre. Fixed
     (2026-09-23): the iOS ZStack layout reported its largest layer (the
     180pt canvas) and the `.frame(width: 304)` round it placed that at its
@@ -445,6 +459,15 @@ defect, which then becomes its own Open item.
     tests pass with it.
   - `AudioPlayer.Waveform` with a real stream: the strip filling as the
     status ticks, and under the finger while scrubbing.
+    Done 2026-10-10 on the emulator and the iOS 26.5 simulator, with a
+    temporary `Waveform` on 4.30's player (reverted) and the SoundHelix
+    stream.
+    - The strip's played part tracks playback (the first bars blue at
+      0:09–0:13 of 6:13).
+    - Mid-drag it follows the thumb: 2:31 on Android (an adb swipe over 5s),
+      3:30 on iOS (`press(forDuration:thenDragTo:…thenHoldForDuration:)`,
+      captured from outside with `simctl io screenshot`).
+    - After release it resumes from the drop: 3:34 and 3:51.
   - Every chart's one spoken sentence on TalkBack and VoiceOver.
   - 2026-10-03: iOS charts now carry an `AXChartDescriptor` (N-010), which
     type-checks and survives the Release build but has not been opened in
