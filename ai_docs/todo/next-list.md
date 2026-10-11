@@ -35,7 +35,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-102
+**Next ID:** N-103
 
 ## Open
 
@@ -455,6 +455,12 @@ defect, which then becomes its own Open item.
     tried 2026-09-28 and opens its editor, but that simulator had a hardware
     keyboard connected, so the soft keyboard was off screen (its frame at y
     952 of 874) and covered nothing: still unjudged on iOS.
+  - Judged on iOS 2026-10-10, with the simulator's hardware keyboard turned
+    off (and restored after). It was covered: row 4's editor opened at y 756
+    under a keyboard whose top was at 583, not hittable. Raised and fixed as
+    N-102. Row 4's editor now sits at y 502 above the keyboard, and
+    `testTheLastGridRowsEditorIsAboveTheKeyboard` holds it. This bullet is
+    done on both natives.
   - On iOS the grid was one static text "Budget" with its text cells out of
     the accessibility tree. N-078 (closed 2026-09-29) made it a container
     whose every cell is a Button ("Amount, row 1, $1200.00"), seen in
@@ -467,15 +473,6 @@ defect, which then becomes its own Open item.
     (the frameless `core.Select`) says "Category, row 1, Home" with no role.
   - The cost on a phone: the doc's "about 5,000 cells" is 4µs a cell measured
     on an M3, times a guess. Type into a 10 × 500 sheet on the Fold6.
-- **N-090** · raised `2026-1003-1659-n007-canvas-text-clip-shape-taps` · value low
-  **Mirrored canvas text under RTL is unseen on the natives.** Compose and
-  SwiftUI swap start and end for a `CanvasMirrorsRTL` canvas laid out right
-  to left; only Chrome was checked (a static page with `dir="rtl"`). Lesson
-  4.19's week chart does not mirror, so the tutorial never reaches the path.
-  - 2026-10-10: no example and no bundled chart combines the two (the
-    mirroring comps draw no `CanvasText`); only wasm/verify/gen.go does, on
-    the web. `TutorialRoundFourUITests` already forces right-to-left by
-    launch arguments, which a native check could reuse.
 - **N-097** · raised `2026-1010-1728-keystore-binding` · value low
   **The keystore is unrun on physical hardware.** Checked with a throwaway
   probe on the API 36 emulator and the iOS 26.5 simulator. Covered: save,
@@ -601,6 +598,39 @@ defect, which then becomes its own Open item.
   comment. The tutorial page that does set cover is N-088.
 
 ## Closed
+
+- **N-102** · raised `2026-1010-2011-next-list-n090-mirrored-canvas-text-n102-ios-keyboard-reveal`
+  · closed 2026-10-10, `2026-1010-2011-next-list-n090-mirrored-canvas-text-n102-ios-keyboard-reveal` — found by N-072's iOS keyboard check: a
+  GrMob field low on a scrolled page opened under the soft keyboard on iOS
+  (4.37's row 4: editor at y 756, keyboard top at 583, not hittable). The
+  field is UIKit, and SwiftUI's ScrollView scrolls only its own TextField
+  into view, which core.KeyboardAware's doc had counted on.
+  `GrMobKeyboardReveal` (GrMobTextInput.swift) remembers the focused field
+  (the coordinator's began and ended) and the keyboard's frame. On the
+  keyboard's did-show or did-change-frame, or on focus with the keyboard
+  already up, it scrolls each ancestor UIScrollView that has height to give.
+  Each scroll is the least that puts the field, plus 16pt, above the keyboard
+  and inside the insets; a horizontal strip is skipped. After: the editor at
+  y 502, whole. `testTheLastGridRowsEditorIsAboveTheKeyboard` checks it with
+  the soft keyboard on and skips with the reason under a hardware keyboard
+  (the simulator's default). TutorialRoundFourUITests and the 2.3 caret test
+  pass both ways. mobile/verify pins the wiring, and KeyboardAware's doc
+  names the iOS reveal. GrMobCodeEditor and GrMobRichTextEditor (UITextViews
+  with no begin-editing hook) are not wired. `e945bc9`.
+
+- **N-090** · raised `2026-1003-1659-n007-canvas-text-clip-shape-taps`
+  · closed 2026-10-10, `2026-1010-2011-next-list-n090-mirrored-canvas-text-n102-ios-keyboard-reveal` — seen on both natives, with a temporary
+  canvas at the top of lesson 1.4 (reverted, never committed). It was a
+  200×60 `CanvasMirrorsRTL` canvas: ticks at x 20, 100 and 180, a start-corner
+  bar, and "start", "mid" and "end" texts aligned start, middle and end on
+  them. It was drawn LTR and RTL:
+  - on the API 36 emulator (per-app `ar` locale, reset after);
+  - on the iOS 26.5 simulator (the forced right-to-left launch arguments);
+  - in headless Chrome on its htmlout export (`dir="rtl"`).
+  All three agree. Under RTL the bar moves to the top-right, "start" ends at
+  its tick (the text's right-hand end, as core's doc says), "mid" stays
+  centred, "end" begins at its tick, and the glyphs read normally on every
+  target.
 
 - **N-100** · raised `2026-1010-1955-next-list-n043-caret-burst-n091-natives-look-n100-align-self`
   · closed 2026-10-10, `2026-1010-1955-next-list-n043-caret-burst-n091-natives-look-n100-align-self` — found by N-091's look: Compose and
