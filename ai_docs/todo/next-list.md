@@ -35,7 +35,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-108
+**Next ID:** N-109
 
 ## Open
 
@@ -189,7 +189,11 @@ defect, which then becomes its own Open item.
     - Drawer under Reduce Motion snaps (a simctl screen recording, one jump).
       But it also snapped without Reduce Motion, on both natives: N-106,
       fixed. It now slides with motion on and still snaps under the setting.
-    `core.Focus` on a Button is still open.
+    `core.Focus` on a Button is still open. Tried 2026-10-10: XCUITest
+    reports `hasFocus` false for every element on the iPhone simulator,
+    before and after 4.18's drawer hands focus to its ✕ and back, so the
+    simulator cannot answer it. It needs a real iPad keyboard (N-004's
+    route).
   - Pinning: `Screen.Footer`, 100% layers in a pinned ZStack.
   - Android: predictive back, MaxWidth where it binds on a tablet, RTL capped
     child. All three done 2026-10-10 on the API 36 emulator.
@@ -457,6 +461,13 @@ defect, which then becomes its own Open item.
     replacement, and Compose clears View focus when the focused node leaves:
     2026-0919-1254 §2). On the web and iOS focus now goes to the title
     (N-069); Compose cannot move it.
+    The TalkBack half was done 2026-10-10 with a temporary probe (reverted)
+    advancing 4.35's wizard every 5s under the emulator's harness. At first
+    the line was never spoken, which is N-108: a live-region Text's text
+    change went unannounced on Compose. Fixed: "Step 3 of 3", "Step 1 of
+    3" and "Step 2 of 3, optional" are now heard at each step. Still open:
+    a browser's screen reader, and where TalkBack's focus lands after Next
+    when a person presses it.
   - `Wizard.Footer()` in `Screen.Footer` above the keyboard is N-002's
     pinning check with a consumer now; no bundled screen does it yet.
 - **N-070** · raised `2026-0921-1057-comps-round-four-phase-4-charts` · value medium
@@ -689,6 +700,17 @@ defect, which then becomes its own Open item.
   comment. The tutorial page that does set cover is N-088.
 
 ## Closed
+
+- **N-108** · raised `2026-1010-2207-next-list-n068-wizard-status-n108-compose-live-text`
+  · closed 2026-10-10, `2026-1010-2207-next-list-n068-wizard-status-n108-compose-live-text` — found by N-068's Wizard check: on
+  Compose a live-region Text (RoleStatus, RoleAlert, RoleLog) was silent
+  when its text changed. A probe Text counting every 5s went unannounced
+  for 32s; the same Text with its words as its label was announced every
+  time. TalkBack hears a live region's description change, not a Text's
+  text change. GrMobText now gives a live-region Text with no label of its
+  own its content as its content description. After: the plain probe was
+  heard at every change, and so was the Wizard's step line. android/verify
+  passes, and mobile/verify pins it (liveregion_test.go). `f8a4a5f`.
 
 - **N-107** · raised `2026-1010-2154-next-list-n002-android-checks-n107-modal-capped-centre`
   · closed 2026-10-10, `2026-1010-2154-next-list-n002-android-checks-n107-modal-capped-centre` — found by N-002's "MaxWidth where it
