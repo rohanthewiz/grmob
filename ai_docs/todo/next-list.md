@@ -35,7 +35,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-103
+**Next ID:** N-104
 
 ## Open
 
@@ -207,6 +207,15 @@ defect, which then becomes its own Open item.
     26.5 simulator (N-050, N-085). Still unseen: the size and insets it
     reports changing under Split View, Stage Manager or rotation. No UI test
     asserts on them.
+  - Rotation done 2026-10-10. Lesson 4.21 now prints the insets beside the
+    size, and `TutorialWindowUITests.testTheWindowRecordFollowsARotation`
+    rotates the iOS 26.5 simulator. The size follows (402 × 874 to 874 ×
+    402 and back). The insets did not: every iOS report was zero, which is
+    N-103, now fixed. They now read top 62, bottom 34 in portrait, and top 0,
+    bottom 20, left 62, right 62 in landscape. On the API 36 emulator the
+    same readouts go 411 × 914 to 914 × 411, with top 24 and bottom 24 both
+    ways (no cutout). Still unseen: Split View and Stage Manager, which need
+    an iPad window a script cannot resize.
 - **N-030** · raised `2026-0917-0227-foldables-window-record-and-two-pane` · value low
   **Folding shut onto the outer display** needs Samsung's "Continue apps on
   cover screen". Unseen. (was #39; lapsed@0917-1659)
@@ -482,7 +491,19 @@ defect, which then becomes its own Open item.
   fresh install's wipe. Unchecked:
   - A hardware-backed key: the Fold6's TEE/StrongBox, and the Mi Max 3 on
     Android 10, the oldest Keystore GCM-with-AAD in reach.
-  - A real Auto Backup restore (`bmgr`) instead of the renamed alias.
+  - A real Auto Backup restore (`bmgr`) instead of the renamed alias. Done
+    2026-10-10 on the API 36 emulator, with a throwaway probe app that was
+    deleted after.
+    - The probe saved "probe". `bmgr backupnow` ran on the local transport,
+      then uninstall (which drops the AndroidKeyStore key) and `adb
+      install`. The install restored `grmob_keystore.xml` by itself, with
+      one entry sealed under the old key.
+    - On launch Keystore.kt logged "no key for 1 sealed entries (restored
+      from a backup?); discarding them". Get answered found=false with no
+      error, and a fresh Save then read back.
+    - Afterwards: the local backup wiped, Backup Manager disabled again on
+      the GMS transport, the tutorial reinstalled, and POST_NOTIFICATIONS
+      and SCHEDULE_EXACT_ALARM granted again.
   - An iOS background launch before first unlock, which should answer
     errSecInteractionNotAllowed (-25308) rather than hang.
 
@@ -598,6 +619,22 @@ defect, which then becomes its own Open item.
   comment. The tutorial page that does set cover is N-088.
 
 ## Closed
+
+- **N-103** · raised `2026-1010-2027-next-list-n097-backup-restore-n028-rotation-n103-ios-insets`
+  · closed 2026-10-10, `2026-1010-2027-next-list-n097-backup-restore-n028-rotation-n103-ios-insets` — found by N-028's rotation check:
+  `core.Window.Insets` was always zero on iOS. Lesson 4.21's new Insets
+  line read "top 0, bottom 0, left 0, right 0" in both orientations on an
+  iPhone 17 Pro. AppWindowReader read them off the size reader's
+  `geo.safeAreaInsets`, but that reader ignores the safe area (to measure the
+  whole window), which consumes the insets its proxy reports. They now come
+  from UIKit: `GrMobWindowInsetsProbe`, a clear full-window UIView, reads
+  `window.safeAreaInsets` on moving to a window, a safe-area change and
+  layout. A change of size or insets sends the latest of both. After: top 62
+  and bottom 34 in portrait; top 0, bottom 20, left 62 and right 62 in
+  landscape (Safari on the same simulator reported 0/62/20/62, N-088).
+  `TutorialWindowUITests` passes twice; mobile/verify pins the UIKit read and
+  refuses `geo.safeAreaInsets`; core.SafeInsets' doc names the new source.
+  `7145cec`.
 
 - **N-102** · raised `2026-1010-2011-next-list-n090-mirrored-canvas-text-n102-ios-keyboard-reveal`
   · closed 2026-10-10, `2026-1010-2011-next-list-n090-mirrored-canvas-text-n102-ios-keyboard-reveal` — found by N-072's iOS keyboard check: a
