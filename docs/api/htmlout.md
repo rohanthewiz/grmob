@@ -415,7 +415,7 @@ func InputModeFor(kind string) string
 
 InputModeFor maps a core.KeyboardKind to HTML's inputmode: the attribute a mobile browser reads to choose its software keyboard. "" is no attribute, the browser's text keyboard. Exported for the WASM runtime's table to be checked against, as InputTypeFor is.
 
-<small>[htmlout/export.go:904](https://github.com/rohanthewiz/grmob/blob/master/htmlout/export.go#L904)</small>
+<small>[htmlout/export.go:946](https://github.com/rohanthewiz/grmob/blob/master/htmlout/export.go#L946)</small>
 
 ### func InputTypeFor
 
@@ -483,7 +483,7 @@ display and background are deliberately not in it. Both are prop-driven, and the
 
 A copy, not the slice itself, for the reason StackAxes returns one: a package-level slice is reachable and writable by any importer.
 
-<small>[htmlout/export.go:1250](https://github.com/rohanthewiz/grmob/blob/master/htmlout/export.go#L1250)</small>
+<small>[htmlout/export.go:1292](https://github.com/rohanthewiz/grmob/blob/master/htmlout/export.go#L1292)</small>
 
 ### func ObjectFitFor
 

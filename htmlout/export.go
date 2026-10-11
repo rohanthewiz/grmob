@@ -27,7 +27,7 @@ func ExportHTML(node *core.Node) string {
 	b := element.NewBuilder()
 	// b.Html writes the <!DOCTYPE html> declaration itself.
 	b.Html("lang", "en").R(
-		motionStylesheet(b, node),
+		documentHead(b, node),
 		b.Body("style", bodyStyle).R(
 			// "root" is the node path of the tree's root, the same name Go's
 			// reconciler gives it (reconcile.Patch's TargetIDs are "root/1/0")
@@ -60,39 +60,81 @@ func ExportHTML(node *core.Node) string {
 // sets the same declaration on its mount point (mount in grmob-runtime.js).
 const bodyStyle = "overflow-wrap:break-word"
 
-// motionStylesheet writes a <head> holding the rules the tree's motion needs:
-// core.SpinKeyframes when any node spins, core.ReducedMotionCSS when any node
-// declares a Transition, core.TranslateDirectionCSS when any node translates
-// along x. A tree with none of them gets no head at all.
+// documentHead writes the <head> every export carries: the charset, the
+// viewport, and then whatever stylesheet the tree needs (motionStylesheet).
+//
+// Always present. Until 2026-10-10 the head existed only when the tree needed
+// a rule, so that a still tree's export stayed byte-for-byte what it had been.
+// The price was that an export had no viewport meta, and a mobile browser
+// lays out a page without one at its 980px desktop fallback and then zooms
+// it out to fit: measured under CDP mobile emulation at 420px, innerWidth was
+// 980 for an export and 420 for the same tree in the `grmob new` host page
+// (N-096). A phone-first framework's preview drawn at desktop width is the
+// wrong picture, so the head is now unconditional and only its <style>s stay
+// conditional.
+//
+// The charset comes first because a browser only honours it inside the first
+// 1024 bytes. Without it a saved export opened from disk is decoded by the
+// browser's guess, and the exports carry non-ASCII (‹, ▸, emoji labels) that a
+// windows-1252 guess turns into mojibake. element's TE() escapes markup
+// characters, not non-ASCII, so the bytes really are UTF-8 and the meta is
+// what tells the browser so.
+//
+// The viewport is the scaffold's (cmd/grmob/templates/wasm/index.html.tmpl)
+// minus viewport-fit=cover. cover lets the page run under the notch and the
+// Dynamic Island, which is only safe for a page that pads itself by
+// env(safe-area-inset-*), as wasm/index.html does. An export has no such
+// padding, so it keeps the default (auto), where the layout viewport stays
+// inside the safe area.
+func documentHead(b *element.Builder, node *core.Node) (x any) {
+	// The children are built as arguments of Head().R for the reason
+	// motionStylesheet's are: element writes each tag the moment it is
+	// called, so a <meta> built before b.Head() would land outside it.
+	b.Head().R(
+		b.Meta("charset", "utf-8").R(),
+		b.Meta("name", "viewport", "content", exportViewport).R(),
+		motionStylesheet(b, node),
+	)
+	return
+}
+
+// exportViewport is the content of the export's viewport meta: lay out at the
+// device's width at 1:1, the same as the `grmob new` host page minus
+// viewport-fit=cover (see documentHead for why).
+const exportViewport = "width=device-width, initial-scale=1"
+
+// motionStylesheet writes the <style>s the tree's motion needs into the head
+// documentHead opens: core.SpinKeyframes when any node spins,
+// core.ReducedMotionCSS when any node declares a Transition,
+// core.TranslateDirectionCSS when any node translates along x. A tree with
+// none of them gets no stylesheet at all.
 //
 // It also carries the one rule that is not about motion, borderBoxCSS, on the
-// same conditional terms (see needsBorderBox): the head is this exporter's
-// only stylesheet, and a second head-writing path would have to agree with
-// this one about whether a head exists.
+// same conditional terms (see needsBorderBox): these <style>s are this
+// exporter's only stylesheet, and a second path writing rules would have to
+// agree with this one about which exist.
 //
 // Conditional rather than always present so that every export without motion
-// is byte-for-byte what it was before these rules existed: the head is the one
-// stylesheet this exporter writes. The keyframes exist because an `animation`
-// naming grmob-spin is inert without its rule (the gap the Style.Animation
-// note below describes for author-named animations); the reduced-motion rule
-// exists because an inline transition can only be switched off from a sheet
-// (see core.ReducedMotionCSS). The constants are core's, not copies, and the
-// WASM runtime's restatements are held to them by wasm/verify. Returns any for
-// the same reason renderNode does.
+// carries no stylesheet, the shape it had before these rules existed. (The
+// head around it used to be conditional too; documentHead says why it no
+// longer is.) The keyframes exist because an `animation` naming grmob-spin is
+// inert without its rule (the gap the Style.Animation note below describes for
+// author-named animations); the reduced-motion rule exists because an inline
+// transition can only be switched off from a sheet (see
+// core.ReducedMotionCSS). The constants are core's, not copies, and the WASM
+// runtime's restatements are held to them by wasm/verify. Returns any for the
+// same reason renderNode does.
 func motionStylesheet(b *element.Builder, node *core.Node) (x any) {
 	m := treeMotion(node)
 	if !m.spins && !m.transitions && !m.translatesX && !m.borderBox {
 		return
 	}
-	// The rules are built as arguments of Head().R, not collected beforehand:
-	// element's builder writes each tag the moment it is called, so a <style>
-	// built before b.Head() would land in front of the <head> it belongs in.
-	b.Head().R(
-		motionRule(b, m.spins, core.SpinKeyframes),
-		motionRule(b, m.transitions, core.ReducedMotionCSS),
-		motionRule(b, m.translatesX, core.TranslateDirectionCSS),
-		motionRule(b, m.borderBox, borderBoxCSS),
-	)
+	// Each rule is written by its own motionRule call, in this order, as an
+	// argument list evaluated left to right inside documentHead's Head().R.
+	motionRule(b, m.spins, core.SpinKeyframes)
+	motionRule(b, m.transitions, core.ReducedMotionCSS)
+	motionRule(b, m.translatesX, core.TranslateDirectionCSS)
+	motionRule(b, m.borderBox, borderBoxCSS)
 	return
 }
 
@@ -135,8 +177,8 @@ const borderBoxCSS = "*,::before,::after{box-sizing:border-box}"
 // it declares a size, and something sits between that size and its content —
 // padding, a border, or a form control's own user-agent padding and border
 // (an <input> or <select> brings both unasked). Any other node lays out the
-// same under either model, so a tree of only such nodes keeps its head-less,
-// byte-for-byte-unchanged export.
+// same under either model, so a tree of only such nodes keeps an export with
+// no stylesheet.
 //
 // A MaxWidth or MinHeight is a declared size as much as Width is: a padded
 // card capped at MaxWidth("480px") is 480 plus its padding on content-box.

@@ -1908,15 +1908,17 @@ func TestTranslateExportsLeadingRelativeWithItsDirectionRule(t *testing.T) {
 	}
 }
 
-// A tree with no motion writes no head, so every such export is byte-for-byte
-// what it was before the motion rules existed.
+// A tree with no motion writes no stylesheet, the shape every such export had
+// before the motion rules existed. The head itself is unconditional since
+// N-096 (it carries the charset and viewport metas), so the check is on the
+// <style>, which is what the motion rules add.
 func TestStillExportWritesNoHead(t *testing.T) {
 	out := ExportHTML(&core.Node{
 		Type:     "Column",
 		Children: []*core.Node{{Type: "Box", Props: map[string]any{}, Style: &core.Style{Rotate: 10}}},
 	})
-	if strings.Contains(out, "<head") {
-		t.Errorf("a still export gained a head:\n%s", out)
+	if strings.Contains(out, "<style") {
+		t.Errorf("a still export gained a stylesheet:\n%s", out)
 	}
 }
 
@@ -1936,14 +1938,14 @@ func TestNegativeSpinReversesAndSharesTheListWithAnimation(t *testing.T) {
 }
 
 // A document with no spinning node is what it was before Spin existed: no
-// head, no stylesheet.
+// stylesheet. (It has a head, which since N-096 every export has.)
 func TestStillTreeExportsNoStylesheet(t *testing.T) {
 	out := ExportHTML(&core.Node{
 		Type:  "Box",
 		Props: map[string]any{},
 		Style: &core.Style{Rotate: 10, Animation: "pulse 2s infinite"},
 	})
-	if strings.Contains(out, "<head") || strings.Contains(out, "grmob-spin") {
+	if strings.Contains(out, "<style") || strings.Contains(out, "grmob-spin") {
 		t.Errorf("a still tree gained the spin stylesheet:\n%s", out)
 	}
 }
@@ -2329,15 +2331,15 @@ func TestSizedInputGetsBorderBox(t *testing.T) {
 }
 
 // Padding with no declared size, or a size with nothing inside it, lays out
-// the same under either model, so the export stays head-less.
+// the same under either model, so the export carries no stylesheet.
 func TestUnsizedOrUnpaddedExportWritesNoBorderBox(t *testing.T) {
 	for name, st := range map[string]*core.Style{
 		"padding only": {Padding: core.EdgeInsets{Top: 8}},
 		"size only":    {Width: "100%"},
 	} {
 		out := ExportHTML(&core.Node{Type: "Box", Props: map[string]any{}, Style: st})
-		if strings.Contains(out, "<head") {
-			t.Errorf("%s: gained a head:\n%s", name, out)
+		if strings.Contains(out, "<style") {
+			t.Errorf("%s: gained a stylesheet:\n%s", name, out)
 		}
 	}
 }
@@ -2484,5 +2486,51 @@ func TestATextFieldGivesUpItsIntrinsicWidth(t *testing.T) {
 	}
 	if box := ExportHTML(&core.Node{Type: "Checkbox", Props: map[string]any{"checked": false}}); strings.Contains(box, "min-width") {
 		t.Errorf("a checkbox's size is the control; no floor should be taken away:\n%s", box)
+	}
+}
+
+// --- The document head (N-096) ----------------------------------------------
+
+// Every export carries the charset and viewport metas, a still tree included,
+// and in that order at the top of the head: a browser honours the charset only
+// inside the first 1024 bytes, and without the viewport a phone lays the page
+// out at its 980px desktop fallback and zooms it out (innerWidth 980 for an
+// export against 420 for the scaffold's page, measured under CDP emulation).
+// The motion rules still follow the metas inside the same head.
+func TestEveryExportCarriesCharsetAndViewport(t *testing.T) {
+	trees := map[string]*core.Node{
+		"still":  {Type: "Column", Children: []*core.Node{{Type: "Text", Props: map[string]any{"content": "‹ Contents"}}}},
+		"moving": {Type: "Box", Props: map[string]any{}, Style: &core.Style{Transition: "250ms ease"}},
+	}
+	for name, tree := range trees {
+		out := ExportHTML(tree)
+		head, end := strings.Index(out, "<head>"), strings.Index(out, "</head>")
+		charset := strings.Index(out, `<meta charset="utf-8">`)
+		viewport := strings.Index(out, `<meta name="viewport" content="`+exportViewport+`">`)
+		if head < 0 || end < head {
+			t.Fatalf("%s: no head:\n%s", name, out)
+		}
+		if charset < head || charset > end || charset > 1024 {
+			t.Errorf("%s: the charset meta is not early in the head:\n%s", name, out)
+		}
+		if viewport < charset || viewport > end {
+			t.Errorf("%s: the viewport meta is not after the charset inside the head:\n%s", name, out)
+		}
+		if rule := strings.Index(out, core.ReducedMotionCSS); name == "moving" && (rule < viewport || rule > end) {
+			t.Errorf("%s: the motion rule is not after the metas inside the head:\n%s", name, out)
+		}
+	}
+}
+
+// The export pads nothing by env(safe-area-inset-*), so its viewport must not
+// opt into viewport-fit=cover: that would let content run under the notch and
+// the Dynamic Island in landscape. The scaffold's page can, because it pads
+// itself (wasm/index.html's body).
+func TestExportViewportStaysInsideTheSafeArea(t *testing.T) {
+	if strings.Contains(exportViewport, "viewport-fit") {
+		t.Errorf("exportViewport = %q; an export has no safe-area padding to pair with viewport-fit", exportViewport)
+	}
+	if !strings.Contains(exportViewport, "width=device-width") || !strings.Contains(exportViewport, "initial-scale=1") {
+		t.Errorf("exportViewport = %q; want the device's width at 1:1", exportViewport)
 	}
 }
