@@ -626,9 +626,17 @@ final class TutorialDevicePassUITests: XCTestCase {
     ///       caret at 8 until it is moved back: a key queued behind the x
     ///       landed in that window.
     ///
-    /// Either way three keys typed at once must read "Helloxyz World". A tap
-    /// lands the caret on a word boundary; the other one it can pick, the
-    /// start of "world", gives "Hello Xyzworld", which is right too.
+    /// Either way twelve keys typed at once must read "Helloxyzabcdefghi
+    /// World". A tap lands the caret on a word boundary; the other one it can
+    /// pick, the start of "world", gives "Hello Xyzabcdefghiworld", which is
+    /// right too.
+    ///
+    /// Twelve rather than three since N-043. The first key is the one Go
+    /// rewrites around, and every key after it is queued while the field
+    /// writes Go's text and corrects the caret. A key delivered inside that
+    /// correction would land at the caret the replacement left. Three keys
+    /// left two in the window; twelve leave eleven. Six launches on the iOS
+    /// 26.5 simulator (2026-10-10), three per seed, lost none.
     func testCapitalizedWordsKeepTheCaretWithTheTyping() throws {
         for seed in ["Hello world", "hello world"] {
             let app = XCUIApplication()
@@ -650,11 +658,11 @@ final class TutorialDevicePassUITests: XCTestCase {
             typed.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0.5))
                 .withOffset(CGVector(dx: 12 + 30, dy: 0)).tap()
             sleep(1)
-            app.typeText("xyz")
+            app.typeText("xyzabcdefghi")
             sleep(1)
             let value = (typed.value as? String) ?? ""
             shot("dp-2.3-words-\(seed.first!)")
-            XCTAssertTrue(value == "Helloxyz World" || value == "Hello Xyzworld",
+            XCTAssertTrue(value == "Helloxyzabcdefghi World" || value == "Hello Xyzabcdefghiworld",
                           "from \(seed): the typing left the caret's place: \(value)")
             app.terminate()
         }
