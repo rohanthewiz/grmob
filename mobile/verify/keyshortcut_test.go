@@ -129,8 +129,10 @@ func TestASwiftUIChordBehindAHiddenSubtreeDoesNotFire(t *testing.T) {
 	swiftStyle := nativeFile("ios", "GrMob", "Runtime", "GrMobStyle.swift")
 	code := codeIn(t, swiftStyle)
 	for _, c := range []struct{ expr, why string }{
-		{`.environment(\.grMobAccessibilityHidden, true)`,
-			"the hidden branch of grMobAccessibility publishes the fact to its subtree"},
+		{`.transformEnvironment(\.grMobAccessibilityHidden) { inherited in`,
+			"grMobAccessibility publishes a hidden node's state to its subtree"},
+		{`if hidden { inherited = true }`,
+			"and only ever raises it, so a visible node under a hidden ancestor stays hidden"},
 		{`@Environment(\.grMobAccessibilityHidden) private var subtreeHidden`,
 			"a chord route reads it"},
 		{`modifier(GrMobVisibleChord(key: first.key, modifiers: first.modifiers))`,

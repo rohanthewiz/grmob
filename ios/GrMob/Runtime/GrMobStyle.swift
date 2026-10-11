@@ -1067,15 +1067,43 @@ extension View {
     /// accessibility element (the feed-row pattern: one swipe stop per row,
     /// announced by the label) — leaves are single elements already, so the
     /// combine is a no-op for them.
-    @ViewBuilder fileprivate func grMobAccessibility(_ s: GrMobStyle?) -> some View {
-        if s?.accessibilityHidden == true {
+    /// Hidden is an argument here, not a branch (N-106). It used to be the
+    /// first arm of the if/else below, and a @ViewBuilder branch is part of a
+    /// view's structural identity: a node whose AccessibilityHidden flipped
+    /// moved between arms, and SwiftUI built its whole subtree again as a new
+    /// view instead of updating it. comps.Drawer flips it on both its layers
+    /// every time it opens or shuts, so on iOS the panel did not slide. It was
+    /// rebuilt already in place: a screen recording of the iOS 26.5 simulator
+    /// went from shut to open within one 60fps frame, and the 250ms
+    /// Transition never ran. The screen behind it, which is hidden while the
+    /// drawer is open, was rebuilt the same way on every open and close, so
+    /// any state SwiftUI held in it (a field's focus, a scroll position) went
+    /// with it.
+    ///
+    /// Applied around the labelled branch rather than instead of it: a
+    /// hidden node with a label still takes its accessibilityElement and
+    /// label, and accessibilityHidden(true) outside them prunes the element
+    /// and its subtree all the same. `accessibilityHidden(false)` is the
+    /// identity, and the environment is only ever raised here, never
+    /// lowered, so a visible node under a hidden ancestor stays hidden.
+    fileprivate func grMobAccessibility(_ s: GrMobStyle?) -> some View {
+        let hidden = s?.accessibilityHidden == true
+        return grMobA11yNamed(s)
             // The environment as well as the modifier: see
             // GrMobAccessibilityHiddenKey. accessibilityHidden hides the
             // subtree from VoiceOver, and this is what stops a keyboard chord
             // inside it from still firing.
-            accessibilityHidden(true)
-                .environment(\.grMobAccessibilityHidden, true)
-        } else if let s, !s.accessibilityLabel.isEmpty {
+            .accessibilityHidden(hidden)
+            .transformEnvironment(\.grMobAccessibilityHidden) { inherited in
+                if hidden { inherited = true }
+            }
+    }
+
+    /// The label and hint half of grMobAccessibility. Its arms depend on
+    /// whether there is a label or a hint, which do not flip when a node is
+    /// hidden or shown.
+    @ViewBuilder fileprivate func grMobA11yNamed(_ s: GrMobStyle?) -> some View {
+        if let s, !s.accessibilityLabel.isEmpty {
             // `.combine` merges the children's traits, values and actions into
             // the one element, which is what a row holding a Switch needs.
             // But a combine over children that are all hidden has nothing to

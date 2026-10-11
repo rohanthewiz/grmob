@@ -254,11 +254,18 @@ private struct GrMobEscapeClaim: ViewModifier {
     let id: String
     @Environment(\.grMobDispatch) private var dispatch
 
+    /// The condition is inside the background, never around `content`. It
+    /// used to be `if id.isEmpty { content } else { content.background {…} }`,
+    /// and a branch around the content is part of its structural identity:
+    /// a node that gained or lost its claim was built again as a new view
+    /// rather than updated (N-106). comps.Drawer's panel layer claims Escape
+    /// only while open, so every open and close rebuilt the panel already in
+    /// place. On the iOS 26.5 simulator it went from shut to open within one
+    /// 60fps frame, and its 250ms slide never ran. An empty background is
+    /// the identity.
     func body(content: Content) -> some View {
-        if id.isEmpty {
-            content
-        } else {
-            content.background {
+        content.background {
+            if !id.isEmpty {
                 GrMobShortcutButtons(chords: [(key: .escape, modifiers: [])]) { dispatch?(id) }
             }
         }

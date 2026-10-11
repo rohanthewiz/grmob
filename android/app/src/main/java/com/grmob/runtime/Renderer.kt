@@ -638,21 +638,30 @@ fun RenderNode(node: GrMobNode, extra: Modifier = Modifier) {
     // flags above.
     val ink = node.style?.textColor
     val inks = ink != null && node.children.isNotEmpty() && ink != LocalContentColor.current
-    if (!disable && !bound && !boundWidth && !named && !inert && !says && !group && !inks) {
-        RenderNodeContent(node, mods)
-    } else {
-        val provided = buildList<ProvidedValue<*>> {
-            if (disable) add(LocalGrMobDisabled provides true)
-            if (bound) add(LocalGrMobUnboundedHeight provides false)
-            if (boundWidth) add(LocalGrMobUnboundedWidth provides false)
-            if (named) add(LocalGrMobNamedControl provides true)
-            if (inert) add(LocalGrMobInert provides true)
-            if (says) add(LocalGrMobGroupSaid provides said)
-            if (group) add(LocalGrMobRadioPositions provides positions)
-            if (inks) add(LocalContentColor provides ink!!)
-        }
-        CompositionLocalProvider(*provided.toTypedArray()) { RenderNodeContent(node, mods) }
+    // One call site, always, with nothing provided when nothing changes
+    // (N-106). This used to call RenderNodeContent directly when no flag was
+    // set and inside CompositionLocalProvider when one was. Those are two
+    // call sites, and Compose keys a composable's state by where it is
+    // called, so a node whose flag flipped had its whole subtree composed
+    // again from scratch. comps.Drawer flips Inert on both its layers at
+    // every open and close. Its panel's remembered Animatables (animatedStyle)
+    // started again at the open position, so the 250ms slide never ran: the
+    // emulator, with animations slowed tenfold, showed the panel fully open
+    // in the first frame after the tap. The screen behind it was composed
+    // again on every toggle too, losing any state it held. An empty provider
+    // is a group and no new values: the price of keeping every node's state
+    // where it is.
+    val provided = buildList<ProvidedValue<*>> {
+        if (disable) add(LocalGrMobDisabled provides true)
+        if (bound) add(LocalGrMobUnboundedHeight provides false)
+        if (boundWidth) add(LocalGrMobUnboundedWidth provides false)
+        if (named) add(LocalGrMobNamedControl provides true)
+        if (inert) add(LocalGrMobInert provides true)
+        if (says) add(LocalGrMobGroupSaid provides said)
+        if (group) add(LocalGrMobRadioPositions provides positions)
+        if (inks) add(LocalContentColor provides ink!!)
     }
+    CompositionLocalProvider(*provided.toTypedArray()) { RenderNodeContent(node, mods) }
 }
 
 /**
