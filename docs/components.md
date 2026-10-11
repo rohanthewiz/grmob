@@ -4280,8 +4280,11 @@ comps.BibleVerse{
 Other notes:
 
 - `blb.Fetch` works on Android, iOS and servers. A browser build needs a
-  same-origin proxy (`blb.Client{BaseURL: …}`), because the feed sends no
-  CORS headers.
+  same-origin proxy, because the feed sends no CORS headers: mount
+  `blb.Proxy` at `blb.EndpointPath` on the app's server and set
+  `blb.Client.BaseURL` to the page's origin. `./dev.sh` (`serve -dev`)
+  mounts one, so this works in development without setup. A static host
+  such as GitHub Pages has no server to mount it on.
 - BLB's feed is not a documented API. `blb` parses it narrowly and returns
   `blb.ErrUnexpectedResponse` if the shape moves; `GRMOB_BLB_LIVE=1 go test
   ./blb/` checks the live endpoint.

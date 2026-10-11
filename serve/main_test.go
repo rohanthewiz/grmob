@@ -2,12 +2,14 @@ package main
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/rohanthewiz/grmob/blb"
 	"github.com/rohanthewiz/rweb"
 )
 
@@ -126,5 +128,41 @@ func TestStaticConditionalGet(t *testing.T) {
 	res := s.Request("GET", "/main.wasm", ims(mod.Add(-time.Hour)), nil)
 	if st := res.Status(); st != http.StatusOK || string(res.Body()) != "\x00asm" {
 		t.Errorf("stale copy: status %d body %q, want 200 and the file", st, res.Body())
+	}
+}
+
+// The BLB proxy route is claimed in front of the static wildcard, carries the
+// query through to the upstream, and hands back its status, type and body; a
+// file next to it is still a file. The upstream is a test server, so this
+// checks the adapter and the routing; blb's own tests hold the narrowing.
+func TestBLBProxyRoute(t *testing.T) {
+	var gotPath, gotID string
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath, gotID = r.URL.Path, r.URL.Query().Get("id")
+		w.Header().Set("Content-Type", "text/javascript")
+		w.Write([]byte("BLB.Tagger.AjaxObject.handleSuccess(o);"))
+	}))
+	defer up.Close()
+
+	s, _ := plainTestServer(t, map[string]string{"index.html": "page", "app.js": "//"})
+	mountBLBProxy(s, &blb.Proxy{Upstream: up.URL, HTTPClient: up.Client()})
+
+	res := s.Request("GET", blb.EndpointPath+"?id=KJV.John.3.16&style=par", nil, nil)
+	if res.Status() != http.StatusOK || !strings.Contains(string(res.Body()), "handleSuccess") {
+		t.Fatalf("proxy route: status %d body %q", res.Status(), res.Body())
+	}
+	if gotPath != blb.EndpointPath || gotID != "KJV.John.3.16" {
+		t.Errorf("upstream saw path %q id %q", gotPath, gotID)
+	}
+	if ct := res.Header("Content-Type"); ct != "text/javascript" {
+		t.Errorf("Content-Type = %q, want the upstream's", ct)
+	}
+
+	// A refusal keeps its status through the adapter.
+	if st := s.Request("GET", blb.EndpointPath, nil, nil).Status(); st != http.StatusBadRequest {
+		t.Errorf("no id: status %d, want 400", st)
+	}
+	if got := string(s.Request("GET", "/app.js", nil, nil).Body()); got != "//" {
+		t.Errorf("/app.js = %q; the proxy route swallowed a file", got)
 	}
 }

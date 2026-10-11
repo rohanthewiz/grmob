@@ -6598,9 +6598,11 @@ type cannedPassage struct {
 
 // tutorialPassages are canned because the tutorial runs in a browser, and
 // Blue Letter Bible's feed sends no CORS headers: blb.Fetch from a page
-// fails before it starts, and the proxy that would fix that does not exist
-// yet (N-092). They are also canned because the blb package would bring
-// net/http into the browser build for three passages that never change.
+// fails before it starts. blb.Proxy is the fix for an app with a server of
+// its own (N-092), but the published tutorial is static files on GitHub
+// Pages, with no server to mount it on. They are also canned because the blb
+// package would bring net/http into the browser build for three passages
+// that never change.
 //
 // One verse, two, and a whole short chapter, because the widget draws verse
 // numbers for two or more and none for one.
@@ -6714,7 +6716,9 @@ comps.BibleVerse{
 					"Loading, so a caller that forgets to clear Loading still shows why."),
 				prose("This page cannot make that call. The feed sends no CORS headers, so a fetch from "+
 					"a browser is refused before it leaves, and a browser build needs a same-origin "+
-					"proxy (blb.Client.BaseURL). Android, iOS and servers call it directly. So the three "+
+					"proxy: mount blb.Proxy on the app's server and set blb.Client.BaseURL to the page's "+
+					"origin (./dev.sh mounts one). Android, iOS and servers call it directly. This page "+
+					"is static files with no server behind it, so the three "+
 					"passages here are typed in, in the shape blb.Passage has, and the segments play the "+
 					"fetch. They are the King James Version, which is in the public domain. Most other "+
 					"translations are under copyright: show them with the link, and don't store them."),

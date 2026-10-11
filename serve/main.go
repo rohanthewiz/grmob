@@ -22,10 +22,12 @@
 //	GET       /__dev/events     SSE stream         (dev only, dev.go)
 //	GET, HEAD /__dev/client.js  hot-reload client  (dev only, dev.go)
 //	GET, HEAD /  /index.html    the host page      (dev: with the client injected)
+//	GET, HEAD blb.EndpointPath  Blue Letter Bible proxy (mountBLBProxy)
 //	GET, HEAD /*path            any other file under -dir
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"io/fs"
@@ -37,6 +39,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rohanthewiz/grmob/blb"
 	"github.com/rohanthewiz/rweb"
 )
 
@@ -51,6 +54,9 @@ func main() {
 		log.Fatal(err)
 	}
 	s := rweb.NewServer(rweb.ServerOptions{Address: *addr})
+	// Both modes: the route is fixed, so the router prefers it to either
+	// mode's "/*path" wildcard regardless of registration order.
+	mountBLBProxy(s, &blb.Proxy{})
 
 	if *dev {
 		d, err := newDevServer(*dir)
@@ -68,6 +74,37 @@ func main() {
 		log.Printf("GrMob app on http://localhost%s (serving %s)", *addr, *dir)
 	}
 	log.Fatal(s.Run())
+}
+
+// mountBLBProxy answers blb.EndpointPath by forwarding it to Blue Letter
+// Bible through px, so a browser build can fetch verses: BLB's reply carries
+// no CORS header, and a page may read a reply from its own origin with none.
+// The app sets blb.Client.BaseURL to the page's origin (blb.Proxy's doc has
+// the line), and in development this server is that origin. Production on a
+// static host has no server to forward from; an app with its own server
+// mounts blb.Proxy there.
+//
+// px does the narrowing (fixed upstream and path, three parameters, no
+// headers; see blb.Proxy), so this adapter only moves its reply onto RWeb.
+// RWeb's context carries no request context, so the upstream call is bounded
+// by the proxy's HTTP client timeout rather than by the browser hanging up.
+//
+// Mounted in both modes rather than behind a flag: it costs nothing until a
+// page requests the path, which a page does only once its app has chosen to
+// point blb at this origin.
+func mountBLBProxy(s *rweb.Server, px *blb.Proxy) {
+	getAndHead(s, blb.EndpointPath, func(ctx rweb.Context) error {
+		reply, err := px.Forward(context.Background(), ctx.Request().Query())
+		if err != nil {
+			// The error already names the proxy ("blb proxy: …").
+			log.Print(err)
+		}
+		if reply.ContentType != "" {
+			ctx.Response().SetHeader("Content-Type", reply.ContentType)
+		}
+		ctx.SetStatus(reply.Status)
+		return ctx.Bytes(reply.Body)
+	})
 }
 
 // getAndHead registers a file route for HEAD as well as GET, as

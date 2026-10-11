@@ -36,7 +36,11 @@
 // browser build cannot call it directly: the reply carries no
 // Access-Control-Allow-Origin header, so the browser refuses to hand it to
 // WebAssembly. A browser app points Client.BaseURL at a same-origin proxy
-// that forwards /remoteExtensions/... to www.blueletterbible.org.
+// that forwards EndpointPath to www.blueletterbible.org. Proxy is that
+// handler, for the app's own server; `go run ./serve` and a scaffolded
+// app's ./dev.sh mount one, so verses load in a browser during development
+// once BaseURL is the page's origin. A static host (GitHub Pages) has no
+// server to put it on.
 //
 // # Translations
 //
@@ -63,6 +67,10 @@ import (
 
 // DefaultBaseURL is Blue Letter Bible's origin.
 const DefaultBaseURL = "https://www.blueletterbible.org"
+
+// userAgent names this package to BLB, on Fetch's requests and on the ones
+// Proxy makes for a browser, so both read the same in BLB's logs.
+const userAgent = "grmob-blb/1 (+https://github.com/rohanthewiz/grmob)"
 
 // DefaultTranslation is used when neither the call nor the Client names one.
 // The King James is the one translation BLB serves that is in the public
@@ -119,8 +127,8 @@ type Client struct {
 	// timeout. The timeout is a backstop; a call's context still governs.
 	HTTPClient *http.Client
 
-	// BaseURL replaces DefaultBaseURL, for a proxy (see "Where it works")
-	// or a test server. No trailing slash is needed.
+	// BaseURL replaces DefaultBaseURL, for a proxy (see "Where it works"
+	// and Proxy) or a test server. No trailing slash is needed.
 	BaseURL string
 
 	// Translation is the default for calls that pass "". Empty means
@@ -170,13 +178,13 @@ func (c *Client) Fetch(ctx context.Context, ref, translation string) (Passage, e
 	// as that link's text. par is the shape the parser reads.
 	q.Set("style", "par")
 	q.Set("target", "true")
-	endpoint := strings.TrimRight(c.baseURL(), "/") + "/remoteExtensions/toolTip/toolTipRemote.cfm?" + q.Encode()
+	endpoint := strings.TrimRight(c.baseURL(), "/") + EndpointPath + "?" + q.Encode()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return Passage{}, fmt.Errorf("blb: building request for %q: %w", ref, err)
 	}
-	req.Header.Set("User-Agent", "grmob-blb/1 (+https://github.com/rohanthewiz/grmob)")
+	req.Header.Set("User-Agent", userAgent)
 
 	hc := c.HTTPClient
 	if hc == nil {
