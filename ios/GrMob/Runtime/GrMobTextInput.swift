@@ -603,12 +603,14 @@ final class GrMobTextInputCoordinator: NSObject, UITextFieldDelegate, UITextView
     private func began() {
         if text != upstream { setText(upstream) }
         ledger.reset(upstream, epoch: upstreamEpoch)
+        if let input { GrMobKeyboardReveal.shared.focused(input) }
         if !onFocus.isEmpty { runtime?.click(onFocus) }
     }
 
     /// Both edges ride the void channel, like onSubmit. None is sent at mount:
     /// a field that never had the caret never loses it.
     private func ended() {
+        if let input { GrMobKeyboardReveal.shared.blurred(input) }
         if !onBlur.isEmpty { runtime?.click(onBlur) }
     }
 
@@ -620,6 +622,133 @@ final class GrMobTextInputCoordinator: NSObject, UITextFieldDelegate, UITextView
         if !onSubmit.isEmpty { runtime?.click(onSubmit) }
         textField.resignFirstResponder()
         return false
+    }
+}
+
+/// Scrolls a focused field above the software keyboard (N-102).
+///
+/// # Why this exists
+///
+/// core.KeyboardAware's doc leans on "SwiftUI's ScrollView" scrolling the
+/// focused field into view once the viewport ends above the keyboard. SwiftUI
+/// does that for its own TextField, whose focus it tracks. This field is a
+/// UIKit view in a UIViewRepresentable (see GrMobTextField for why), and
+/// SwiftUI neither knows it took focus nor moves the scroll view for it. A
+/// field low on a scrolled page was simply covered. Seen on the iOS 26.5
+/// simulator with the soft keyboard up (2026-10-10): lesson 4.37's last grid
+/// row, at y 756 of an 874pt screen, opened its editor under a keyboard whose
+/// top was at 583, and the editor was not hittable. Compose's field brings
+/// itself into view, so the same row sits just above Gboard there.
+///
+/// # What it does
+///
+/// It remembers the focused GrMob field and the keyboard's frame. When the
+/// keyboard has finished showing or moving, or a field takes focus while the
+/// keyboard is already up (Next from one field to the one below), it walks
+/// the field's ancestors. Every one that is a UIScrollView with more content
+/// than height is scrolled the least amount that puts the field, plus a
+/// margin, inside the part of it that the keyboard and its bars do not cover.
+///
+///	  scroll view ┌──────────────┐
+///	              │              │
+///	              │   visible    │ ← bounds, less adjustedContentInset,
+///	              │              │   less the keyboard where it overlaps
+///	   keyboard → ├──────────────┤
+///	              │ ▒▒ field ▒▒  │ → scrolled up by (field.maxY + margin
+///	              └──────────────┘   − visible.maxY), clamped to the content
+///
+/// "Did" rather than "will": by then SwiftUI has applied the keyboard's
+/// safe-area inset to the page, so the scroll view's frame and insets are the
+/// final ones the arithmetic needs. The innermost scroller goes first, so a
+/// field in a nested Scroll is brought into its own viewport and then that
+/// viewport into the page's. A horizontal strip (EditableGrid's) has no extra
+/// height and is skipped. A field already in view moves nothing.
+final class GrMobKeyboardReveal {
+    static let shared = GrMobKeyboardReveal()
+
+    /// Space kept between the field and the keyboard, so the field does not
+    /// sit flush against the suggestion strip.
+    private let margin: CGFloat = 16
+
+    private weak var field: UIView?
+    /// The keyboard's frame in screen coordinates, or nil while it is down.
+    private var keyboard: CGRect?
+
+    private init() {
+        let center = NotificationCenter.default
+        center.addObserver(forName: UIResponder.keyboardDidShowNotification, object: nil, queue: .main) { [weak self] note in
+            self?.keyboardMoved(note)
+        }
+        center.addObserver(forName: UIResponder.keyboardDidChangeFrameNotification, object: nil, queue: .main) { [weak self] note in
+            self?.keyboardMoved(note)
+        }
+        center.addObserver(forName: UIResponder.keyboardDidHideNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.keyboard = nil
+        }
+    }
+
+    /// A GrMob field took focus. With the keyboard already up there is no
+    /// show notification to wait for, so the reveal is made on the next turn
+    /// of the main loop, once the focus change has laid out.
+    func focused(_ view: UIView) {
+        field = view
+        guard keyboard != nil else { return }
+        DispatchQueue.main.async { [weak self, weak view] in
+            guard let self, let view, self.field === view else { return }
+            self.reveal(view)
+        }
+    }
+
+    /// A GrMob field lost focus. Only the field that is remembered is
+    /// forgotten: the next field's begin can arrive before this one's end.
+    func blurred(_ view: UIView) {
+        if field === view { field = nil }
+    }
+
+    private func keyboardMoved(_ note: Notification) {
+        guard let frame = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else { return }
+        keyboard = frame
+        if let field, field.isFirstResponder { reveal(field) }
+    }
+
+    private func reveal(_ view: UIView) {
+        guard let window = view.window, let keyboard else { return }
+        // The keyboard's frame arrives in screen coordinates. The window's
+        // coordinate space converts it, which also covers an iPad window that
+        // is not full screen.
+        let keyboardInWindow = window.convert(keyboard, from: window.screen.coordinateSpace)
+        var ancestor = view.superview
+        while let current = ancestor {
+            if let scroll = current as? UIScrollView,
+               scroll.contentSize.height > scroll.bounds.height + 1 {
+                scrollToShow(view, in: scroll, keyboard: keyboardInWindow)
+            }
+            ancestor = current.superview
+        }
+    }
+
+    /// The least scroll of `scroll` that puts `view` (plus margin) inside the
+    /// part of it neither its insets nor the keyboard cover. Upwards only
+    /// when the field is above that part, downwards only when below.
+    private func scrollToShow(_ view: UIView, in scroll: UIScrollView, keyboard: CGRect) {
+        let target = view.convert(view.bounds, to: scroll).insetBy(dx: 0, dy: -margin)
+        let insets = scroll.adjustedContentInset
+        var visible = scroll.bounds.inset(by: UIEdgeInsets(top: insets.top, left: 0, bottom: insets.bottom, right: 0))
+        let keyboardInScroll = scroll.convert(keyboard, from: nil)
+        if keyboardInScroll.minY < visible.maxY && keyboardInScroll.maxY > visible.minY {
+            visible.size.height = max(0, keyboardInScroll.minY - visible.minY)
+        }
+        var delta: CGFloat = 0
+        if target.height > visible.height || target.minY < visible.minY {
+            delta = target.minY - visible.minY
+        } else if target.maxY > visible.maxY {
+            delta = target.maxY - visible.maxY
+        }
+        guard abs(delta) > 0.5 else { return }
+        let lowest = -insets.top
+        let highest = max(lowest, scroll.contentSize.height + insets.bottom - scroll.bounds.height)
+        let y = min(max(scroll.contentOffset.y + delta, lowest), highest)
+        scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: y), animated: true)
     }
 }
 

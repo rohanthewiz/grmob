@@ -13,10 +13,13 @@ package core
 //
 // On a *scrolling* node (Scroll, List) it shrinks the viewport. The content
 // does not move on its own — but because the viewport now ends above the
-// keyboard, the platform's own "scroll the focused field into view" behavior
-// (Compose's BasicTextField, SwiftUI's ScrollView) lands the field somewhere
+// keyboard, "scroll the focused field into view" lands the field somewhere
 // the user can see, which it cannot do while the viewport still claims the
-// rows the keyboard is sitting on. This is the form case.
+// rows the keyboard is sitting on. This is the form case. On Compose that
+// scroll is BasicTextField's own. On iOS it is the runtime's
+// (GrMobKeyboardReveal), because the field is a UIKit view that SwiftUI's
+// ScrollView does not track: it only scrolls its own TextField into view, and
+// a field low on a page used to open under the keyboard (N-102).
 //
 // On any *other* node it lifts that subtree whole. That is the case for a
 // screen with something docked at the bottom — a chat composer, a checkout

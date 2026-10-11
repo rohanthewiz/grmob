@@ -230,6 +230,51 @@ final class TutorialRoundFourUITests: XCTestCase {
                        "Item, row 2, GroceriesXY", "the discarded draft reached the cell")
     }
 
+    /// The last grid row's editor, opened near the bottom of the screen, must
+    /// sit above the software keyboard (N-102). The editor is a UIKit field
+    /// that SwiftUI's ScrollView does not scroll into view, and before
+    /// GrMobKeyboardReveal the keyboard covered it whole (the editor at y 756
+    /// under a keyboard whose top was at 583).
+    ///
+    /// Only meaningful with the soft keyboard on screen. With the simulator's
+    /// hardware keyboard connected, the default, the keyboard element sits
+    /// below the screen and there is nothing to cover the field. The test then
+    /// records the skip rather than passing for a reason it did not check. To
+    /// run it for real: `defaults write com.apple.iphonesimulator
+    /// ConnectHardwareKeyboard -bool false`, then relaunch Simulator.app.
+    func testTheLastGridRowsEditorIsAboveTheKeyboard() throws {
+        let app = XCUIApplication()
+        open(app, lesson: "4.37")
+        let rows = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Item, row '"))
+        let screen = app.windows.firstMatch.frame
+        // Small drags, so row 4 stops just inside the bottom edge, where the
+        // keyboard will rise over it; a slow swipe overshoots to mid-screen.
+        var drags = 0
+        while drags < 80 {
+            let all = rows.allElementsBoundByIndex
+            if all.count >= 4, let last = all.last, last.isHittable, last.frame.maxY < screen.maxY - 40 { break }
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.75))
+                .press(forDuration: 0.05, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.68)))
+            drags += 1
+        }
+        let last = rows.allElementsBoundByIndex.last!
+        XCTAssertEqual(last.label, "Item, row 4, Dinner out", "the fourth row is not the last")
+        last.tap()
+        sleep(2)
+        // The keyboard's one-time "slide to type" sheet, on a fresh simulator.
+        let onboarding = app.buttons["Continue"]
+        if onboarding.exists { onboarding.tap(); sleep(2) }
+        shot("r4-4.37-last-row-editing")
+        let keyboard = app.keyboards.firstMatch.frame
+        guard keyboard.minY < screen.maxY else {
+            throw XCTSkip("the soft keyboard is not on screen (a hardware keyboard is connected); nothing to cover the field")
+        }
+        let field = app.textFields.firstMatch
+        XCTAssertTrue(field.isHittable, "the last row's editor is not hittable: \(field.frame) under a keyboard at \(keyboard)")
+        XCTAssertLessThanOrEqual(field.frame.maxY, keyboard.minY,
+                                 "the last row's editor ends at \(field.frame.maxY), under the keyboard's top at \(keyboard.minY)")
+    }
+
     // MARK: 4.34 — a ReactionBar chip the reader tapped
 
     func testReactionChipReportsItsSelection() throws {

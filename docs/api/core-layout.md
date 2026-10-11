@@ -265,7 +265,7 @@ KeyboardAware makes a region yield to the software keyboard instead of being cov
 
 #### The two shapes it takes
 
-On a \*scrolling\* node (Scroll, List) it shrinks the viewport. The content does not move on its own — but because the viewport now ends above the keyboard, the platform's own "scroll the focused field into view" behavior (Compose's BasicTextField, SwiftUI's ScrollView) lands the field somewhere the user can see, which it cannot do while the viewport still claims the rows the keyboard is sitting on. This is the form case.
+On a \*scrolling\* node (Scroll, List) it shrinks the viewport. The content does not move on its own — but because the viewport now ends above the keyboard, "scroll the focused field into view" lands the field somewhere the user can see, which it cannot do while the viewport still claims the rows the keyboard is sitting on. This is the form case. On Compose that scroll is BasicTextField's own. On iOS it is the runtime's (GrMobKeyboardReveal), because the field is a UIKit view that SwiftUI's ScrollView does not track: it only scrolls its own TextField into view, and a field low on a page used to open under the keyboard (N-102).
 
 On any \*other\* node it lifts that subtree whole. That is the case for a screen with something docked at the bottom — a chat composer, a checkout bar — which is outside the scrolling region by construction and would otherwise be the one thing the keyboard covers. Applied to a whole screen's column, it is the classic "the app resizes for the keyboard" behavior, asked for explicitly and by one screen at a time.
 
@@ -302,7 +302,7 @@ That asymmetry is why this is a flag and not simply what Scroll always does: on 
 
 It is also why SafeArea does not carry it. The safe area on Android is WindowInsets.safeDrawing, which bundles the IME in with the system bars — applied there it would resize every screen whole and, worse, consume the inset so that a Scroll asking for it received nothing. The renderer subtracts the IME from that set for exactly this reason, leaving the keyboard to whichever node asked for it: the same split SwiftUI makes.
 
-<small>[core/keyboard.go:74](https://github.com/rohanthewiz/grmob/blob/master/core/keyboard.go#L74)</small>
+<small>[core/keyboard.go:77](https://github.com/rohanthewiz/grmob/blob/master/core/keyboard.go#L77)</small>
 
 ### func List
 
