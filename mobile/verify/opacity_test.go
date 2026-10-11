@@ -32,7 +32,7 @@ func TestBothNativeParsersReadOpacity(t *testing.T) {
 // asked to fade out.
 func TestBothNativeRenderersApplyTheOpacityReading(t *testing.T) {
 	kotlin := codeIn(t, kotlinStyle)
-	if !strings.Contains(kotlin, "if (layerAlpha < 1f) m = m.alpha(layerAlpha)") {
+	if !strings.Contains(kotlin, "if (layerAlpha < 1f && !alphaOnShadow) m = m.alpha(layerAlpha)") {
 		t.Errorf("%s: no Modifier.alpha for core.Opacity in boxModifier — the "+
 			"alpha parses and never fades anything", kotlinStyle)
 	}
@@ -52,7 +52,7 @@ func TestBothNativeRenderersApplyTheOpacityReading(t *testing.T) {
 // where the mistake is available.
 func TestOpacityWrapsThePaintedBoxOnBothNatives(t *testing.T) {
 	kotlin := codeIn(t, kotlinStyle)
-	alphaAt := strings.Index(kotlin, "if (layerAlpha < 1f) m = m.alpha(layerAlpha)")
+	alphaAt := strings.Index(kotlin, "if (layerAlpha < 1f && !alphaOnShadow) m = m.alpha(layerAlpha)")
 	shadowAt := strings.Index(kotlin, "m = m.shadow(elevation")
 	bgAt := strings.Index(kotlin, "background?.let { m = m.background(it) }")
 	if alphaAt < 0 || shadowAt < 0 || bgAt < 0 {
@@ -84,6 +84,34 @@ func TestOpacityWrapsThePaintedBoxOnBothNatives(t *testing.T) {
 	if opacityAt > transitionAt {
 		t.Errorf("%s: .opacity is applied outside grMobTransition, so a changed "+
 			"alpha snaps under a Transition", swiftStyle)
+	}
+}
+
+// A shadowed box at an opacity below 1 keeps its shadow on Compose (N-104).
+//
+// An alpha below 1 renders its layer offscreen into a buffer the size of the
+// node, and the shadow, drawn inside that layer, fell outside the buffer and
+// was cut: a Card at Opacity(0.5) drew no shadow at all on the emulator. Now
+// the alpha goes inside the shadow when the box has both. On API 28 and up
+// the shadow sits on its own layer outside the alpha, tinted to the opacity,
+// so it fades linearly as CSS fades a box-shadow under `opacity`. Below 28,
+// which has no shadow colours, the alpha shares the shadow's layer, which the
+// platform casts from the outline and fades (twice) without cutting.
+func TestComposeShadowSurvivesAnOpacity(t *testing.T) {
+	kotlin := codeIn(t, kotlinStyle)
+	for _, pin := range []struct{ code, why string }{
+		{"val alphaOnShadow = shadow > 0f && layerAlpha < 1f",
+			"a shadowed box below opacity 1 must take the shadow's arm, or its alpha layer cuts the shadow"},
+		{"val tint = DefaultShadowColor.copy(alpha = layerAlpha)",
+			"the shadow must fade with the box through its colour's alpha"},
+		{"m = m.shadow(elevation = shadow.dp, shape = outline, ambientColor = tint, spotColor = tint)\n                .alpha(layerAlpha)",
+			"the alpha must sit inside the shadow, or the shadow is drawn into the alpha's buffer and cut"},
+		{"shadowElevation = shadow.dp.toPx()",
+			"below API 28 the shadow and the alpha must share one layer"},
+	} {
+		if !strings.Contains(kotlin, pin.code) {
+			t.Errorf("%s: lacks %q — %s", kotlinStyle, pin.code, pin.why)
+		}
 	}
 }
 

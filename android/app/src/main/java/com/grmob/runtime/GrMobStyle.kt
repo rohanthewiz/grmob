@@ -2,6 +2,7 @@ package com.grmob.runtime
 
 import android.icu.text.RelativeDateTimeFormatter
 import android.icu.util.ULocale
+import android.os.Build
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Easing
@@ -22,6 +23,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.DefaultShadowColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.layout.layout
@@ -819,7 +822,14 @@ fun GrMobStyle?.boxModifier(extra: Modifier = Modifier, gestures: Modifier = Mod
     // opacity(0) hide the whole box. Hidden wins over any Opacity, since
     // "keeps its space but not its pixels" has no partial form.
     val layerAlpha = if (display == "hidden") 0f else opacity
-    if (layerAlpha < 1f) m = m.alpha(layerAlpha)
+    // A box with a shadow takes its alpha on the shadow's own layer instead
+    // (below), because a separate alpha layer here cut the shadow off. An
+    // alpha below 1 renders its layer offscreen, into a buffer the size of
+    // the node, and the shadow drawn inside it falls outside that buffer: a
+    // Card at Opacity(0.5) drew no shadow at all on the emulator, its corners
+    // squared off at the buffer's edge (N-104, 2026-10-10).
+    val alphaOnShadow = shadow > 0f && layerAlpha < 1f
+    if (layerAlpha < 1f && !alphaOnShadow) m = m.alpha(layerAlpha)
     if (rotate != 0f) m = m.rotate(rotate)
     // core.Spin, at the same layer position as the fixed angle and for the
     // same reasons: it must turn the whole painted box and the touch target
@@ -829,7 +839,46 @@ fun GrMobStyle?.boxModifier(extra: Modifier = Modifier, gestures: Modifier = Mod
     if (spinMs != 0) m = m.then(SpinElement(spinMs))
 
     val shape = grMobShape(this)
-    if (shadow > 0f) {
+    if (alphaOnShadow) {
+        val outline = shape ?: RoundedCornerShape(0.dp)
+        if (Build.VERSION.SDK_INT >= 28) {
+            // The shadow on a layer of its own, outside the alpha, so nothing
+            // cuts it, with its colour's alpha at the box's opacity, so it
+            // fades as CSS fades a box-shadow under `opacity`: linearly (at
+            // 0.5 the emulator's shadow darkened the panel by half of what
+            // the opaque card's did). The alpha layer inside it holds the
+            // fill, border and content, one composited picture faded once:
+            // CSS's group opacity, as before. Its offscreen buffer is the
+            // node's size, which is all the content needs: the shadow is not
+            // in it.
+            //
+            // One difference from CSS remains, and it is the platform's: an
+            // elevation shadow is cast under the whole outline, not only
+            // outside it, so it shows faintly through a box that is not
+            // opaque. CSS clips a box-shadow to outside the border box. At
+            // 0.5 the emulator's card read 228 inside where white over the
+            // panel is 238. Folding the alpha into the shadow's layer (the
+            // API < 28 arm) leaves the same show-through at 232 and a shadow
+            // a quarter strong, so this arm is the closer of the two.
+            val tint = DefaultShadowColor.copy(alpha = layerAlpha)
+            m = m.shadow(elevation = shadow.dp, shape = outline, ambientColor = tint, spotColor = tint)
+                .alpha(layerAlpha)
+        } else {
+            // Shadow colours arrive in API 28, so below it the alpha goes on
+            // the shadow's own layer instead. The platform casts that layer's
+            // shadow outside its content, from the outline, so it is not cut
+            // either; it fades by alpha twice (the layer's and the outline's,
+            // which Compose sets together), so a 0.5 box casts a quarter
+            // shadow. Lighter than CSS, where the separate alpha layer drew
+            // none.
+            m = m.graphicsLayer {
+                shadowElevation = shadow.dp.toPx()
+                this.shape = outline
+                clip = true
+                alpha = layerAlpha
+            }
+        }
+    } else if (shadow > 0f) {
         m = m.shadow(elevation = shadow.dp, shape = shape ?: RoundedCornerShape(0.dp))
     }
     if (shape != null) {
