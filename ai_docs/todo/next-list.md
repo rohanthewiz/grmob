@@ -35,7 +35,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-104
+**Next ID:** N-105
 
 ## Open
 
@@ -191,6 +191,9 @@ defect, which then becomes its own Open item.
     only and never opens 6.6's dialog, despite its name. An iOS Modal still
     has no Escape claim of its own (`core.OnEscape`'s doc), so for a Modal
     the check is whether SwiftUI's own dismissal answers a real Escape.
+  - Renamed 2026-10-10 to `testEscapeClosesTheDrawer`, with a doc that says
+    why the Dialog is this item's check and not the test's (`421ff1b`). It
+    still passes with its expected failure.
 - **N-005** · raised `2026-0914-2319-next-list-row-hug-box-chords-and-a-strip-that-divides` · value low
   **iOS chords.** Page-global chords were verified once, and the chord gate
   (behind a modal, inside a shut Drawer panel) is unheard. (was #6;
@@ -301,6 +304,17 @@ defect, which then becomes its own Open item.
     simulator, and snap under Reduce Motion (see N-062). Whether a view at
     exactly 0 still takes taps and VoiceOver focus is still unmeasured (the
     doc says taps stop; that is from SwiftUI's known behaviour).
+  - Measured 2026-10-10 with a temporary demo (reverted). An Opacity(0) Box
+    with an OnClick was tapped where it sits.
+    - The iOS 26.5 simulator: the tap did not reach it (0 taps), as core's
+      doc says, and it is still in XCUITest's accessibility tree. Whether
+      VoiceOver itself stops there is unheard.
+    - The emulator: the same box is in the tree, clickable, and took the tap
+      (1 tap), as core documents for Compose.
+  - The shadow question above is answered: an alpha below 1 cut the shadow
+    off entirely on Compose (a 0.5 Card cast none). Fixed as N-104, and the
+    0.5 Card's shadow now darkens the panel by half of what the opaque one's
+    does. iOS's 0.5 Card kept its shadow, with an exact interior.
   - Fixed (2026-09-21): Compose's `DisplayHidden` alpha used to sit at the
     foot of `boxModifier`, inside the background and border, so a hidden node
     with a fill still drew the fill. It now shares the Opacity layer
@@ -319,6 +333,16 @@ defect, which then becomes its own Open item.
     mid-text, and lesson 2.3's UPPERCASE mid-text). Not on the Fold6, and not
     with an IME that composes (Gboard's suggestions, Samsung's keyboard):
     `adb shell input text` commits whole keys.
+  - Composing IME done on the emulator (2026-10-10). Gboard's on-screen keys
+    were tapped by coordinate into 2.3's field with UPPERCASE on, and
+    `show_ime_with_hard_keyboard` was restored to 0 after.
+    - "hello world" read "HELLO WORLD", with Gboard composing (its strip
+      offering "world" and "would").
+    - "abc" typed with the caret at the start of "WORLD" read "HELLO
+      ABCWORLD", caret after the C.
+    - " wor" then a tap on the "world" suggestion committed "WORLD " (with
+      Gboard's space), and a following "x" read "X".
+    Still not on the Fold6, nor with Samsung's keyboard.
   - iOS: done on the simulator (2026-09-21). `write`'s arithmetic is
     `carryPlan` in GrMobTextEdits.swift, run by `ios/verify` against
     `CarryCases` (the caret, and that the span ends at the caret when the
@@ -619,6 +643,23 @@ defect, which then becomes its own Open item.
   comment. The tutorial page that does set cover is N-088.
 
 ## Closed
+
+- **N-104** · raised `2026-1010-2039-next-list-n004-rename-n065-gboard-n064-n104-compose-shadow-alpha`
+  · closed 2026-10-10, `2026-1010-2039-next-list-n004-rename-n065-gboard-n064-n104-compose-shadow-alpha` — found by N-064's shadow check: on
+  Compose an Opacity below 1 cut a box's shadow off entirely. The alpha's
+  offscreen buffer is the node's size, and the shadow was drawn inside it.
+  A box with both now takes the alpha inside the shadow.
+  - API 28+: the shadow on its own layer, tinted
+    `DefaultShadowColor.copy(alpha = layerAlpha)`, with `.alpha` inside it
+    (fill, border and content one faded group). At 0.5 the shadow darkens
+    the panel by 11 against the opaque card's 23, which is linear, as CSS
+    is.
+  - Below 28 (no shadow colours): the alpha shares the shadow's layer,
+    alpha squared, so a quarter shadow. That still beats none.
+  - Left as the platform's: an elevation shadow shows faintly through a
+    translucent box (228 inside a 0.5 card where CSS gives 238).
+  mobile/verify's opacity pins are updated plus a new one, and android/verify
+  passes. `c864d21`.
 
 - **N-103** · raised `2026-1010-2027-next-list-n097-backup-restore-n028-rotation-n103-ios-insets`
   · closed 2026-10-10, `2026-1010-2027-next-list-n097-backup-restore-n028-rotation-n103-ios-insets` — found by N-028's rotation check:
