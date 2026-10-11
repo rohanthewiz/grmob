@@ -35,7 +35,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-100
+**Next ID:** N-102
 
 ## Open
 
@@ -83,15 +83,6 @@ with each item's `raised` traced back through all session docs.
   lapsed@0917-1659)
   - Recommendation (2026-09-29, not acted on): decline. The lesson's prose
     already names the missing term; a hard-coded Origin.X would teach a guess.
-- **N-043** · raised `2026-0918-1310-next-list-paragraph-corners-scroll-to-one-field-pin` · value low
-  **iOS UIKit field: a queued key during the caret correction.** Not observed.
-  Candidate fix: drain through `input.inputDelegate` before `replace`. (was
-  #53)
-  - Re-checked 2026-10-10: `write()` in GrMobTextInput.swift still calls
-    `input.replace(range, withText:)` and then `setCaret`, and nothing under
-    ios/ uses `inputDelegate`. Since `carryPlan` (N-065) the common case
-    (caret at or after the change) needs no correction, so the window is
-    narrower than when this was raised.
 - **N-045** · raised `2026-0918-2002-next-list-thread-widget-caret-fixes-boot-frame-proof` · value low (by design)
   The web's thread place-keeping applies only when the List is its own scroll
   box. (was #56)
@@ -140,6 +131,19 @@ with each item's `raised` traced back through all session docs.
   widgets draw it too. A Text cannot mirror. The API decision is a
   mirror-under-RTL prop for Text, like `CanvasMirrorsRTL`. Split out of
   N-068 on 2026-10-10, where it sat inside a list of device checks.
+  - Looked for a fix within the existing API (2026-10-10), so the decision
+    has its options in front of it. None is free:
+    - A `core.Text` cannot mirror, and "▸" (U+25B8) is not Bidi_Mirrored, so
+      no host's text engine flips it.
+    - A bidi-mirrored glyph does flip by itself under RTL on every host:
+      "›" (U+203A) renders as "‹" in a right-to-left paragraph. But it is an
+      angle quote, not a filled triangle, so every disclosure widget changes
+      its look.
+    - The chevron could be a small Canvas with `CanvasMirrorsRTL`. It needs
+      ChevronStyle's font size turned into a box size, and it changes the
+      node type that four renderers draw for every disclosure.
+    - The prop the item names (mirror-under-RTL for Text) is the general
+      answer, and new API.
 - **N-099** · raised `2026-0919-1254-fold6-talkback-hid-harness-focus-after-navigation-inert-named-controls` · value low
   **SwiftUI does not read `Inert`.** Compose reads its keyboard half
   (2026-0919-1254 §5). On iOS a hardware keyboard can still Tab into a
@@ -209,6 +213,26 @@ defect, which then becomes its own Open item.
 - **N-040** · raised `2026-0918-0910-next-list-copy-strip-edit-epochs-accent-and-the-lost-first-key` · value medium
   **The first hardware key after launch is lost on the iOS 26.5 simulator.**
   Worked around by `primeKeyboard`. Unchecked on a real iPad. (was #50)
+- **N-043** · raised `2026-0918-1310-next-list-paragraph-corners-scroll-to-one-field-pin` · value low
+  **iOS UIKit field: a queued key during the caret correction.** Not observed.
+  Candidate fix: drain through `input.inputDelegate` before `replace`. (was
+  #53)
+  - Re-checked 2026-10-10: `write()` in GrMobTextInput.swift still calls
+    `input.replace(range, withText:)` and then `setCaret`, and nothing under
+    ios/ uses `inputDelegate`. Since `carryPlan` (N-065) the common case
+    (caret at or after the change) needs no correction, so the window is
+    narrower than when this was raised.
+  - Stress-tested 2026-10-10 on the iOS 26.5 simulator, and moved to
+    Validate: nothing to fix there. 2.3's capitalize-words field reaches both
+    correction arms (the span holding the caret, and the span after it). The
+    first key typed is the one Go rewrites around, and every key after it
+    waits in the keyboard's queue during the write and the correction. Six
+    launches, three per seed, typed a 12-key burst ("xyzabcdefghi"), leaving
+    11 keys queued behind the rewrite. All six read "Helloxyzabcdefghi World",
+    so no key was lost. `testCapitalizedWordsKeepTheCaretWithTheTyping` now
+    types that burst instead of three keys (`e23a8b1`). The `inputDelegate`
+    candidate fix was not applied. What remains is a real device: a hardware
+    keyboard typed fast, and an IME that composes.
 - **N-044** · raised `2026-0918-2002-next-list-thread-widget-caret-fixes-boot-frame-proof` · value low
   **iOS Paragraph link colours on the iOS 17 floor.** No iOS 17 runtime is
   installed. (was #55)
@@ -452,14 +476,6 @@ defect, which then becomes its own Open item.
     mirroring comps draw no `CanvasText`); only wasm/verify/gen.go does, on
     the web. `TutorialRoundFourUITests` already forces right-to-left by
     launch arguments, which a native check could reuse.
-- **N-091** · raised `2026-1003-1852-stripe-checkout-bible-verse-discussion-widgets` · value medium
-  **StripeCheckout, BibleVerse and Discussion are unseen on the natives.**
-  They were checked with debug-mode tests, `AuditTree` and one headless
-  Chrome screenshot of an `htmlout` export. Nobody has looked at them on
-  Android or iOS. The parts most likely to differ: Discussion's labelled
-  header rows ("Ben, reply to Ana, 1h"), which exist for the natives' sake;
-  the 2px thread line stretched with `AlignSelf`; and the lock glyph and Like
-  chip sizing.
 - **N-097** · raised `2026-1010-1728-keystore-binding` · value low
   **The keystore is unrun on physical hardware.** Checked with a throwaway
   probe on the API 36 emulator and the iOS 26.5 simulator. Covered: save,
@@ -474,6 +490,16 @@ defect, which then becomes its own Open item.
     errSecInteractionNotAllowed (-25308) rather than hang.
 
   church_mobile's N-004 swap is the natural first real consumer.
+
+- **N-101** · raised `2026-1010-1955-next-list-n043-caret-burst-n091-natives-look-n100-align-self` · value low
+  **Discussion's header rows: does a screen reader read the name and time
+  again after the row's label?** Each header row carries the label the
+  natives need ("Ben, reply to Ana, 1h", seen in both trees on 2026-10-10).
+  Its inner Texts ("Ben", "1h") still appear as separate nodes in the
+  emulator's uiautomator dump and in XCUITest's tree. Neither tree is what
+  TalkBack or VoiceOver walks, so whether a swipe stops on them is unheard.
+  The emulator's Tab-driven harness cannot settle it (N-058); the Fold6's HID
+  harness can.
 
 ## Non-goals
 
@@ -575,6 +601,43 @@ defect, which then becomes its own Open item.
   comment. The tutorial page that does set cover is N-088.
 
 ## Closed
+
+- **N-100** · raised `2026-1010-1955-next-list-n043-caret-burst-n091-natives-look-n100-align-self`
+  · closed 2026-10-10, `2026-1010-1955-next-list-n043-caret-burst-n091-natives-look-n100-align-self` — found by N-091's look: Compose and
+  SwiftUI ignored `core.Style.AlignSelf`. Discussion's thread line (an empty
+  2px Box with `AlignSelf(stretch)`) was not drawn on either phone, and
+  Link's `AlignSelf(start)` was dropped, so "Read on Blue Letter Bible" took
+  taps across the whole card. Both natives now apply CSS's rule (the child's
+  value overrides AlignItems, "" defers):
+  - SwiftUI uses `GrMobFlexAlignSelf` with `GrMobFlexSolver.selfStretches`
+    and `selfAlign`, for both the fill frame and the layout.
+  - Compose uses `Modifier.align` or a fill, and pins a Row's height when a
+    child stretches itself. That pin is skipped when a child cannot answer
+    intrinsics (List, vertical Scroll).
+  - A self-placed child (start, center or end) is fit-content across the
+    line, as CSS sizes an unstretched item; on Compose that is
+    `fitContentWidth`, on SwiftUI `fitCross`. Children with no AlignSelf are
+    sized as before.
+  After: the thread lines draw on both phones, and the link is 487px on
+  Android (708 before) and 191pt on iOS (260 before). 6.7's ActionSheet and
+  4.29's links are unchanged on Android. android/verify passes; ios/verify
+  has the rule's cases; mobile/verify pins the parse, the arms and the
+  bindings; 17 tutorial UI tests pass. The styling reference moves AlignSelf
+  to the all-targets row. `99dc23e`.
+
+- **N-091** · raised `2026-1003-1852-stripe-checkout-bible-verse-discussion-widgets`
+  · closed 2026-10-10, `2026-1010-1955-next-list-n043-caret-burst-n091-natives-look-n100-align-self` — looked at on the API 36 emulator and the
+  iOS 26.5 simulator (lessons 4.38, 4.39 and 4.40, screenshots and both
+  accessibility trees).
+  - StripeCheckout draws right on both: the summary, the Pay button, and the
+    lock glyph sized to and aligned with the first line of its note.
+  - BibleVerse draws right on both, loaded and failed; Retry hugs its label.
+  - Discussion's header rows carry their labels on both ("Ben, reply to Ana,
+    1h", "Chen, reply to Ben, 45m"). The Like chips size alike (a filled
+    chip with the red emoji heart on Android, the white SF heart on iOS).
+  - The 2px thread line was missing on both: N-100, fixed and seen.
+  - Link's tap target spanning the card was the same cause.
+  - Whether a reader repeats a header's inner name and time is unheard: N-101.
 
 - **N-096** · raised `2026-1007-0210-n094-headless-window-minimum-not-overflow`
   · closed 2026-10-10, `2026-1010-1919-next-list-n096-export-viewport-n092-blb-proxy-n021-ios-image-floor` — every export now has a `<head>`
