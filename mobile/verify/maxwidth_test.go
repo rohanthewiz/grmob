@@ -139,7 +139,7 @@ func TestSwiftCapsOutsideTheGrowFrame(t *testing.T) {
 		{"cap: GrMobMaxWidth.fixedLimit(", "a rigid Width frame must be clamped by a points cap"},
 		{"relativeCap: (s?.maxWidth ?? ",
 			"a percentage cap must reach grMobDimension, which cannot resolve it into a length"},
-		{"case .horizontal where relativeCap:\n                frame(minWidth: 0, idealWidth: CGFloat(number), maxWidth: CGFloat(number),",
+		{"case .horizontal where relativeCap || squeezable:",
 			"a points Width under a percentage cap must be a flexible frame, or it ignores the proposal " +
 				"GrMobMaxWidthLayout narrowed and draws past its slot (comps.StaticMap in lesson 4.11 " +
 				"drew 320pt in a 306pt column)"},

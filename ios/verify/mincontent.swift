@@ -174,6 +174,45 @@ func checkMinContent() -> [String] {
         problems.append("a 110px MapView should floor at 0, as its <div> does")
     }
 
+    // Once GrMobImage has decoded the bitmap, its natural size lowers the
+    // floor to CSS's min(declared, content suggestion) (N-021). These are
+    // headless Chrome's measurements for a 110 × 40 box: a 400×100 image
+    // still floors at 110 (40 · 4 = 160, capped), a 50×50 one at 40 (its
+    // aspect at the declared height). With no Height the natural width is
+    // the suggestion. A size with a zero side is no size. The srcs are
+    // invented for this check and never fetched; the store is the app's
+    // singleton, so each gets a name no real tree would use.
+    var box110x40 = fixed110
+    box110x40.height = "40px"
+    let imageCases: [(name: String, natural: CGSize, height: String, want: CGFloat)] = [
+        ("wide", CGSize(width: 400, height: 100), "40px", 110),
+        ("square", CGSize(width: 50, height: 50), "40px", 40),
+        ("unsized height", CGSize(width: 50, height: 30), "", 50),
+        ("percentage height", CGSize(width: 50, height: 30), "50%", 50),
+        ("zero side", CGSize(width: 0, height: 30), "40px", 110),
+    ]
+    for c in imageCases {
+        let src = "verify://mincontent/\(c.name).png"
+        GrMobImageSizes.shared.record(c.natural, for: src)
+        var st = fixed110
+        st.height = c.height
+        let got = GrMobMinContent.width(of: node("Image", style: st, props: ["src": src]))
+        if abs(got - c.want) > 0.01 {
+            problems.append("a 110px Image whose bitmap is \(c.natural) (Height \(c.height.debugDescription)) should floor at \(c.want), got \(got)")
+        }
+    }
+    // Margins sit outside the floor, as they do for the declared width.
+    var marginedImage = box110x40
+    marginedImage.margin.left = 5
+    marginedImage.margin.right = 7
+    if GrMobMinContent.width(of: node("Image", style: marginedImage, props: ["src": "verify://mincontent/square.png"])) != 52 {
+        problems.append("a squeezable Image's margins should sit outside its natural-size floor (40 + 12)")
+    }
+    // Still loading: the declared width, Chrome's answer until the bitmap is in.
+    if GrMobMinContent.width(of: node("Image", style: box110x40, props: ["src": "verify://mincontent/never.png"])) != 110 {
+        problems.append("an Image whose bitmap has not arrived should floor at its declared width")
+    }
+
     let column = node("Column", children: [a, b])
     if abs(GrMobMinContent.width(of: column) - max(wA, wB)) > 0.01 {
         problems.append("a column's minimum should be its widest child")

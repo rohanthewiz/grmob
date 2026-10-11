@@ -1,6 +1,7 @@
 import CoreGraphics
 import CoreText
 import Foundation
+import Observation
 import SwiftUI
 
 /// CSS min-content width, computed over the node tree.
@@ -124,21 +125,23 @@ enum GrMobMinContent {
         //   failed to load    floors at 110
         //   no src            floors at   0   (htmlout writes a <div>)
         //
-        // A tree walk has no natural size — the image may not have arrived,
-        // and the node never carries one — so this floors at the declared
-        // width, which is Chrome's answer for every image at least as wide
-        // (at the declared height) as its box, and for one still loading.
-        // It is too high only for an image narrower in proportion than its
-        // box, which a browser would let the row squeeze to that proportion;
-        // flooring at 0 instead let SwiftUI squeeze every image, the Canvas
-        // bug again. A MapView is a <div> on the web and stays at 0.
+        // The node never carries a natural size, so it comes from the image
+        // itself once GrMobImage has decoded it (GrMobImageSizes, recorded
+        // by src). Until then, while it loads and if it fails, the floor is
+        // the declared width, which is Chrome's answer for an image still
+        // loading and for a failed one (the 110 above). Once the size is
+        // known the floor is CSS's min(declared, content size suggestion),
+        // imageFloor below. Flooring every image at 0 instead let SwiftUI
+        // squeeze it whatever its proportions, the Canvas bug again. A
+        // MapView is a <div> on the web and stays at 0.
         if let s = node.style, !s.width.isEmpty {
             if node.type == "Canvas", let w = GrMobMaxWidth.fixedLimit(s.width) {
                 return min(w, 300) + CGFloat(s.margin.left + s.margin.right)
             }
-            if node.type == "Image", !node.stringProp("src").isEmpty,
-               let w = GrMobMaxWidth.fixedLimit(s.width) {
-                return w + CGFloat(s.margin.left + s.margin.right)
+            if isReplacedImage(node), let w = GrMobMaxWidth.fixedLimit(s.width) {
+                return imageFloor(declared: w, height: s.height,
+                                  natural: GrMobImageSizes.shared.size(for: node.stringProp("src")))
+                    + CGFloat(s.margin.left + s.margin.right)
             }
             return 0
         }
@@ -184,6 +187,52 @@ enum GrMobMinContent {
         // insets — which is not what a browser does with one.
         guard inner > 0 else { return 0 }
         return capped(inner, node.style) + outerInsets(node.style)
+    }
+
+    /// Whether a node is an `<img>` on the web targets: an Image with a src.
+    /// htmlout writes a src-less Image as a `<div>`, which is not a replaced
+    /// element and has no natural size. FlexChildren asks the same question
+    /// to decide whether the image's Width may be squeezed (GrMobGrow
+    /// .squeezesWidth), so the floor and the frame agree about which images
+    /// are replaced.
+    static func isReplacedImage(_ node: GrMobNode) -> Bool {
+        node.type == "Image" && !node.stringProp("src").isEmpty
+    }
+
+    /// CSS's automatic minimum width for an image whose declared width is
+    /// `declared` points: `min(specified size suggestion, content size
+    /// suggestion)` (css-flexbox-1 §4.5). The specified suggestion is the
+    /// declared width. The content suggestion is the natural width, or, when
+    /// the height is declared in points, the natural aspect ratio carried
+    /// through that height. Natural sizes are in CSS px, which for an
+    /// `<img>` with no srcset is the bitmap's pixel size, and that is what
+    /// GrMobImageSizes records.
+    ///
+    /// ```
+    ///   box 110 × 40      natural      content suggestion   floor
+    ///   ------------      -------      ------------------   -----
+    ///                     400 × 100    40 · 4   = 160       110
+    ///                      50 ×  50    40 · 1   =  40        40
+    ///                     unknown      (loading or failed)  110
+    ///   box 110 × auto     50 ×  30    50                    50
+    /// ```
+    ///
+    /// The first three rows are headless Chrome's measurements (see
+    /// width(of:)). The last is the same rule with no height to carry the
+    /// ratio through. A natural size with a zero side (a decoder that
+    /// answered nothing) counts as unknown, so the floor stays high: the
+    /// table's bias.
+    static func imageFloor(declared: CGFloat, height: String, natural: CGSize?) -> CGFloat {
+        guard let natural, natural.width > 0, natural.height > 0 else { return declared }
+        let content: CGFloat
+        // fixedLimit answers points only: nil for "", "auto" and a
+        // percentage, none of which is a definite height to carry through.
+        if let h = GrMobMaxWidth.fixedLimit(height) {
+            content = h * natural.width / natural.height
+        } else {
+            content = natural.width
+        }
+        return min(declared, content)
     }
 
     /// A Button's min-content width: its label's widest word, inside the
@@ -432,5 +481,49 @@ func grMobFontWeightPair(_ w: Int) -> (Font.Weight, CGFloat) {
     case ..<800: (.bold, 0.4)
     case ..<900: (.heavy, 0.56)
     default: (.black, 0.62)
+    }
+}
+
+/// The natural size of every image GrMobImage has decoded, by its src.
+///
+/// GrMobMinContent needs an image's natural size for its floor (imageFloor),
+/// and a tree walk cannot know it: the node carries only the URL. The view
+/// that loads the bitmap does know it, so GrMobImage records it here, and the
+/// walk reads it back.
+///
+/// # Why it is @Observable
+///
+/// The floor is read in FlexChildren's body, as a layout value, before the
+/// image has arrived, so the first answer is the declared width. When the
+/// bitmap lands only GrMobImage's own state changes. The Row's body would not
+/// run again, and its children would keep the stale floor. Observation tracks
+/// the read of `sizes` made during that body, so recording a size here runs
+/// the body again and the layout gets the new floor. The whole dictionary is
+/// one tracked property, so any image arriving re-runs every body that read
+/// it. Only a Row holding an Image with a src and a points Width reads it,
+/// which keeps that cheap.
+///
+/// Keyed by src rather than by node because the size belongs to the bitmap:
+/// two nodes showing one URL share it, and a node whose src changes must not
+/// keep the old image's size. Entries are never evicted. One is two numbers,
+/// and an app shows a bounded set of URLs.
+///
+/// Main thread only, like every other read and write of the tree: GrMobImage
+/// records on the main actor, and the walk runs inside view bodies.
+@Observable
+final class GrMobImageSizes {
+    static let shared = GrMobImageSizes()
+
+    private(set) var sizes: [String: CGSize] = [:]
+
+    /// The natural size recorded for src, or nil until its image has been
+    /// decoded (or when it never decodes).
+    func size(for src: String) -> CGSize? { sizes[src] }
+
+    /// Records src's natural size. A repeat of the same size is not written,
+    /// because a write notifies every observer even when nothing changed,
+    /// and each of them would lay out again for nothing.
+    func record(_ size: CGSize, for src: String) {
+        if sizes[src] != size { sizes[src] = size }
     }
 }

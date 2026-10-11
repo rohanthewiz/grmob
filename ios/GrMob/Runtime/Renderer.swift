@@ -288,19 +288,70 @@ private struct GrMobEscapeClaim: ViewModifier {
 /// The bars used to be black on every host. That was Go's doing, not this
 /// view's: core.Image inherited Components.Camera's black fill (see
 /// core/image.go).
+///
+/// # Its own loader, not AsyncImage
+///
+/// This was an AsyncImage, which hands its content a SwiftUI Image and
+/// nothing else, so the bitmap's natural size was unknowable. The flex floor
+/// needs that size (GrMobMinContent.imageFloor, N-021): a browser lets a
+/// squeezed row narrow an image's box to its natural proportions, and
+/// without the size this host could only hold every image at its declared
+/// width. So the view loads the bytes itself, decodes them to a platform
+/// image, records the size in GrMobImageSizes, and draws it.
+///
+/// It keeps AsyncImage's behaviour everywhere else, on purpose:
+///
+///   - the spinner while loading, and also after a failure or with no src,
+///     which is where AsyncImage's placeholder stayed;
+///   - URLSession.shared, so the same URLCache backs it;
+///   - scale 1, so a bitmap's points are its pixels, which is also the CSS
+///     px of an `<img>` with no srcset;
+///   - an unlabeled image, labelled by grMobBox (AccessibilityLabel) or by
+///     grMobAltLabel outside this view.
+///
+/// The decoded image is kept with the src it came from. A src change shows
+/// the spinner rather than the old picture under the new URL, and `.task(id:)`
+/// cancels the old load. AsyncImage did the same.
 private struct GrMobImage: View {
     let node: GrMobNode
+    @State private var loaded: (src: String, image: GrMobPlatformImage)?
 
     var body: some View {
-        AsyncImage(url: URL(string: node.stringProp("src"))) { image in
-            grMobScaled(image, mode: node.stringProp("contentMode"))
-        } placeholder: {
-            ProgressView()
+        let src = node.stringProp("src")
+        Group {
+            if let loaded, loaded.src == src {
+                grMobScaled(grMobImage(loaded.image), mode: node.stringProp("contentMode"))
+            } else {
+                ProgressView()
+            }
         }
         .frame(maxWidth: grMobIsStated(node.style?.width) ? .infinity : nil,
                maxHeight: grMobIsStated(node.style?.height) ? .infinity : nil)
+        .task(id: src) {
+            guard !src.isEmpty, let url = URL(string: src),
+                  let (data, _) = try? await URLSession.shared.data(from: url),
+                  let image = GrMobPlatformImage(data: data),
+                  !Task.isCancelled else { return }
+            // Written after the size, so the Row's floor and this view's
+            // picture update in the same transaction.
+            GrMobImageSizes.shared.record(image.size, for: src)
+            loaded = (src, image)
+        }
     }
 }
+
+// The platform bitmap GrMobImage decodes into. UIImage on iOS. The macOS arm
+// exists only so ios/verify's typecheck of this file, which targets macOS,
+// has a type to name (the canImport(UIKit) pattern of GrMobSurface.swift).
+// Both decode with scale 1 and apply EXIF orientation, so `size` is the
+// upright pixel size.
+#if canImport(UIKit)
+typealias GrMobPlatformImage = UIImage
+private func grMobImage(_ image: UIImage) -> Image { Image(uiImage: image) }
+#else
+typealias GrMobPlatformImage = NSImage
+private func grMobImage(_ image: NSImage) -> Image { Image(nsImage: image) }
+#endif
 
 /// core.ContentMode -> SwiftUI image scaling. An absent or unknown mode is
 /// fit, which is both core.Image's documented default and what this renderer
@@ -773,7 +824,9 @@ private struct FlexChildren: View {
             // main axis is height, and MaxWidth is not read there.
             let cap = axis == .horizontal && resolvesPercentCaps
                 ? GrMobMinSize.fraction(child.style?.maxWidth ?? "") ?? 0 : 0
-            RenderNode(node: child, grow: fill(weight: weight, floored: floor > 0, stretch: stretch && !hugs))
+            RenderNode(node: child, grow: fill(weight: weight, floored: floor > 0, stretch: stretch && !hugs,
+                                               squeezable: axis == .horizontal
+                                                   && GrMobMinContent.isReplacedImage(child)))
                 // Tells the child's GrMobMaxWidthModifier to stand down; set
                 // only where the layout below will apply the cap instead.
                 .environment(\.grMobPercentCapResolved, cap > 0)
@@ -835,8 +888,12 @@ private struct FlexChildren: View {
     /// child may be given a slot longer than its content, and a main-axis
     /// fill is what makes it take the slot rather than draw its content
     /// inside it.
-    private func fill(weight: CGFloat, floored: Bool, stretch: Bool) -> GrMobGrow {
+    ///
+    /// `squeezable` is a Row's image child, whose Width the solver may narrow
+    /// to its natural-size floor; see GrMobGrow.squeezesWidth.
+    private func fill(weight: CGFloat, floored: Bool, stretch: Bool, squeezable: Bool = false) -> GrMobGrow {
         var g = GrMobGrow()
+        g.squeezesWidth = squeezable
         if weight > 0 || floored {
             if axis == .horizontal { g.fillWidth = true } else { g.fillHeight = true }
         }

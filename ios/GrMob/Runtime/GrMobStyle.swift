@@ -434,6 +434,19 @@ struct GrMobGrow: Equatable {
     /// DOM does for `flex-grow` under `overflow: auto` and Compose does
     /// with heightIn(min = viewport).
     var minHeight: CGFloat = 0
+    /// A Row's flex item whose points Width may be squeezed below the
+    /// declared size, down to the floor GrMobMinContent gives it, as CSS
+    /// flex-shrink squeezes a box with `width: 110px`. grMobDimension then
+    /// draws that Width as a flexible frame (0, ideal w, max w) in place of a
+    /// rigid one. A rigid frame reports the declared width whatever the Row
+    /// proposes, so a slot the solver had narrowed was drawn over.
+    ///
+    /// Set only for an Image with a src (FlexChildren), the one node type
+    /// whose floor can sit between zero and its declared width
+    /// (GrMobMinContent.imageFloor). Every other declared Width floors at
+    /// its own size (Canvas, and Image until its bitmap arrives) or at 0,
+    /// and making those squeezable would move rows no check has looked at.
+    var squeezesWidth = false
 
     static let none = GrMobGrow()
     static let horizontal = GrMobGrow(fillWidth: true)
@@ -444,7 +457,8 @@ struct GrMobGrow: Equatable {
     func union(_ other: GrMobGrow) -> GrMobGrow {
         GrMobGrow(fillWidth: fillWidth || other.fillWidth,
                   fillHeight: fillHeight || other.fillHeight,
-                  minHeight: max(minHeight, other.minHeight))
+                  minHeight: max(minHeight, other.minHeight),
+                  squeezesWidth: squeezesWidth || other.squeezesWidth)
     }
 }
 
@@ -893,7 +907,8 @@ struct GrMobBoxModifier: ViewModifier {
             // the frame itself gives CSS's min(width, max-width).
             .grMobDimension(s?.width ?? "", axis: .horizontal, alignment: alignment,
                             cap: GrMobMaxWidth.fixedLimit(s?.maxWidth ?? ""),
-                            relativeCap: (s?.maxWidth ?? "").hasSuffix("%"))
+                            relativeCap: (s?.maxWidth ?? "").hasSuffix("%"),
+                            squeezable: grow.squeezesWidth)
             .grMobDimension(s?.height ?? "", axis: .vertical, alignment: alignment)
             // core.MinWidth and core.MinHeight, right outside the declared
             // size and inside the background, so the fill, the border and the
@@ -1285,9 +1300,19 @@ extension View {
     /// web and Compose both take the column. Minimum-content floors do not
     /// move, because GrMobMinContent reads the declared Width off the tree
     /// rather than probing this frame.
+    ///
+    /// `squeezable` takes the same flexible arm for a second reason: the node
+    /// is a Row's flex item that the solver may narrow below its Width
+    /// (GrMobGrow.squeezesWidth, an Image whose natural size gives it a lower
+    /// floor; N-021). The flex layout proposes the resolved slot, and the
+    /// flexible frame takes it. Its base is unchanged, because the layout
+    /// measures a base with no main-axis proposal, which this frame answers
+    /// with its ideal, the declared width. A points `cap` still clamps the
+    /// ideal and the maximum, as it clamps the rigid arm: min(width,
+    /// max-width).
     @ViewBuilder fileprivate func grMobDimension(
         _ value: String, axis: Axis, alignment: Alignment = .topLeading, cap: CGFloat? = nil,
-        relativeCap: Bool = false
+        relativeCap: Bool = false, squeezable: Bool = false
     ) -> some View {
         if value.isEmpty || value == "auto" {
             self
@@ -1311,8 +1336,11 @@ extension View {
             // middle. comps.Spinner showed it — the dot that orbits the rim
             // sat at the ring's centre, where turning it moves nothing.
             switch axis {
-            case .horizontal where relativeCap:
-                frame(minWidth: 0, idealWidth: CGFloat(number), maxWidth: CGFloat(number),
+            case .horizontal where relativeCap || squeezable:
+                // cap is nil under relativeCap (a percentage MaxWidth has no
+                // points value), so the clamp only binds a squeezable node.
+                frame(minWidth: 0, idealWidth: GrMobMaxWidth.clamp(CGFloat(number), to: cap),
+                      maxWidth: GrMobMaxWidth.clamp(CGFloat(number), to: cap),
                       alignment: alignment)
             case .horizontal: frame(width: GrMobMaxWidth.clamp(CGFloat(number), to: cap),
                                     alignment: alignment)
