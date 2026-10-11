@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// The iOS half of grmob's window event: tells Go how big the app window is,
 /// through the "window" host event (core/window.go).
@@ -26,12 +27,23 @@ import SwiftUI
 ///
 /// # The insets
 ///
-/// Because the reader ignores the safe area, its proxy's `safeAreaInsets`
-/// are the window's own — the status bar, the home indicator and, on a
-/// notched phone in landscape, the sensor housing. They go to Go as
-/// core.SafeInsets so a component can position itself against them; what
-/// keeps ordinary content clear of the bars is still the SafeArea node, and
-/// SwiftUI's own insetting behind it, not these numbers.
+/// The window's bars: the status bar, the home indicator and, on a notched
+/// phone in landscape, the sensor housing. They go to Go as core.SafeInsets
+/// so a component can position itself against them. What keeps ordinary
+/// content clear of the bars is still the SafeArea node, and SwiftUI's own
+/// insetting behind it, not these numbers.
+///
+/// They are UIKit's: the key window's `safeAreaInsets`, read by a full-window
+/// UIView probe (GrMobWindowInsetsProbe below). They used to be the size
+/// reader's `geo.safeAreaInsets`, on the theory that a reader ignoring the
+/// safe area would see the window's own. It does not. `.ignoresSafeArea()`
+/// consumes the very insets the proxy would report, so every report said
+/// zero. Seen on the iOS 26.5 simulator (2026-10-10, N-103): lesson 4.21
+/// showed "top 0, bottom 0, left 0, right 0" in portrait and in landscape on
+/// an iPhone 17 Pro. A reader that respects the safe area cannot measure the
+/// window either, so the two numbers come from two places. The window's own
+/// figure is also what Android reports (WindowInsets.safeDrawing), and it
+/// excludes the keyboard there and here.
 ///
 /// # The colour scheme
 ///
@@ -97,6 +109,8 @@ struct AppWindowReader: View {
     /// Read through Observation, so the scene's style changing re-evaluates
     /// this body and the onChange below sees it.
     private let system = GrMobSystemScheme.shared
+    /// The window's bars, as the probe last read them. See "The insets".
+    @State private var insets = EdgeInsets()
 
     private var scheme: ColorScheme { system.scheme ?? windowScheme }
 
@@ -106,22 +120,82 @@ struct AppWindowReader: View {
                 // onAppear for the first measurement, onChange for every
                 // resize after it; onChange does not fire for the initial
                 // value.
-                .onAppear { AppWindow.report(geo.size, insets: geo.safeAreaInsets, scheme: scheme, to: runtime) }
+                .onAppear { AppWindow.report(geo.size, insets: insets, scheme: scheme, to: runtime) }
                 .onChange(of: geo.size) { _, size in
-                    AppWindow.report(size, insets: geo.safeAreaInsets, scheme: scheme, to: runtime)
+                    AppWindow.report(size, insets: insets, scheme: scheme, to: runtime)
                 }
-                // The bars can move without the window resizing: a rotation
-                // that puts the sensor housing on the other edge, a keyboard
-                // that changes the bottom inset. onChange(of: size) alone
-                // would miss those, so the insets are watched too.
-                .onChange(of: geo.safeAreaInsets) { _, insets in
-                    AppWindow.report(geo.size, insets: insets, scheme: scheme, to: runtime)
+                // The bars can move without the window resizing (a rotation
+                // that puts the sensor housing on the other edge arrives in
+                // the same layout as the size, but in no promised order), so
+                // the probe's reading is watched too, and either change sends
+                // the latest of both.
+                .onChange(of: insets) { _, now in
+                    AppWindow.report(geo.size, insets: now, scheme: scheme, to: runtime)
                 }
                 // Dark mode switched with no resize. See "The colour scheme".
                 .onChange(of: scheme) { _, now in
-                    AppWindow.report(geo.size, insets: geo.safeAreaInsets, scheme: now, to: runtime)
+                    AppWindow.report(geo.size, insets: insets, scheme: now, to: runtime)
                 }
+                .background(GrMobWindowInsetsProbe { insets = $0 })
         }
         .ignoresSafeArea()
+    }
+}
+
+/// UIKit's reading of the window's safe area, for AppWindowReader (see "The
+/// insets"). A clear, untouchable UIView laid out over the whole window,
+/// since it sits inside the reader that ignores the safe area. It reads
+/// `window.safeAreaInsets` rather than its own: the window's is the device's
+/// bars whatever SwiftUI did to the safe area on the way down.
+///
+/// It reads on the three occasions the window's figure can have moved for
+/// it: arriving in a window, its own safe area changing, and a layout, which
+/// a rotation always brings, since the view spans the window. A repeat of the
+/// last reading is not reported.
+private struct GrMobWindowInsetsProbe: UIViewRepresentable {
+    let changed: (EdgeInsets) -> Void
+
+    func makeUIView(context: Context) -> ProbeView {
+        let view = ProbeView()
+        view.isUserInteractionEnabled = false
+        view.backgroundColor = .clear
+        view.changed = changed
+        return view
+    }
+
+    func updateUIView(_ view: ProbeView, context: Context) {
+        view.changed = changed
+    }
+
+    final class ProbeView: UIView {
+        var changed: ((EdgeInsets) -> Void)?
+        private var last: UIEdgeInsets?
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            read()
+        }
+
+        override func safeAreaInsetsDidChange() {
+            super.safeAreaInsetsDidChange()
+            read()
+        }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            read()
+        }
+
+        private func read() {
+            guard let window else { return }
+            let bars = window.safeAreaInsets
+            guard bars != last else { return }
+            last = bars
+            // Physical edges: UIEdgeInsets' left and right are, and core
+            // wants them so (see AppWindow.report).
+            let reading = EdgeInsets(top: bars.top, leading: bars.left, bottom: bars.bottom, trailing: bars.right)
+            // Out of the layout pass: the callback writes SwiftUI state.
+            DispatchQueue.main.async { [changed] in changed?(reading) }
+        }
     }
 }

@@ -553,7 +553,7 @@ OnWindow subscribes fn to window changes. The returned function cancels the subs
 
 Process-wide like OnLifecycle, and for the same reason: one app, one window. fn runs on whichever goroutine delivered the event and must not block; writing State and calling RequestRender are fine from there.
 
-<small>[core/window.go:375](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L375)</small>
+<small>[core/window.go:378](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L378)</small>
 
 ### func ParseLatLng
 
@@ -656,7 +656,7 @@ Validation is split by what a bad value would do downstream:
 
 Received is set here, whatever the caller passed, since arriving through this function is what receiving means. A repeat of the current window is absorbed silently. Subscribers are notified outside the lock.
 
-<small>[core/window.go:406](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L406)</small>
+<small>[core/window.go:409](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L409)</small>
 
 ### func ShowUserLocation
 
@@ -976,7 +976,7 @@ Following the system's dark mode needs two things: the host saying which mode is
 
 The empty value means no host has said: a headless run, a shell older than the field. Treat it as light, which is what DefaultTheme and the shells' own surface assume.
 
-<small>[core/window.go:229](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L229)</small>
+<small>[core/window.go:232](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L232)</small>
 
 ```go
 const (
@@ -1015,7 +1015,7 @@ type Fold struct {
 
 Fold is one hinge or seam crossing the window.
 
-<small>[core/window.go:237](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L237)</small>
+<small>[core/window.go:240](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L240)</small>
 
 ### type FoldOrientation
 
@@ -1385,7 +1385,10 @@ The same numbers answer "how tall is the bar I am drawing my own colour behind" 
 
 	Android   WindowInsets.safeDrawing minus the IME, in dp — the same
 	          insets the SafeArea node applies, so the two agree
-	iOS       the root GeometryReader's safeAreaInsets, in points
+	iOS       the key window's safeAreaInsets (UIKit), in points. Not the
+	          size reader's proxy: that reader ignores the safe area to
+	          measure the whole window, which zeroes the insets it would
+	          report, and every iOS report said zero until N-103
 	Browser   zero: there is no JS reading of env(safe-area-inset-*), and a
 	          page in a normal browser window has no system bars anyway
 
@@ -1393,7 +1396,7 @@ The browser's zero is wrong in one case: a page drawn behind a notch or a home i
 
 Left and Right are physical edges, not leading and trailing: a cutout is where it is whatever the writing direction is, and the fold bounds beside them are physical too.
 
-<small>[core/window.go:186](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L186)</small>
+<small>[core/window.go:189](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L189)</small>
 
 ### type SizeClass
 
@@ -1458,7 +1461,7 @@ type Window struct {
 
 Window is the last report of the app window's size and fold.
 
-<small>[core/window.go:262](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L262)</small>
+<small>[core/window.go:265](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L265)</small>
 
 #### func CurrentWindow
 
@@ -1468,7 +1471,7 @@ func CurrentWindow() Window
 
 CurrentWindow reports the last window the host announced; the zero Window (Received false) until it has announced one.
 
-<small>[core/window.go:363](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L363)</small>
+<small>[core/window.go:366](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L366)</small>
 
 #### func (Window) Dark
 
@@ -1478,7 +1481,7 @@ func (w Window) Dark() bool
 
 Dark reports whether the host says the system is in dark mode. False before a report and from a host that sends no scheme.
 
-<small>[core/window.go:335](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L335)</small>
+<small>[core/window.go:338](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L338)</small>
 
 #### func (Window) HeightClass
 
@@ -1488,7 +1491,7 @@ func (w Window) HeightClass() SizeClass
 
 HeightClass is the window's height bucketed into a SizeClass. Most layouts only need WidthClass; height is what tells a landscape phone (compact height) from a tablet in landscape, which a bottom sheet or a video player cares about.
 
-<small>[core/window.go:312](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L312)</small>
+<small>[core/window.go:315](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L315)</small>
 
 #### func (Window) Posture
 
@@ -1498,7 +1501,7 @@ func (w Window) Posture() Posture
 
 Posture derives the named posture from the fold. See Posture's constants.
 
-<small>[core/window.go:323](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L323)</small>
+<small>[core/window.go:326](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L326)</small>
 
 #### func (Window) SeparatingFold
 
@@ -1508,7 +1511,7 @@ func (w Window) SeparatingFold() (Fold, bool)
 
 SeparatingFold returns the fold when content should be laid out around it, which is the one question a two-pane layout asks. A non-separating fold (a flat, continuous panel) is reported as none, since there is nothing to avoid.
 
-<small>[core/window.go:343](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L343)</small>
+<small>[core/window.go:346](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L346)</small>
 
 #### func (Window) WidthClass
 
@@ -1518,7 +1521,7 @@ func (w Window) WidthClass() SizeClass
 
 WidthClass is the window's width bucketed into a SizeClass. See the breakpoint constants above.
 
-<small>[core/window.go:298](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L298)</small>
+<small>[core/window.go:301](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L301)</small>
 
 ### type WindowRect
 

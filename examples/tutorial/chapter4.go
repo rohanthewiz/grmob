@@ -4131,9 +4131,15 @@ func lessonFoldables() Lesson {
 					core.Text(value, core.UseStyle(t.Typography.Body), core.FlexGrow(1)),
 				)
 			}
-			size := "not reported yet"
+			size, insets := "not reported yet", "not reported yet"
 			if win.Received {
 				size = fmt.Sprintf("%.0f × %.0f", win.Width, win.Height)
+				// Physical edges, as core.SafeInsets states them: a cutout
+				// moves to a side when the phone turns, whatever the reading
+				// direction (N-028's rotation check reads this line).
+				in := win.Insets
+				insets = fmt.Sprintf("top %.0f, bottom %.0f, left %.0f, right %.0f",
+					in.Top, in.Bottom, in.Left, in.Right)
 			}
 
 			list := make([]core.PropsAndChildren, 0, len(foldNotes)+1)
@@ -4159,6 +4165,7 @@ func lessonFoldables() Lesson {
 					"fold crossing it if there is one — and re-renders when either changes."),
 				demoPanel("Fold, unfold, bend or rotate the device and watch every line change.",
 					readout("Window", size),
+					readout("Insets", insets),
 					readout("Width class", string(win.WidthClass())),
 					readout("Height class", string(win.HeightClass())),
 					readout("Posture", string(win.Posture())),

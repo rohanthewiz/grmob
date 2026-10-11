@@ -67,3 +67,24 @@ func TestWindowEventSpellingsAgree(t *testing.T) {
 		}
 	}
 }
+
+// iOS's insets come from UIKit's window, not from the size reader (N-103).
+//
+// The size reader ignores the safe area so that it measures the whole window,
+// and .ignoresSafeArea() consumes the very insets its proxy would report. For
+// as long as the insets were read off that proxy, every iOS report said zero:
+// lesson 4.21 showed "top 0, bottom 0, left 0, right 0" in both orientations
+// on an iPhone 17 Pro. TutorialWindowUITests now watches a rotation move them;
+// this holds the source to the reading that works, so a tidy-up that folds the
+// insets back into the GeometryReader is a failing test rather than a quiet
+// return to zero.
+func TestIOSWindowInsetsAreTheWindowsOwn(t *testing.T) {
+	file := nativeFile("ios", "GrMob", "App", "AppWindow.swift")
+	src := codeIn(t, file)
+	if !strings.Contains(src, "let bars = window.safeAreaInsets") {
+		t.Errorf("%s: the insets are not read from the UIWindow's safeAreaInsets", file)
+	}
+	if strings.Contains(src, "geo.safeAreaInsets") {
+		t.Errorf("%s: reads geo.safeAreaInsets, which is zero inside a reader that ignores the safe area", file)
+	}
+}

@@ -166,7 +166,10 @@ type WindowRect struct {
 //
 //	Android   WindowInsets.safeDrawing minus the IME, in dp — the same
 //	          insets the SafeArea node applies, so the two agree
-//	iOS       the root GeometryReader's safeAreaInsets, in points
+//	iOS       the key window's safeAreaInsets (UIKit), in points. Not the
+//	          size reader's proxy: that reader ignores the safe area to
+//	          measure the whole window, which zeroes the insets it would
+//	          report, and every iOS report said zero until N-103
 //	Browser   zero: there is no JS reading of env(safe-area-inset-*), and a
 //	          page in a normal browser window has no system bars anyway
 //
