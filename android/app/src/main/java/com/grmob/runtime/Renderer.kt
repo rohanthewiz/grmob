@@ -112,6 +112,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.collapse
 import androidx.compose.ui.semantics.collectionInfo
 import androidx.compose.ui.semantics.collectionItemInfo
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.expand
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
@@ -570,9 +571,10 @@ fun RenderNode(node: GrMobNode, extra: Modifier = Modifier) {
     if (scrollEpoch > 0) mods = mods.then(scrollCommand(scrollEpoch))
 
     // Opening the disabled scope here, once, rather than inside every control
-    // means a container's flag reaches leaves it does not know about — and
-    // the provider is skipped when nothing changes, so an enabled tree pays
-    // nothing for the mechanism.
+    // means a container's flag reaches leaves it does not know about. The
+    // provider call itself is always made, with nothing in it when nothing
+    // changes, so that a node keeps its state when a flag flips (N-106; see
+    // the call at the end of this function).
     //
     // The unbounded-height local is closed the same way, and only where it
     // changes: a node with a points Height gives its subtree a definite height
@@ -586,7 +588,7 @@ fun RenderNode(node: GrMobNode, extra: Modifier = Modifier) {
     //
     // The values that change are collected and provided in one call, rather
     // than one `when` arm per combination: eight independent values would be
-    // 256 arms. An unchanged tree still provides nothing.
+    // 256 arms. An unchanged tree provides no values.
     val disable = node.style?.disabled == true && !LocalGrMobDisabled.current
     val bound = LocalGrMobUnboundedHeight.current && hasPointsHeight(node.style)
     val boundWidth = LocalGrMobUnboundedWidth.current && hasPointsWidth(node.style)
@@ -1206,6 +1208,9 @@ private fun contentScaleFor(mode: String): ContentScale = when (mode) {
 // Leaf components
 // ---------------------------------------------------------------------------
 
+/** The roles that make a node a live region on this platform; see roleSemantics. */
+private val grMobLiveRoles = setOf("status", "alert", "log")
+
 @Composable
 private fun GrMobText(node: GrMobNode, extra: Modifier) {
     val s = animatedStyle(node.style)
@@ -1228,9 +1233,22 @@ private fun GrMobText(node: GrMobNode, extra: Modifier) {
     // would otherwise silence itself.
     val echo = node.style?.accessibilityLabel.isNullOrEmpty() &&
         content.trim().lowercase() in LocalGrMobGroupSaid.current
+    // A live region (core.RoleStatus, RoleAlert, RoleLog) on a Text with no
+    // label of its own takes its content as its content description as well
+    // (N-108). TalkBack announced a live region whose description changed,
+    // and said nothing when only its text did. Measured on the emulator with
+    // a RoleStatus Text counting every 5s: silent for 32s as text alone,
+    // and every change announced ("Probe status 4" … "8") once the same
+    // words were its description. comps.Wizard's "Step 2 of 3" line was the
+    // casualty, and with it every step change on Android, since Compose
+    // cannot move TalkBack's focus to the new title. The description is the
+    // text itself, so nothing new is said, and it is read once.
+    val live = node.style?.accessibilityRole in grMobLiveRoles &&
+        node.style?.accessibilityLabel.isNullOrEmpty()
     Text(
         text = content,
         modifier = s.boxModifier(extra, gestureModifier(node))
+            .then(if (live) Modifier.semantics { contentDescription = content } else Modifier)
             .then(if (quiet || echo) Modifier.clearAndSetSemantics { } else Modifier),
         style = textStyle(s),
         maxLines = if (cap > 0) cap else Int.MAX_VALUE,
