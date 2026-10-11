@@ -113,7 +113,14 @@ final class TutorialKeyShortcutsUITests: XCTestCase {
 
     /// core.OnEscape: a bare Escape from the hardware keyboard should close
     /// lesson 4.18's open Drawer (the panel's claim, an invisible Button with
-    /// Escape as its shortcut) and lesson 6.6's Dialog.
+    /// Escape as its shortcut).
+    ///
+    /// The Drawer only. This was named testEscapeClosesTheDrawerAndTheDialog
+    /// and never opened lesson 6.6's Dialog (N-004, renamed 2026-10-10). A
+    /// Dialog is not a claim this test could check: an iOS Modal has no
+    /// Escape claim of its own (core.OnEscape's doc), so whether SwiftUI's
+    /// own sheet dismissal answers a real Escape is a question for a real
+    /// iPad keyboard, which N-004 holds.
     ///
     /// A known failure, like F6 above. On the iOS 26.5 simulator
     /// (2026-09-29) XCUITest's Escape closed neither, pressed twice after a
@@ -126,7 +133,7 @@ final class TutorialKeyShortcutsUITests: XCTestCase {
     /// (osascript is not allowed keystrokes on the machine this ran on).
     /// XCTExpectFailure is strict: the day Escape lands this fails, and the
     /// wrapper should come off.
-    func testEscapeClosesTheDrawerAndTheDialog() throws {
+    func testEscapeClosesTheDrawer() throws {
         let app = XCUIApplication()
         app.launch()
         app.open(URL(string: "grmob://lesson/4.18")!)
