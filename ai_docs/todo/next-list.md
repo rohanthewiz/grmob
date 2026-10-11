@@ -35,7 +35,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-107
+**Next ID:** N-108
 
 ## Open
 
@@ -192,7 +192,16 @@ defect, which then becomes its own Open item.
     `core.Focus` on a Button is still open.
   - Pinning: `Screen.Footer`, 100% layers in a pinned ZStack.
   - Android: predictive back, MaxWidth where it binds on a tablet, RTL capped
-    child.
+    child. All three done 2026-10-10 on the API 36 emulator.
+    - Predictive back: a slow edge swipe from Contents shrinks the window to
+      preview what is behind it. From a lesson, and with 4.18's drawer open,
+      it shows only the back arrow and goes back inside the app.
+    - MaxWidth where it binds, in landscape (914dp) rather than on a tablet:
+      the 520px cap on 6.7's ActionSheet and 4.17's Menu held, but the panels
+      sat at the window's start. That is N-107, now fixed: both are centred.
+      4.9's DatePicker card (360) is centred and scrolls.
+    - RTL capped child: 5.7's PIN row (320px cap) sits at the start of its
+      line, left in LTR and right in Arabic.
   - Devices: the Mi Max 3 (Android 10, input locked without a SIM). (was #1;
     lapsed@0917-1659)
 - **N-004** · raised `2026-0913-2250-next-list-hook-blame-cell-elements-f-keys-and-a-row-that-fills` · value low
@@ -680,6 +689,18 @@ defect, which then becomes its own Open item.
   comment. The tutorial page that does set cover is N-088.
 
 ## Closed
+
+- **N-107** · raised `2026-1010-2154-next-list-n002-android-checks-n107-modal-capped-centre`
+  · closed 2026-10-10, `2026-1010-2154-next-list-n002-android-checks-n107-modal-capped-centre` — found by N-002's "MaxWidth where it
+  binds" check. On Compose a capped child of a Modal that states its own
+  Width was left at the start of a wide window: 6.7's ActionSheet card and
+  4.17's Menu panel (Width 100% under a 520px cap) sat at the bottom-left in
+  landscape, where the web centres them. `centreCapped`'s `wrapContentWidth`
+  centres only inside a minimum forced by the column's `fillMaxWidth`, which
+  `hugsContent` withholds from a child with a Width. The column now also
+  aligns such a child to the centre, unless it states its own AlignSelf.
+  Both panels now span 517–1882 of 2400px. android/verify passes, and
+  mobile/verify pins the alignment. `96f6154`.
 
 - **N-106** · raised `2026-1010-2139-next-list-n002-ios-looks-n106-native-view-identity`
   · closed 2026-10-10, `2026-1010-2139-next-list-n002-ios-looks-n106-native-view-identity` — found by N-002's Reduce Motion check:
