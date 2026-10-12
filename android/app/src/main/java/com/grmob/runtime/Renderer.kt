@@ -521,6 +521,9 @@ fun GrMobRoot(runtime: GrMobRuntime) {
         // have joined; see ShellSurface. The window's surface and bar icons
         // come from the Go tree, not the system's dark mode (N-085).
         runtime.store.root?.let { root -> ShellSurface(root, barClaims) }
+        // TalkBack stays on the control keyboard focus moves to, off screen
+        // ones included (N-058); see GrMobFocusAnnouncer.kt.
+        AnnounceFocusMovesToScreenReader()
     }
 }
 
@@ -3934,6 +3937,10 @@ private fun GrMobModal(node: GrMobNode) {
     ) {
         // Escape closes the Modal as back does (core.OnEscape).
         DialogEscape { if (onDismiss.isNotEmpty()) runtime.click(onDismiss) }
+        // The dialog is its own window and Compose view, so it needs its own
+        // watcher (N-058). Opened from the keyboard, Compose focuses its first
+        // control, and TalkBack heard it only from the watcher's retry.
+        AnnounceFocusMovesToScreenReader()
         // The dialog window already scrims with the backdrop; the content gets
         // a card-like surface unless the app styled its children explicitly.
         //
