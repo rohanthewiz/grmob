@@ -2,9 +2,9 @@
 
 The project's open follow-ups, kept in one place. Sessions edit this file in
 place (see `/sess-save`) instead of copying a list forward from doc to doc, so
-an item that leaves Open without a line in Closed or Non-goals shows up as a
-deletion in git history. Seeded 2026-09-19 by `/next-list seed` from the
-`## Next` of `2026-0919-1254-fold6-talkback-hid-harness-focus-after-navigation-inert-named-controls`,
+an item that leaves Open or Validate without a line in Closed or Non-goals
+shows up as a deletion in git history. Seeded 2026-09-19 by
+`/next-list seed` from the `## Next` of `2026-0919-1254-fold6-talkback-hid-harness-focus-after-navigation-inert-named-controls`,
 with each item's `raised` traced back through all session docs.
 
 ## Conventions
@@ -23,13 +23,14 @@ with each item's `raised` traced back through all session docs.
     `delete?`, `non-goal?`) says what the item waits on.
 - **Open** is the next build work (code, a defect, a decision). **Validate**
   is the next testing: run, look, hear, measure, or write or repair a test,
-  with no product change planned unless the check finds a defect. An item
-  that mixes a fix with a check stays in Open until the fix lands.
+  with no product change planned unless the check finds a defect. An Open
+  item whose fix has landed but is unseen moves to Validate. An item that
+  mixes a fix with a check stays in Open until the fix lands.
 - **Nothing leaves Open or Validate** without a line in Closed (done or
   merged) or Non-goals (declined, with the reason). A move between them is
   not a lapse.
-- **Open and Validate stay in ID order.** New items are appended with
-  **Next ID**, which is then bumped.
+- **Open and Validate stay in ID order.** New items are appended to
+  whichever fits with **Next ID**, which is then bumped.
 - `lapsed@<doc>` marks an item that once fell off a hand-carried list without
   being done; kept as history.
 - In the seed, a non-goal's `declined` stem is where the item was first
