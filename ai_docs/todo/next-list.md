@@ -135,8 +135,7 @@ with each item's `raised` traced back through all session docs.
   2026-10-10, where it sat as a check whose answer was already known. N-001
   declines composing the shut panel differently. This item is only the
   focus gate.
-
-- **N-109** · raised `2026-1011-2237-v0.6.0-release-on-red-ci` · value medium
+- **N-109** · raised `2026-1011-2237-v0.6.0-release-on-red-ci` · value high
   **Browser check 24 (the overflow sweep) fails in the site workflow**, red on
   master since about 2026-09-24 and still red at `cbe9c6d`. In CI's Chrome a
   Text or Checkbox overflows its parent Row on tutorial lessons 2.2, 4.29,
@@ -146,6 +145,14 @@ with each item's `raised` traced back through all session docs.
   under": x 66.88..345.5 outside its parent Row's x 48..342`. Not yet run
   locally, so it is unknown whether the overflow happens only with CI's fonts.
   v0.6.0 was tagged on this red, at the user's call.
+  - Run locally 2026-10-11 (`/next-list`): `wasm/verify/run.sh` passes on
+    macOS with Chrome 152, check 24 included. The overflow is specific to
+    CI's ubuntu-latest runner, its fonts or its Chrome. To reproduce it, run
+    the suite on Linux or with CI's font stack.
+  - Re-rated high from medium: in `.github/workflows/site.yml`, `deploy`
+    `needs: verify`, so every red run skips the GitHub Pages deploy. The
+    published tutorial site has not been updated since the last green run
+    (2026-09-24).
 
 ## Validate
 
@@ -614,7 +621,7 @@ defect, which then becomes its own Open item.
   harness can. N-058's fix (2026-10-11) does not change that: Tab visits
   controls, and the question is about the texts a swipe stops on.
 
-- **N-110** · raised `2026-1011-2237-v0.6.0-release-on-red-ci` · value medium
+- **N-110** · raised `2026-1011-2237-v0.6.0-release-on-red-ci` · value high
   **`go test -race ./comps` fails in CI: the EditableGrid harness races its
   own timer.** Red on master since about 2026-09-21, and it reproduces locally.
   `TestEditableGridBlurCommitsAfterTheGrace` and
@@ -628,6 +635,10 @@ defect, which then becomes its own Open item.
   through a locked accessor. While it is red, the CI job skips the steps after
   `go test -race`: the docs server build, the WASM build and
   `wasm/verify/run.sh`.
+  - Re-rated high from medium (2026-10-11, `/next-list`): it is worked around
+    today. v0.6.0 was tagged on the red, and while the job fails, a new
+    failure in any of the skipped steps goes unseen. Still reproduces locally
+    (`go test -race -count=3 -run TestEditableGrid ./comps/`).
 
 ## Non-goals
 
