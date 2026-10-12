@@ -35,7 +35,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-109
+**Next ID:** N-111
 
 ## Open
 
@@ -135,6 +135,17 @@ with each item's `raised` traced back through all session docs.
   2026-10-10, where it sat as a check whose answer was already known. N-001
   declines composing the shut panel differently. This item is only the
   focus gate.
+
+- **N-109** · raised `v0.6.0 tag, 2026-10-11 (no session doc)` · value medium
+  **Browser check 24 (the overflow sweep) fails in the site workflow**, red on
+  master since about 2026-09-24 and still red at `cbe9c6d`. In CI's Chrome a
+  Text or Checkbox overflows its parent Row on tutorial lessons 2.2, 4.29,
+  5.3 and 6.5 (each a 66.88px-inset Text, so likely one bullet or note
+  pattern), 7.2 (a Column and its Checkbox) and 7.4 (the "PRO" badge), at 360
+  and/or 390px. Example: `5.3: Text "The blur listener is attached only
+  under": x 66.88..345.5 outside its parent Row's x 48..342`. Not yet run
+  locally, so it is unknown whether the overflow happens only with CI's fonts.
+  v0.6.0 was tagged on this red, at the user's call.
 
 ## Validate
 
@@ -602,6 +613,21 @@ defect, which then becomes its own Open item.
   The emulator's Tab-driven harness cannot settle it (N-058); the Fold6's HID
   harness can. N-058's fix (2026-10-11) does not change that: Tab visits
   controls, and the question is about the texts a swipe stops on.
+
+- **N-110** · raised `v0.6.0 tag, 2026-10-11 (no session doc)` · value medium
+  **`go test -race ./comps` fails in CI: the EditableGrid harness races its
+  own timer.** Red on master since about 2026-09-21, and it reproduces locally.
+  `TestEditableGridBlurCommitsAfterTheGrace` and
+  `TestEditableGridDiscardIsOneFocusUnitWithTheField` fail. The blur-grace
+  commit runs on `UseTimeoutWhile`'s `time.AfterFunc` goroutine and calls the
+  harness's `OnChange`, which writes `g.rows`/`g.changes`
+  (`comps/editable_grid_test.go:68-78`). The test goroutine reads them after a
+  `time.Sleep`, and a sleep does not order the two goroutines. Every racing
+  pair runs through that closure, so the race is the harness's and not the
+  grid's. Fix: guard the harness fields with a mutex and read `changes`
+  through a locked accessor. While it is red, the CI job skips the steps after
+  `go test -race`: the docs server build, the WASM build and
+  `wasm/verify/run.sh`.
 
 ## Non-goals
 
