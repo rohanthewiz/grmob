@@ -136,7 +136,7 @@ with each item's `raised` traced back through all session docs.
   declines composing the shut panel differently. This item is only the
   focus gate.
 
-- **N-109** · raised `v0.6.0 tag, 2026-10-11 (no session doc)` · value medium
+- **N-109** · raised `2026-1011-2237-v0.6.0-release-on-red-ci` · value medium
   **Browser check 24 (the overflow sweep) fails in the site workflow**, red on
   master since about 2026-09-24 and still red at `cbe9c6d`. In CI's Chrome a
   Text or Checkbox overflows its parent Row on tutorial lessons 2.2, 4.29,
@@ -614,7 +614,7 @@ defect, which then becomes its own Open item.
   harness can. N-058's fix (2026-10-11) does not change that: Tab visits
   controls, and the question is about the texts a swipe stops on.
 
-- **N-110** · raised `v0.6.0 tag, 2026-10-11 (no session doc)` · value medium
+- **N-110** · raised `2026-1011-2237-v0.6.0-release-on-red-ci` · value medium
   **`go test -race ./comps` fails in CI: the EditableGrid harness races its
   own timer.** Red on master since about 2026-09-21, and it reproduces locally.
   `TestEditableGridBlurCommitsAfterTheGrace` and
