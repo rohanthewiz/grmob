@@ -104,23 +104,6 @@ with each item's `raised` traced back through all session docs.
 - **N-051** · raised `2026-0918-2310-mi-max-3-android-10-force-dark-theme-sweep` · value low
   **Why the decor-view force-dark flag stopped holding after an AndroidView
   attached is undiagnosed.** Moot for this app. (was #68)
-- **N-058** · raised `2026-0919-1254-fold6-talkback-hid-harness-focus-after-navigation-inert-named-controls` · value medium
-  (Raised from low 2026-09-25: it now blocks the emulator half of N-062's
-  Poll, N-068's TreeView and Wizard checks, and N-072's TalkBack pass. The
-  Fold6's HID harness is the known route round it.)
-  **TalkBack does not follow Tab onto 4.18's ☰.** Compose's focus is right
-  (TalkBack off shows it), but TalkBack said "Showing Inbox" or stayed on the
-  previous node. (was #80)
-  - Seen again on the emulator (2026-09-22): on 4.34 most Tabs spoke nothing
-    and Enter under TalkBack pressed a different node from the one just
-    spoken (a Copy button); on 4.16 TalkBack's Tab read prose and code that
-    Compose's own focus never visits. Controls were reachable by moving
-    Compose's focus with TalkBack off, turning TalkBack on and stepping once.
-  - Blocked the Wizard check (2026-09-23, 4.35): with Compose's focus on the
-    wizard's Skip and TalkBack then turned on, Enter pressed the page's
-    "‹ Contents"; an earlier Enter on Next advanced the step with nothing
-    logged, so whether it was Next that Enter pressed is unknown. Injected
-    taps do not reach the emulator's touch explorer either.
 - **N-098** · raised `2026-0922-0204-n076-logical-insets-hidden-fill-ios-carry-talkback-sweep` · value medium (API decision)
   **The disclosure chevron does not mirror under RTL.** A collapsed "▸"
   points right, against the reading direction, on all three hosts: seen on
@@ -323,6 +306,10 @@ defect, which then becomes its own Open item.
   - `Poll` results: one stop per option, with the hidden `ProgressBar` and
     texts not reachable by swipe. Not reached by the emulator's Tab sweep of
     4.34 (N-058's gap), so still unheard.
+    With N-058 fixed (2026-10-11), Tab speaks each option once on the
+    emulator: "Tabs, Button", "Spaces, Button", "Whatever gofmt says,
+    Button". Whether a swipe skips the hidden ProgressBar and texts is still
+    unheard (Tab visits controls only).
 - **N-064** · raised `2026-0921-0935-core-opacity-and-typing-indicator-fade` · value medium
   **`core.Opacity` is unrun on a device.** It
   compiles on all four targets and its call sites, layer order and sentinel
@@ -454,6 +441,9 @@ defect, which then becomes its own Open item.
     the branch, Button", "Selected, guide.md, Button", "collapsed. api. …".
     TalkBack skipped src, assets and README.md on Tab although Compose's own
     focus visits all six rows (N-058's gap).
+    With N-058 fixed (2026-10-11): "collapsed. src. …", "collapsed. assets.
+    …" and "README.md, Button" are heard too, then "Collapse all" and
+    "Reveal core.md".
   - `Wizard`: the `RoleStatus` line heard on a step change on TalkBack (tried
     on the emulator 2026-09-23 and blocked by N-058; the Fold6's HID harness
     is the route) and in a browser's screen reader; and where TalkBack's
@@ -468,6 +458,12 @@ defect, which then becomes its own Open item.
     3" and "Step 2 of 3, optional" are now heard at each step. Still open:
     a browser's screen reader, and where TalkBack's focus lands after Next
     when a person presses it.
+    From the keyboard (2026-10-11, after N-058): with a name typed, Tab spoke
+    "Next, Button", and Enter pressed it. TalkBack said "Step 2 of 3,
+    optional", then read "Order, Step 2 of 3, optional, Gift note, Note,
+    Optional: …" in one utterance, which looks like a group rather than the
+    new title. Tab then went "Step 1: Your name, done" → the note field →
+    Back → Skip, and Enter on Skip gave "Step 3 of 3".
   - `Wizard.Footer()` in `Screen.Footer` above the keyboard is N-002's
     pinning check with a consumer now; no bundled screen does it yet.
 - **N-070** · raised `2026-0921-1057-comps-round-four-phase-4-charts` · value medium
@@ -561,6 +557,12 @@ defect, which then becomes its own Open item.
     Heard on the emulator (2026-09-21): "Amount, row 2, $310.50. Edits the
     cell, Button" and "Row 1. Opens the row's menu, Button". A Category cell
     (the frameless `core.Select`) says "Category, row 1, Home" with no role.
+    By Tab after N-058's fix (2026-10-11), in Compose's order: "Row 1. Opens
+    the row's menu", "Item, row 1, Rent. Edits the cell", "Category, row 1,
+    Home", "Amount, row 1, $1200.00…", "Paid, row 1, checked, Button", then
+    row 2. Moving to row 2 scrolls the grid back sideways, and TalkBack first
+    says "Amount, row 2" before the correction to "Row 2. Opens the row's
+    menu". The editor, the RoleAlert and the row menu are still unheard.
   - The cost on a phone: the doc's "about 5,000 cells" is 4µs a cell measured
     on an M3, times a guess. Type into a 10 × 500 sheet on the Fold6.
 - **N-097** · raised `2026-1010-1728-keystore-binding` · value low
@@ -598,7 +600,8 @@ defect, which then becomes its own Open item.
   emulator's uiautomator dump and in XCUITest's tree. Neither tree is what
   TalkBack or VoiceOver walks, so whether a swipe stops on them is unheard.
   The emulator's Tab-driven harness cannot settle it (N-058); the Fold6's HID
-  harness can.
+  harness can. N-058's fix (2026-10-11) does not change that: Tab visits
+  controls, and the question is about the texts a swipe stops on.
 
 ## Non-goals
 
@@ -700,6 +703,43 @@ defect, which then becomes its own Open item.
   comment. The tutorial page that does set cover is N-088.
 
 ## Closed
+
+- **N-058** · raised `2026-0919-1254-fold6-talkback-hid-harness-focus-after-navigation-inert-named-controls`
+  · closed 2026-10-11, `2026-1011-2105-next-list-n058-talkback-follows-keyboard-focus` — TalkBack did not follow Tab on Compose. Compose's
+  focus was right; TalkBack was not told. Compose 1.7.6 sends
+  TYPE_VIEW_FOCUSED (the event TalkBack follows) only for a node it already
+  had in its previous 100ms batch, and its batches hold only on-screen
+  nodes. So a Tab onto a control below the fold was never announced: on the
+  emulator, 4.18's ☰ and ‹ Prev, and most Tabs on 4.34 and 4.16. Two more
+  ways it was lost:
+  - TalkBack ignored a TYPE_VIEW_FOCUSED that came mid-scroll (4.34's poll
+    options).
+  - TalkBack moved its own focus to visible prose as its node scrolled
+    away, which cut Compose's bring-into-view short. On 4.9, ‹ Prev was
+    left 745px off screen.
+  That was the "Enter pressed a different node from the one just spoken".
+  The fix is the new `GrMobFocusAnnouncer.kt`, run for GrMobRoot and for
+  every Modal. It acts only with touch exploration on and out of touch
+  mode. It holds the newly focused node until TalkBack's own focus is on it
+  (asked of Compose's provider). It scrolls an off-screen target on through
+  its scroller's ScrollBy action, as ACTION_SHOW_ON_SCREEN would. Then it
+  sends the TYPE_VIEW_FOCUSED Compose would have sent, with one retry 1.2s
+  later. After (emulator, TalkBack 16):
+  - 4.18: Copy → Open navigation → ‹ Prev → Next › → ‹ Contents.
+  - 4.34: every Tab spoke its control: the poll's Tabs, Spaces and
+    "Whatever gofmt says", then ‹ Prev.
+  - 4.9: Copy, ‹ Prev and Next › after the date field.
+  - 4.35: TreeView's src, assets and README.md. Enter on the Wizard's Next
+    and Skip pressed the control just spoken.
+  - The DatePicker's Modal, opened from the keyboard, speaks "Service date"
+    then "Clear, Button", where Compose put focus.
+  - With TalkBack off the Tab order is unchanged.
+  Still heard: when TalkBack's node scrolls away, TalkBack may first read
+  what it moved to ("Amount, row 2" on 4.37) before the correction. A long
+  scroll's correction can take over 2s. Once in four 4.34 walks, ‹ Prev went
+  unspoken. android lint passes; mobile/verify pins it
+  (focus_announce_test.go). Not tried: Samsung TalkBack on the Fold6.
+  `394bf92`.
 
 - **N-108** · raised `2026-1010-2207-next-list-n068-wizard-status-n108-compose-live-text`
   · closed 2026-10-10, `2026-1010-2207-next-list-n068-wizard-status-n108-compose-live-text` — found by N-068's Wizard check: on
