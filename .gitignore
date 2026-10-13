@@ -41,6 +41,7 @@ materialwallet.html
 # Editor and OS
 .DS_Store
 .idea/
+.ced/
 .vscode/
 *.swp
 
