@@ -53,6 +53,7 @@ func kstr(s string) string {
 		`"`, `\"`,
 		`$`, `\$`,
 		"\n", `\n`,
+		"\r", `\r`,
 		"\t", `\t`,
 	)
 	return `"` + r.Replace(s) + `"`
@@ -115,6 +116,7 @@ val menuCases: List<MenuCase> = listOf(
 	writeProgressCases(&b)
 	writeCanvasCases(&b)
 	writeRebaseCases(&b)
+	writeDataURICases(&b)
 	os.Stdout.WriteString(b.String())
 }
 

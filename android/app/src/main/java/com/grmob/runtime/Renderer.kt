@@ -873,19 +873,28 @@ private fun RenderNodeContent(node: GrMobNode, extra: Modifier) {
 
         "TabView" -> GrMobTabView(node, extra)
         "Modal" -> GrMobModal(node)
-        "Image" -> AsyncImage(
-            model = node.stringProp("src"),
-            contentScale = contentScaleFor(node.stringProp("contentMode")),
-            // The Go-side AccessibilityLabel style prop is the first choice
-            // for the description; the legacy "alt" prop remains a fallback.
-            // The label is delivered through AsyncImage's own semantics slot,
-            // so it is stripped from the style handed to boxModifier — both
-            // paths setting contentDescription would double-announce.
-            contentDescription = (style?.accessibilityLabel ?: "")
-                .ifEmpty { node.stringProp("alt") }.ifEmpty { null },
-            modifier = style?.copy(accessibilityLabel = "", accessibilityHint = "")
-                .boxModifier(extra, gestureModifier(node)),
-        )
+        "Image" -> {
+            // Coil 2 has no fetcher for data: URIs, so one is decoded to its
+            // bytes here (grMobImageModel, GrMobDataUri.kt) and every other
+            // src passes through. Remembered per src because a ByteArray's
+            // equality is its identity: a fresh decode on each recomposition
+            // would read to AsyncImage as a new model and reload the image.
+            val src = node.stringProp("src")
+            val model = remember(src) { grMobImageModel(src) }
+            AsyncImage(
+                model = model,
+                contentScale = contentScaleFor(node.stringProp("contentMode")),
+                // The Go-side AccessibilityLabel style prop is the first choice
+                // for the description; the legacy "alt" prop remains a fallback.
+                // The label is delivered through AsyncImage's own semantics slot,
+                // so it is stripped from the style handed to boxModifier — both
+                // paths setting contentDescription would double-announce.
+                contentDescription = (style?.accessibilityLabel ?: "")
+                    .ifEmpty { node.stringProp("alt") }.ifEmpty { null },
+                modifier = style?.copy(accessibilityLabel = "", accessibilityHint = "")
+                    .boxModifier(extra, gestureModifier(node)),
+            )
+        }
 
         // Camera capture needs a CameraX integration pass of its own; until
         // then render the styled surface and any overlay so layouts hold up.

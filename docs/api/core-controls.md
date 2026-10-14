@@ -270,7 +270,9 @@ func Image(src string, styleProps ...StyleProp) View
 
 Image renders a remote or bundled image at the default content mode (ContentModeFit). Use ImageWithMode to choose another.
 
-<small>[core/image.go:92](https://github.com/rohanthewiz/grmob/blob/master/core/image.go#L92)</small>
+src may also be a data: URI (base64 or percent-encoded), which every target loads: the browser and iOS natively, and Android through GrMobDataUri.kt, because its image loader (Coil 2) has no data: fetcher.
+
+<small>[core/image.go:96](https://github.com/rohanthewiz/grmob/blob/master/core/image.go#L96)</small>
 
 ### func ImageWithMode
 
@@ -282,7 +284,7 @@ ImageWithMode is Image plus an explicit ContentMode.
 
 A separate builder rather than a variadic change to Image, matching InputWithSubmit: every existing Image call site keeps compiling and keeps its current rendering, and the mode stays a required, visible argument at the sites that care rather than an option buried in a style list.
 
-<small>[core/image.go:102](https://github.com/rohanthewiz/grmob/blob/master/core/image.go#L102)</small>
+<small>[core/image.go:106](https://github.com/rohanthewiz/grmob/blob/master/core/image.go#L106)</small>
 
 ### func Input
 

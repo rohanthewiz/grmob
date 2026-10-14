@@ -267,6 +267,50 @@ fun main() {
         kotlin.system.exitProcess(1)
     }
     println("OK: ${carryCases.size} writes into a focused field carry the caret as Go's reference does")
+
+    // And for the data: URIs core.Image hands Coil.
+    if (dataUriCases.size < 20) {
+        System.err.println("FAIL: only ${dataUriCases.size} data: URI cases were generated")
+        kotlin.system.exitProcess(1)
+    }
+    val dataUriProblems = checkDataUri(dataUriCases)
+    if (dataUriProblems.isNotEmpty()) {
+        System.err.println("FAIL: the Kotlin data: URI decoder disagrees with Go:")
+        dataUriProblems.forEach { System.err.println("  $it") }
+        kotlin.system.exitProcess(1)
+    }
+    println("OK: ${dataUriCases.size} data: image srcs decode to the bytes Go's base64 and url give")
+}
+
+/** One case from datauri.go: a core.Image src and Go's bytes for it, null when it must not decode. */
+data class DataUriCase(
+    val name: String,
+    val src: String,
+    val want: List<Int>?,
+)
+
+/**
+ * Runs each case through [grMobDataUriBytes], and through [grMobImageModel]
+ * for the half of the contract the bytes alone do not show: a src that is not
+ * a data: URI goes to Coil unchanged, and one that is goes as the same bytes.
+ */
+fun checkDataUri(cases: List<DataUriCase>): List<String> {
+    val problems = mutableListOf<String>()
+    for (c in cases) {
+        val got = grMobDataUriBytes(c.src)?.map { it.toInt() and 0xFF }
+        if (got != c.want) {
+            problems += "${c.name}: decoded ${got?.size ?: "null"} bytes ${got?.take(8)}, Go ${c.want?.size ?: "null"} bytes ${c.want?.take(8)}"
+        }
+        val model = grMobImageModel(c.src)
+        val data = isDataUri(c.src)
+        when {
+            !data && model != c.src -> problems += "${c.name}: a non-data src was not passed through"
+            data && c.want == null && model != null -> problems += "${c.name}: an undecodable data: src gave a model"
+            data && c.want != null && (model as? ByteArray)?.map { it.toInt() and 0xFF } != c.want ->
+                problems += "${c.name}: the model is not the decoded bytes"
+        }
+    }
+    return problems
 }
 
 /**

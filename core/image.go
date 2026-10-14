@@ -89,6 +89,10 @@ func ContentModes() []ContentMode {
 
 // Image renders a remote or bundled image at the default content mode
 // (ContentModeFit). Use ImageWithMode to choose another.
+//
+// src may also be a data: URI (base64 or percent-encoded), which every target
+// loads: the browser and iOS natively, and Android through GrMobDataUri.kt,
+// because its image loader (Coil 2) has no data: fetcher.
 func Image(src string, styleProps ...StyleProp) View {
 	return imageNode(src, "", styleProps)
 }
