@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
@@ -2127,9 +2126,18 @@ private fun GrMobTextField(
     val decorator = TextFieldDecorator { inner ->
         Box {
             if (field.text.isEmpty()) {
+                // One line for a single-line field, cut with an ellipsis, as a
+                // SwiftUI TextField's prompt is and a web <input>'s placeholder
+                // never wraps. A wrapping prompt made the field as tall as its
+                // words in a narrow box (gonotes_mobile's search field in a
+                // two-pane list pane stood the height of the pane, one word
+                // per line). A TextArea's prompt still wraps, as it does in a
+                // <textarea>.
                 Text(
                     node.stringProp("placeholder"),
                     style = textStyle(s).copy(color = Color(0x993C3C43)),
+                    maxLines = if (multiline) Int.MAX_VALUE else 1,
+                    overflow = if (multiline) TextOverflow.Clip else TextOverflow.Ellipsis,
                 )
             }
             inner()
@@ -3332,21 +3340,58 @@ private fun hugsContent(s: GrMobStyle?): Boolean =
  * definite container size CSS would stretch against, and an intrinsic
  * measurement would fight the frame boxModifier applies for it.
  *
- * Two combinations to avoid, both fixable by giving the Row an explicit
- * Height (which takes the early exit above):
+ * Also skipped when the parent hands the row a *fixed* height: a FlexGrow
+ * child of a bounded Column is measured through weight(), whose constraints
+ * have minHeight == maxHeight. That is a definite container height too, so
+ * the children stretch against it with no intrinsic pass. The decision is
+ * made at measure time (pinToTallestUnlessFixed), because only the
+ * constraints know: `extra` is opaque here, and the same FlexGrow inside a
+ * *Row* parent sets width, where the intrinsic height is still right.
  *
- *  - A List inside a stretched Row. Intrinsic measurement asks every child
- *    for its own intrinsic height, which a lazy list cannot answer —
- *    LazyColumn/LazyRow throw rather than materialize every row to measure.
- *  - A stretched Row that is itself a FlexGrow child of a Column. The parent
- *    hands it a weight-derived height and this modifier overrides it with the
- *    tallest child's, so the row hugs instead of filling its share. The
- *    conflict cannot be detected here: `extra` is opaque, and the same
- *    FlexGrow inside a *Row* parent sets width, where the intrinsic height is
- *    still exactly right.
+ * Skipping it there fixed two things at once (gonotes_mobile N-021):
+ *
+ *  - A List inside such a row no longer crashes. Intrinsic measurement asks
+ *    every child for its own intrinsic height, which a lazy list cannot
+ *    answer: LazyColumn/LazyRow throw ("Asking for intrinsic measurements of
+ *    SubcomposeLayout layouts is not supported") rather than materialize
+ *    every row. comps.TwoPane is this shape (a stretched, FlexGrow Row), so
+ *    any app with a List in a pane died at launch on a wide window.
+ *  - Such a row fills its share instead of hugging the tallest child, as
+ *    the weight-derived height is no longer overridden.
+ *
+ * A List inside a stretched Row whose height is not fixed (an auto-height
+ * row, or one in a scrolled page) still throws. An explicit Height takes the
+ * early exit above.
  */
 private fun stretchRowHeight(s: GrMobStyle?, node: GrMobNode): Modifier =
-    if (rowPinsHeight(s, node)) Modifier.height(IntrinsicSize.Max) else Modifier
+    if (rowPinsHeight(s, node)) Modifier.pinToTallestUnlessFixed() else Modifier
+
+/**
+ * Modifier.height(IntrinsicSize.Max), except when the incoming height is
+ * already fixed, in which case the constraints pass through untouched.
+ *
+ *     incoming height       what the row is measured with
+ *     ---------------       -----------------------------
+ *     fixed (min == max)    unchanged: the parent decided (a weighted child)
+ *     anything else         its tallest child's height, kept within the
+ *                           incoming bounds, as height(IntrinsicSize.Max)
+ *
+ * A layout modifier rather than BoxWithConstraints, for the reason
+ * verticalScrollWhenBounded gives: this node can itself be measured
+ * intrinsically, and a SubcomposeLayout refuses that.
+ */
+internal fun Modifier.pinToTallestUnlessFixed(): Modifier =
+    layout { measurable, constraints ->
+        val pinned = if (constraints.hasFixedHeight) {
+            constraints
+        } else {
+            val tallest = measurable.maxIntrinsicHeight(constraints.maxWidth)
+                .coerceIn(constraints.minHeight, constraints.maxHeight)
+            constraints.copy(minHeight = tallest, maxHeight = tallest)
+        }
+        val placeable = measurable.measure(pinned)
+        layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+    }
 
 /**
  * Whether a Row pins itself to its tallest child (stretchRowHeight): when it
