@@ -72,7 +72,8 @@ type CodeEditor struct {
 	// instead when that is what you mean, which also tells the platform.
 	OnChange func(string)
 
-	// Language picks the lexer by name: "go", "json", or "" for no colour. An
+	// Language picks the lexer by name: "go", "json", "python", "bash" and
+	// the rest of highlight.Languages(), or "" for no colour. An
 	// unknown name is uncoloured rather than an error, so a screen whose editor
 	// mis-spells its language still renders. It also picks the comment marker
 	// the comment command toggles; see CommentPrefix.
@@ -298,15 +299,11 @@ func (c CodeEditor) commentPrefix() (string, bool) {
 	if c.CommentPrefix != "" {
 		return c.CommentPrefix, true
 	}
-	switch c.Language {
-	case "go":
-		return "//", true
-	case "json":
-		// JSON has no comment. An empty prefix makes the command a no-op rather
-		// than one that inserts a marker making the document invalid.
-		return "", true
-	}
-	return "", false
+	// Every language highlight lexes knows its own marker: "#" for Python and
+	// shell, "--" for SQL, "//" for Go. JSON (and CSS, HTML, XML) have no
+	// line comment and answer "", which makes the command a no-op rather than
+	// one that inserts a marker making the document invalid.
+	return highlight.LineComment(c.Language)
 }
 
 // onChange is the handler the node is given, never nil: core.CodeEditor

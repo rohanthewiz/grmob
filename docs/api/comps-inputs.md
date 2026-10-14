@@ -448,7 +448,8 @@ type CodeEditor struct {
 	// instead when that is what you mean, which also tells the platform.
 	OnChange func(string)
 
-	// Language picks the lexer by name: "go", "json", or "" for no colour. An
+	// Language picks the lexer by name: "go", "json", "python", "bash" and
+	// the rest of highlight.Languages(), or "" for no colour. An
 	// unknown name is uncoloured rather than an error, so a screen whose editor
 	// mis-spells its language still renders. It also picks the comment marker
 	// the comment command toggles; see CommentPrefix.
@@ -553,7 +554,7 @@ No memoization. go/scanner over a thousand lines is well under a millisecond —
 func (c CodeEditor) Render(ctx *core.Context) *core.Node
 ```
 
-<small>[comps/code_editor.go:133](https://github.com/rohanthewiz/grmob/blob/master/comps/code_editor.go#L133)</small>
+<small>[comps/code_editor.go:134](https://github.com/rohanthewiz/grmob/blob/master/comps/code_editor.go#L134)</small>
 
 ### type ColorSwatchPicker
 

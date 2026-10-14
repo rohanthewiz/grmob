@@ -239,10 +239,15 @@ func plainRows(src string) []core.GridRow {
 // ForLanguage returns the Highlighter for a language name, or Plain for one
 // this package does not lex.
 //
-// The names are the ones a file extension or a Markdown fence would give:
-// "go", "json". Matching is exact and lowercase — a caller with a filename
-// resolves it to a language first, because a path is not a language ("go.mod"
-// is not Go) and this package has no business guessing.
+// The names are each language's own lowercase name: "go", "json",
+// "javascript", "python", "bash" and the rest Languages lists. Matching is
+// exact — a caller with a filename or a Markdown fence's short form ("js",
+// "py") resolves it to a language first, because a path is not a language
+// ("go.mod" is not Go) and this package has no business guessing.
+//
+// Go and JSON have lexers of their own (golang.go, json.go), HTML and XML
+// share one (markup.go), and every other language is a row in the table in
+// table.go.
 //
 // An unknown name is deliberately not an error. The caller is a widget with a
 // Language field, and a screen whose editor mis-spells its language should
@@ -253,6 +258,11 @@ func ForLanguage(name string) Highlighter {
 		return Go()
 	case "json":
 		return JSON()
+	case "html", "xml":
+		return markupHighlighter{}
+	}
+	if spec, ok := languages[name]; ok {
+		return tableHighlighter{spec}
 	}
 	return Plain()
 }

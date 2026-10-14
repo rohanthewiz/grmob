@@ -34,9 +34,38 @@ A hand lexer rather than encoding/json, and the reason is the same one that make
 
 So this lexer never fails. It classifies what it can see and treats anything it does not recognize as plain ink, which degrades exactly the way an editor should: the bytes you have finished typing are coloured, the ones you are in the middle of are not yet.
 
+HTML and XML highlighting.
+
+Markup is not a token stream the table in table.go can describe: what a word means depends on whether it is inside a tag, and the text between tags is prose. So it gets its own small lexer, with the same class bytes and the same unterminated rule as the table (see table.go):
+
+	<!-- … -->            block comment (only once closed)
+	<name  </name  <?xml  the name: Keyword
+	attr=                 an attribute name inside a tag: Func
+	"…"  '…'              an attribute value inside a tag: String
+	everything else       plain ink, including the text between tags and
+	                      the contents of <script> and <style>
+
+The roles mirror JSON's: a tag is the language's vocabulary and an attribute name is a key.
+
+Table-driven highlighting for the languages that have no lexer of their own in this package.
+
+Go has go/scanner and JSON has a grammar small enough to lex exactly. The rest — JavaScript, Python, shell, SQL, YAML and the C family among them — are coloured by one lexer driven by a per-language table (langSpec): its keywords, its comment and string delimiters, and a few flags for the shapes that differ (a \`#\` that only starts a comment after whitespace, a YAML key before its colon, SQL's case-insensitive keywords). HTML and XML are tags rather than tokens and get a small lexer of their own (markup.go).
+
+## Why a table and not a lexer per language
+
+The colour roles a Scheme has are few: keyword, string, number, comment, block comment, and the identifier being called or the key being set. At that resolution most languages differ only in their vocabulary and their delimiters, so a table states each language in a few lines that read like its spec, and every language shares one scanning loop that the property tests in highlight\_test.go hold to the package's contracts (line-for-line, every byte preserved, maximal runs). Twenty hand-written lexers would be twenty places for the run arithmetic to go wrong.
+
+The price is precision: a table cannot know that \`'a\` is a Rust lifetime or that \`$((…))\` is shell arithmetic. Where a construct cannot be described in the table it is left uncoloured rather than guessed at, which is the package's standing rule (see Highlighter).
+
+## Unterminated constructs
+
+Go's lexer gives up on the whole input when go/scanner reports any error. There is no reference scanner here to defer to, so the rule is local instead: a string or block comment is coloured only once its closing delimiter is found. An opener with no closer is plain ink, and scanning resumes on the byte after it. Colours therefore never run on past the point where the lexer lost its place, which is the failure the Go fallback exists to prevent, and a fence holding a half-written line (or an apostrophe in a shell word) keeps its colours everywhere else.
+
 ## Index
 
 - [Variables](#variables) — `Darcula`, `Light`
+- [`func Languages`](#func-languages)
+- [`func LineComment`](#func-linecomment)
 - [`type Highlighter`](#type-highlighter)
     - [`func ForLanguage`](#func-forlanguage)
     - [`func Go`](#func-go)
@@ -84,6 +113,28 @@ var Light = Scheme{
 
 <small>[highlight/highlight.go:104](https://github.com/rohanthewiz/grmob/blob/master/highlight/highlight.go#L104)</small>
 
+## Functions
+
+### func Languages
+
+```go
+func Languages() []string
+```
+
+Languages lists every language name ForLanguage lexes, sorted. A caller mapping its own names (a Markdown fence's "js", a file's ".py") onto these can check its table against this list rather than against the docs.
+
+<small>[highlight/table.go:457](https://github.com/rohanthewiz/grmob/blob/master/highlight/table.go#L457)</small>
+
+### func LineComment
+
+```go
+func LineComment(lang string) (prefix string, ok bool)
+```
+
+LineComment is the line-comment marker of a language ForLanguage lexes: "#" for Python and shell, "--" for SQL and Lua, "//" for the C family and JavaScript. ok is true for every language this package knows, and prefix is "" for one with no line comment (JSON, CSS, HTML, XML), so an editor's comment command can tell "no marker" apart from "unknown language". comps.CodeEditor uses it to pick the marker its comment command toggles.
+
+<small>[highlight/table.go:472](https://github.com/rohanthewiz/grmob/blob/master/highlight/table.go#L472)</small>
+
 ## Types
 
 ### type Highlighter
@@ -108,11 +159,13 @@ func ForLanguage(name string) Highlighter
 
 ForLanguage returns the Highlighter for a language name, or Plain for one this package does not lex.
 
-The names are the ones a file extension or a Markdown fence would give: "go", "json". Matching is exact and lowercase — a caller with a filename resolves it to a language first, because a path is not a language ("go.mod" is not Go) and this package has no business guessing.
+The names are each language's own lowercase name: "go", "json", "javascript", "python", "bash" and the rest Languages lists. Matching is exact — a caller with a filename or a Markdown fence's short form ("js", "py") resolves it to a language first, because a path is not a language ("go.mod" is not Go) and this package has no business guessing.
+
+Go and JSON have lexers of their own (golang.go, json.go), HTML and XML share one (markup.go), and every other language is a row in the table in table.go.
 
 An unknown name is deliberately not an error. The caller is a widget with a Language field, and a screen whose editor mis-spells its language should show uncoloured code, not fail to render.
 
-<small>[highlight/highlight.go:250](https://github.com/rohanthewiz/grmob/blob/master/highlight/highlight.go#L250)</small>
+<small>[highlight/highlight.go:255](https://github.com/rohanthewiz/grmob/blob/master/highlight/highlight.go#L255)</small>
 
 #### func Go
 
