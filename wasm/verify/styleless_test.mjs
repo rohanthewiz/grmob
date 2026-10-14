@@ -272,3 +272,22 @@ test("a text field gives up its intrinsic width unless a floor is stated", () =>
     assert.equal(at(2).style.minWidth, "");
     assert.equal(at(3).style.minWidth, "120px");
 });
+
+test("a Fragment or a Theme draws no box, so a Fill child can grow", () => {
+    // The element stays (patches address it by path) but generates no box:
+    // `display: contents` hands its children to the grandparent's flex
+    // layout, which is how htmlout and both natives treat the two types. An
+    // update-style patch restates it, because styleFromGrMob is total.
+    const { rt, at } = mount([
+        { Type: "Theme", Children: [{ Type: "Column", Children: [] }] },
+        { Type: "Fragment", Children: [] },
+    ]);
+    assert.equal(at(0).style.display, "contents");
+    assert.equal(at(1).style.display, "contents");
+    // The child under the Theme is still a flex container of its own.
+    assert.equal(nodeAt(rt.document, "root/0/0").style.display, "flex");
+
+    rt.GrMob.patch(JSON.stringify([{ Type: "update-style", TargetID: "root/0", Changes: {} }]));
+    rt.drainFrames();
+    assert.equal(at(0).style.display, "contents");
+});

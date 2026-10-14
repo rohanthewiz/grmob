@@ -656,6 +656,28 @@ const GrMob = (() => {
     // textually, so keep it a flat array of string literals on one line.
     const OVERLAY_TYPES = new Set(["ZStack"]);
 
+    // The grouping nodes that draw no box of their own — core.For's Fragment
+    // and core.WithTheme's Theme. htmlout emits no element for them and both
+    // natives inline their children into the parent's layout, so a Fill child
+    // (comps.Screen{Fill: true}) under a WithTheme grows on every other target.
+    //
+    // This runtime still has to give them an element (see tagForType: patch
+    // addressing is positional), so it gives them `display: contents`
+    // instead: the div stays in the DOM, and so in step with the node tree,
+    // but generates no box. Its children become flex items of the
+    // grandparent, which is exactly what "transparent" means on the other
+    // three targets.
+    //
+    //   Column (flex, column)            Column (flex, column)
+    //   └─ div Theme  ← one flex item    ├─ div Theme  (display: contents)
+    //      └─ Screen  ← can't grow       └─ Screen     ← a flex item; grows
+    //        before                          after
+    //
+    // Go states the set once, in transparentTypes (htmlout/tag.go), and
+    // TestRuntimeTransparentTypesMatchGo in wasm/verify compares the two. It
+    // reads this literal textually, so keep it a flat array on one line.
+    const TRANSPARENT_TYPES = new Set(["Fragment", "Theme"]);
+
     // The cell every layer of an overlay occupies. Assigned to the *children*
     // of an overlay, which is why it is a lone constant rather than part of
     // styleFromGrMob's output: a layer has no idea it is a layer, so the
@@ -7020,12 +7042,13 @@ const GrMob = (() => {
     // and does not fix (the axis, not the missing tab bar). The two are
     // compared by TestRuntimeStackAxesMatchGo, so keep the flat-literal shape.
     //
-    // Fragment and Theme are this runtime's own rows: it boxes both in real
-    // divs to keep positional patch addressing valid (see tagForType), and a
-    // box that is not a stack would swallow its parent's layout the way any
-    // other block-flow div does. htmlout emits no element for them at all, so
-    // its table has no such rows — the one exemption the conformance test
-    // makes, narrowed to these two types.
+    // Fragment and Theme are this runtime's own rows: it keeps both as real
+    // divs to keep positional patch addressing valid (see tagForType). Their
+    // display is then overridden to `contents` at the end of styleFromGrMob
+    // (TRANSPARENT_TYPES), so the axis here is never laid out; the rows stay
+    // so the table is unchanged for its conformance test. htmlout emits no
+    // element for them at all, so its table has no such rows — the one
+    // exemption the conformance test makes, narrowed to these two types.
     function stackAxisFor(nodeType) {
         return {
             Row: "row",
@@ -7651,6 +7674,16 @@ const GrMob = (() => {
             // display and this one does not.
             delete out.display;
         }
+        // A transparent grouping node draws no box: see TRANSPARENT_TYPES.
+        // Last, so it overrides the stack container's display:flex planted
+        // above (stackAxisFor still lists both types, which keeps the axis
+        // table and its Go conformance test whole; the axis is simply never
+        // used). Display none still wins, as it does everywhere in this
+        // function — "contents" would draw the children of a hidden node.
+        // Total like the rest: every pass on these two types assigns it.
+        if (TRANSPARENT_TYPES.has(nodeType) && out.display !== "none") {
+            out.display = "contents";
+        }
         return out;
     }
 
@@ -7819,11 +7852,13 @@ const GrMob = (() => {
             // stay isomorphic to the node tree. Dropping the element for a
             // Fragment would send every patch beneath it to the wrong node.
             //
-            // The cost is real and known: inside a flex parent this div
-            // becomes the single flex item and swallows the gap and alignment
-            // meant for the children. Fixing it means teaching the addressing
-            // scheme about nodes that have no element, not deleting these two
-            // rows. See transparentTypes in htmlout/tag.go.
+            // The div used to cost layout: inside a flex parent it became the
+            // single flex item and swallowed the gap, alignment and growth
+            // meant for the children (a Fill screen under core.WithTheme
+            // collapsed to its content). styleFromGrMob now gives both types
+            // `display: contents` (TRANSPARENT_TYPES), so the element exists
+            // for addressing and draws no box. See transparentTypes in
+            // htmlout/tag.go.
             Fragment: "div",
             Theme: "div",
         }[type] || "div";

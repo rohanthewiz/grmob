@@ -151,7 +151,7 @@ func BorderResetTypes() []string
 
 BorderResetTypes returns those node types, sorted so that a test looping over them reports in a stable order. Exported for the reason GenericTags is: the WASM conformance test has to compare set against set.
 
-<small>[htmlout/tag.go:462](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L462)</small>
+<small>[htmlout/tag.go:468](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L468)</small>
 
 ### func CanvasClip
 
@@ -282,7 +282,7 @@ CarriesOwnRole reports whether a node type states its own ARIA role, with no cor
 
 Exported because the TabView wiring has to know: the role attribute has one slot per element, and a page whose type already filled it must not be given role="tabpanel" on top.
 
-<small>[htmlout/tag.go:298](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L298)</small>
+<small>[htmlout/tag.go:304](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L304)</small>
 
 ### func ChartDataOf
 
@@ -395,7 +395,7 @@ func FieldFloorTypes() []string
 
 FieldFloorTypes returns those node types, sorted, for the WASM conformance test to compare set against set (BorderResetTypes' reason).
 
-<small>[htmlout/tag.go:444](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L444)</small>
+<small>[htmlout/tag.go:450](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L450)</small>
 
 ### func GenericTags
 
@@ -467,7 +467,7 @@ func IsTransparent(nodeType string) bool
 
 IsTransparent reports whether a node type renders its children directly into the parent, with no element of its own.
 
-<small>[htmlout/tag.go:249](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L249)</small>
+<small>[htmlout/tag.go:255](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L255)</small>
 
 ### func ModalChassis
 
@@ -529,7 +529,7 @@ OwnRoleFor returns the ARIA role a node type states for itself, or "" for a type
 
 Exported for the reason Tags is: the WASM runtime has the same two node types to answer for and cannot ask Go at runtime, so wasm/verify holds its copy against this one rather than against a list written twice.
 
-<small>[htmlout/tag.go:309](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L309)</small>
+<small>[htmlout/tag.go:315](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L315)</small>
 
 ### func PathData
 
@@ -549,7 +549,7 @@ func ResetsUABorder(nodeType string) bool
 
 ResetsUABorder reports whether a node type needs an explicit "no border" written for it when the style declares none. See borderResetTypes.
 
-<small>[htmlout/tag.go:455](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L455)</small>
+<small>[htmlout/tag.go:461](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L461)</small>
 
 ### func StackAxes
 
@@ -663,7 +663,7 @@ func TransparentTypes() []string
 
 TransparentTypes returns the transparent node types, sorted so that a test looping over them reports in a stable order. Exported for the same reason Tags is: the WASM conformance test has to know which types are excluded from the tag comparison, and a hand-written list there would be exactly the untracked second copy this file exists to remove.
 
-<small>[htmlout/tag.go:258](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L258)</small>
+<small>[htmlout/tag.go:264](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L264)</small>
 
 ### func ZeroesFieldFloor
 
@@ -673,5 +673,5 @@ func ZeroesFieldFloor(nodeType string) bool
 
 ZeroesFieldFloor reports whether a node type gets min-width:0 when its style states no MinWidth. See fieldFloorTypes.
 
-<small>[htmlout/tag.go:438](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L438)</small>
+<small>[htmlout/tag.go:444](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L444)</small>
 

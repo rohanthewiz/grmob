@@ -29,7 +29,11 @@
   /* #app is the mount point grmob-runtime.js fills. The root view is
      stretched to the screen so FlexGrow has space to grow into. */
   #app { position: absolute; inset: 0; display: flex; flex-direction: column; }
-  #app > * { flex: 1; min-height: 0; }
+  /* A Fragment or Theme root (core.WithTheme around the app) is drawn with
+     display: contents and has no box to stretch, so the rule reaches through
+     it to the root's own children, which are the boxes #app lays out. */
+  #app > *,
+  #app > :is([data-node-type="Fragment"], [data-node-type="Theme"]) > * { flex: 1; min-height: 0; }
   /* Inside a fixed-height screen a Scroll node must be the scrolling viewport,
      as it is on the natives; the runtime leaves overflow to the host page. */
   #app [data-node-type="Scroll"] {

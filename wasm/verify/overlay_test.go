@@ -194,3 +194,40 @@ func TestRuntimeStampsOverlayLayersOnBothPaths(t *testing.T) {
 		}
 	}
 }
+
+// The set of grouping node types the runtime draws with no box.
+//
+// Go is the authority (transparentTypes in htmlout/tag.go): htmlout emits no
+// element for these, and both natives inline their children. The runtime has
+// to keep an element for each (positional patch addressing), so it marks them
+// `display: contents` instead, and this set is what it keys that on. A type
+// missing here would box its children on the live web page alone, which is
+// how a comps.Screen{Fill: true} under core.WithTheme collapsed to its content
+// height in the browser while it filled the window everywhere else.
+//
+// Here beside the overlay test because both read a flat Set literal the same
+// way.
+func TestRuntimeTransparentTypesMatchGo(t *testing.T) {
+	src := runtimeSource(t)
+
+	m := regexp.MustCompile(`const TRANSPARENT_TYPES = new Set\(\[([^\]]*)\]\);`).FindStringSubmatch(src)
+	if m == nil {
+		t.Fatalf("grmob-runtime.js: no `const TRANSPARENT_TYPES = new Set([...])` found — if it was " +
+			"renamed or spread over several lines, update this test rather than deleting it")
+	}
+	var got []string
+	for _, q := range regexp.MustCompile(`"([^"]*)"`).FindAllStringSubmatch(m[1], -1) {
+		got = append(got, q[1])
+	}
+	sort.Strings(got)
+
+	want := htmlout.TransparentTypes()
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("TRANSPARENT_TYPES is %v; htmlout.TransparentTypes() is %v — a grouping node draws "+
+			"a box on the live page and none in the export", got, want)
+	}
+	if !strings.Contains(src, `if (TRANSPARENT_TYPES.has(nodeType) && out.display !== "none") {`) {
+		t.Error("grmob-runtime.js: styleFromGrMob no longer reads TRANSPARENT_TYPES — the set is " +
+			"stated but nothing gives those nodes display: contents")
+	}
+}

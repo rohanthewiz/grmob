@@ -52,7 +52,11 @@
     transform: translateZ(0);
   }
   #app { position: absolute; inset: 0; display: flex; flex-direction: column; }
-  #app > * { flex: 1; min-height: 0; }
+  /* A Fragment or Theme root (core.WithTheme around the app) is drawn with
+     display: contents and has no box to stretch, so the rule reaches through
+     it to the root's own children, which are the boxes #app lays out. */
+  #app > *,
+  #app > :is([data-node-type="Fragment"], [data-node-type="Theme"]) > * { flex: 1; min-height: 0; }
   /* The rule that turns a Scroll node into the viewport the natives make
      of it. Without it the document scrolls instead, and a clipped capture
      of a fixed-size bezel would show the top of the page whatever the

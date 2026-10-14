@@ -68,6 +68,15 @@ it with two narrower rules. A horizontal Scroll keeps its content height
 `flex-direction: row` the runtime writes. A hand-rolled host that constrains
 the app's height needs all three; `grmob new` scaffolds them.
 
+The root view is stretched to the screen by `#app > * { flex: 1; min-height: 0 }`.
+A `Fragment` or a `Theme` node (`core.WithTheme` around the whole app) is drawn
+with `display: contents`, as htmlout and both natives treat it, so it has no box
+for that rule to stretch. The page's rule therefore also matches the children of
+a `Fragment` or `Theme` root
+(`#app > :is([data-node-type="Fragment"], [data-node-type="Theme"]) > *`).
+A host page from before that change shows a `WithTheme`-rooted app at its
+content height. `grmob web -refresh` re-renders the page with the wider rule.
+
 The same page shows how an app and its host can share vocabulary the
 framework does not define: the tutorial's deep links are a `"route"` host
 event in (`GrMobWASM.HostEvent("route", {"lesson": "2.3"})`, sent at boot

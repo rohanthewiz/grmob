@@ -237,6 +237,12 @@ func GenericTags() []string {
 // snapshot with no patch stream to keep addressable, so flattening costs it
 // nothing.
 //
+// The disagreement is in the DOM's shape only, not in layout: the runtime
+// gives the div `display: contents` (TRANSPARENT_TYPES in grmob-runtime.js),
+// so it generates no box and its children are laid out by the grandparent,
+// as they are here. TestRuntimeTransparentTypesMatchGo holds that set to this
+// map.
+//
 // The divergence is named here, and pinned by TestRuntimeTagsMatchGo, so that
 // it reads as a decision with a reason rather than as drift nobody caught.
 var transparentTypes = map[string]bool{
