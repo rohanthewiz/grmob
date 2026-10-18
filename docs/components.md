@@ -3160,6 +3160,91 @@ comps.Lightbox{
 - No `OnDismiss` raises `ConcernLightboxInescapable`: the close button and the
   scrim would close nothing.
 
+## Gallery
+
+An immersive picture viewer. It shows one large card at a time, and each card
+has a title, a subtitle and a description over its picture. A card can flip
+over to a back face of details, zoom, share itself and offer a "Learn more"
+action. The look, the motion and every label are fields, and each field's zero
+value is a working default.
+
+```go
+comps.Gallery{Items: []comps.GalleryItem{{
+    Src: photo.URL, Alt: photo.Description,
+    Title: "Geirangerfjord", Subtitle: "Norway", Description: blurb,
+    Details:   []comps.KeyValue{{Key: "Length", Value: "15 km"}},
+    ActionURL: wikiURL,
+    ShareURL:  permalink,
+}}}
+```
+
+Every setting at once:
+
+```go
+view := core.NewState(ctx, comps.GalleryState{})
+comps.Gallery{
+    Items:      items,
+    Controlled: true, State: view.Get(), OnChange: view.Set,
+    Look:       comps.GalleryLookCinema,     // or Minimal, Polaroid; zero follows the theme
+    Motion: comps.GalleryMotion{
+        Transition: comps.GalleryTransitionDeck, // slide (zero), fade, deck, none
+        Flip:       comps.GalleryFlipRise,       // fade (zero), rise, none
+        DurationMs: 450, Easing: core.EaseOut,  // 0 = default, negative = snap
+    },
+    Indicator: comps.GalleryIndicatorThumbnails, // auto (zero), dots, counter, none
+    Zoom:      comps.GalleryZoomFullscreen,      // expand in place (zero), off
+    Autoplay:  6 * time.Second,
+    Wrap:      true,
+    OnAction:  func(it comps.GalleryItem, i int) { core.Push(ctx, detail(it)) },
+    OnShare:   func(it comps.GalleryItem, i int) { shareSheet(it.ShareURL) },
+}
+```
+
+**The gallery owns its state by default, and the caller can take it over.**
+`GalleryState` holds the index and the flipped, zoomed and paused flags. By
+default the gallery keeps it, seeded from `State` on the first pass. With
+`Controlled`, `State` is read on every pass and every change is a request to
+`OnChange`. `OnChange` is called in both modes. Changes are clamped and
+deduplicated, and a move to another card shows its front. The gallery takes
+two hook slots (its state and the autoplay timer), so it must be rendered
+unconditionally.
+
+**Moving between cards is a style patch.** Every card stays in the tree as a
+`ZStack` layer and is posed with `core.Translate`, `core.Opacity` and
+`core.Rotate` under a `core.Transition`. Each target animates the change on its
+own frame clock. Reduced motion makes every animation snap.
+
+**Touch, mouse and keyboard.** Invisible tap zones over the card step back
+(leading quarter), flip (middle) and step forward (trailing quarter). A long
+press in the middle zooms. The buttons below the stage do the same things for
+readers and keyboards, so the zones are hidden from assistive technology.
+Escape and Android back turn a flipped card back or leave an in-place zoom.
+
+**Looks.** `GalleryLookTheme` and `GalleryLookMinimal` follow the app theme.
+`GalleryLookCinema` (black, full-bleed) and `GalleryLookPolaroid` (a white
+print with a mat) look the same in every theme. They render the card under
+`core.DarkTheme` and `core.DefaultTheme` respectively, so everything inside
+the card stays legible, including a caller's `Back` view. `CardTheme`
+overrides the theme for any look.
+
+**Learn more and Share.** The action button opens `ActionURL`, or calls
+`OnAction` when it is set. The share button calls `OnShare`, or puts the share
+text (`ShareText` or the title, then `ShareURL`) on the clipboard with a toast.
+
+Other notes:
+
+- Only the current card is in the accessibility tree. Each card is a group
+  named like "3 of 12, Title", and its title is a heading (level 2 unless
+  `HeadingLevel` says otherwise).
+- Details states its expansion, and the in-place Zoom and Autoplay state
+  whether they are on. Autoplay always has a pause control (WCAG 2.2.2) and
+  pauses while a card is flipped or zoomed.
+- What core does not have yet: a swipe gesture, a 3-D flip (`Rotate` turns
+  only about the axis out of the screen), a scale transform or pinch, and a
+  system share sheet. The gallery uses the closest portable stand-in for each
+  and says so in its doc.
+- Controlled with no `OnChange` raises `ConcernGalleryFrozen`.
+
 ## ActionSheet
 
 A short list of actions on the bottom edge of the screen, such as Share, Copy

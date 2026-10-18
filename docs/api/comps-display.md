@@ -4,13 +4,13 @@
 import "github.com/rohanthewiz/grmob/comps"
 ```
 
-Avatars and avatar stacks, stat tiles, the compass, clocks, countdowns and alarms, an audio player, message bubbles and threads, typing indicators, reaction bars, polls, threaded discussions, expandable text, Bible verses, QR codes, map panels and static maps.
+Avatars and avatar stacks, stat tiles, the compass, clocks, countdowns and alarms, an audio player, an immersive picture gallery, message bubbles and threads, typing indicators, reaction bars, polls, threaded discussions, expandable text, Bible verses, QR codes, map panels and static maps.
 
-One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/avatar.go`, `comps/avatar_stack.go`, `comps/stat_tile.go`, `comps/compass.go`, `comps/clock.go`, `comps/timers.go`, `comps/alarm.go`, `comps/audio_player.go`, `comps/message_bubble.go`, `comps/message_thread.go`, `comps/typing_indicator.go`, `comps/reaction_bar.go`, `comps/poll.go`, `comps/expandable_text.go`, `comps/qr_code.go`, `comps/map_panel.go`, `comps/static_map.go`, `comps/bible_verse.go`, `comps/discussion.go`.
+One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/avatar.go`, `comps/avatar_stack.go`, `comps/stat_tile.go`, `comps/compass.go`, `comps/clock.go`, `comps/timers.go`, `comps/alarm.go`, `comps/audio_player.go`, `comps/gallery.go`, `comps/message_bubble.go`, `comps/message_thread.go`, `comps/typing_indicator.go`, `comps/reaction_bar.go`, `comps/poll.go`, `comps/expandable_text.go`, `comps/qr_code.go`, `comps/map_panel.go`, `comps/static_map.go`, `comps/bible_verse.go`, `comps/discussion.go`.
 
 ## Index
 
-- [Constants](#constants) — `ConcernAudioPlayerNoTrack`, `ConcernBibleVerseEmpty`, `ConcernCountdownUntilUnset`, `ConcernDiscussionReplyTargetMissing`, `ConcernNoMapProvider`, `ConcernPollInert`, `ConcernQRDataTooLong`, `ConcernReactionBarInert`, `ConcernStopwatchSinceUnset`, `DefaultMapHeight`, `DefaultMapPanelHeight`, `DefaultMapScale`, and 10 more
+- [Constants](#constants) — `ConcernAudioPlayerNoTrack`, `ConcernBibleVerseEmpty`, `ConcernCountdownUntilUnset`, `ConcernDiscussionReplyTargetMissing`, `ConcernGalleryFrozen`, `ConcernNoMapProvider`, `ConcernPollInert`, `ConcernQRDataTooLong`, `ConcernReactionBarInert`, `ConcernStopwatchSinceUnset`, `DefaultMapHeight`, `DefaultMapPanelHeight`, and 11 more
 - [`func FitRegion`](#func-fitregion)
 - [`func GoogleMapsHandoff`](#func-googlemapshandoff)
 - [`func OSMStaticMap`](#func-osmstaticmap)
@@ -43,6 +43,17 @@ One of 7 topic pages of [package comps](comps.md), which has the package overvie
 - [`type ECLevel`](#type-eclevel)
 - [`type ExpandableText`](#type-expandabletext)
     - [`func (ExpandableText) Render`](#func-expandabletext-render)
+- [`type Gallery`](#type-gallery)
+    - [`func (Gallery) Render`](#func-gallery-render)
+- [`type GalleryFlip`](#type-galleryflip)
+- [`type GalleryIndicator`](#type-galleryindicator)
+- [`type GalleryItem`](#type-galleryitem)
+- [`type GalleryLabels`](#type-gallerylabels)
+- [`type GalleryLook`](#type-gallerylook)
+- [`type GalleryMotion`](#type-gallerymotion)
+- [`type GalleryState`](#type-gallerystate)
+- [`type GalleryTransition`](#type-gallerytransition)
+- [`type GalleryZoom`](#type-galleryzoom)
 - [`type MapHandoff`](#type-maphandoff)
 - [`type MapPanel`](#type-mappanel)
     - [`func (MapPanel) Render`](#func-mappanel-render)
@@ -200,6 +211,14 @@ const ConcernDiscussionReplyTargetMissing = "discussion-reply-target-missing"
 ```
 
 <small>[comps/discussion.go:13](https://github.com/rohanthewiz/grmob/blob/master/comps/discussion.go#L13)</small>
+
+ConcernGalleryFrozen is raised, in debug builds only, when a Gallery is Controlled but has no OnChange. Every control then asks for a change that nobody makes, so the arrows, the dots, the flip and the zoom all look live and do nothing.
+
+```go
+const ConcernGalleryFrozen = "gallery-frozen"
+```
+
+<small>[comps/gallery.go:15](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L15)</small>
 
 ConcernNoMapProvider: a StaticMap rendered with no Provider, which draws an empty frame. It is a development-time finding rather than a panic because the failure is survivable — a screen missing its map is still a screen — and because the fix is configuration, which is exactly the class of mistake that is invisible in a running app and obvious in a concern list.
 
@@ -1387,6 +1406,501 @@ func (e ExpandableText) Render(ctx *core.Context) *core.Node
 Render draws the text and, when it is long enough, the toggle. It takes one hook, the open state.
 
 <small>[comps/expandable_text.go:82](https://github.com/rohanthewiz/grmob/blob/master/comps/expandable_text.go#L82)</small>
+
+### type Gallery
+
+```go
+type Gallery struct {
+	// Items are the cards, in order.
+	Items []GalleryItem
+
+	// State is the gallery's state. Owned (Controlled false), it is read on
+	// the first pass only, to open on a given card or flipped; controlled,
+	// it is what is drawn on every pass.
+	State GalleryState
+
+	// Controlled makes State the caller's: every change goes through
+	// OnChange, and nothing changes until the caller passes a new State.
+	Controlled bool
+
+	// OnChange receives every change, in both modes. Controlled with a nil
+	// OnChange reports ConcernGalleryFrozen.
+	OnChange func(GalleryState)
+
+	// Look selects the visual style; see "Looks". The zero value follows
+	// the app's theme.
+	Look GalleryLook
+
+	// CardTheme replaces the theme the card is rendered under, for any
+	// Look. Nil uses the Look's own: the app's theme for theme and minimal,
+	// core.DarkTheme for cinema, core.DefaultTheme for polaroid.
+	CardTheme *core.Theme
+
+	// Motion configures every animation; see "Motion is a field".
+	Motion GalleryMotion
+
+	// Indicator selects what sits between the arrows. The zero value is
+	// dots for up to ten cards and a "3 / 12" counter beyond that.
+	Indicator GalleryIndicator
+
+	// Zoom selects what zooming does; see "Zoom". The zero value grows the
+	// card in place.
+	Zoom GalleryZoom
+
+	// Wrap lets Previous on the first card go to the last and Next on the
+	// last go to the first. Without it the arrows stop at the ends (and are
+	// disabled there). Autoplay always wraps.
+	Wrap bool
+
+	// Autoplay advances to the next card after each card has been shown
+	// this long. Zero leaves the cards still. Moving by hand restarts the
+	// delay. It pauses while a card is flipped or zoomed, and a pause button
+	// is drawn whenever it is set.
+	Autoplay time.Duration
+
+	// Height is the stage's height in px; 0 means 360.
+	Height float64
+
+	// ZoomedHeight is the stage's height while zoomed in place, or the
+	// Lightbox picture's height for GalleryZoomFullscreen. 0 means one and a
+	// half times Height in place, and the Lightbox's own default fullscreen.
+	ZoomedHeight float64
+
+	// DescriptionLines caps the description on the front of the card; the
+	// back always shows all of it. 0 means 2; negative means no cap.
+	DescriptionLines int
+
+	// HeadingLevel is the card title's heading level. 0 means 2, a section
+	// of a screen, as a Card title is.
+	HeadingLevel int
+
+	// OnAction is called by the action button with the current item. Nil
+	// opens the item's ActionURL. See "Learn more and Share".
+	OnAction func(item GalleryItem, index int)
+
+	// OnShare is called by the share button with the current item. Nil puts
+	// the share text on the clipboard. See "Learn more and Share".
+	OnShare func(item GalleryItem, index int)
+
+	// HideControls removes the row of tool buttons and the action button
+	// under the stage, for a purely visual gallery. The arrows, the
+	// indicator and the tap zones stay.
+	HideControls bool
+
+	// Labels are the spoken and visible words; empty fields are English
+	// defaults.
+	Labels GalleryLabels
+
+	// Style is applied to the root column after its defaults.
+	Style []core.StyleProp
+
+	// StageStyle is applied to the stage after its defaults, so it can
+	// round, colour or border the stage.
+	StageStyle []core.StyleProp
+
+	// CardStyle is applied to every card's frame after the Look's props.
+	CardStyle []core.StyleProp
+}
+```
+
+Gallery is an immersive picture viewer: one large card at a time, each with a title, a subtitle and a description over its picture, a back face of details it flips over to, a zoom, a share and a "Learn more" action. The visual style, the motion and every label are fields, and each field's zero value is a reasonable default, so the shortest call is a working gallery:
+
+	comps.Gallery{Items: []comps.GalleryItem{
+	    {Src: "https://…/fjord.jpg", Alt: "A fjord at dawn",
+	        Title: "Geirangerfjord", Subtitle: "Norway",
+	        Description: "A fifteen-kilometre arm of the Storfjord…",
+	        Details:   []comps.KeyValue{{Key: "Length", Value: "15 km"}},
+	        ActionURL: "https://en.wikipedia.org/wiki/Geirangerfjord",
+	        ShareURL:  "https://example.com/p/fjord"},
+	}}
+
+Every setting at once, with the state owned by the caller:
+
+	view := core.NewState(ctx, comps.GalleryState{})
+	comps.Gallery{
+	    Items:      items,
+	    Controlled: true, State: view.Get(), OnChange: view.Set,
+	    Look:       comps.GalleryLookCinema,
+	    Motion:     comps.GalleryMotion{Transition: comps.GalleryTransitionDeck,
+	        Flip: comps.GalleryFlipRise, DurationMs: 450, Easing: core.EaseOut},
+	    Indicator:  comps.GalleryIndicatorThumbnails,
+	    Zoom:       comps.GalleryZoomFullscreen,
+	    Autoplay:   6 * time.Second,
+	    Wrap:       true,
+	    OnAction:   func(it comps.GalleryItem, i int) { core.Push(ctx, detail(it)) },
+	    OnShare:    func(it comps.GalleryItem, i int) { myShareSheet(it.ShareURL) },
+	}
+
+The tree:
+
+	┌ Column  role=group "Gallery", then Style ──────────────────────────┐
+	│ ┌ ZStack stage  Height (→ ZoomedHeight), clipped, then StageStyle ┐ │
+	│ │ ┌ Keyed card layer × n, last item first ───────────────────────┐ │ │
+	│ │ │ Box 100%×100%, inset; Translate/Opacity/Rotate per Motion    │ │ │
+	│ │ │ └ Theme(card theme) ─ ZStack frame, then CardStyle           │ │ │
+	│ │ │     ├ front ZStack: picture (Fill) + caption band at bottom  │ │ │
+	│ │ │     └ back Scroll: title, description, Details | Back        │ │ │
+	│ │ └──────────────────────────────────────────────────────────────┘ │ │
+	│ │ ┌ Row tap zones (hidden from readers; gone while flipped) ─────┐ │ │
+	│ │ │  ‹ previous  │   tap: flip · hold: zoom   │   next ›         │ │ │
+	│ │ └──────────────────────────────────────────────────────────────┘ │ │
+	│ └─────────────────────────────────────────────────────────────────┘ │
+	│ ┌ Row ──────────────────────────────────────────────────────────┐   │
+	│ │ [‹]          ● ━━ ● ●   (dots | 3 / 12 | thumbnails)      [›] │   │
+	│ └───────────────────────────────────────────────────────────────┘   │
+	│ ┌ Row (wraps) ──────────────────────────────────────────────────┐   │
+	│ │ [⟲ Details] [⤢ Zoom] [↗ Share] [❚❚]            [Learn more]  │   │
+	│ └───────────────────────────────────────────────────────────────┘   │
+	│  Lightbox (Zoom == GalleryZoomFullscreen only)                      │
+	└─────────────────────────────────────────────────────────────────────┘
+
+#### Every card is in the tree, and moving between them is a style patch
+
+Each card is a layer of one ZStack, rendered on every pass and moved into place with core.Translate, core.Opacity and core.Rotate under a core.Transition. Changing the current card therefore changes only styles: each target sees an old style and a new one on a node that is displayed both before and after, and animates between them on its own frame clock (CSS transitions, Compose, SwiftUI). Nothing is stepped from Go and nothing crosses the bridge per frame, which is Drawer's "It slides" argument applied to n panels instead of one.
+
+The alternative was to render only the current card (and maybe its neighbours). A card that enters the tree has no "before" style to animate from, so it would appear rather than arrive, and a jump from card 1 to card 9 through the thumbnails would need a different path from a step. The cost of keeping every card is composition: a gallery of a few dozen pictures is cheap, a few hundred should be paged by the caller.
+
+The layers are emitted last item first, so that earlier cards draw over later ones. Slide and fade do not care about the order, but the deck does: the current card has to sit on top of the cards fanned out behind it, and core.ZIndex is honoured on the web only. A fixed order also means the layers never move between passes, which would cost the diff a reorder and the targets their transitions.
+
+#### Motion is a field, and "none" is one of its values
+
+Motion.Transition picks how cards change:
+
+	slide (zero)  the next card slides in from the trailing edge as the
+	              current one leaves by the leading edge; both fade so a jump
+	              of several cards does not drag the ones between across
+	fade          a crossfade in place
+	deck          the following cards are fanned out behind the current one
+	              at small alternating angles; the current card flies off to
+	              the leading edge, and Previous brings it back on top
+	none          cards swap with no motion
+
+Motion.Flip picks how the back face appears: a crossfade (zero), a rise from the bottom edge, or none. Every duration is a field whose zero is a default, whose negative snaps, and which shares one Easing. Under the platform's reduce-motion setting every one of them snaps whatever it says, which is core.Transition's rule and is not overridable here.
+
+A flip is not a 3-D turn. core.Rotate turns a node about the axis out of the screen, and core has no rotation about the vertical axis, no perspective and no scale, so "card turns over" cannot be drawn the same way on every target. That is a gap in core's paint transforms rather than something this widget can paper over with platform code.
+
+#### Touch, mouse and keyboard
+
+The stage carries three invisible tap zones over the current card's front: the leading quarter steps back, the trailing quarter steps forward, and the middle flips the card when it has a back, the way story viewers work. A long press in the middle zooms. The zones are a pointer convenience over the buttons below, which do the same things, so the zones are hidden from assistive technology and every action has a named control.
+
+A swipe is not among them. core has no drag or swipe gesture; the closest primitive is a horizontal core.Scroll, and a scroll reports no position, so nothing could say which card a swipe stopped on. A swipe is a core gesture primitive waiting to be added, not a widget problem.
+
+While the card is flipped or zoomed in place, Escape (any host with a keyboard) and Android's system back put it back, the way a Drawer claims both while open. Neither is claimed otherwise.
+
+#### State: owned by default, controlled on request
+
+GalleryState is the current index and the flipped, zoomed and paused flags. By default the gallery keeps it itself, seeded from State on the first pass, so the shortest call above needs no state of its own. With Controlled set, State is read on every pass and every change is a request to OnChange, the shape of Wizard and SegmentedControl: that is what an app that deep-links to a card, or remembers the last one viewed, uses. OnChange is called in both modes, so an owned gallery can still be observed.
+
+The two modes share one implementation: the hook is taken either way, and only which copy is read differs. The slot count is therefore the same in both modes, and a gallery can switch modes without shifting its caller's hooks.
+
+Changes are clamped (an index outside Items lands on the nearest card), deduplicated (OnChange never hears a no-op), and moving to another card always shows its front.
+
+#### Hooks
+
+It takes two hook slots, the state and the autoplay timer (hooks.UseTimeoutWhile), both before any branch. So a Gallery must be rendered unconditionally on every pass: never inside core.If, a conditional or a For whose length varies. Back and any other View in Items is rendered only on some passes (and inside a card) and must be hook-free.
+
+#### Looks
+
+Look picks one of four styles. Two follow the app's theme, and two are fixed on purpose:
+
+	theme (zero)  a card in the theme's Card fill, radius and shadow, with
+	              the caption on an opaque strip in the same fill
+	minimal       no frame or shadow: the picture with rounded corners and
+	              the caption on the page's own background
+	cinema        black stage, full-bleed picture, caption on a dark
+	              translucent band; the card renders under core.DarkTheme
+	polaroid      a white print with a mat and a soft shadow, inset in the
+	              stage; the card renders under core.DefaultTheme
+
+Cinema is dark in a light app and polaroid is light in a dark app: that is what the look means, and it is Lightbox's "dark on every target, in every theme" decision for cinema. To keep everything inside the card legible, including a Details list and a caller's Back view, the card is rendered under a whole bundled theme (core.WithTheme) rather than given a few literal ink colours. CardTheme replaces that theme for any look. The controls below the stage always follow the app's theme.
+
+#### Zoom
+
+Zoom picks what zooming the current card does. The zero value grows it in place: the stage animates from Height to ZoomedHeight, and the card drops its inset, corner radius and shadow, so the picture fills the stage edge to edge. GalleryZoomFullscreen opens the card's picture in a comps.Lightbox instead, letterboxed and uncropped, and GalleryZoomOff removes zooming. core has no scale transform or pinch gesture, so a zoom is a bigger box, not a magnification inside one box.
+
+#### Learn more and Share
+
+The action button is drawn for an item with an ActionURL, or for every item when OnAction is set. OnAction receives the item; with it nil, the ActionURL is opened with core.OpenURL.
+
+The share button is drawn for an item with a ShareURL or ShareText, or for every item when OnShare is set. With OnShare nil, the share text (ShareText or the Title, then the ShareURL) is put on the clipboard and confirmed by a toast, CopyButton's behaviour. core has no system share sheet, so an app that wants one passes OnShare and calls its own.
+
+#### Accessibility
+
+The root is a labelled group. Each card is a group named "3 of 12, Title" (Labels.Position formats the first part), and only the current card is in the accessibility tree: the others are AccessibilityHidden and Inert, as a shut Drawer is. The card title is a heading, at level 2 unless HeadingLevel says otherwise. The picture is named by its Alt and hidden without one, Avatar's rule.
+
+Every glyph button has a spoken name. Details states its expansion (core.AccessibilityExpanded on the control that toggles it), the in-place Zoom and Autoplay state that they are on with core.AccessibilitySelected, and the fullscreen Zoom states that it opens a dialog. Each dot or thumbnail is a button named for its card, and the current one carries core.CurrentTrue. Autoplay always has a pause control, as WCAG 2.2.2 asks of content that moves by itself, and pauses while a card is flipped or zoomed. The "3 / 12" counter is a status region only when nothing is moving by itself; with autoplay running, it would speak on every tick.
+
+#### Theme roles read
+
+	Controls     as comps.Button; ghost for the tools, filled for the action
+	Dots         Colors.Primary (current), Colors.Border (the rest)
+	Counter      Typography.Caption, Colors.TextSecondary
+	Thumbnails   Colors.Primary ring on the current one
+	Card         per Look: Components.Card Background/BorderRadius/Shadow,
+	             Colors.Surface, Colors.Background (in the card's theme)
+	Caption      Typography.Subtitle bold, Caption and Body; TextPrimary,
+	             TextSecondary (in the card's theme)
+	Spacing      XS, SM and MD for gaps and insets
+
+<small>[comps/gallery.go:242](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L242)</small>
+
+#### func (Gallery) Render
+
+```go
+func (g Gallery) Render(ctx *core.Context) *core.Node
+```
+
+Render builds the tree drawn in the type doc.
+
+<small>[comps/gallery.go:540](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L540)</small>
+
+### type GalleryFlip
+
+```go
+type GalleryFlip string
+```
+
+GalleryFlip is how a Gallery card shows its back.
+
+<small>[comps/gallery.go:423](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L423)</small>
+
+```go
+const (
+	// GalleryFlipFade crossfades the two faces. It is the zero value.
+	GalleryFlipFade GalleryFlip = ""
+	// GalleryFlipRise slides the back up over the front from the bottom
+	// edge.
+	GalleryFlipRise GalleryFlip = "rise"
+	// GalleryFlipNone swaps the faces with no motion.
+	GalleryFlipNone GalleryFlip = "none"
+)
+```
+
+### type GalleryIndicator
+
+```go
+type GalleryIndicator string
+```
+
+GalleryIndicator is what a Gallery draws between its arrows.
+
+<small>[comps/gallery.go:448](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L448)</small>
+
+```go
+const (
+	// GalleryIndicatorAuto is dots for up to ten cards and a counter
+	// beyond. It is the zero value.
+	GalleryIndicatorAuto GalleryIndicator = ""
+	// GalleryIndicatorDots is a tappable dot per card.
+	GalleryIndicatorDots GalleryIndicator = "dots"
+	// GalleryIndicatorCounter is "3 / 12".
+	GalleryIndicatorCounter GalleryIndicator = "counter"
+	// GalleryIndicatorThumbnails is a scrolling strip of tappable
+	// thumbnails.
+	GalleryIndicatorThumbnails GalleryIndicator = "thumbnails"
+	// GalleryIndicatorNone draws nothing between the arrows.
+	GalleryIndicatorNone GalleryIndicator = "none"
+)
+```
+
+### type GalleryItem
+
+```go
+type GalleryItem struct {
+	// Key identifies the card across passes. Empty uses its index, which is
+	// right for a fixed list; set it when items are inserted or removed, so
+	// a card keeps its node and its animation.
+	Key string
+
+	// Src is the picture's URL, drawn to fill the card (cropped, never
+	// distorted).
+	Src string
+
+	// Alt describes the picture. Empty hides the picture from assistive
+	// technology, and the title and description are what is read.
+	Alt string
+
+	// Title, Subtitle and Description are the caption on the front of the
+	// card. Any of them may be empty; with all three empty, no caption
+	// strip is drawn and the picture fills the card.
+	Title       string
+	Subtitle    string
+	Description string
+
+	// Details are label/value facts on the back of the card, drawn as a
+	// comps.KeyValueList. A card with Details or a Back can be flipped; one
+	// with neither cannot, and draws no Details button.
+	Details []KeyValue
+
+	// Back replaces Details as the back of the card, under its title and
+	// description. It is rendered only on some passes, so it must be
+	// hook-free.
+	Back core.View
+
+	// ActionLabel replaces Labels.Action for this card only.
+	ActionLabel string
+
+	// ActionURL is opened by the action button when Gallery.OnAction is
+	// nil. Empty, with OnAction nil, draws no action button for this card.
+	ActionURL string
+
+	// ShareURL and ShareText are what is shared. With OnShare nil, the
+	// clipboard gets ShareText (or Title), then ShareURL.
+	ShareURL  string
+	ShareText string
+}
+```
+
+GalleryItem is one card of a Gallery.
+
+<small>[comps/gallery.go:335](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L335)</small>
+
+### type GalleryLabels
+
+```go
+type GalleryLabels struct {
+	// Gallery names the root group; "Gallery".
+	Gallery string
+	// Previous and Next name the arrows; "Previous", "Next".
+	Previous, Next string
+	// Details is the flip button's caption and name; "Details".
+	Details string
+	// Front names the button on a card's back that turns it back over;
+	// "Show picture".
+	Front string
+	// Zoom is the zoom button's caption and name; "Zoom".
+	Zoom string
+	// Share is the share button's caption and name; "Share".
+	Share string
+	// Shared is the toast after a clipboard share; "Copied to clipboard".
+	Shared string
+	// Autoplay names the pause/play toggle; "Autoplay".
+	Autoplay string
+	// Action is the action button's caption; "Learn more".
+	Action string
+	// Empty is drawn on the stage when there are no Items; "Nothing to
+	// show".
+	Empty string
+	// Position formats a card's place: "3 of 12" by default. index is
+	// 0-based.
+	Position func(index, count int) string
+}
+```
+
+GalleryLabels are a Gallery's words. Every empty field takes the English default noted, so a localised app sets the ones it translates.
+
+<small>[comps/gallery.go:484](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L484)</small>
+
+### type GalleryLook
+
+```go
+type GalleryLook string
+```
+
+GalleryLook is a Gallery's visual style; see "Looks" on Gallery.
+
+<small>[comps/gallery.go:393](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L393)</small>
+
+```go
+const (
+	// GalleryLookTheme is a themed card. It is the zero value.
+	GalleryLookTheme GalleryLook = ""
+	// GalleryLookMinimal is the picture alone, rounded, with no frame.
+	GalleryLookMinimal GalleryLook = "minimal"
+	// GalleryLookCinema is a full-bleed picture on black in every theme.
+	GalleryLookCinema GalleryLook = "cinema"
+	// GalleryLookPolaroid is a white print with a mat in every theme.
+	GalleryLookPolaroid GalleryLook = "polaroid"
+)
+```
+
+### type GalleryMotion
+
+```go
+type GalleryMotion struct {
+	// Transition is how cards change; the zero value slides.
+	Transition GalleryTransition
+	// Flip is how a card shows its back; the zero value crossfades.
+	Flip GalleryFlip
+	// DurationMs times a change of card; 0 means 320.
+	DurationMs int
+	// FlipDurationMs times a flip; 0 means 260.
+	FlipDurationMs int
+	// ZoomDurationMs times an in-place zoom; 0 means 240.
+	ZoomDurationMs int
+	// Easing is the curve every animation shares; empty is EaseInOut.
+	Easing core.Easing
+}
+```
+
+GalleryMotion configures a Gallery's animations. Every duration is in milliseconds: zero is the default noted, and negative snaps.
+
+<small>[comps/gallery.go:467](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L467)</small>
+
+### type GalleryState
+
+```go
+type GalleryState struct {
+	// Index is the 0-based current card.
+	Index int
+	// Flipped shows the current card's back.
+	Flipped bool
+	// Zoomed zooms the current card; see Gallery.Zoom.
+	Zoomed bool
+	// Paused stops Autoplay.
+	Paused bool
+}
+```
+
+GalleryState is what a Gallery shows. It is comparable, so a caller can test two for equality, and OnChange is never called with an unchanged one.
+
+<small>[comps/gallery.go:381](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L381)</small>
+
+### type GalleryTransition
+
+```go
+type GalleryTransition string
+```
+
+GalleryTransition is how a Gallery moves between cards.
+
+<small>[comps/gallery.go:407](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L407)</small>
+
+```go
+const (
+	// GalleryTransitionSlide slides cards along the inline axis. It is the
+	// zero value.
+	GalleryTransitionSlide GalleryTransition = ""
+	// GalleryTransitionFade crossfades cards in place.
+	GalleryTransitionFade GalleryTransition = "fade"
+	// GalleryTransitionDeck fans the following cards out behind the current
+	// one and flies the current one off when it is left.
+	GalleryTransitionDeck GalleryTransition = "deck"
+	// GalleryTransitionNone swaps cards with no motion.
+	GalleryTransitionNone GalleryTransition = "none"
+)
+```
+
+### type GalleryZoom
+
+```go
+type GalleryZoom string
+```
+
+GalleryZoom is what zooming a Gallery card does; see "Zoom" on Gallery.
+
+<small>[comps/gallery.go:436](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L436)</small>
+
+```go
+const (
+	// GalleryZoomExpand grows the card in place. It is the zero value.
+	GalleryZoomExpand GalleryZoom = ""
+	// GalleryZoomFullscreen opens the picture in a Lightbox.
+	GalleryZoomFullscreen GalleryZoom = "fullscreen"
+	// GalleryZoomOff removes zooming: no button and no long press.
+	GalleryZoomOff GalleryZoom = "off"
+)
+```
 
 ### type MapHandoff
 

@@ -73,6 +73,7 @@ func chapter4() Chapter {
 			lessonStripeCheckout(),
 			lessonBibleVerse(),
 			lessonDiscussion(),
+			lessonGallery(),
 		},
 	}
 }
@@ -6964,6 +6965,152 @@ func lessonDiscussion() Lesson {
 					"Composer is drawn under ReplyingTo's comment (or at the top), so it must be hook-free.",
 					"MaxDepth caps the indent; the nesting level, and the natives' \"reply to\" names, keep counting.",
 					"Deleted comments keep their place and replies; Keys must be stable, like server IDs.",
+				),
+			)
+		},
+	}
+}
+
+// tutorialPhotos are the pictures 4.41's Gallery shows: fixed photographs from
+// a placeholder service, by id, so the demo and its screenshot show the same
+// five pictures every time.
+func tutorialPhotos() []comps.GalleryItem {
+	photo := func(id int) string { return fmt.Sprintf("https://picsum.photos/id/%d/900/600", id) }
+	return []comps.GalleryItem{
+		{Key: "valley", Src: photo(1015), Alt: "A river winding through a green valley under cliffs",
+			Title: "River valley", Subtitle: "Morning, late summer",
+			Description: "A slow river cuts a green floor between two cliff walls. The light comes in low from the east.",
+			Details:     []comps.KeyValue{{Key: "Camera", Value: "35 mm"}, {Key: "Aperture", Value: "f/8"}, {Key: "Shutter", Value: "1/250 s"}},
+			ActionURL:   "https://picsum.photos/id/1015/info",
+			ShareURL:    "https://picsum.photos/id/1015/900/600"},
+		{Key: "peaks", Src: photo(1018), Alt: "Snow-dusted mountains above a forested ridge",
+			Title: "High peaks", Subtitle: "From the ridge trail",
+			Description: "The last ridge before the summit, with the snow line just above the trees.",
+			Details:     []comps.KeyValue{{Key: "Elevation", Value: "2,350 m"}, {Key: "Hike", Value: "6 h"}},
+			ShareURL:    "https://picsum.photos/id/1018/900/600"},
+		{Key: "falls", Src: photo(1039), Alt: "A waterfall pouring into a dark pool",
+			Title: "Falls", Subtitle: "After the rain",
+			Description: "Three days of rain upstream, and the falls at twice their summer width."},
+		{Key: "shore", Src: photo(1036), Alt: "Winter mountains over a frozen shore",
+			Title: "Winter shore", Subtitle: "January",
+			Description: "The lake froze from the edges in; the far shore is a mile of ice.",
+			Back: core.Column(core.Padding(0), core.Gap(4),
+				core.Text("A Back view replaces the Details list with anything hook-free."),
+				comps.Badge{Text: "Back slot"})},
+		{Key: "road", Src: photo(1016), Alt: "A road through red canyon rock",
+			Title: "Canyon road", Subtitle: "Golden hour",
+			ActionURL: "https://picsum.photos/id/1016/info"},
+	}
+}
+
+// 4.41 — comps.Gallery. One gallery, and every knob that changes its look or
+// motion as a control above it, so a reader sees each animation by toggling
+// it rather than reading about it. The gallery owns its state; the lesson
+// only observes it through OnChange, for the readout under the demo.
+//
+// Appended at the end of the chapter for the reason 4.25 was.
+func lessonGallery() Lesson {
+	return Lesson{
+		Title:   "An immersive picture gallery",
+		Summary: "comps.Gallery: cards with titles, details on the back, zoom, share and Learn more, four looks, configurable motion, and tap zones for touch and mouse.",
+		Body: func(ctx *core.Context) core.View {
+			look := core.NewState(ctx, 0)
+			motion := core.NewState(ctx, 0)
+			flip := core.NewState(ctx, 0)
+			indicator := core.NewState(ctx, 0)
+			fullscreen := core.NewState(ctx, false)
+			autoplay := core.NewState(ctx, false)
+			seen := core.NewState(ctx, comps.GalleryState{})
+
+			looks := []comps.GalleryLook{comps.GalleryLookTheme, comps.GalleryLookMinimal, comps.GalleryLookCinema, comps.GalleryLookPolaroid}
+			motions := []comps.GalleryTransition{comps.GalleryTransitionSlide, comps.GalleryTransitionFade, comps.GalleryTransitionDeck, comps.GalleryTransitionNone}
+			flips := []comps.GalleryFlip{comps.GalleryFlipFade, comps.GalleryFlipRise, comps.GalleryFlipNone}
+			indicators := []comps.GalleryIndicator{comps.GalleryIndicatorDots, comps.GalleryIndicatorCounter, comps.GalleryIndicatorThumbnails}
+
+			zoom := comps.GalleryZoomExpand
+			if fullscreen.Get() {
+				zoom = comps.GalleryZoomFullscreen
+			}
+			var every time.Duration
+			if autoplay.Get() {
+				every = 4 * time.Second
+			}
+
+			s := seen.Get()
+			readout := fmt.Sprintf("card %d of 5", s.Index+1)
+			if s.Flipped {
+				readout += ", flipped"
+			}
+			if s.Zoomed {
+				readout += ", zoomed"
+			}
+
+			return core.Column(
+				core.Gap(14),
+				prose("Gallery shows pictures one large card at a time. Each card has a title, a "+
+					"subtitle and a description over its picture, and can turn over to a back "+
+					"face of details. The current card can zoom, share itself, and offer a Learn "+
+					"more action. Every field's zero value is a working default, so the shortest "+
+					"gallery is a list of items."),
+				codeBlock(`comps.Gallery{Items: []comps.GalleryItem{{
+    Src: url, Alt: "A river winding through a valley",
+    Title: "River valley", Subtitle: "Morning, late summer",
+    Description: "A slow river cuts a green floor…",
+    Details:   []comps.KeyValue{{Key: "Camera", Value: "35 mm"}},
+    ActionURL: infoURL,   // draws Learn more
+    ShareURL:  permalink, // draws Share
+}}}`),
+				demoPanel("Tap the left or right edge of the picture to step, the middle to flip, hold to zoom.",
+					caption("Look:"),
+					comps.SegmentedControl{Style: segWrap, Labels: []string{"Theme", "Minimal", "Cinema", "Polaroid"},
+						Selected: look.Get(), OnSelect: look.Set, KeyPrefix: "gal-look-"},
+					caption("Transition:"),
+					comps.SegmentedControl{Style: segWrap, Labels: []string{"Slide", "Fade", "Deck", "None"},
+						Selected: motion.Get(), OnSelect: motion.Set, KeyPrefix: "gal-motion-"},
+					caption("Flip:"),
+					comps.SegmentedControl{Style: segWrap, Labels: []string{"Fade", "Rise", "None"},
+						Selected: flip.Get(), OnSelect: flip.Set, KeyPrefix: "gal-flip-"},
+					caption("Indicator:"),
+					comps.SegmentedControl{Style: segWrap, Labels: []string{"Dots", "Counter", "Thumbnails"},
+						Selected: indicator.Get(), OnSelect: indicator.Set, KeyPrefix: "gal-ind-"},
+					checkRow("Zoom opens fullscreen", fullscreen),
+					checkRow("Autoplay every 4 seconds", autoplay),
+					comps.Gallery{
+						Items:     tutorialPhotos(),
+						Look:      looks[look.Get()],
+						Motion:    comps.GalleryMotion{Transition: motions[motion.Get()], Flip: flips[flip.Get()]},
+						Indicator: indicators[indicator.Get()],
+						Zoom:      zoom,
+						Autoplay:  every,
+						Height:    300,
+						OnChange:  seen.Set,
+					},
+					caption("OnChange saw: "+readout),
+				),
+				prose("Every card stays in the tree as a layer of one ZStack. Changing card only "+
+					"changes each layer's Translate, Opacity and Rotate under a Transition, so "+
+					"every target animates the move on its own frame clock and nothing is "+
+					"stepped from Go. Motion picks the transition (slide, fade, deck or none), "+
+					"the flip (fade, rise or none), each duration and the easing. Under the "+
+					"platform's reduce-motion setting all of them snap."),
+				prose("The gallery owns its state by default: which card, and whether it is "+
+					"flipped, zoomed or paused. OnChange hears every change, which is how the "+
+					"readout above works. An app that deep-links to a card sets Controlled and "+
+					"passes State itself, the way a Wizard's step is passed. The gallery takes "+
+					"two hooks, so it must be rendered on every pass, never inside core.If."),
+				prose("Cinema and Polaroid look the same in every theme. They render the card under "+
+					"DarkTheme and DefaultTheme, so the Details list and any Back view stay "+
+					"legible. Theme and Minimal follow the app's theme."),
+				prose("Share calls OnShare, or copies the title and ShareURL with a toast, because "+
+					"core has no system share sheet. Learn more calls OnAction, or opens ActionURL. "+
+					"The tap zones are a pointer shortcut for the buttons below the stage, so "+
+					"screen readers skip them and use the named buttons."),
+				keyPoints(
+					"Zero values work: Gallery{Items} has a themed look, slide motion, dots, in-place zoom, share and Learn more.",
+					"Motion is a field: slide, fade, deck or none, a flip of fade, rise or none, durations and easing.",
+					"Looks: Theme and Minimal follow the app; Cinema and Polaroid are fixed, rendered under a bundled theme.",
+					"Owned state by default, Controlled on request; OnChange hears every change either way.",
+					"Two hooks: render it every pass, and keep any Back view hook-free.",
 				),
 			)
 		},

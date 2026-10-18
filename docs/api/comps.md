@@ -39,7 +39,7 @@ Package comps's reference is split into 7 topic pages by source file. The index 
 | [Inputs & pickers](comps-inputs.md) | Form fields, password fields, one-time code fields, tag inputs, masked inputs, number pads, colour swatches, range sliders, search, searchable selects, radio groups, dates, date ranges, times and calendars, and the two editors. | 22 types, 20 functions and methods |
 | [Buttons & choices](comps-actions.md) | Buttons and their variants, copy buttons, links, chips, segmented controls, steppers, ratings, badges and the Stripe checkout summary. | 15 types, 17 functions and methods |
 | [Overlays & feedback](comps-overlays.md) | Dialogs, lightboxes, action sheets, menus, snackbars, banners, progress, spinners, skeletons and empty states. | 13 types, 10 functions and methods |
-| [Data display & maps](comps-display.md) | Avatars and avatar stacks, stat tiles, the compass, clocks, countdowns and alarms, an audio player, message bubbles and threads, typing indicators, reaction bars, polls, threaded discussions, expandable text, Bible verses, QR codes, map panels and static maps. | 32 types, 29 functions and methods |
+| [Data display & maps](comps-display.md) | Avatars and avatar stacks, stat tiles, the compass, clocks, countdowns and alarms, an audio player, an immersive picture gallery, message bubbles and threads, typing indicators, reaction bars, polls, threaded discussions, expandable text, Bible verses, QR codes, map panels and static maps. | 42 types, 30 functions and methods |
 | [Charts](comps-charts.md) | Sparklines, line, area, bar and scatter charts, histograms, heatmaps and calendar heatmaps, donuts and pies, gauges, candlesticks, funnels, radars and audio waveforms, drawn on core.Canvas. | 22 types, 17 functions and methods |
 
 ## Index
@@ -153,7 +153,7 @@ Package comps's reference is split into 7 topic pages by source file. The index 
     - [`type Spinner`](comps-overlays.md#type-spinner)
     - [`type SpinnerSize`](comps-overlays.md#type-spinnersize)
 - [Data display & maps](comps-display.md)
-    - [Constants](comps-display.md#constants) — `ConcernAudioPlayerNoTrack`, `ConcernBibleVerseEmpty`, `ConcernCountdownUntilUnset`, `ConcernDiscussionReplyTargetMissing`, `ConcernNoMapProvider`, `ConcernPollInert`, `ConcernQRDataTooLong`, `ConcernReactionBarInert`, `ConcernStopwatchSinceUnset`, `DefaultMapHeight`, `DefaultMapPanelHeight`, `DefaultMapScale`, and 10 more
+    - [Constants](comps-display.md#constants) — `ConcernAudioPlayerNoTrack`, `ConcernBibleVerseEmpty`, `ConcernCountdownUntilUnset`, `ConcernDiscussionReplyTargetMissing`, `ConcernGalleryFrozen`, `ConcernNoMapProvider`, `ConcernPollInert`, `ConcernQRDataTooLong`, `ConcernReactionBarInert`, `ConcernStopwatchSinceUnset`, `DefaultMapHeight`, `DefaultMapPanelHeight`, and 11 more
     - [`func FitRegion`](comps-display.md#func-fitregion)
     - [`func GoogleMapsHandoff`](comps-display.md#func-googlemapshandoff)
     - [`func OSMStaticMap`](comps-display.md#func-osmstaticmap)
@@ -174,6 +174,16 @@ Package comps's reference is split into 7 topic pages by source file. The index 
     - [`type DiscussionComment`](comps-display.md#type-discussioncomment)
     - [`type ECLevel`](comps-display.md#type-eclevel)
     - [`type ExpandableText`](comps-display.md#type-expandabletext)
+    - [`type Gallery`](comps-display.md#type-gallery)
+    - [`type GalleryFlip`](comps-display.md#type-galleryflip)
+    - [`type GalleryIndicator`](comps-display.md#type-galleryindicator)
+    - [`type GalleryItem`](comps-display.md#type-galleryitem)
+    - [`type GalleryLabels`](comps-display.md#type-gallerylabels)
+    - [`type GalleryLook`](comps-display.md#type-gallerylook)
+    - [`type GalleryMotion`](comps-display.md#type-gallerymotion)
+    - [`type GalleryState`](comps-display.md#type-gallerystate)
+    - [`type GalleryTransition`](comps-display.md#type-gallerytransition)
+    - [`type GalleryZoom`](comps-display.md#type-galleryzoom)
     - [`type MapHandoff`](comps-display.md#type-maphandoff)
     - [`type MapPanel`](comps-display.md#type-mappanel)
     - [`type MapPin`](comps-display.md#type-mappin)
