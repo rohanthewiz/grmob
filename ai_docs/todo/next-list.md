@@ -36,7 +36,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-111
+**Next ID:** N-115
 
 ## Open
 
@@ -154,6 +154,25 @@ with each item's `raised` traced back through all session docs.
     `needs: verify`, so every red run skips the GitHub Pages deploy. The
     published tutorial site has not been updated since the last green run
     (2026-09-24).
+- **N-112** · raised `2026-1017-2211-gallery-widget` · value high
+  **core has no swipe or drag gesture.** `comps.Gallery` steps through
+  cards with tap zones (leading quarter, middle, trailing quarter) and
+  buttons. A swipe would need a new core prop on every host (pointer events
+  on the web, `detectHorizontalDragGestures` on Compose, `DragGesture` on
+  SwiftUI) reporting a direction or a delta. A horizontal `core.Scroll`
+  cannot stand in for it, because a scroll reports no position.
+- **N-113** · raised `2026-1017-2211-gallery-widget` · value low
+  **core's paint transforms stop at Rotate and Translate.** A 3-D card flip
+  needs rotation about the vertical axis with perspective, and a real zoom
+  needs a scale transform (plus pinch). `comps.Gallery` uses a crossfade or a
+  rise for the flip, and a taller stage or a Lightbox for the zoom. Nobody
+  has asked for more than that yet.
+- **N-114** · raised `2026-1017-2211-gallery-widget` · value medium
+  **No system share sheet.** `comps.Gallery`'s Share falls back to the
+  clipboard and a toast (CopyButton's behaviour) unless the app passes
+  `OnShare`. A `core.Share(text, url)` command would need a host event on
+  each target: `navigator.share` on the web, `Intent.ACTION_SEND` on Android,
+  `UIActivityViewController` on iOS.
 
 ## Validate
 
@@ -640,6 +659,20 @@ defect, which then becomes its own Open item.
     today. v0.6.0 was tagged on the red, and while the job fails, a new
     failure in any of the skipped steps goes unseen. Still reproduces locally
     (`go test -race -count=3 -run TestEditableGrid ./comps/`).
+- **N-111** · raised `2026-1017-2211-gallery-widget` · value medium
+  **`comps.Gallery` has been seen only on the web** (headless Chrome shots of
+  lesson 4.41: theme, cinema with deck and thumbnails, polaroid flipped,
+  minimal zoomed in place, fullscreen Lightbox). Not yet seen on Compose or
+  SwiftUI. Check these:
+  - the card layers' Translate, Opacity and Rotate transitions;
+  - deck paint order: the natives use child order, while the web needed
+    `ZIndex`;
+  - the in-place zoom's height, padding and radius transitions;
+  - the rise flip clipped by the frame's Overflow;
+  - the back face's Scroll at a pinned height;
+  - the hidden tap-zone Row taking taps, and long press zooming;
+  - the `core.WithTheme` wrapper around a card;
+  - TalkBack and VoiceOver reaching only the current card.
 
 ## Non-goals
 
