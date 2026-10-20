@@ -39,7 +39,7 @@ Package comps's reference is split into 7 topic pages by source file. The index 
 | [Inputs & pickers](comps-inputs.md) | Form fields, password fields, one-time code fields, tag inputs, masked inputs, number pads, colour swatches, range sliders, search, searchable selects, radio groups, dates, date ranges, times and calendars, and the two editors. | 22 types, 20 functions and methods |
 | [Buttons & choices](comps-actions.md) | Buttons and their variants, copy buttons, links, chips, segmented controls, steppers, ratings, badges and the Stripe checkout summary. | 15 types, 17 functions and methods |
 | [Overlays & feedback](comps-overlays.md) | Dialogs, lightboxes, action sheets, menus, snackbars, banners, progress, spinners, skeletons and empty states. | 13 types, 10 functions and methods |
-| [Data display & maps](comps-display.md) | Avatars and avatar stacks, stat tiles, the compass, clocks, countdowns and alarms, an audio player, an immersive picture gallery, message bubbles and threads, typing indicators, reaction bars, polls, threaded discussions, expandable text, Bible verses, QR codes, map panels and static maps. | 42 types, 30 functions and methods |
+| [Data display & maps](comps-display.md) | Avatars and avatar stacks, stat tiles, stock tickers, the compass, clocks, countdowns and alarms, an audio player, an immersive picture gallery, message bubbles and threads, typing indicators, reaction bars, polls, threaded discussions, expandable text, Bible verses, QR codes, map panels and static maps. | 44 types, 31 functions and methods |
 | [Charts](comps-charts.md) | Sparklines, line, area, bar and scatter charts, histograms, heatmaps and calendar heatmaps, donuts and pies, gauges, candlesticks, funnels, radars and audio waveforms, drawn on core.Canvas. | 22 types, 17 functions and methods |
 
 ## Index
@@ -199,6 +199,8 @@ Package comps's reference is split into 7 topic pages by source file. The index 
     - [`type StaticMapArea`](comps-display.md#type-staticmaparea)
     - [`type StaticMapProvider`](comps-display.md#type-staticmapprovider)
         - [`func GoogleStaticMap`](comps-display.md#func-googlestaticmap)
+    - [`type StockQuote`](comps-display.md#type-stockquote)
+    - [`type StockTicker`](comps-display.md#type-stockticker)
     - [`type Stopwatch`](comps-display.md#type-stopwatch)
     - [`type ThreadMessage`](comps-display.md#type-threadmessage)
     - [`type TypingIndicator`](comps-display.md#type-typingindicator)

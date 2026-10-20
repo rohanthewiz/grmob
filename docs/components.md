@@ -3700,6 +3700,53 @@ four targets agree: Compose and SwiftUI divide the whole axis by weight, CSS
 divides only the leftover space. The natives ignore `FlexBasis`, so the prop
 that is inert on two targets is exactly the one that converges the other two.
 
+## StockTicker
+
+A one-line tape of stock quotes (symbol, price and movement) that pans
+sideways. Use it for the strip along the top of a markets screen or a
+watchlist header.
+
+```go
+comps.StockTicker{
+    Quotes: []comps.StockQuote{
+        {Symbol: "AAPL", Name: "Apple", Price: 189.12, Change: 1.23},
+        {Symbol: "MSFT", Name: "Microsoft", Price: 411.65, Change: -2.10},
+    },
+    OnTap: func(q comps.StockQuote) { openSymbol(q.Symbol) },
+}
+```
+
+**Controlled, no hooks.** Prices belong to the caller, and so does the motion.
+Core has no looping translate, and `core.ScrollIntoView` is a single app-wide
+command, so the tape does not glide on its own. It pans under the reader's
+finger, and a caller who wants it to move steps it with `Start`, the index
+of the quote drawn first. `Start` wraps in both directions, so a bare
+counter driven by `hooks.UseIntervalWhile` is enough. Quotes are keyed by
+symbol, so each step reorders the existing nodes. A tape that moves on its
+own for more than five seconds needs a pause control (WCAG 2.2.2), and the
+caller that steps it owns that control.
+
+**Direction is never colour alone.** Every movement has a glyph (▲ / ▼) and
+a spoken word ("up", "down", "unchanged"). Rises are green and falls red by
+default. `RedRises` swaps the two for the convention used in mainland China,
+Taiwan, Japan and Korea. Each colour is the role's ink tone, as in `StatTile`.
+
+**Accessibility.** Each quote is one stop for a screen reader, read as one
+sentence: "Apple, AAPL, 189.12, up 1.23, 0.65 percent". `Name` is spoken
+but not drawn. The tape is a labelled list ("Stock prices"). With `OnTap` set,
+each quote becomes a button and the tape becomes a labelled group.
+
+Other notes:
+
+- `Format` writes the price and the size of the change, and receives the
+  magnitude, because the sign belongs to the glyph. The percentage is always
+  two decimal places.
+- The percentage is derived from `Change / (Price − Change)`, so it cannot
+  disagree with the drawn change. It is left off when the previous close
+  is zero or negative. `HidePercent` drops it on a narrow tape.
+- Spoken words are localisable through `UpLabel`, `DownLabel`,
+  `UnchangedLabel`, `PercentLabel` and `Label`.
+
 ## Chart data
 
 Every chart below, and `LineChart`, `AreaChart`, `BarChart`, `ScatterChart`

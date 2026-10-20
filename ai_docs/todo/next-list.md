@@ -36,7 +36,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-120
+**Next ID:** N-122
 
 ## Open
 
@@ -173,6 +173,15 @@ with each item's `raised` traced back through all session docs.
   `OnShare`. A `core.Share(text, url)` command would need a host event on
   each target: `navigator.share` on the web, `Intent.ACTION_SEND` on Android,
   `UIActivityViewController` on iOS.
+- **N-120** · raised `2026-1020-1656-stock-ticker-widget` · value low
+  **core has no looping translate, so a ticker cannot glide.**
+  `comps.StockTicker` steps instead: the caller advances `Start` on a
+  `hooks.UseIntervalWhile` counter, and keyed quotes are reordered.
+  `core.Spin` is the only looping animation, and its doc names a second
+  consumer as the trigger for a general loop. A ticker is a candidate, but
+  nobody has asked for a gliding one. `core.ScrollIntoView` is not a
+  substitute, because it is one app-wide command and would pull the page
+  back to the tape. Related to N-113 (paint transforms).
 
 ## Validate
 
@@ -687,6 +696,16 @@ defect, which then becomes its own Open item.
     untapped;
   - the `core.WithTheme` wrapper around a card;
   - TalkBack and VoiceOver reaching only the current card.
+- **N-121** · raised `2026-1020-1656-stock-ticker-widget` · value medium
+  **`comps.StockTicker` and lesson 4.42 on the natives.** Checked so far:
+  web only (wasm shot, 2026-10-20) and the Go tests. Still to check:
+  - the sideways `core.Scroll` of HBox quotes on Compose and SwiftUI: each
+    quote keeps its width (`FlexShrink(0)`) and the tape pans;
+  - the ▲/▼ glyphs in each platform's font;
+  - a step (`Start` + 1) arriving as moves of the keyed quotes, not a rebuild;
+  - TalkBack and VoiceOver reading each quote as one sentence ("Apple, AAPL,
+    189.12, up 1.23, 0.65 percent"), the tape as a list, and as a group of
+    buttons with `OnTap`.
 
 ## Non-goals
 

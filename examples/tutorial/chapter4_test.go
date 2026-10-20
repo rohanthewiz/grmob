@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rohanthewiz/grmob/comps"
 	"github.com/rohanthewiz/grmob/core"
 	"github.com/rohanthewiz/grmob/render"
 )
@@ -3589,6 +3590,69 @@ func TestDiscussionLesson(t *testing.T) {
 	}
 	if !hasText(tree(t, mgr), "Does the new build stop the keyboard covering the message box?") {
 		t.Error("folding should keep Ana's own comment")
+	}
+	assertNoConcerns(t)
+}
+
+func TestStockTickerLesson(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "A stock ticker")
+
+	// Pause first, so the 3-second interval cannot step the tape between the
+	// reads below; Step then moves it deterministically.
+	toggleCheckbox(t, mgr, 0, true)
+
+	tape := func() *node {
+		return findNode(tree(t, mgr), func(n *node) bool {
+			return n.Type == "Scroll" && n.Style != nil && n.Style.AccessibilityLabel == "Stock prices"
+		})
+	}
+	firstQuote := func() string {
+		for _, c := range tape().Children {
+			if c.Style != nil && c.Style.AccessibilityRole == string(core.RoleButton) {
+				return c.Style.AccessibilityLabel
+			}
+		}
+		return ""
+	}
+
+	// Tick 0 is the listed figures exactly.
+	if got := firstQuote(); got != "Apple, AAPL, 189.12, up 1.23, 0.65 percent" {
+		t.Fatalf("first quote = %q, want Apple at its opening figures", got)
+	}
+	if !hasText(tape(), "0.00 (0.00%)") {
+		t.Error("TSLA should open unchanged")
+	}
+
+	// Step: Start advances, so Microsoft leads.
+	tap(t, mgr, "Step")
+	if got := firstQuote(); !strings.HasPrefix(got, "Microsoft, MSFT, ") {
+		t.Errorf("after a step the tape should open on Microsoft, got %q", got)
+	}
+
+	// OnTap reports the quote.
+	tapLabelled(t, mgr, firstQuote())
+	if !hasText(tree(t, mgr), "OnTap got Microsoft (MSFT)") {
+		t.Error("tapping a quote should show it in the readout")
+	}
+
+	// Red rises: a rise's ink becomes the Error role's.
+	rise := func() string {
+		n := findNode(tape(), func(n *node) bool {
+			s, _ := n.Props["content"].(string)
+			return n.Type == "Text" && strings.HasPrefix(s, "▲ ")
+		})
+		if n == nil {
+			t.Fatal("no rise on the tape")
+		}
+		return n.Style.TextColor
+	}
+	if got := rise(); got != comps.VariantSuccess.AsInk(core.DefaultTheme) {
+		t.Errorf("rise ink = %q, want the success ink by default", got)
+	}
+	toggleCheckbox(t, mgr, 1, true)
+	if got := rise(); got != comps.VariantError.AsInk(core.DefaultTheme) {
+		t.Errorf("rise ink = %q, want the error ink under Red rises", got)
 	}
 	assertNoConcerns(t)
 }

@@ -74,6 +74,7 @@ func chapter4() Chapter {
 			lessonBibleVerse(),
 			lessonDiscussion(),
 			lessonGallery(),
+			lessonStockTicker(),
 		},
 	}
 }
@@ -7111,6 +7112,112 @@ func lessonGallery() Lesson {
 					"Looks: Theme and Minimal follow the app; Cinema and Polaroid are fixed, rendered under a bundled theme.",
 					"Owned state by default, Controlled on request; OnChange hears every change either way.",
 					"Two hooks: render it every pass, and keep any Back view hook-free.",
+				),
+			)
+		},
+	}
+}
+
+// tutorialQuotes are 4.42's tape at a given tick. Each price wobbles on a
+// sine of the tick, offset per symbol so the five do not move in step, and
+// rounded to the cent. The wobble is subtracted at tick 0, so the opening
+// tape is exactly the listed figures: a test and a screenshot see the same
+// numbers every time, and TSLA opens unchanged, showing the flat case.
+func tutorialQuotes(tick int) []comps.StockQuote {
+	base := []comps.StockQuote{
+		{Symbol: "AAPL", Name: "Apple", Price: 189.12, Change: 1.23},
+		{Symbol: "MSFT", Name: "Microsoft", Price: 411.65, Change: -2.10},
+		{Symbol: "NVDA", Name: "Nvidia", Price: 121.44, Change: 3.87},
+		{Symbol: "TSLA", Name: "Tesla", Price: 242.00},
+		{Symbol: "AMZN", Name: "Amazon", Price: 186.51, Change: -0.94},
+	}
+	cents := func(v float64) float64 { return math.Round(v*100) / 100 }
+	for i := range base {
+		// The wobble is relative to tick 0, so drift(0) is exactly zero.
+		drift := cents(1.5*math.Sin(float64(tick)*0.9+float64(i))) - cents(1.5*math.Sin(float64(i)))
+		base[i].Price = cents(base[i].Price + drift)
+		base[i].Change = cents(base[i].Change + drift)
+	}
+	return base
+}
+
+// 4.42 — comps.StockTicker. The lesson is where the motion lives: the widget
+// is hook-free and has no timer, so the demo owns one counter, drives it from
+// hooks.UseIntervalWhile, and feeds it to both Start (the order) and the
+// prices. The Pause checkbox is the WCAG 2.2.2 switch the widget's doc says
+// a stepping caller owes its readers.
+//
+// Appended at the end of the chapter for the reason 4.25 was.
+func lessonStockTicker() Lesson {
+	return Lesson{
+		Title:   "A stock ticker",
+		Summary: "comps.StockTicker: a swipeable tape of quotes with ▲/▼ movements, the caller stepping it with Start, a pause switch, and red-rises markets.",
+		Body: func(ctx *core.Context) core.View {
+			tick := core.NewState(ctx, 0)
+			paused := core.NewState(ctx, false)
+			redRises := core.NewState(ctx, false)
+			tapped := core.NewState(ctx, "")
+
+			// Every hook before any branch: the interval is taken on every
+			// pass, and Pause only switches it off.
+			step := func() { tick.Set(tick.Get() + 1) }
+			hooks.UseIntervalWhile(ctx, !paused.Get(), step, 3*time.Second)
+
+			readout := "Tap a quote."
+			if s := tapped.Get(); s != "" {
+				readout = "OnTap got " + s
+			}
+
+			return core.Column(
+				core.Gap(14),
+				prose("StockTicker is a one-line tape of quotes: a symbol, the last price, and the "+
+					"movement since the previous close. It pans sideways under the reader's finger, "+
+					"for the strip along the top of a markets screen or over a watchlist."),
+				codeBlock(`tick := core.NewState(ctx, 0)
+hooks.UseIntervalWhile(ctx, !paused.Get(), func() { tick.Set(tick.Get() + 1) }, 3*time.Second)
+
+comps.StockTicker{
+    Quotes: []comps.StockQuote{
+        {Symbol: "AAPL", Name: "Apple", Price: 189.12, Change: 1.23},
+        {Symbol: "MSFT", Name: "Microsoft", Price: 411.65, Change: -2.10},
+    },
+    Start:    tick.Get(),        // the quote drawn first; wraps
+    RedRises: redRises.Get(),    // China, Taiwan, Japan, Korea
+    OnTap:    func(q comps.StockQuote) { open(q.Symbol) },
+}`),
+				demoPanel("The tape steps every 3 seconds. Swipe it, pause it, or tap a quote.",
+					comps.StockTicker{
+						Quotes:   tutorialQuotes(tick.Get()),
+						Start:    tick.Get(),
+						RedRises: redRises.Get(),
+						OnTap:    func(q comps.StockQuote) { tapped.Set(q.Name + " (" + q.Symbol + ")") },
+					},
+					checkRow("Pause the tape", paused),
+					checkRow("Red rises", redRises),
+					comps.Button{Label: "Step", Emphasis: comps.EmphasisOutlined, OnTap: step,
+						Style: []core.StyleProp{core.AlignSelf(core.AlignItemsStart)}},
+					caption(readout),
+				),
+				prose("The widget has no hooks and no timer. Prices are the caller's, and so is the "+
+					"motion. Start is the index of the quote drawn first, and it wraps in both "+
+					"directions, so a bare counter is enough. This demo ticks one counter with "+
+					"hooks.UseIntervalWhile and feeds it to Start and to the prices. Each quote is "+
+					"keyed by its symbol, so a step reorders the nodes already on screen."),
+				prose("The tape steps rather than glides. Core's one looping animation is Spin, and "+
+					"a glide driven from Go would be a patch per frame. Content that moves on its "+
+					"own for more than five seconds needs a way to stop it (WCAG 2.2.2), and the "+
+					"caller that moves it owns that switch: here, Pause the tape."),
+				prose("Direction is never colour alone. A rise is ▲ and a fall ▼, and each quote is "+
+					"one stop for a screen reader, read as a sentence: \"Apple, AAPL, 189.12, up "+
+					"1.23, 0.65 percent\". Name is spoken but not drawn, because symbols are read "+
+					"letter by letter. Rises are green by default, and RedRises swaps the pair for "+
+					"markets where red means up."),
+				keyPoints(
+					"No hooks: prices and motion are the caller's; render it anywhere, even inside core.If.",
+					"Start is the first quote drawn and wraps; step it with a counter and UseIntervalWhile.",
+					"A tape that moves on its own needs a pause switch, and the caller owns it.",
+					"▲/▼ and a spoken word carry the direction; colour only reinforces it. RedRises swaps the pair.",
+					"Format gets the magnitude; the percentage is derived from Change and the previous close.",
 				),
 			)
 		},

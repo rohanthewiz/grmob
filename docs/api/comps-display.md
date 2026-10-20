@@ -4,9 +4,9 @@
 import "github.com/rohanthewiz/grmob/comps"
 ```
 
-Avatars and avatar stacks, stat tiles, the compass, clocks, countdowns and alarms, an audio player, an immersive picture gallery, message bubbles and threads, typing indicators, reaction bars, polls, threaded discussions, expandable text, Bible verses, QR codes, map panels and static maps.
+Avatars and avatar stacks, stat tiles, stock tickers, the compass, clocks, countdowns and alarms, an audio player, an immersive picture gallery, message bubbles and threads, typing indicators, reaction bars, polls, threaded discussions, expandable text, Bible verses, QR codes, map panels and static maps.
 
-One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/avatar.go`, `comps/avatar_stack.go`, `comps/stat_tile.go`, `comps/compass.go`, `comps/clock.go`, `comps/timers.go`, `comps/alarm.go`, `comps/audio_player.go`, `comps/gallery.go`, `comps/message_bubble.go`, `comps/message_thread.go`, `comps/typing_indicator.go`, `comps/reaction_bar.go`, `comps/poll.go`, `comps/expandable_text.go`, `comps/qr_code.go`, `comps/map_panel.go`, `comps/static_map.go`, `comps/bible_verse.go`, `comps/discussion.go`.
+One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/avatar.go`, `comps/avatar_stack.go`, `comps/stat_tile.go`, `comps/stock_ticker.go`, `comps/compass.go`, `comps/clock.go`, `comps/timers.go`, `comps/alarm.go`, `comps/audio_player.go`, `comps/gallery.go`, `comps/message_bubble.go`, `comps/message_thread.go`, `comps/typing_indicator.go`, `comps/reaction_bar.go`, `comps/poll.go`, `comps/expandable_text.go`, `comps/qr_code.go`, `comps/map_panel.go`, `comps/static_map.go`, `comps/bible_verse.go`, `comps/discussion.go`.
 
 ## Index
 
@@ -78,6 +78,9 @@ One of 7 topic pages of [package comps](comps.md), which has the package overvie
 - [`type StaticMapArea`](#type-staticmaparea)
 - [`type StaticMapProvider`](#type-staticmapprovider)
     - [`func GoogleStaticMap`](#func-googlestaticmap)
+- [`type StockQuote`](#type-stockquote)
+- [`type StockTicker`](#type-stockticker)
+    - [`func (StockTicker) Render`](#func-stockticker-render)
 - [`type Stopwatch`](#type-stopwatch)
     - [`func (Stopwatch) Render`](#func-stopwatch-render)
 - [`type ThreadMessage`](#type-threadmessage)
@@ -2812,6 +2815,141 @@ A constructor rather than a bare provider because the key is the caller's: it is
 An empty key yields a provider that returns "", which renders the widget as a box with no image in it rather than as a map of Google's "this request is not authorized" error tile. A misconfigured build should look unfinished, not broken.
 
 <small>[comps/static_map.go:398](https://github.com/rohanthewiz/grmob/blob/master/comps/static_map.go#L398)</small>
+
+### type StockQuote
+
+```go
+type StockQuote struct {
+	// Symbol is the drawn ticker symbol ("AAPL"). It is also the quote's
+	// identity on the tape: two quotes with the same Symbol are told apart by
+	// their order, so keep symbols unique where the tape can be reordered.
+	Symbol string
+
+	// Name is spoken before the symbol and never drawn ("Apple"). Symbols are
+	// read letter by letter, or worse, as a word ("MSFT", "SNAP"), so a name
+	// is what makes the tape listenable. Empty speaks the symbol alone.
+	Name string
+
+	// Price is the last traded price.
+	Price float64
+
+	// Change is the absolute movement since the previous close, signed:
+	// negative is down. The percentage is derived from it (see percentChange)
+	// rather than passed alongside, so the two drawn figures cannot disagree.
+	Change float64
+}
+```
+
+StockQuote is one entry on a StockTicker: a symbol, its last price and its movement since the previous close.
+
+<small>[comps/stock_ticker.go:12](https://github.com/rohanthewiz/grmob/blob/master/comps/stock_ticker.go#L12)</small>
+
+### type StockTicker
+
+```go
+type StockTicker struct {
+	// Quotes are the tape's contents, in order.
+	Quotes []StockQuote
+
+	// Start is the index of the quote drawn first; the ones before it follow
+	// the last. Out-of-range values wrap, negative ones included, so a caller
+	// can step it with a bare counter. See the type comment.
+	Start int
+
+	// Format writes the price and the magnitude of the change. Nil writes two
+	// decimal places.
+	Format func(float64) string
+
+	// HidePercent drops the percentage after the change, for a tape too
+	// narrow for it. The spoken sentence drops it too.
+	HidePercent bool
+
+	// RedRises draws a rise red and a fall green, the convention in mainland
+	// China, Taiwan, Japan and Korea. The glyphs and spoken words are
+	// unchanged. The zero value draws rises green.
+	RedRises bool
+
+	// OnTap is called with the quote that was tapped — open the symbol's
+	// detail screen. Nil leaves the quotes inert, and registers nothing.
+	OnTap func(StockQuote)
+
+	// Label names the tape for screen readers. Empty is "Stock prices".
+	Label string
+
+	// UpLabel, DownLabel and UnchangedLabel are the spoken directions, for
+	// localisation. Empty is "up", "down" and "unchanged". PercentLabel is
+	// spoken after the percentage; empty is "percent".
+	UpLabel        string
+	DownLabel      string
+	UnchangedLabel string
+	PercentLabel   string
+
+	// Style is applied to the scrolling strip after the widget's own props.
+	Style []core.StyleProp
+}
+```
+
+StockTicker is a one-line tape of stock quotes — symbol, price and movement — that pans sideways: the strip along the top of a markets screen, a watchlist header, a portfolio's holdings at a glance.
+
+	comps.StockTicker{Quotes: []comps.StockQuote{
+	    {Symbol: "AAPL", Name: "Apple", Price: 189.12, Change: 1.23},
+	    {Symbol: "MSFT", Name: "Microsoft", Price: 411.65, Change: -2.10},
+	    {Symbol: "TSLA", Name: "Tesla", Price: 242.00},
+	}}
+
+	┌ Scroll (Horizontal; RoleList, "Stock prices") ─────────────────────────────┐
+	│ ┌ HBox (listitem) ─────────────┐   ┌ HBox (listitem) ──────────────┐       │
+	│ │ AAPL  189.12  ▲ 1.23 (0.65%) │   │ MSFT  411.65  ▼ 2.10 (0.51%)  │  ...→ │
+	│ └──────────────────────────────┘   └───────────────────────────────┘       │
+	└────────────────────────────────────────────────────────────────────────────┘
+
+#### Controlled, no hooks
+
+Prices are the caller's, and so is the motion. The widget holds no state and starts no timer, so it may be rendered conditionally (inside core.If).
+
+#### Stepping the tape, not scrolling it
+
+A broadcast-style ticker glides continuously, and core has no primitive for that: Spin is the only looping animation, and its doc explains why a general looping translate was left out until a second consumer needed one. A glide driven from Go would be a patch per frame over the bridge. Scrolling with core.ScrollIntoView is no substitute either: it is one app-wide command, so a ticker issuing it every few seconds would take the command away from the app's own "jump to" links, and would pull the page back to the tape whenever the reader had scrolled it off screen.
+
+So the tape pans under the reader's finger, and a caller who wants it to move steps it with Start: the quote drawn first, wrapping round the end. Each quote is keyed by its symbol, so a step is a reorder of existing nodes rather than a re-patch of every figure.
+
+	off := core.NewState(ctx, 0)
+	hooks.UseIntervalWhile(ctx, !paused.Get(), func() { off.Set(off.Get() + 1) }, 3*time.Second)
+	comps.StockTicker{Quotes: qs, Start: off.Get()}
+
+Content that moves by itself for more than five seconds needs a way to stop it (WCAG 2.2.2, Pause, Stop, Hide). A caller that steps the tape owns that switch too, which is the other reason the stepping lives with the caller.
+
+#### Direction is never colour alone
+
+Each movement is drawn with a glyph (▲ up, ▼ down) and spoken with a word ("up", "down", "unchanged"); the colour reinforces the glyph and never replaces it. Red-green is the most common colour-vision deficiency, and the pair this widget defaults to is exactly that pair.
+
+Unlike StatTile, which refuses to guess whether up is good, the colours here are on by default: on a price tape the convention is the meaning, and every market uses one. Which one differs, though. Most of the world draws a rise green; mainland China, Taiwan, Japan and Korea draw it red. RedRises swaps the pair, and the zero value is the more common reading.
+
+#### Numbers
+
+Format writes the price and the size of the change; nil writes two decimal places. The sign is the widget's, not Format's: Format is handed the magnitude and the widget adds the glyph, so a currency formatter that puts its own minus in a different place cannot produce "▼ -$2.10". The percentage is always two places, because it is a ratio and not money.
+
+#### Accessibility
+
+Each quote is one stop for a screen reader, read as a sentence: "Apple, AAPL, 189.12, up 1.23, 0.65 percent". Its drawn parts are hidden, so the glyph is never read out as "black up-pointing triangle". The tape itself is a labelled list (Label, "Stock prices" by default). With OnTap set each quote becomes a button instead of a list item, and the tape a labelled group, because a list item and a button are two roles and a node has one.
+
+#### Theme roles read
+
+	Symbol       Typography.Body, bold
+	Price        Typography.Body
+	Movement     Typography.Caption; Success / Error ink tones, or
+	             Colors.TextSecondary when unchanged
+	Gaps         Spacing.LG between quotes, Spacing.XS within one
+
+<small>[comps/stock_ticker.go:114](https://github.com/rohanthewiz/grmob/blob/master/comps/stock_ticker.go#L114)</small>
+
+#### func (StockTicker) Render
+
+```go
+func (s StockTicker) Render(ctx *core.Context) *core.Node
+```
+
+<small>[comps/stock_ticker.go:165](https://github.com/rohanthewiz/grmob/blob/master/comps/stock_ticker.go#L165)</small>
 
 ### type Stopwatch
 
