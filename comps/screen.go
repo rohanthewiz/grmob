@@ -128,9 +128,16 @@ type Screen struct {
 	// screen and push a footer to the bottom — because a FlexGrow child can
 	// only grow inside a parent that has height to give.
 	//
-	// Fill with Scroll is legal but unusual: it makes the scrolled content at
-	// least as tall as the viewport, which is how you bottom-anchor a footer
-	// on a short page. It does not make a scroll view fill anything.
+	// Fill with Scroll makes the scrolled content at least as tall as the
+	// viewport, which is how you bottom-anchor a footer on a short page, or
+	// keep a screen's background reaching the bottom edge. The scroll region
+	// grows too (FlexGrow(1) on the Scroll, as a Footer gives it), because the
+	// content can only be as tall as the viewport if the viewport is the safe
+	// area's height. The browser host page and Compose made the Scroll that
+	// tall regardless. SwiftUI measures a Scroll in a column at its content
+	// height and reads its viewport off its own size, so the minimum was the
+	// content again: a short page left the window's white below it (seen on
+	// the iOS 26.5 simulator).
 	Fill bool
 
 	// Footer is pinned below the content, outside the scroll region: the slot
@@ -319,9 +326,11 @@ func (s Screen) Render(ctx *core.Context) *core.Node {
 		inner = core.Scroll(
 			core.MaybeProp(s.KeyboardAware, core.KeyboardAware()),
 			// With a Footer sharing the SafeArea, the viewport takes the
-			// leftover height so the footer sits below it. Without one the
-			// false path is nil and the Scroll keeps its unstyled shape.
-			core.MaybeProp(s.Footer != nil, core.FlexGrow(1)),
+			// leftover height so the footer sits below it. With Fill it takes
+			// the whole height, so the growing column inside has a viewport to
+			// fill (see the Fill field). Without either the false path is nil
+			// and the Scroll keeps its unstyled shape.
+			core.MaybeProp(s.Footer != nil || s.Fill, core.FlexGrow(1)),
 			// As the base layer of a floating stack the Scroll fills the
 			// stack; see the Floating field.
 			core.MaybeProp(s.Floating != nil, core.Width("100%")),

@@ -98,6 +98,34 @@ func TestScreenFillSetsFlexGrowOnTheColumn(t *testing.T) {
 	}
 }
 
+// Fill with Scroll grows the scroll region as well as the column inside it.
+// The column can only be as tall as the viewport if the viewport is the safe
+// area's height, and on SwiftUI a Scroll in a column is otherwise measured at
+// its content height, so Fill did nothing there and a short page showed the
+// window's white below it. A Scroll without Fill (or a Footer) keeps no
+// FlexGrow, so the trees of screens that did not ask are unchanged.
+func TestScreenFillWithScrollGrowsTheScrollRegion(t *testing.T) {
+	scrollOf := func(n *core.Node) *core.Node {
+		t.Helper()
+		s := findFirst(n, func(n *core.Node) bool { return n.Type == "Scroll" })
+		if s == nil {
+			t.Fatalf("no Scroll in %s", describe(n))
+		}
+		return s
+	}
+	plain := renderScreen(t, core.DefaultTheme, Screen{Scroll: true, Children: []core.View{core.Text("hi")}})
+	if g := scrollOf(plain).Style.FlexGrow; g != 0 {
+		t.Errorf("Scroll without Fill set FlexGrow = %v on the Scroll, want 0", g)
+	}
+	filled := renderScreen(t, core.DefaultTheme, Screen{Scroll: true, Fill: true, Children: []core.View{core.Text("hi")}})
+	if g := scrollOf(filled).Style.FlexGrow; g != 1 {
+		t.Errorf("Scroll with Fill gave the Scroll FlexGrow = %v, want 1", g)
+	}
+	if g := column(t, filled).Style.FlexGrow; g != 1 {
+		t.Errorf("Scroll with Fill gave the column FlexGrow = %v, want 1", g)
+	}
+}
+
 // Scroll changes the tree's shape, not just a style prop, so both directions
 // are pinned: the wrapper exists and sits between SafeArea and the Column when
 // set, and there is no Scroll node anywhere when it is not.
