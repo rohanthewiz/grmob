@@ -84,8 +84,13 @@
          there is none.
 
          Theme.GrMob is the platform's light Material theme with force dark
-         switched off for the window; see res/values/themes.xml. -->
+         switched off for the window; see res/values/themes.xml.
+
+         GrMobApplication configures Coil's image loader with a descriptive
+         User-Agent; image hosts with a robot policy (Wikimedia) refuse
+         OkHttp's default one. See GrMobApplication.kt. -->
     <application
+        android:name="com.grmob.app.GrMobApplication"
         android:enableOnBackInvokedCallback="true"
         android:label="GrMob"
         android:allowBackup="true"
