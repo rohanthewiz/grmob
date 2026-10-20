@@ -83,8 +83,8 @@ func TestComposeUnweightedRowChildHugsItsContent(t *testing.T) {
 func TestComposeFloorsARowChildAtItsMinContentWidth(t *testing.T) {
 	body := codeOf(t, kotlinRenderer, "private fun Modifier.rowChildWidth(")
 	for _, c := range []struct{ expr, why string }{
-		{"val minContent = measurable.minIntrinsicWidth(constraints.maxHeight)",
-			"min-content is asked of the subtree, not derived from a measurement"},
+		{"val minContent = if (scrollContainer) 0 else measurable.minIntrinsicWidth(constraints.maxHeight)",
+			"min-content is asked of the subtree, not derived from a measurement (a scroll container's is zero)"},
 		{"val minW = maxOf(constraints.minWidth, declared, minContent)",
 			"the floor is the widest of the incoming minimum, a declared MinWidth and min-content"},
 		{"val reported = maxOf(placeable.width, constraints.minWidth)",
@@ -109,6 +109,33 @@ func TestComposeFloorsARowChildAtItsMinContentWidth(t *testing.T) {
 		t.Errorf("%s: sizedByRow consults RowOfferFillers, so only containers are "+
 			"floored. The floor is a rule about flex items and 8.2's button is a "+
 			"leaf; RowOfferFillers decides the CAP (hugsRowOffer), not the floor.",
+			kotlinRenderer)
+	}
+}
+
+// A scroll container in a Row is not floored at its min-content width.
+//
+// CSS computes `min-width: auto` to 0 for a flex item whose overflow is not
+// visible, so a core.Scroll takes the room its row has and scrolls the rest.
+// On Compose, horizontalScroll forwards intrinsic queries to its content, so
+// the min-content floor of a horizontal strip is the whole strip: comps.
+// Gallery's thumbnails were measured at all nine thumbnails' width and drawn
+// over both arrows on a Fold6's cover screen instead of scrolling between
+// them. The device is where that was seen; these pins hold the wiring.
+func TestComposeDoesNotFloorAScrollContainerInARow(t *testing.T) {
+	// valuesOf, not codeOf: the check needs the "Scroll" literal, which
+	// codeOf masks out along with the comments.
+	children := valuesOf(t, kotlinRenderer, "private fun RowScope.RowChildren(")
+	if !strings.Contains(children, `scrollContainer = child.type == "Scroll",`) {
+		t.Errorf("%s: RowChildren does not tell rowChildWidth that a Scroll child "+
+			"is a scroll container. Its min-content floor is then the whole strip, "+
+			"and a strip in a row overflows its siblings instead of scrolling.",
+			kotlinRenderer)
+	}
+	body := codeOf(t, kotlinRenderer, "private fun Modifier.rowChildWidth(")
+	if !strings.Contains(body, "if (scrollContainer) 0 else") {
+		t.Errorf("%s: rowChildWidth does not drop the min-content floor for a "+
+			"scroll container, which CSS gives an automatic minimum of zero.",
 			kotlinRenderer)
 	}
 }

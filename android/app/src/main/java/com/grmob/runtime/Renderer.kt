@@ -2450,6 +2450,7 @@ private fun RowScope.RowChildren(
                     minWidth = child.style?.minWidth ?: "",
                     maxWidth = child.style?.maxWidth ?: "",
                     hug = hugsRowOffer(child),
+                    scrollContainer = child.type == "Scroll",
                 )
             }
             // core.Style.AlignSelf overrides the row's verdict for this child
@@ -2539,10 +2540,35 @@ private fun isPlainStrip(child: GrMobNode): Boolean =
  * ```
  *   min-width: auto   never below the item's min-content width; the row
  *                     overflows instead, at the word rather than inside it
+ *                     (zero for a scroll container; see below)
  *   flex-basis: auto  its content width (max-content)...
  *   shrink to fit     ...shrunk to the space the row has left
  *   max-width: N%     a share of the ROW, not of the shrunk maximum
  * ```
+ *
+ * # A scroll container's minimum is zero
+ *
+ * CSS computes `min-width: auto` to 0 for a flex item whose overflow is not
+ * `visible`, and a core.Scroll is `overflow: auto` on both web targets. That
+ * is the whole point of the region: it takes the room the row has and
+ * scrolls what does not fit. Here the floor would do the opposite, because
+ * horizontalScroll forwards intrinsic queries to its content, so a strip's
+ * min-content width is every item in it laid end to end:
+ *
+ * ```
+ *   Row( ‹, Row(FlexGrow 1)[ Scroll(Horizontal)[ 9 thumbnails ] ], › )
+ *
+ *   Compose, floored  the strip is measured at all nine thumbnails' width,
+ *                     reported past the grower's share, and drawn over both
+ *                     arrows (Compose does not clip what overflows)
+ *   CSS               the strip is the grower's share wide and scrolls
+ * ```
+ *
+ * That was comps.Gallery's thumbnail strip on a Galaxy Z Fold6's cover
+ * screen. So `scrollContainer` drops the floor to zero, and the strip is
+ * measured at min(offer, content) like any other plain strip (hugsRowOffer),
+ * scrolling when the content is wider. The intrinsic query is skipped too,
+ * since its answer would be thrown away. A declared MinWidth still floors it.
  *
  * # The defect it exists for
  *
@@ -2675,7 +2701,12 @@ private fun Modifier.fitContentWidth(): Modifier = layout { measurable, constrai
     layout(placeable.width, placeable.height) { placeable.placeRelative(0, 0) }
 }
 
-private fun Modifier.rowChildWidth(minWidth: String, maxWidth: String, hug: Boolean): Modifier {
+private fun Modifier.rowChildWidth(
+    minWidth: String,
+    maxWidth: String,
+    hug: Boolean,
+    scrollContainer: Boolean = false,
+): Modifier {
     val floor = parseWidthCap(minWidth)
     val cap = parseWidthCap(maxWidth)
     return layout { measurable, constraints ->
@@ -2685,8 +2716,10 @@ private fun Modifier.rowChildWidth(minWidth: String, maxWidth: String, hug: Bool
         }
         val offer = constraints.maxWidth
         // CSS's automatic minimum size for a flex item. Asked of every child,
-        // capped or not, because it is the floor that stops a word being cut.
-        val minContent = measurable.minIntrinsicWidth(constraints.maxHeight)
+        // capped or not, because it is the floor that stops a word being cut,
+        // except a scroll container, whose automatic minimum CSS sets to zero
+        // (see "A scroll container's minimum is zero" above).
+        val minContent = if (scrollContainer) 0 else measurable.minIntrinsicWidth(constraints.maxHeight)
         val declared = floor?.let {
             if (it.isFraction) (offer * it.amount).roundToInt() else it.amount.dp.roundToPx()
         } ?: 0
