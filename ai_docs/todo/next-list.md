@@ -36,7 +36,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-115
+**Next ID:** N-116
 
 ## Open
 
@@ -670,7 +670,10 @@ defect, which then becomes its own Open item.
   - the in-place zoom's height, padding and radius transitions;
   - the rise flip clipped by the frame's Overflow;
   - the back face's Scroll at a pinned height;
-  - the hidden tap-zone Row taking taps, and long press zooming;
+  - the hidden tap-zone Row taking taps, and long press zooming. On the
+    web the zones never took a tap until N-115 (the 4.41 shots never
+    tapped the photo); the natives paint by child order, so expect them
+    to, but nobody has tapped one there;
   - the `core.WithTheme` wrapper around a card;
   - TalkBack and VoiceOver reaching only the current card.
 
@@ -774,6 +777,16 @@ defect, which then becomes its own Open item.
   comment. The tutorial page that does set cover is N-088.
 
 ## Closed
+
+- **N-115** · raised `2026-1019-2246-gallery-tapzone-zindex`
+  · closed 2026-10-19, `2026-1019-2246-gallery-tapzone-zindex` — `comps.Gallery`'s tap zones never took
+  a tap on the web. Every card layer carries `core.ZIndex` (`zOrder`, up to
+  n+2), but the tap-zone Row had none, so the cards painted over it and the
+  picture took every click: tapping the photo didn't flip it and tapping
+  the edges didn't step. Found building a cat-adoption app on Gallery.
+  Fixed in dcf9274: `tapZOrder()` gives the Row n+3, and
+  `TestGalleryTapZonesPaintAboveTheCards` covers all four transitions from
+  both ends of the deck. Clicking the photo flipped the card in Chrome.
 
 - **N-058** · raised `2026-0919-1254-fold6-talkback-hid-harness-focus-after-navigation-inert-named-controls`
   · closed 2026-10-11, `2026-1011-2105-next-list-n058-talkback-follows-keyboard-focus` — TalkBack did not follow Tab on Compose. Compose's
