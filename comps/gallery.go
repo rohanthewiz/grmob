@@ -851,6 +851,17 @@ func (r galleryRender) zOrder(d int) int {
 	return r.n + 1 - d
 }
 
+// tapZOrder is the web's paint order for the tap-zone layer: one above the
+// highest card (zOrder's n+2), so the zones take the pointer.
+//
+// The layer is the stage's last child, which is all the natives need, but on
+// the web child order loses to z-index: every card layer carries one, so a
+// layer with none painted under them all, the card's picture took every
+// click, and tapping the photo flipped nothing and the edges stepped
+// nowhere. Hit testing follows paint order, so the zones have to be stated
+// above the cards rather than merely after them.
+func (r galleryRender) tapZOrder() int { return r.n + 3 }
+
 // frame builds a card: a clipped ZStack of the front and back faces, in the
 // look's fill, radius and shadow, with CardStyle last.
 func (r galleryRender) frame(i int, height float64) core.View {
@@ -1136,6 +1147,8 @@ func (r galleryRender) tapZones() core.View {
 		core.Gap(0),
 		core.Width("100%"),
 		core.Height("100%"),
+		// Above every card on the web; see tapZOrder.
+		core.ZIndex(r.tapZOrder()),
 		// A pointer convenience over named controls; see "Touch, mouse and
 		// keyboard".
 		core.AccessibilityHidden(),

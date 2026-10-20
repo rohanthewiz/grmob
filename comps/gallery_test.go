@@ -322,6 +322,39 @@ func TestGalleryTapZones(t *testing.T) {
 	}
 }
 
+// The tap zones paint above every card on the web, whatever the transition
+// and whichever card is current. The card layers carry core.ZIndex, and a
+// zone row without one painted under them all, so in the browser the
+// picture took every click and the zones never fired. Checked from both ends
+// of the deck, since zOrder lifts the cards already left behind highest.
+func TestGalleryTapZonesPaintAboveTheCards(t *testing.T) {
+	for _, tr := range []GalleryTransition{GalleryTransitionSlide, GalleryTransitionFade, GalleryTransitionDeck, GalleryTransitionNone} {
+		for _, at := range []int{0, len(galleryItems()) - 1} {
+			t.Run(fmt.Sprintf("%s/at-%d", tr, at), func(t *testing.T) {
+				g := Gallery{Items: galleryItems(), Motion: GalleryMotion{Transition: tr},
+					State: GalleryState{Index: at}}
+				_, n := renderDebug(t, g)
+				zones := findFirst(n, func(x *core.Node) bool {
+					return x.Type == "Row" && x.Style.AccessibilityHidden && len(x.Children) == 3
+				})
+				if zones == nil {
+					t.Fatal("no tap-zone row on the stage")
+				}
+				for i, it := range galleryItems() {
+					card := galleryCard(n, fmt.Sprintf("%d of 3, %s", i+1, it.Title))
+					if card == nil {
+						t.Fatalf("no card layer for %s", it.Title)
+					}
+					if zones.Style.ZIndex <= card.Style.ZIndex {
+						t.Errorf("tap zones z-index %d does not clear %s's %d",
+							zones.Style.ZIndex, it.Title, card.Style.ZIndex)
+					}
+				}
+			})
+		}
+	}
+}
+
 // Each transition poses the current card opaque and at rest, and the slide
 // waits the next card one stage width along.
 func TestGalleryTransitionsPoseTheCards(t *testing.T) {
