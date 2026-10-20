@@ -36,7 +36,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-116
+**Next ID:** N-118
 
 ## Open
 
@@ -660,10 +660,15 @@ defect, which then becomes its own Open item.
     failure in any of the skipped steps goes unseen. Still reproduces locally
     (`go test -race -count=3 -run TestEditableGrid ./comps/`).
 - **N-111** · raised `2026-1017-2211-gallery-widget` · value medium
-  **`comps.Gallery` has been seen only on the web** (headless Chrome shots of
-  lesson 4.41: theme, cinema with deck and thumbnails, polaroid flipped,
-  minimal zoomed in place, fullscreen Lightbox). Not yet seen on Compose or
-  SwiftUI. Check these:
+  **`comps.Gallery` has been seen on the web and partly on Compose** (headless
+  Chrome shots of lesson 4.41: theme, cinema with deck and thumbnails,
+  polaroid flipped, minimal zoomed in place, fullscreen Lightbox). Compose,
+  2026-10-19, in the catadopt app on a Galaxy Z Fold6's cover screen
+  (`2026-1019-2323-android-image-agent-and-scroll-strip-floor`): theme look
+  under AmberTheme, slide transition, the thumbnail strip (it overflowed its
+  arrows until N-117) and the fade flip to a Details back were seen, and
+  photos loaded once N-116 gave Coil a User-Agent. Not yet seen on SwiftUI.
+  Still to check on Compose unless noted:
   - the card layers' Translate, Opacity and Rotate transitions;
   - deck paint order: the natives use child order, while the web needed
     `ZIndex`;
@@ -672,8 +677,9 @@ defect, which then becomes its own Open item.
   - the back face's Scroll at a pinned height;
   - the hidden tap-zone Row taking taps, and long press zooming. On the
     web the zones never took a tap until N-115 (the 4.41 shots never
-    tapped the photo); the natives paint by child order, so expect them
-    to, but nobody has tapped one there;
+    tapped the photo). On Compose a tap in the middle zone flipped the card
+    (Fold6, 2026-10-19); the edge zones, long press and SwiftUI are
+    untapped;
   - the `core.WithTheme` wrapper around a card;
   - TalkBack and VoiceOver reaching only the current card.
 
@@ -777,6 +783,26 @@ defect, which then becomes its own Open item.
   comment. The tutorial page that does set cover is N-088.
 
 ## Closed
+
+- **N-117** · raised `2026-1019-2323-android-image-agent-and-scroll-strip-floor`
+  · closed 2026-10-19, `2026-1019-2323-android-image-agent-and-scroll-strip-floor` — On Compose a horizontal Scroll in a Row
+  overflowed instead of scrolling. `rowChildWidth` floors an unweighted Row
+  child at min-content (CSS `min-width: auto`), but CSS makes that 0 for a
+  scroll container, and `horizontalScroll` forwards intrinsics to its
+  content, so the floor was the whole strip. `comps.Gallery`'s thumbnails
+  were drawn over both arrows. Fixed in 6e820c8: RowChildren passes
+  `scrollContainer = child.type == "Scroll"`, which drops the floor.
+  `TestComposeDoesNotFloorAScrollContainerInARow` pins it. On the Fold6 the
+  strip sat between the arrows and swiped.
+- **N-116** · raised `2026-1019-2323-android-image-agent-and-scroll-strip-floor`
+  · closed 2026-10-19, `2026-1019-2323-android-image-agent-and-scroll-strip-floor` — Android images 403'd at Wikimedia. Coil
+  fetched through OkHttp with its default `okhttp/4.x` User-Agent, which
+  Wikimedia refuses ("Please set a user-agent and respect our robot
+  policy"), so Commons photos were blank on Android only. Fixed in c2e98ad:
+  a new `GrMobApplication` in the shell manifest is Coil's
+  ImageLoaderFactory and sets `<label>/<version> (<appId>; Android <rel>)
+  grmob` on requests that carry no agent. `mobile/verify/image_agent_test.go`
+  pins it. On the Fold6 the photos loaded.
 
 - **N-115** · raised `2026-1019-2246-gallery-tapzone-zindex`
   · closed 2026-10-19, `2026-1019-2246-gallery-tapzone-zindex` — `comps.Gallery`'s tap zones never took
