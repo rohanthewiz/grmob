@@ -36,7 +36,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-118
+**Next ID:** N-120
 
 ## Open
 
@@ -667,7 +667,12 @@ defect, which then becomes its own Open item.
   (`2026-1019-2323-android-image-agent-and-scroll-strip-floor`): theme look
   under AmberTheme, slide transition, the thumbnail strip (it overflowed its
   arrows until N-117) and the fade flip to a Details back were seen, and
-  photos loaded once N-116 gave Coil a User-Agent. Not yet seen on SwiftUI.
+  photos loaded once N-116 gave Coil a User-Agent. SwiftUI, 2026-10-19, in
+  the same app on the iOS 26.5 simulator (iPhone 17 Pro;
+  `2026-1019-2343-ios-filled-image-frame-and-screen-fill-scroll`): the front
+  face, the caption and the thumbnail strip render at the screen's width
+  once N-118 stopped a filled picture widening its box. Before that the whole
+  screen was about 693pt wide. Nothing was tapped there (simctl cannot tap).
   Still to check on Compose unless noted:
   - the card layers' Translate, Opacity and Rotate transitions;
   - deck paint order: the natives use child order, while the web needed
@@ -783,6 +788,26 @@ defect, which then becomes its own Open item.
   comment. The tutorial page that does set cover is N-088.
 
 ## Closed
+
+- **N-119** · raised `2026-1019-2343-ios-filled-image-frame-and-screen-fill-scroll`
+  · closed 2026-10-19, `2026-1019-2343-ios-filled-image-frame-and-screen-fill-scroll` — `Screen{Scroll, Fill}` left a white band
+  below a short page on SwiftUI. Fill grew the column inside the Scroll but
+  not the Scroll. SwiftUI measures a Scroll in a column at its content
+  height and reads its viewport off its own size, so the minimum was the
+  content again. The browser (host CSS) and Compose made the Scroll full
+  height anyway. Fixed in e5b0e80: with Fill the Scroll gets FlexGrow(1),
+  as a Footer already gave it. Trees without Fill are unchanged.
+  `TestScreenFillWithScrollGrowsTheScrollRegion` pins it. On the simulator
+  the background reached the bottom; unchanged on an Android emulator.
+- **N-118** · raised `2026-1019-2343-ios-filled-image-frame-and-screen-fill-scroll`
+  · closed 2026-10-19, `2026-1019-2343-ios-filled-image-frame-and-screen-fill-scroll` — A ContentModeFill Image widened its box on
+  SwiftUI. GrMobImage's `frame(maxWidth: .infinity)` had no minimum, so it
+  reported max(proposal, child), and `scaledToFill` reports the filled size.
+  Gallery keeps every card in the tree, so one wide photo (500×306, filled
+  to a 424pt stage, about 693pt) laid the whole screen out twice the
+  iPhone's width. Fixed in 379ddca: a zero minimum on stated axes, with the
+  clip moved onto the frame. On the simulator the screen fit. No contract
+  test pins it; it was seen on the device.
 
 - **N-117** · raised `2026-1019-2323-android-image-agent-and-scroll-strip-floor`
   · closed 2026-10-19, `2026-1019-2323-android-image-agent-and-scroll-strip-floor` — On Compose a horizontal Scroll in a Row
