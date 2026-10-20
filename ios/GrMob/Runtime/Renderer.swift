@@ -296,6 +296,39 @@ private struct GrMobEscapeClaim: ViewModifier {
 /// view's: core.Image inherited Components.Camera's black fill (see
 /// core/image.go).
 ///
+/// # A filled image is the size of its box
+///
+/// On a stated axis the frame is `frame(minWidth: 0, maxWidth: .infinity)`,
+/// not `frame(maxWidth: .infinity)` alone, and the clip is on the frame.
+///
+/// A flexible frame with no minimum takes the child's size as its lower
+/// bound, so it reports `max(proposal, child)`. Fit, stretch and the spinner
+/// never exceed their proposal, so that was harmless. ContentModeFill does:
+/// `scaledToFill` reports the filled size, which is wider than the slot for
+/// a picture wider than the box (or taller, for a taller one). The frame
+/// passed that up as its own width, every `Width("100%")` frame above it
+/// did the same, and the screen was laid out wider than the window and
+/// centred in it. comps.Gallery showed it: every card is in the tree, and a
+/// 500×306 photo filled to a 424pt stage is about 693pt wide, so on a 402pt
+/// iPhone the title and the arrows were off both edges and the description
+/// ran on one line.
+///
+/// ```
+///   proposed 370 × 424, photo 500 × 306 filled → 693 × 424
+///
+///   frame(maxWidth: ∞)               693   (max(proposal, child))
+///   frame(minWidth: 0, maxWidth: ∞)  370   (the proposal, clamped to 0…∞)
+/// ```
+///
+/// With a zero minimum the frame is the proposal, which is what CSS
+/// `object-fit: cover` and Compose's ContentScale.Crop give the box. An
+/// ideal-size query (a nil proposal, as a flex basis asks) still gets the
+/// image's own size, since a flexible frame with nothing proposed reports
+/// its child. The `.clipped()` that grMobScaled puts on a filled image clips
+/// to the image's own, filled bounds, so the crop to the box is the clip
+/// here, after the frame. An unstated axis keeps neither a minimum nor a
+/// maximum, so an unsized image is still exactly its bitmap.
+///
 /// # Its own loader, not AsyncImage
 ///
 /// This was an AsyncImage, which hands its content a SwiftUI Image and
@@ -332,8 +365,13 @@ private struct GrMobImage: View {
                 ProgressView()
             }
         }
-        .frame(maxWidth: grMobIsStated(node.style?.width) ? .infinity : nil,
+        // minWidth/minHeight 0 on a stated axis, and the clip out here; see
+        // "A filled image is the size of its box" above.
+        .frame(minWidth: grMobIsStated(node.style?.width) ? 0 : nil,
+               maxWidth: grMobIsStated(node.style?.width) ? .infinity : nil,
+               minHeight: grMobIsStated(node.style?.height) ? 0 : nil,
                maxHeight: grMobIsStated(node.style?.height) ? .infinity : nil)
+        .clipped()
         .task(id: src) {
             guard !src.isEmpty, let url = URL(string: src),
                   let (data, _) = try? await URLSession.shared.data(from: url),
