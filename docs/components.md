@@ -640,8 +640,30 @@ text is drawn under the input as an alert, and the draft stays so a typo can be
 fixed; typing again clears it. `cart.Store.ApplyCode` has this shape, and
 answers `cart.ErrUnknownCode` for a code no rule names.
 
-**The draft and the refusal are the widget's,** held in two hooks: render a
-PromoCodeField unconditionally, in a stable position.
+**A server check: `OnApplyAsync`.** It gets the code and a `done(err)` func and
+returns at once. Until `done` is called, the input and Apply are disabled and
+the button reads "Checking…" (`PendingLabel`). `done` may come from any
+goroutine, and only its first call counts. On success, apply the code with
+`store.Dispatch(cart.ApplyCode{Code: code})`, since the server already accepted
+it. `OnApplyAsync` wins over `OnApply`.
+
+```go
+comps.PromoCodeField{
+    OnApplyAsync: func(code string, done func(error)) {
+        go func() {
+            err := api.CheckCode(code)
+            if err == nil {
+                store.Dispatch(cart.ApplyCode{Code: code})
+            }
+            done(err)
+        }()
+    },
+    Applied: q.Cart.Codes, OnRemove: store.RemoveCode,
+}
+```
+
+**The draft, the refusal and the pending attempt are the widget's,** held in
+three hooks: render a PromoCodeField unconditionally, in a stable position.
 
 Other notes:
 
@@ -649,7 +671,7 @@ Other notes:
   empty.
 - The pills are [TagInput](#taginput)'s: a list of items, each ✕ a separate
   button named "Remove SPRING10". Without `OnRemove` they have no ✕.
-- No `OnApply` raises `ConcernPromoCodeFieldInert`.
+- Neither `OnApply` nor `OnApplyAsync` raises `ConcernPromoCodeFieldInert`.
 
 ## InputRow
 

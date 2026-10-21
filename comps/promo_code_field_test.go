@@ -138,3 +138,71 @@ func TestPromoCodeFieldWithoutOnApplyIsReported(t *testing.T) {
 		t.Fatal("an inert PromoCodeField is reported")
 	}
 }
+
+// OnApplyAsync: pending locks the field and relabels Apply until done, which
+// counts once, and may come from another goroutine.
+func TestPromoCodeFieldAsyncApplyIsPendingUntilDone(t *testing.T) {
+	var asked []string
+	var done func(error)
+	syncCalled := false
+	h := newRowHarness(t, func() core.View {
+		return PromoCodeField{
+			OnApply: func(string) error { syncCalled = true; return nil },
+			OnApplyAsync: func(code string, d func(error)) {
+				asked = append(asked, code)
+				done = d
+			},
+		}
+	})
+	in := func() *core.Node {
+		return findFirst(h.node, func(n *core.Node) bool { return n.Type == "Input" })
+	}
+	h.ctx.TriggerTextCallback(in().Props["onChange"].(string), " nope ")
+	h.render()
+	h.ctx.TriggerCallback(findButton(h.node, "Apply").Props["onClick"].(string))
+	h.render()
+
+	if syncCalled || len(asked) != 1 || asked[0] != "nope" {
+		t.Fatalf("OnApplyAsync wins and gets the trimmed code: asked %q, sync %v", asked, syncCalled)
+	}
+	b := findButton(h.node, "Checking…")
+	if b == nil || !b.Style.Disabled || !in().Style.Disabled {
+		t.Fatal("pending: Apply reads Checking… and both controls are disabled")
+	}
+	// A second submit while pending asks nothing.
+	h.ctx.TriggerCallback(in().Props["onSubmit"].(string))
+	if len(asked) != 1 {
+		t.Fatal("no second attempt while one is out")
+	}
+
+	// Refused, from another goroutine: the draft stays, the reason shows.
+	finished := make(chan struct{})
+	go func() { done(errors.New("Expired code")); close(finished) }()
+	<-finished
+	h.render()
+	if findText(h.node, "Expired code") == nil || in().Props["value"] != " nope " || in().Style.Disabled {
+		t.Fatalf("after refusal: draft %q", in().Props["value"])
+	}
+
+	// Accepted: the draft clears; a late second done changes nothing.
+	h.ctx.TriggerTextCallback(in().Props["onChange"].(string), "SPRING10")
+	h.render()
+	h.ctx.TriggerCallback(findButton(h.node, "Apply").Props["onClick"].(string))
+	h.render()
+	done(nil)
+	h.render()
+	if in().Props["value"] != "" || findButton(h.node, "Apply") == nil {
+		t.Fatalf("after acceptance: draft %q", in().Props["value"])
+	}
+	h.ctx.TriggerTextCallback(in().Props["onChange"].(string), "NEXT")
+	h.render()
+	done(errors.New("late"))
+	h.render()
+	if findText(h.node, "late") != nil || in().Props["value"] != "NEXT" {
+		t.Error("only the first done call counts")
+	}
+}
+
+func TestPromoCodeFieldAsyncAloneIsNotInert(t *testing.T) {
+	renderDebug(t, PromoCodeField{OnApplyAsync: func(string, func(error)) {}, PendingLabel: "…"})
+}

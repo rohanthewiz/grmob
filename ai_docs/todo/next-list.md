@@ -175,14 +175,6 @@ with each item's `raised` traced back through all session docs.
   nobody has asked for a gliding one. `core.ScrollIntoView` is not a
   substitute, because it is one app-wide command and would pull the page
   back to the tape. Related to N-113 (paint transforms).
-- **N-124** · raised `2026-1021-1113-shopping-cart-library` · value low
-  **A promo code can only be checked synchronously.** `comps.PromoCodeField`
-  calls `OnApply` on the event path and draws its error on the next pass, and
-  `cart.Config.AcceptCode` returns at once. A code that only the server can
-  validate needs a pending state on the field (Apply disabled, a spinner)
-  and an apply that completes later. The workaround today is to accept the
-  code and price it once the server agrees, or to check it against a list
-  fetched earlier.
 - **N-125** · raised `2026-1021-1113-shopping-cart-library` · value low
   **The cart's built-in refusal is a Go error string.**
   `cart.ErrUnknownCode` reads "that code isn't valid", lowercase by Go
@@ -850,6 +842,13 @@ defect, which then becomes its own Open item.
 
 ## Closed
 
+- **N-124** · raised `2026-1021-1113-shopping-cart-library` · value low
+  · closed 2026-10-21, `2026-1021-1122-n124-n125-promo-code-async-and-text` — a promo code could only be checked
+  synchronously. `comps.PromoCodeField.OnApplyAsync(code, done)` returns at
+  once; until `done`, the input and Apply are disabled and Apply reads
+  `PendingLabel` ("Checking…"). `done` may come from any goroutine and only
+  its first call counts. The documented server recipe dispatches
+  `cart.ApplyCode` once the server accepts. Race-tested in `comps`.
 - **N-112** · raised `2026-1017-2211-gallery-widget`
   · closed 2026-10-20, `2026-1020-1933-core-swipe-gesture` — core had no swipe gesture. Added in 5e93a45:
   `core.OnSwipe` and `core.OnVerticalSwipe`, a text callback reporting

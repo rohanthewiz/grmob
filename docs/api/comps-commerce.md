@@ -47,13 +47,13 @@ const ConcernCartListDuplicateID = "cart-list-duplicate-id"
 
 <small>[comps/cart_list.go:13](https://github.com/rohanthewiz/grmob/blob/master/comps/cart_list.go#L13)</small>
 
-ConcernPromoCodeFieldInert is raised, in debug builds only, when a PromoCodeField has no OnApply. Apply clears nothing and applies nothing, and the reader is left believing their discount is on the order.
+ConcernPromoCodeFieldInert is raised, in debug builds only, when a PromoCodeField has neither OnApply nor OnApplyAsync. Apply clears nothing and applies nothing, and the reader is left believing their discount is on the order.
 
 ```go
 const ConcernPromoCodeFieldInert = "promo-code-field-inert"
 ```
 
-<small>[comps/promo_code_field.go:12](https://github.com/rohanthewiz/grmob/blob/master/comps/promo_code_field.go#L12)</small>
+<small>[comps/promo_code_field.go:13](https://github.com/rohanthewiz/grmob/blob/master/comps/promo_code_field.go#L13)</small>
 
 ConcernStripeCheckoutInert is raised, in debug builds only, when a StripeCheckout has neither OnPay nor CheckoutURL and is not Disabled. Its Pay button looks ready and does nothing, on the one screen where a reader is most sure what a button should do.
 
@@ -519,6 +519,11 @@ type PromoCodeField struct {
 	// ConcernPromoCodeFieldInert.
 	OnApply func(code string) error
 
+	// OnApplyAsync is OnApply for an answer that takes time: it is handed the
+	// code and a done func to call with nil or the refusal, from any
+	// goroutine. It wins over OnApply. See the type doc.
+	OnApplyAsync func(code string, done func(error))
+
 	// Applied are the codes already on the order, drawn as removable pills.
 	Applied []string
 
@@ -533,6 +538,10 @@ type PromoCodeField struct {
 
 	// ApplyLabel is the button's text. Empty is "Apply".
 	ApplyLabel string
+
+	// PendingLabel is the button's text while an OnApplyAsync attempt is
+	// pending. Empty is "Checking…".
+	PendingLabel string
 
 	// RemoveLabel prefixes each ✕'s spoken name. Empty is "Remove".
 	RemoveLabel string
@@ -567,11 +576,33 @@ PromoCodeField is where a reader types a promo code: an input and an Apply butto
 
 Whether a code is good is not this widget's to decide: it may need the cart (a minimum order) or a server. OnApply returns nil to accept, and the draft clears; or an error, whose text is drawn under the input, and the draft stays so the reader can fix a typo rather than retype the code. cart.Store.ApplyCode has exactly this shape. Typing again clears the error, since it described a code that is no longer in the field.
 
-OnApply runs on the event path and its answer is drawn on the next pass, so it should answer promptly. A server check is better made by accepting the code (Store.Dispatch(cart.ApplyCode{…})) and pricing it once the server agrees, or by an AcceptCode that consults a list fetched earlier.
+OnApply runs on the event path and its answer is drawn on the next pass, so it must answer promptly: a network call there freezes the screen.
+
+#### A code only the server can check: OnApplyAsync
+
+OnApplyAsync is handed the code and a done func, and returns at once. The field is pending until done is called: the input and the button are disabled and the button reads PendingLabel ("Checking…"), which is also what a screen reader hears on it. done(nil) clears the draft; done(err) shows err, as OnApply's answers do. done may be called from any goroutine, and only its first call counts.
+
+	comps.PromoCodeField{
+	    OnApplyAsync: func(code string, done func(error)) {
+	        go func() {
+	            err := api.CheckCode(code)             // your server
+	            if err == nil {
+	                store.Dispatch(cart.ApplyCode{Code: code})
+	            }
+	            done(err)
+	        }()
+	    },
+	    Applied:  q.Cart.Codes,
+	    OnRemove: store.RemoveCode,
+	}
+
+Dispatch rather than Store.ApplyCode, because the server has already accepted the code and the Config's AcceptCode would ask again. The rule that prices the code still has to be in Config.Rules.
+
+A callback rather than a Pending field the caller drives: the pending state belongs to one attempt, and a done func ties the answer to the attempt that asked, with nothing for the caller to keep in step. The input is locked while an attempt is out, so there is only ever one. OnApplyAsync wins when both are set, as StripeCheckout's OnPay wins over its CheckoutURL.
 
 #### The draft and the error are the widget's
 
-TagInput's test: no application wants a half-typed code, and the refusal is about the last attempt, not about the cart. Both live in hooks here, so the hook rules apply: render a PromoCodeField unconditionally, in a stable position.
+TagInput's test: no application wants a half-typed code, and the refusal is about the last attempt, not about the cart. They, and the pending attempt, live in hooks here, so the hook rules apply: render a PromoCodeField unconditionally, in a stable position.
 
 #### Accessibility
 
@@ -584,7 +615,7 @@ The input is named by Label. A refusal is a RoleAlert, so a reader who pressed A
 	Error    Typography.Caption, Colors.Error
 	Pills    as TagInput's: Colors.Surface fill, ColorPalette.BorderColor hairline
 
-<small>[comps/promo_code_field.go:68](https://github.com/rohanthewiz/grmob/blob/master/comps/promo_code_field.go#L68)</small>
+<small>[comps/promo_code_field.go:102](https://github.com/rohanthewiz/grmob/blob/master/comps/promo_code_field.go#L102)</small>
 
 #### func (PromoCodeField) Render
 
@@ -592,9 +623,9 @@ The input is named by Label. A refusal is a RoleAlert, so a reader who pressed A
 func (p PromoCodeField) Render(ctx *core.Context) *core.Node
 ```
 
-Render draws the field. It takes two hooks, the draft and the last refusal, before any branch.
+Render draws the field. It takes three hooks before any branch: the draft, the last refusal, and whether an async attempt is pending.
 
-<small>[comps/promo_code_field.go:101](https://github.com/rohanthewiz/grmob/blob/master/comps/promo_code_field.go#L101)</small>
+<small>[comps/promo_code_field.go:144](https://github.com/rohanthewiz/grmob/blob/master/comps/promo_code_field.go#L144)</small>
 
 ### type StripeCheckout
 
