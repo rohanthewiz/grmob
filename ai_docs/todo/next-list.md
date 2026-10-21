@@ -36,7 +36,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-122
+**Next ID:** N-123
 
 ## Open
 
@@ -154,13 +154,6 @@ with each item's `raised` traced back through all session docs.
     `needs: verify`, so every red run skips the GitHub Pages deploy. The
     published tutorial site has not been updated since the last green run
     (2026-09-24).
-- **N-112** · raised `2026-1017-2211-gallery-widget` · value high
-  **core has no swipe or drag gesture.** `comps.Gallery` steps through
-  cards with tap zones (leading quarter, middle, trailing quarter) and
-  buttons. A swipe would need a new core prop on every host (pointer events
-  on the web, `detectHorizontalDragGestures` on Compose, `DragGesture` on
-  SwiftUI) reporting a direction or a delta. A horizontal `core.Scroll`
-  cannot stand in for it, because a scroll reports no position.
 - **N-113** · raised `2026-1017-2211-gallery-widget` · value low
   **core's paint transforms stop at Rotate and Translate.** A 3-D card flip
   needs rotation about the vertical axis with perspective, and a real zoom
@@ -706,6 +699,25 @@ defect, which then becomes its own Open item.
   - TalkBack and VoiceOver reading each quote as one sentence ("Apple, AAPL,
     189.12, up 1.23, 0.65 percent"), the tape as a list, and as a group of
     buttons with `OnTap`.
+- **N-122** · raised `2026-1020-1933-core-swipe-gesture` · value medium
+  **`core.OnSwipe` / `OnVerticalSwipe` on the natives and under real touch.**
+  Checked so far: the Go tests and the DOM shim's tests. In headless Chrome
+  with CDP mouse input, a drag across Gallery's middle zone stepped both ways
+  without flipping the card, and a 5px press still flipped it. The Kotlin
+  (`GrMobSwipe.kt`) passed kotlinc's type check against the cached Compose
+  1.7.6 jars, but not a gradle build: there was no NDK for the gomobile AAR.
+  The Swift passed `ios/verify` (typecheck plus whole-module optimisation),
+  with no simulator run. Still to check:
+  - Compose: a swipe that starts on a clickable tap zone steps and does not
+    also tap; a vertical drag over a swipeable card still scrolls the page; a
+    long press in the middle zone still zooms;
+  - SwiftUI: the same three, plus whether a tap child really fails once the
+    finger travels (the doc says "expected"), and a child Button's own
+    tracking;
+  - RTL on both natives: leading is a finger moving right. iOS reads the
+    translation in the global space on the assumption that it is physical;
+  - the web under real touch: `touch-action: pan-y` hands vertical pans to
+    the page, and a horizontal swipe on a phone browser steps the gallery.
 
 ## Non-goals
 
@@ -808,6 +820,19 @@ defect, which then becomes its own Open item.
 
 ## Closed
 
+- **N-112** · raised `2026-1017-2211-gallery-widget`
+  · closed 2026-10-20, `2026-1020-1933-core-swipe-gesture` — core had no swipe gesture. Added in 5e93a45:
+  `core.OnSwipe` and `core.OnVerticalSwipe`, a text callback reporting
+  `SwipeLeading`/`SwipeTrailing` (resolved for RTL on the host) or
+  `SwipeUp`/`SwipeDown` once at release, with no stream of deltas. Every
+  host applies one rule: at least `core.SwipeMinDistance` (40) along the
+  axis and strictly further along it than across. Each prop claims only its
+  axis. Wired on the web (pointer capture, touch-action, the trailing click
+  swallowed), Compose (a slop-gated drag detector at RenderNode) and
+  SwiftUI (a simultaneous DragGesture at RenderNode). `comps.Gallery`'s
+  stage steps on it. Pinned by `core/swipe_test.go`,
+  `wasm/verify/swipe_test.mjs` and `TestGallerySwipeSteps`. Seen working in
+  headless Chrome with real mouse input. The natives are N-122.
 - **N-119** · raised `2026-1019-2343-ios-filled-image-frame-and-screen-fill-scroll`
   · closed 2026-10-19, `2026-1019-2343-ios-filled-image-frame-and-screen-fill-scroll` — `Screen{Scroll, Fill}` left a white band
   below a short page on SwiftUI. Fill grew the column inside the Scroll but
