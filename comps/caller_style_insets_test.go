@@ -24,16 +24,16 @@ import (
 // last word away from the caller, and the ordering rule would stop being
 // reachable for that widget with nothing failing.
 //
-// # Why these five
+// # Why these six
 //
 // The census is over widgets carrying a non-zero inset default on the node a
 // caller's Style field reaches, since those are the only ones where a side
-// prop has anything to reach past. That is the root for four of the five and
+// prop has anything to reach past. That is the root for five of the six and
 // the control for GroupHeader, whose insets moved inward so that the padding
 // and the tap target are the same rectangle. They divide into the two shapes
 // that matter:
 //
-//	explicit sides       Card (padding and margin), ListRow
+//	explicit sides       Card (padding and margin), ListRow, CartButton
 //	                     the caller's assignment is the whole of it
 //
 //	a live shorthand     GroupHeader (on its control, not its root — see
@@ -155,6 +155,15 @@ func TestACallerStylePropOutranksAWidgetsOwnInsets(t *testing.T) {
 			styled: Card{Style: []core.StyleProp{core.MarginTop(0)}},
 			read:   margin, clearedName: "Top", keptName: "Bottom",
 			cleared: top, kept: bottom, axis: vertical,
+		},
+		{
+			// The tap-target insets around the glyph and badge, set as sides
+			// over a cleared theme Row base.
+			name:   "CartButton padding, explicit sides",
+			bare:   CartButton{Count: 1, OnTap: func() {}},
+			styled: CartButton{Count: 1, OnTap: func() {}, Style: []core.StyleProp{core.PaddingLeft(0)}},
+			read:   padding, clearedName: "Left", keptName: "Right",
+			cleared: left, kept: right, axis: horizontal,
 		},
 		{
 			name:   "ListRow padding, explicit sides from the theme Row base",

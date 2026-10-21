@@ -6,7 +6,7 @@ import "github.com/rohanthewiz/grmob/comps"
 
 Form fields, password fields, one-time code fields, tag inputs, masked inputs, number pads, colour swatches, range sliders, search, searchable selects, radio groups, dates, date ranges, times and calendars, and the two editors.
 
-One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/form_field.go`, `comps/password_field.go`, `comps/pin_input.go`, `comps/tag_input.go`, `comps/masked_input.go`, `comps/mask.go`, `comps/number_pad.go`, `comps/color_swatch_picker.go`, `comps/range_slider.go`, `comps/search_field.go`, `comps/searchable_select.go`, `comps/radio_group.go`, `comps/date_picker.go`, `comps/date_range_picker.go`, `comps/time_picker.go`, `comps/calendar.go`, `comps/code_editor.go`, `comps/rich_text_editor.go`, `comps/rich_text_view.go`.
+One of 8 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/form_field.go`, `comps/password_field.go`, `comps/pin_input.go`, `comps/tag_input.go`, `comps/masked_input.go`, `comps/mask.go`, `comps/number_pad.go`, `comps/color_swatch_picker.go`, `comps/range_slider.go`, `comps/search_field.go`, `comps/searchable_select.go`, `comps/radio_group.go`, `comps/date_picker.go`, `comps/date_range_picker.go`, `comps/time_picker.go`, `comps/calendar.go`, `comps/code_editor.go`, `comps/rich_text_editor.go`, `comps/rich_text_view.go`.
 
 ## Index
 

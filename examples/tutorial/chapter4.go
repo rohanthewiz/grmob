@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/rohanthewiz/grmob/alarm"
+	"github.com/rohanthewiz/grmob/cart"
 	"github.com/rohanthewiz/grmob/comps"
 	"github.com/rohanthewiz/grmob/core"
 	"github.com/rohanthewiz/grmob/hooks"
@@ -75,6 +76,7 @@ func chapter4() Chapter {
 			lessonDiscussion(),
 			lessonGallery(),
 			lessonStockTicker(),
+			lessonShoppingCart(),
 		},
 	}
 }
@@ -7218,6 +7220,166 @@ comps.StockTicker{
 					"A tape that moves on its own needs a pause switch, and the caller owns it.",
 					"▲/▼ and a spoken word carry the direction; colour only reinforces it. RedRises swaps the pair.",
 					"Format gets the magnitude; the percentage is derived from Change and the previous close.",
+				),
+			)
+		},
+	}
+}
+
+// tutorialCartConfig is 4.43's pricing: the cart package doc's three
+// built-in rules, plus a FREESHIP code written as a Rule in place, to show
+// that a rule is only a function of the Quote so far.
+func tutorialCartConfig() cart.Config {
+	return cart.Config{
+		Currency:    "usd",
+		MaxQuantity: 5,
+		Rules: []cart.Rule{
+			cart.PercentOff("SPRING10", "Spring sale", cart.Percent(10)),
+			cart.FlatShipping("Shipping", 599, 5000),
+			{Code: "FREESHIP", Apply: func(q cart.Quote) []cart.Adjustment {
+				// Cancels whatever shipping the rule before it charged.
+				for _, a := range q.Adjustments {
+					if a.Label == "Shipping" && a.Amount > 0 {
+						return []cart.Adjustment{{Label: "Free shipping", Amount: -a.Amount}}
+					}
+				}
+				return nil
+			}},
+			cart.Tax("Tax", cart.Percent(8.25)),
+		},
+	}
+}
+
+// tutorialProducts are 4.43's catalog, the items its Add buttons put in the
+// cart.
+var tutorialProducts = []cart.Item{
+	{ID: "kettle/black", Label: "Pour-over kettle", Detail: "Matte black", UnitAmount: 4500},
+	{ID: "filters", Label: "Filters (100)", UnitAmount: 650},
+	{ID: "mug", Label: "Stoneware mug", UnitAmount: 1200},
+}
+
+// 4.43 — package cart and the comps cart widgets. The store is made once per
+// lesson mount (UseMemo with no deps) rather than at package level, so every
+// test's fresh app opens on the same two lines, and nothing persists: an app
+// passes a cartdb Persister in the Config instead.
+//
+// Appended at the end of the chapter for the reason 4.25 was.
+func lessonShoppingCart() Lesson {
+	return Lesson{
+		Title:   "A shopping cart",
+		Summary: "package cart and the cart widgets: a shared Store with pricing rules and promo codes, CartList, CartSummary, CartButton and PromoCodeField.",
+		Body: func(ctx *core.Context) core.View {
+			// Every hook before any branch, and PromoCodeField (two hooks of
+			// its own) is rendered on every pass below.
+			store := hooks.UseMemo(ctx, func() *cart.Store {
+				s := cart.NewStore(tutorialCartConfig())
+				s.Add(tutorialProducts[0])
+				s.Add(cart.Item{ID: "filters", Label: "Filters (100)", UnitAmount: 650, Quantity: 2})
+				return s
+			})
+			q := hooks.UseCart(ctx, store)
+			swipe := core.NewState(ctx, false)
+			review := core.NewState(ctx, false)
+			readout := core.NewState(ctx, "")
+
+			adds := make([]core.PropsAndChildren, 0, len(tutorialProducts)+2)
+			adds = append(adds, core.Padding(0), core.Gap(8), core.FlexWrap(true))
+			for _, p := range tutorialProducts {
+				adds = append(adds, comps.Button{
+					Label:    "Add " + strings.ToLower(p.Label),
+					Emphasis: comps.EmphasisOutlined,
+					OnTap:    func() { store.Add(p) },
+				})
+			}
+
+			msg := readout.Get()
+			if msg == "" {
+				msg = "Try SPRING10 or FREESHIP, or a code that isn't."
+			}
+
+			return core.Column(
+				core.Gap(14),
+				prose("A cart outlives every screen that shows it, so it does not live in a screen's "+
+					"state. Package cart holds it in a Store: one value the product page adds to, "+
+					"the app bar counts and the cart screen edits. hooks.UseCart reads the Store "+
+					"and re-renders its caller whenever the cart changes, from any screen."),
+				codeBlock(`var store = cart.NewStore(cart.Config{
+    Currency:    "usd",
+    MaxQuantity: 5,
+    Rules: []cart.Rule{
+        cart.PercentOff("SPRING10", "Spring sale", cart.Percent(10)),
+        cart.FlatShipping("Shipping", 599, 5000), // free from $50
+        cart.Tax("Tax", cart.Percent(8.25)),
+    },
+    Persister: db.Cart("default"), // cartdb: survives a relaunch
+})
+
+q := hooks.UseCart(ctx, store) // every pass
+comps.CartList{Items: q.Cart.Items, Currency: q.Currency,
+    OnQuantity: store.SetQuantity, OnRemove: store.Remove}
+comps.PromoCodeField{OnApply: store.ApplyCode,
+    Applied: q.Cart.Codes, OnRemove: store.RemoveCode}
+comps.CartSummary{Quote: q, Footer: checkoutButton}`),
+				demoPanel("Add things, change quantities, apply a code.",
+					core.Row(
+						core.Padding(0),
+						core.AlignItemsProp(core.AlignItemsCenter),
+						core.Text("Shop", core.FontWeight(core.Bold), core.FlexGrow(1)),
+						comps.CartButton{Count: q.Count(), OnTap: func() {
+							readout.Set("CartButton: an app would push the cart screen here.")
+						}},
+					),
+					core.Row(adds...),
+					comps.CartList{
+						Items:         q.Cart.Items,
+						Currency:      q.Currency,
+						OnQuantity:    store.SetQuantity,
+						OnRemove:      store.Remove,
+						SwipeToRemove: swipe.Get(),
+						ReadOnly:      review.Get(),
+						EmptyHint:     "Add something above.",
+					},
+					checkRow("Swipe to remove a line", swipe),
+					checkRow("Review step (read only)", review),
+					comps.PromoCodeField{
+						OnApply:  store.ApplyCode,
+						Applied:  q.Cart.Codes,
+						OnRemove: store.RemoveCode,
+						Disabled: review.Get(),
+					},
+					comps.CartSummary{
+						Quote: q,
+						Footer: comps.Button{
+							Label:     "Checkout " + comps.FormatMoney(q.Total, q.Currency),
+							FullWidth: true,
+							Disabled:  q.Cart.IsEmpty(),
+							OnTap: func() {
+								readout.Set(fmt.Sprintf("Checkout: send %d IDs, their quantities and %d code(s) to your server, which prices them itself.",
+									len(store.Cart().Items), len(store.Cart().Codes)))
+							},
+						},
+					},
+					caption(msg),
+				),
+				prose("Pricing is a pipeline of rules run in order, each seeing the running total, so "+
+					"the order is the policy: the discount here comes before tax, so tax is charged on "+
+					"the discounted amount. A rule with a Code applies only while that code is "+
+					"applied, and naming it is what lets ApplyCode accept the code. FREESHIP is a "+
+					"Rule written in place: a function of the Quote so far."),
+				prose("Amounts are int64 minor units and rates are basis points, so nothing rounds "+
+					"until a rate is applied, and then half away from zero. The Quote is for display: "+
+					"whoever holds the phone can change it, so the server that takes the payment "+
+					"prices the IDs and quantities itself."),
+				prose("The widgets are controlled and hold no cart. CartList's callbacks take an item "+
+					"ID, the shapes Store.SetQuantity and Store.Remove already have; leave them nil, "+
+					"or set ReadOnly, for a review step. Each line's controls carry the item's name "+
+					"(\"Remove Pour-over kettle\"), and its text is one spoken phrase."),
+				keyPoints(
+					"cart.Store is the one cart every screen shares; hooks.UseCart re-renders a screen when it changes.",
+					"Config.Rules run in order on the running total; a Rule with a Code applies only while it is applied.",
+					"Config.Reduce and Config.Price are pure: a cart without a store, or priced without a UI.",
+					"A Persister (cartdb for bytdb) keeps the cart between launches; nil keeps it in memory.",
+					"StripeCheckoutFromCart turns the same Quote into the Stripe hand-off of lesson 4.38.",
 				),
 			)
 		},

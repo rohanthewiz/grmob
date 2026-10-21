@@ -3656,3 +3656,62 @@ func TestStockTickerLesson(t *testing.T) {
 	}
 	assertNoConcerns(t)
 }
+
+func TestShoppingCartLesson(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "A shopping cart")
+
+	named := func(name string) *node {
+		return findNode(tree(t, mgr), func(n *node) bool {
+			return n.Style != nil && n.Style.AccessibilityLabel == name
+		})
+	}
+	want := func(names ...string) {
+		t.Helper()
+		for _, name := range names {
+			if named(name) == nil {
+				t.Errorf("nothing named %q", name)
+			}
+		}
+	}
+
+	// Opens on a kettle and two filter packs: $58.00, shipping free over
+	// $50, 8.25% tax.
+	want("Cart, 3 items", "Subtotal, 3 items, $58.00", "Shipping, Free", "Tax, $4.79", "Total, $62.79")
+
+	// An Add button reaches the store, and every widget reading it follows.
+	tap(t, mgr, "Add stoneware mug")
+	want("Cart, 4 items", "Stoneware mug, $12.00", "Total, $75.78")
+
+	// The mug's own "+" (each stepper is named for its item).
+	stepper := named("Quantity, Stoneware mug")
+	plus := findNode(stepper, func(n *node) bool {
+		return n.Style != nil && n.Style.AccessibilityLabel == "Increase"
+	})
+	mgr.DispatchCallback(plus.Props["onClick"].(string))
+	want("Cart, 5 items", "Stoneware mug, 2 × $12.00, $24.00")
+
+	// A refused code is announced; a good one is priced and shown as a pill.
+	typeField(t, mgr, "Promo code", "nope")
+	tap(t, mgr, "Apply")
+	if !hasText(tree(t, mgr), "that code isn't valid") {
+		t.Error("a refused code shows why")
+	}
+	typeField(t, mgr, "Promo code", "spring10")
+	tap(t, mgr, "Apply")
+	want("Spring sale, SPRING10, -$8.20", "Remove SPRING10")
+
+	// Remove takes the line out everywhere.
+	tapLabelled(t, mgr, "Remove Stoneware mug")
+	if named("Remove Stoneware mug") != nil {
+		t.Error("the mug's line is gone")
+	}
+	want("Cart, 3 items")
+
+	// Review step: no line controls.
+	toggleCheckbox(t, mgr, 1, true)
+	if named("Remove Pour-over kettle") != nil {
+		t.Error("the review step draws no Remove buttons")
+	}
+	assertNoConcerns(t)
+}

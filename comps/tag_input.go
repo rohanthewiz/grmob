@@ -203,7 +203,15 @@ func (in TagInput) Render(ctx *core.Context) *core.Node {
 
 // pill is one tag: the inert text and its ✕, in a rounded Surface box.
 func (in TagInput) pill(t *core.Theme, tag, removeName string, remove func()) core.View {
-	return core.Row(
+	return removablePill(t, tag, removeName, in.Disabled, remove)
+}
+
+// removablePill is the pill TagInput draws for a tag and PromoCodeField for
+// an applied code: inert text and, when remove is set, a ghost ✕ Button
+// named removeName, in a rounded Surface box. A nil remove draws the text
+// alone, for a set the reader may see but not change.
+func removablePill(t *core.Theme, text, removeName string, disabled bool, remove func()) core.View {
+	items := []core.PropsAndChildren{
 		core.AccessibilityRole(core.RoleListItem),
 		core.AccessibilityNestingLevel(1),
 		core.AlignItemsProp(core.AlignItemsCenter),
@@ -217,20 +225,26 @@ func (in TagInput) pill(t *core.Theme, tag, removeName string, remove func()) co
 		core.BackgroundColor(t.Colors.Surface),
 		core.BorderWidth(1),
 		core.BorderColor(t.Colors.BorderColor()),
-		core.Text(tag, core.UseStyle(t.Typography.Body)),
-		Button{
-			Label:              "✕",
-			OnTap:              remove,
-			Emphasis:           EmphasisGhost,
-			Disabled:           in.Disabled,
-			AccessibilityLabel: removeName,
-			Style: []core.StyleProp{
-				core.PaddingVertical(2),
-				core.PaddingHorizontal(6),
-				core.FlexShrink(0),
-			},
+		core.Text(text, core.UseStyle(t.Typography.Body)),
+	}
+	if remove == nil {
+		// No ✕ to carry the trailing padding, so the text gets it.
+		items = append(items, core.PaddingRight(10))
+		return core.Row(items...)
+	}
+	items = append(items, Button{
+		Label:              "✕",
+		OnTap:              remove,
+		Emphasis:           EmphasisGhost,
+		Disabled:           disabled,
+		AccessibilityLabel: removeName,
+		Style: []core.StyleProp{
+			core.PaddingVertical(2),
+			core.PaddingHorizontal(6),
+			core.FlexShrink(0),
 		},
-	)
+	})
+	return core.Row(items...)
 }
 
 // splitDraft cuts the input's text at every separator. Every piece before the

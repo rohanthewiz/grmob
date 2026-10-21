@@ -30,7 +30,7 @@ func TestFormatMoney(t *testing.T) {
 	}
 }
 
-var cart = []CheckoutItem{
+var checkoutCart = []CheckoutItem{
 	{Label: "Pour-over kettle", Detail: "Matte black", UnitAmount: 4500},
 	{Label: "Filters (100)", Quantity: 2, UnitAmount: 650},
 }
@@ -39,7 +39,7 @@ var cart = []CheckoutItem{
 // button that says the total.
 func TestStripeCheckoutSummary(t *testing.T) {
 	s := StripeCheckout{
-		Items:       cart,
+		Items:       checkoutCart,
 		Adjustments: []CheckoutAdjustment{{Label: "Shipping", Amount: 500}, {Label: "Discount", Amount: -1000}},
 		CheckoutURL: "https://buy.stripe.com/test_123",
 	}
@@ -77,7 +77,7 @@ func TestStripeCheckoutSummary(t *testing.T) {
 // OnPay wins over CheckoutURL and is called once per tap.
 func TestStripeCheckoutOnPayWins(t *testing.T) {
 	paid := 0
-	ctx, n := renderDebug(t, StripeCheckout{Items: cart, CheckoutURL: "https://buy.stripe.com/x", OnPay: func() { paid++ }})
+	ctx, n := renderDebug(t, StripeCheckout{Items: checkoutCart, CheckoutURL: "https://buy.stripe.com/x", OnPay: func() { paid++ }})
 	btn := buttonsOf(n)[0]
 	if btn.Style.AccessibilityHint != "" {
 		t.Error("OnPay's destination is the app's; the browser hint should not be claimed")
@@ -92,7 +92,7 @@ func TestStripeCheckoutOnPayWins(t *testing.T) {
 // nothing.
 func TestStripeCheckoutPending(t *testing.T) {
 	paid := 0
-	ctx, n := renderDebug(t, StripeCheckout{Items: cart, OnPay: func() { paid++ }, Pending: true})
+	ctx, n := renderDebug(t, StripeCheckout{Items: checkoutCart, OnPay: func() { paid++ }, Pending: true})
 	btn := buttonsOf(n)[0]
 	if btn.Props["label"] != "Redirecting to Stripe…" || !btn.Style.Disabled {
 		t.Errorf("label %q disabled %v", btn.Props["label"], btn.Style.Disabled)
@@ -107,7 +107,7 @@ func TestStripeCheckoutPending(t *testing.T) {
 // and title are replaceable.
 func TestStripeCheckoutOptions(t *testing.T) {
 	_, n := renderDebug(t, StripeCheckout{
-		Title: "Your cart", Items: cart, OnPay: func() {}, Error: "Your card was declined.",
+		Title: "Your cart", Items: checkoutCart, OnPay: func() {}, Error: "Your card was declined.",
 		PayLabel: "Check out", HideNote: true, Currency: "jpy",
 	})
 	if msg := findText(n, "Your card was declined."); msg == nil || msg.Style.AccessibilityRole != core.RoleAlert {
@@ -136,9 +136,9 @@ func TestStripeCheckoutConcerns(t *testing.T) {
 		s    StripeCheckout
 		want string
 	}{
-		{StripeCheckout{Items: cart}, ConcernStripeCheckoutInert},
-		{StripeCheckout{Items: cart, CheckoutURL: "http://buy.stripe.com/x"}, ConcernStripeCheckoutInsecureURL},
-		{StripeCheckout{Items: cart, Disabled: true}, ""},
+		{StripeCheckout{Items: checkoutCart}, ConcernStripeCheckoutInert},
+		{StripeCheckout{Items: checkoutCart, CheckoutURL: "http://buy.stripe.com/x"}, ConcernStripeCheckoutInsecureURL},
+		{StripeCheckout{Items: checkoutCart, Disabled: true}, ""},
 	}
 	for _, c := range cases {
 		core.SetDebugMode(true)
@@ -157,7 +157,7 @@ func TestStripeCheckoutConcerns(t *testing.T) {
 }
 
 func TestStripeCheckoutCallerStyleWins(t *testing.T) {
-	_, n := renderDebug(t, StripeCheckout{Items: cart, OnPay: func() {}, Style: []core.StyleProp{core.Gap(29)}})
+	_, n := renderDebug(t, StripeCheckout{Items: checkoutCart, OnPay: func() {}, Style: []core.StyleProp{core.Gap(29)}})
 	if n.Style.Gap != 29 {
 		t.Errorf("gap = %v, want the caller's 29", n.Style.Gap)
 	}
@@ -169,7 +169,7 @@ func TestStripeCheckoutEveryTheme(t *testing.T) {
 		core.ClearConcerns()
 		ctx := core.NewContext().WithTheme(th)
 		ctx.BeginRenderPass()
-		n := StripeCheckout{Items: cart, OnPay: func() {}, Error: "x"}.Render(ctx)
+		n := StripeCheckout{Items: checkoutCart, OnPay: func() {}, Error: "x"}.Render(ctx)
 		ctx.EndRenderPass()
 		core.AuditTree(n)
 		if dump := core.DumpConcerns(); dump != "" {

@@ -263,9 +263,17 @@ var Packages = []Pkg{
 		}, {
 			Slug:  "actions",
 			Title: "Buttons & choices",
-			Blurb: "Buttons and their variants, copy buttons, links, chips, segmented controls, steppers, ratings, badges and the Stripe checkout summary.",
+			Blurb: "Buttons and their variants, copy buttons, links, chips, segmented controls, steppers, ratings and badges.",
 			Files: []string{"button.go", "variant.go", "copy_button.go", "link.go", "chip.go", "chip_strip.go", "segmented_control.go",
-				"stepper.go", "rating.go", "badge.go", "stripe_checkout.go"},
+				"stepper.go", "rating.go", "badge.go"},
+		}, {
+			// Its own page because a shop screen reaches for all of these
+			// together, and they share package cart's types; StripeCheckout
+			// moved here from "actions" when the cart widgets arrived.
+			Slug:  "commerce",
+			Title: "Cart & checkout",
+			Blurb: "Cart lines and lists, the cart summary, the cart button with its count, the promo code field, and the Stripe checkout summary.",
+			Files: []string{"cart_line.go", "cart_list.go", "cart_summary.go", "cart_button.go", "promo_code_field.go", "stripe_checkout.go"},
 		}, {
 			Slug:  "overlays",
 			Title: "Overlays & feedback",
@@ -295,6 +303,16 @@ var Packages = []Pkg{
 		Dir:   "forms",
 		Group: "Widgets",
 		Blurb: "Validation rules, the form hook that owns values and error visibility, and bound inputs.",
+	},
+	{
+		Dir:   "cart",
+		Group: "Widgets",
+		Blurb: "The model behind a shopping cart: lines, pricing rules and promo codes, a reducer, and a Store every screen shares.",
+	},
+	{
+		Dir:   "cart/cartdb",
+		Group: "Widgets",
+		Blurb: "A cart.Persister backed by bytdb, so a cart survives the app being killed.",
 	},
 	{
 		Dir:   "richtext",

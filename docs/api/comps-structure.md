@@ -6,7 +6,7 @@ import "github.com/rohanthewiz/grmob/comps"
 
 Screen, app and bottom bars, the FAB, tabs, drawers, step indicators, wizards, tree views, two-pane and foldable layouts, cards, accordions, headings, breadcrumbs and separators, labelled or not.
 
-One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/screen.go`, `comps/app_bar.go`, `comps/bottom_bar.go`, `comps/fab.go`, `comps/tabs.go`, `comps/drawer.go`, `comps/step_indicator.go`, `comps/wizard.go`, `comps/tree_view.go`, `comps/two_pane.go`, `comps/card.go`, `comps/accordion.go`, `comps/disclosure.go`, `comps/heading.go`, `comps/breadcrumb.go`, `comps/separator.go`, `comps/labeled_separator.go`.
+One of 8 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/screen.go`, `comps/app_bar.go`, `comps/bottom_bar.go`, `comps/fab.go`, `comps/tabs.go`, `comps/drawer.go`, `comps/step_indicator.go`, `comps/wizard.go`, `comps/tree_view.go`, `comps/two_pane.go`, `comps/card.go`, `comps/accordion.go`, `comps/disclosure.go`, `comps/heading.go`, `comps/breadcrumb.go`, `comps/separator.go`, `comps/labeled_separator.go`.
 
 ## Index
 

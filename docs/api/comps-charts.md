@@ -6,7 +6,7 @@ import "github.com/rohanthewiz/grmob/comps"
 
 Sparklines, line, area, bar and scatter charts, histograms, heatmaps and calendar heatmaps, donuts and pies, gauges, candlesticks, funnels, radars and audio waveforms, drawn on core.Canvas.
 
-One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/chart.go`, `comps/sparkline.go`, `comps/line_chart.go`, `comps/bar_chart.go`, `comps/histogram.go`, `comps/scatter_chart.go`, `comps/heatmap.go`, `comps/donut_chart.go`, `comps/gauge.go`, `comps/candlestick_chart.go`, `comps/funnel_chart.go`, `comps/radar_chart.go`, `comps/waveform.go`.
+One of 8 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/chart.go`, `comps/sparkline.go`, `comps/line_chart.go`, `comps/bar_chart.go`, `comps/histogram.go`, `comps/scatter_chart.go`, `comps/heatmap.go`, `comps/donut_chart.go`, `comps/gauge.go`, `comps/candlestick_chart.go`, `comps/funnel_chart.go`, `comps/radar_chart.go`, `comps/waveform.go`.
 
 ## Index
 

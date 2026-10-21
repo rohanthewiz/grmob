@@ -6,7 +6,7 @@ import "github.com/rohanthewiz/grmob/comps"
 
 Avatars and avatar stacks, stat tiles, stock tickers, the compass, clocks, countdowns and alarms, an audio player, an immersive picture gallery, message bubbles and threads, typing indicators, reaction bars, polls, threaded discussions, expandable text, Bible verses, QR codes, map panels and static maps.
 
-One of 7 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/avatar.go`, `comps/avatar_stack.go`, `comps/stat_tile.go`, `comps/stock_ticker.go`, `comps/compass.go`, `comps/clock.go`, `comps/timers.go`, `comps/alarm.go`, `comps/audio_player.go`, `comps/gallery.go`, `comps/message_bubble.go`, `comps/message_thread.go`, `comps/typing_indicator.go`, `comps/reaction_bar.go`, `comps/poll.go`, `comps/expandable_text.go`, `comps/qr_code.go`, `comps/map_panel.go`, `comps/static_map.go`, `comps/bible_verse.go`, `comps/discussion.go`.
+One of 8 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/avatar.go`, `comps/avatar_stack.go`, `comps/stat_tile.go`, `comps/stock_ticker.go`, `comps/compass.go`, `comps/clock.go`, `comps/timers.go`, `comps/alarm.go`, `comps/audio_player.go`, `comps/gallery.go`, `comps/message_bubble.go`, `comps/message_thread.go`, `comps/typing_indicator.go`, `comps/reaction_bar.go`, `comps/poll.go`, `comps/expandable_text.go`, `comps/qr_code.go`, `comps/map_panel.go`, `comps/static_map.go`, `comps/bible_verse.go`, `comps/discussion.go`.
 
 ## Index
 

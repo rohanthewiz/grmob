@@ -84,11 +84,14 @@ nav:
           - Lists & tables: api/comps-lists.md
           - Inputs & pickers: api/comps-inputs.md
           - Buttons & choices: api/comps-actions.md
+          - Cart & checkout: api/comps-commerce.md
           - Overlays & feedback: api/comps-overlays.md
           - Data display & maps: api/comps-display.md
           - Charts: api/comps-charts.md
       - alarm: api/alarm.md
       - forms: api/forms.md
+      - cart: api/cart.md
+      - cart/cartdb: api/cart-cartdb.md
       - richtext: api/richtext.md
       - highlight: api/highlight.md
       - blb: api/blb.md

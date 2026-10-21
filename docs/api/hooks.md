@@ -28,6 +28,7 @@ Comparison is by value equality on the dependency list. A dependency that is a f
 ## Index
 
 - [`func UseAudio`](#func-useaudio)
+- [`func UseCart`](#func-usecart)
 - [`func UseEffect`](#func-useeffect)
 - [`func UseHeading`](#func-useheading)
 - [`func UseInterval`](#func-useinterval)
@@ -76,6 +77,33 @@ The subscription is taken on the hook's first render and released when the conte
 The status itself is not copied into a hook slot: core keeps one record for the process (core.CurrentAudioStatus), and reading it at render time is what makes every subscriber see the same tick. The slot only remembers that this component already subscribed, so re-renders do not stack subscriptions.
 
 <small>[hooks/audio.go:42](https://github.com/rohanthewiz/grmob/blob/master/hooks/audio.go#L42)</small>
+
+### func UseCart
+
+```go
+func UseCart(ctx *core.Context, s *cart.Store) cart.Quote
+```
+
+UseCart returns the store's cart, priced, and re-renders the calling component whenever the cart changes, from this screen or any other:
+
+	q := hooks.UseCart(ctx, store)
+	return core.Column(
+	    comps.CartList{Items: q.Cart.Items, Currency: q.Currency,
+	        OnQuantity: store.SetQuantity, OnRemove: store.Remove},
+	    comps.CartSummary{Quote: q},
+	)
+
+It is the bridge cart.Store's doc describes: the cart outlives every screen, so it lives in the store, and each screen that shows it calls this once per pass. A product page and an app bar badge each calling UseCart on the same store stay in step without passing anything between them.
+
+#### One slot, every pass
+
+The hook takes one slot, so the hook rules apply: call it unconditionally. The store may change between passes (a sign-in swaps the account's cart); the slot moves its subscription to the new one. A nil store returns an empty Quote and subscribes to nothing.
+
+#### When the subscription ends
+
+As with every hook here, on the context's Close, not when the component leaves the tree: a screen pushed on the navigation stack lets go when its frame is popped. A subscription costs a map entry and a RequestRender per change, so one outliving its screen is harmless.
+
+<small>[hooks/cart.go:95](https://github.com/rohanthewiz/grmob/blob/master/hooks/cart.go#L95)</small>
 
 ### func UseEffect
 

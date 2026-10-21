@@ -30,14 +30,15 @@ Accordion (expanded or collapsed) and DatePicker (is the sheet open, which month
 
 ## Topics
 
-Package comps's reference is split into 7 topic pages by source file. The index below lists every top-level declaration with the page it is on.
+Package comps's reference is split into 8 topic pages by source file. The index below lists every top-level declaration with the page it is on.
 
 | Topic | What it covers | Declares |
 | --- | --- | --- |
 | [Screens & structure](comps-structure.md) | Screen, app and bottom bars, the FAB, tabs, drawers, step indicators, wizards, tree views, two-pane and foldable layouts, cards, accordions, headings, breadcrumbs and separators, labelled or not. | 21 types, 16 functions and methods |
 | [Lists & tables](comps-lists.md) | List rows, the settings-row family (switch, checkbox, select and slider), input rows, key-value lists, bullet lists, grouped and paged lists, data tables and timelines. | 24 types, 17 functions and methods |
 | [Inputs & pickers](comps-inputs.md) | Form fields, password fields, one-time code fields, tag inputs, masked inputs, number pads, colour swatches, range sliders, search, searchable selects, radio groups, dates, date ranges, times and calendars, and the two editors. | 22 types, 20 functions and methods |
-| [Buttons & choices](comps-actions.md) | Buttons and their variants, copy buttons, links, chips, segmented controls, steppers, ratings, badges and the Stripe checkout summary. | 15 types, 17 functions and methods |
+| [Buttons & choices](comps-actions.md) | Buttons and their variants, copy buttons, links, chips, segmented controls, steppers, ratings and badges. | 12 types, 14 functions and methods |
+| [Cart & checkout](comps-commerce.md) | Cart lines and lists, the cart summary, the cart button with its count, the promo code field, and the Stripe checkout summary. | 8 types, 9 functions and methods |
 | [Overlays & feedback](comps-overlays.md) | Dialogs, lightboxes, action sheets, menus, snackbars, banners, progress, spinners, skeletons and empty states. | 13 types, 10 functions and methods |
 | [Data display & maps](comps-display.md) | Avatars and avatar stacks, stat tiles, stock tickers, the compass, clocks, countdowns and alarms, an audio player, an immersive picture gallery, message bubbles and threads, typing indicators, reaction bars, polls, threaded discussions, expandable text, Bible verses, QR codes, map panels and static maps. | 44 types, 31 functions and methods |
 | [Charts](comps-charts.md) | Sparklines, line, area, bar and scatter charts, histograms, heatmaps and calendar heatmaps, donuts and pies, gauges, candlesticks, funnels, radars and audio waveforms, drawn on core.Canvas. | 22 types, 17 functions and methods |
@@ -120,12 +121,9 @@ Package comps's reference is split into 7 topic pages by source file. The index 
     - [`type TagInput`](comps-inputs.md#type-taginput)
     - [`type TimePicker`](comps-inputs.md#type-timepicker)
 - [Buttons & choices](comps-actions.md)
-    - [Constants](comps-actions.md#constants) — `ColorTransparent`, `ConcernLinkInert`, `ConcernStripeCheckoutInert`, `ConcernStripeCheckoutInsecureURL`
-    - [`func FormatMoney`](comps-actions.md#func-formatmoney)
+    - [Constants](comps-actions.md#constants) — `ColorTransparent`, `ConcernLinkInert`
     - [`type Badge`](comps-actions.md#type-badge)
     - [`type Button`](comps-actions.md#type-button)
-    - [`type CheckoutAdjustment`](comps-actions.md#type-checkoutadjustment)
-    - [`type CheckoutItem`](comps-actions.md#type-checkoutitem)
     - [`type Chip`](comps-actions.md#type-chip)
     - [`type ChipStrip`](comps-actions.md#type-chipstrip)
     - [`type CopyButton`](comps-actions.md#type-copybutton)
@@ -135,8 +133,19 @@ Package comps's reference is split into 7 topic pages by source file. The index 
     - [`type Rating`](comps-actions.md#type-rating)
     - [`type SegmentedControl`](comps-actions.md#type-segmentedcontrol)
     - [`type Stepper`](comps-actions.md#type-stepper)
-    - [`type StripeCheckout`](comps-actions.md#type-stripecheckout)
     - [`type Variant`](comps-actions.md#type-variant)
+- [Cart & checkout](comps-commerce.md)
+    - [Constants](comps-commerce.md#constants) — `ConcernCartButtonInert`, `ConcernCartListDuplicateID`, `ConcernPromoCodeFieldInert`, `ConcernStripeCheckoutInert`, `ConcernStripeCheckoutInsecureURL`
+    - [`func FormatMoney`](comps-commerce.md#func-formatmoney)
+    - [`type CartButton`](comps-commerce.md#type-cartbutton)
+    - [`type CartLine`](comps-commerce.md#type-cartline)
+    - [`type CartList`](comps-commerce.md#type-cartlist)
+    - [`type CartSummary`](comps-commerce.md#type-cartsummary)
+    - [`type CheckoutAdjustment`](comps-commerce.md#type-checkoutadjustment)
+    - [`type CheckoutItem`](comps-commerce.md#type-checkoutitem)
+    - [`type PromoCodeField`](comps-commerce.md#type-promocodefield)
+    - [`type StripeCheckout`](comps-commerce.md#type-stripecheckout)
+        - [`func StripeCheckoutFromCart`](comps-commerce.md#func-stripecheckoutfromcart)
 - [Overlays & feedback](comps-overlays.md)
     - [Constants](comps-overlays.md#constants) — `ConcernLightboxInescapable`, `SnackbarDuration`
     - [`type ActionSheet`](comps-overlays.md#type-actionsheet)

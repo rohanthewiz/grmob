@@ -36,7 +36,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-123
+**Next ID:** N-126
 
 ## Open
 
@@ -175,6 +175,22 @@ with each item's `raised` traced back through all session docs.
   nobody has asked for a gliding one. `core.ScrollIntoView` is not a
   substitute, because it is one app-wide command and would pull the page
   back to the tape. Related to N-113 (paint transforms).
+- **N-124** · raised `2026-1021-1113-shopping-cart-library` · value low
+  **A promo code can only be checked synchronously.** `comps.PromoCodeField`
+  calls `OnApply` on the event path and draws its error on the next pass, and
+  `cart.Config.AcceptCode` returns at once. A code that only the server can
+  validate needs a pending state on the field (Apply disabled, a spinner)
+  and an apply that completes later. The workaround today is to accept the
+  code and price it once the server agrees, or to check it against a list
+  fetched earlier.
+- **N-125** · raised `2026-1021-1113-shopping-cart-library` · value low
+  **The cart's built-in refusal is a Go error string.**
+  `cart.ErrUnknownCode` reads "that code isn't valid", lowercase by Go
+  convention, and `PromoCodeField` draws `err.Error()` as-is, so the lesson
+  shows it uncapitalised. An app can return its own wording from
+  `Config.AcceptCode`. Decide whether the cart should carry display text
+  apart from error text, and whether its other English defaults ("1 item",
+  "Free", "Your cart is empty") need more than their per-field overrides.
 
 ## Validate
 
@@ -718,6 +734,20 @@ defect, which then becomes its own Open item.
     translation in the global space on the assumption that it is physical;
   - the web under real touch: `touch-action: pan-y` hands vertical pans to
     the page, and a horizontal swipe on a phone browser steps the gallery.
+- **N-123** · raised `2026-1021-1113-shopping-cart-library` · value medium
+  **The cart widgets on the natives and with a screen reader.** Checked so
+  far: Go tests (cart, cartdb with a relaunch, UseCart, every widget, lesson
+  4.43) and screenshots of lesson 4.43 in the browser shots host. Still to
+  check:
+  - Android and iOS: CartLine's filled 64-pt thumbnail, the Stepper and
+    Remove row, CartButton (a Row acting as a button) inside an AppBar's
+    Actions, and PromoCodeField's input beside its Apply button;
+  - TalkBack and VoiceOver: each line's text as one phrase, the Stepper
+    named "Quantity, <item>", "Remove <item>", "Cart, 3 items", and the
+    refusal alert;
+  - SwipeToRemove under real touch, with N-122's checks;
+  - `cartdb` on a device: a cart under `mobile.DataDir()` survives killing
+    the app.
 
 ## Non-goals
 

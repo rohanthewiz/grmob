@@ -461,6 +461,196 @@ Other notes:
 - Lesson 4.38 in the interactive tutorial walks a pretend payment: pending,
   declined and paid, in three currencies.
 
+## CartList
+
+A shopping cart's lines: a [CartLine](#cartline) per item with separators
+between them, or an empty state when there are none. The cart itself lives in
+a `cart.Store` (package `cart`): one value every screen shares, priced by the
+rules in its `Config`, and kept between launches by a `Persister` such as
+`cartdb`'s bytdb one. `hooks.UseCart` reads it and re-renders the screen
+whenever it changes, from this screen or any other.
+
+```go
+var store = cart.NewStore(cart.Config{
+    Currency:    "usd",
+    MaxQuantity: 10,
+    Rules: []cart.Rule{
+        cart.PercentOff("SPRING10", "Spring sale", cart.Percent(10)),
+        cart.FlatShipping("Shipping", 599, 5000), // free from $50
+        cart.Tax("Tax", cart.Percent(8.25)),
+    },
+    Persister: db.Cart("default"), // cartdb.Open(path); nil keeps it in memory
+})
+
+func CartScreen(ctx *core.Context) core.View {
+    q := hooks.UseCart(ctx, store) // every pass, unconditionally
+    return core.Column(
+        comps.CartList{
+            Items:      q.Cart.Items,
+            Currency:   q.Currency,
+            OnQuantity: store.SetQuantity, // func(id string, n int)
+            OnRemove:   store.Remove,      // func(id string)
+        },
+        comps.PromoCodeField{OnApply: store.ApplyCode, Applied: q.Cart.Codes, OnRemove: store.RemoveCode},
+        comps.CartSummary{Quote: q, Footer: checkoutButton},
+    )
+}
+```
+
+**Three layers, each usable alone.** `cart.Config.Reduce` is a pure reducer
+(`hooks.UseReducer(ctx, cfg.Reduce, cart.Cart{})` is a cart with no store),
+`cart.Config.Price` prices a cart with no UI, and `cart.Store` adds sharing and
+persistence. Snapshots are values: every action builds new slices, so render
+code holds a `Cart` without a lock.
+
+**Pricing is a rule pipeline.** Rules run in `Config.Rules` order, each seeing
+the running total, so the order is the policy: a discount before tax is taxed
+on the discounted amount. A rule with a `Code` applies only while that code is
+applied, and naming it is what lets `Store.ApplyCode` accept the code
+(`Config.AcceptCode` replaces that policy). Rates are basis points
+(`cart.Percent(8.25)`), and every amount is `int64` minor units, as in
+[StripeCheckout](#stripecheckout). The price shown is not the price charged:
+the server that creates the payment prices the IDs and quantities itself.
+
+**Controlled, with store-shaped callbacks.** The list's callbacks take the
+item's ID, the shapes `Store.SetQuantity` and `Store.Remove` already have.
+Leave them nil, or set `ReadOnly`, for an order-review list with no controls.
+`Line` replaces each CartLine with a row of your own; the list keeps keying,
+separators and the empty state.
+
+Other notes:
+
+- No hooks; it may be rendered conditionally. A `Line` func must be hook-free.
+- Lines are keyed by ID, separators by `"sep:"+id`, so a removal patches one
+  line. Two items with one ID raise `ConcernCartListDuplicateID`.
+- `Empty` replaces the built empty state; `EmptyTitle` and `EmptyHint` word it.
+- `Currency`, `Format`, `SwipeToRemove`, `HideImages`, `QuantityLabel`,
+  `RemoveLabel` and `Disabled` pass through to every line.
+- To undo a removal, keep `store.Cart()` from before it and
+  `store.Dispatch(cart.Replace{Cart: before})` from a Snackbar's action.
+
+## CartLine
+
+One line of a cart: a thumbnail, the item's name and price, a
+[Stepper](#stepper) for its quantity and a Remove button. Usually drawn by
+CartList; on its own for a layout CartList does not draw.
+
+```go
+comps.CartLine{
+    Item:       it, // cart.Item
+    Currency:   q.Currency,
+    OnQuantity: func(n int) { store.SetQuantity(it.ID, n) },
+    OnRemove:   func() { store.Remove(it.ID) },
+}
+```
+
+**The controls follow the callbacks.** The Stepper is drawn only with
+`OnQuantity` and an item that can be more than one; Remove only with
+`OnRemove`. The zero `CartLine{Item: it}` is a read-only line. The Stepper runs
+from one to the item's `MaxQuantity` (filled from `Config.MaxQuantity` when the
+item was added), or 99; its "−" stops at one, leaving removal to the button
+that says so.
+
+**Swipe to remove is opt-in.** `SwipeToRemove` removes the line on a swipe
+toward the leading edge. It is off by default, because nothing hints at it and
+nothing confirms it; pair it with an undo. The Remove button stays, since a
+screen-reader user cannot swipe.
+
+**Accessibility.** The item's text is one labelled phrase ("Pour-over kettle,
+Matte black, 2 × $45.00, $90.00"). The controls stay outside it and carry the
+item's name: "Quantity, Pour-over kettle" and "Remove Pour-over kettle". The
+thumbnail is hidden.
+
+Other notes:
+
+- No hooks; it may be rendered conditionally.
+- `Leading` replaces the thumbnail; `HideImage` and `ImageSize` (default 64)
+  adjust it.
+- `Disabled` disables both controls and the swipe while a checkout is in
+  flight.
+
+## CartSummary
+
+The totals of a priced cart in a Card: subtotal with the item count, each
+rule's adjustment, the total, and a `Footer` slot for the button that moves
+on.
+
+```go
+comps.CartSummary{
+    Quote:  hooks.UseCart(ctx, store),
+    Footer: comps.Button{Label: "Checkout", OnTap: checkout, FullWidth: true},
+}
+```
+
+**Every number comes from the Quote.** The widget adds nothing up, so its
+figures cannot disagree with each other or with the Quote your server is
+sent. A discount's row names the code that gave it; a zero adjustment reads
+"Free" (`FreeLabel`).
+
+**Paying with Stripe.** `comps.StripeCheckoutFromCart(q)` returns a
+[StripeCheckout](#stripecheckout) filled from the same Quote (items,
+adjustments, currency, disabled when empty); set `OnPay` and `Pending` on it.
+
+Other notes:
+
+- No hooks; it may be rendered conditionally.
+- `Title` (none by default) is a level-2 heading; `SubtotalLabel`,
+  `TotalLabel` and `CountLabel` localise the fixed text, and `HideCount` drops
+  the count.
+
+## CartButton
+
+The cart glyph with a count beside it, for an app bar: the way to the cart
+from every screen.
+
+```go
+comps.AppBar{Title: "Shop", Actions: []core.View{
+    comps.CartButton{Count: hooks.UseCart(ctx, store).Count(), OnTap: openCart},
+}}
+```
+
+**The count sits beside the glyph,** not over its corner, so it is ordinary
+row layout on every host and a long count never runs off the icon. An empty
+cart draws no badge; above `MaxCount` (99) the badge reads "99+".
+
+**Accessibility.** The row is the button, named "Cart, 3 items" with the real
+count; `Label` and `CountLabel` localise it.
+
+Other notes:
+
+- No hooks; it may be rendered conditionally.
+- No `OnTap` raises `ConcernCartButtonInert`.
+- `Glyph` replaces "🛒"; `Variant` colours the badge.
+
+## PromoCodeField
+
+An input and an Apply button for a promo code, the reason a code was refused,
+and the applied codes as pills with their own ✕.
+
+```go
+comps.PromoCodeField{
+    OnApply:  store.ApplyCode, // func(code string) error
+    Applied:  q.Cart.Codes,
+    OnRemove: store.RemoveCode,
+}
+```
+
+**OnApply answers with an error.** Nil accepts, and the draft clears. An error's
+text is drawn under the input as an alert, and the draft stays so a typo can be
+fixed; typing again clears it. `cart.Store.ApplyCode` has this shape, and
+answers `cart.ErrUnknownCode` for a code no rule names.
+
+**The draft and the refusal are the widget's,** held in two hooks: render a
+PromoCodeField unconditionally, in a stable position.
+
+Other notes:
+
+- Return applies, as the button does; Apply is disabled while the field is
+  empty.
+- The pills are [TagInput](#taginput)'s: a list of items, each ✕ a separate
+  button named "Remove SPRING10". Without `OnRemove` they have no ✕.
+- No `OnApply` raises `ConcernPromoCodeFieldInert`.
+
 ## InputRow
 
 The composer: a text field that fills the row, and an optional trailing button
