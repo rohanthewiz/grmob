@@ -53,15 +53,6 @@ with each item's `raised` traced back through all session docs.
 - **N-009** · raised `2026-0916-1032-clocks-canvas-alarm` · value low
   **A Notify alarm is a banner, not a ringing screen.** The route is AlarmKit
   or full-screen intents. (was #15; lapsed@0917-1659)
-- **N-013** · raised `2026-0916-1157-next-list-charts-on-devices-tier-e-alarms-timezone` · value low (API decision)
-  **`mobile.SetTimeZone` runs once at startup.** Fixing it needs core to hold
-  the location. (was #16; lapsed@0917-1659)
-  - Recommendation (2026-09-29, not acted on): leave it. The fix is a zone
-    core holds (`core.Local()`, set from a "timezone" host event) and every
-    widget reading it instead of `time.Local`, but app code calling
-    `time.Now()` would still see the launch zone, so the result is two clocks
-    that can disagree. A zone change mid-run is rare; relaunch picks it up.
-    Propose as a non-goal.
 - **N-015** · raised `2026-0916-1229-next-list-exact-alarms-boot-rearm-and-sweeps` · value low (user's decision)
   **Compose Rows don't shrink children in proportion.** Seen on the Fold6's
   cover screen. (was #18; lapsed@0917-1659)
@@ -72,18 +63,6 @@ with each item's `raised` traced back through all session docs.
 - **N-024** · raised `2026-0916-1557-small-fixes-stroke-gradients-bar-values-alarm-groups` · value low
   **`barValueRoom` is still an estimate.** Exact needs host measurement of the
   plot. (was #30)
-- **N-027** · raised `2026-0917-0227-foldables-window-record-and-two-pane` · value low
-  **Lesson 4.21's TwoPane sets no `Origin`.** No longer waits on N-026:
-  4.21 sets `IgnoreHorizontalFold`, so its live axis is the vertical hinge
-  and the missing term is `Origin.X` — the demo panel's own left padding, a
-  layout constant no host reports. A correct `Origin` there would be a
-  hard-coded guess; showing the documented `Origin{Y: insets.Top + bar}`
-  case honestly needs a non-scrolling demo. Measured in the browser
-  (2026-09-22, browser check 23's setup): under a vertical hinge at x 390 the
-  seam lands at x 445, the demo panel's 55px of inset. (was #36;
-  lapsed@0917-1659)
-  - Recommendation (2026-09-29, not acted on): decline. The lesson's prose
-    already names the missing term; a hard-coded Origin.X would teach a guess.
 - **N-045** · raised `2026-0918-2002-next-list-thread-widget-caret-fixes-boot-frame-proof` · value low (by design)
   The web's thread place-keeping applies only when the List is its own scroll
   box. (was #56)
@@ -724,6 +703,13 @@ defect, which then becomes its own Open item.
   the user 2026-09-25. (was #13)
 - **N-012** · declined `2026-0916-1129-charts-on-canvas` — A 180° `Gauge`
   leaves its bottom half empty. (was #14; lapsed@0917-1659)
+- **N-013** · raised `2026-0916-1157-next-list-charts-on-devices-tier-e-alarms-timezone`
+  · declined 2026-10-21, `2026-1021-1132-work-next-list-n110-n109` — `mobile.SetTimeZone` runs once at
+  startup, and that stays. The item's recommendation (2026-09-29) named this
+  default. Holding the zone in core (`core.Local()`, set from a "timezone"
+  host event) would leave app code calling `time.Now()` on the launch zone,
+  so there would be two clocks that can disagree. A zone change mid-run is
+  rare, and a relaunch picks it up. (was #16; lapsed@0917-1659)
 - **N-017** · declined
   `2026-0916-1331-next-list-sweep-maxlines-chart-types-evenodd` — `MaxLines`
   on the natives applies to Text only; a stacked chart counts NaN as 0. (was
@@ -734,6 +720,13 @@ defect, which then becomes its own Open item.
 - **N-023** · declined
   `2026-0916-1557-small-fixes-stroke-gradients-bar-values-alarm-groups` —
   Renaming a `NotifyGroup` strands its schedules. (was #28; lapsed@0917-1659)
+- **N-027** · raised `2026-0917-0227-foldables-window-record-and-two-pane`
+  · declined 2026-10-21, `2026-1021-1132-work-next-list-n110-n109` — lesson 4.21's TwoPane sets no `Origin`.
+  The item's recommendation (2026-09-29) named this default. The missing
+  term is `Origin.X`, the demo panel's own 55px left inset, which is a
+  layout constant no host reports. Hard-coding it would teach a guess, and
+  the lesson's prose already names the missing term. (was #36;
+  lapsed@0917-1659)
 - **N-031** · declined 2026-10-04 · raised `2026-0917-0227-foldables-window-record-and-two-pane`
   — **Housekeeping.**
   - The `GrMob_Foldable` AVD is still installed. Delete it? (User's call.)
