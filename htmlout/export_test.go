@@ -2489,6 +2489,30 @@ func TestATextFieldGivesUpItsIntrinsicWidth(t *testing.T) {
 	}
 }
 
+// A grower's content is not a floor either (N-109): a growing Text or Column
+// gets min-width:0, so a long word breaks inside its share of the Row instead
+// of spilling out. A text field keeps its own floor without growing (the case
+// above states FlexGrow, so it alone could not tell the two arms apart), a
+// stated MinWidth still wins, and a node that does not grow is left alone.
+func TestAGrowerGivesUpItsLongestWord(t *testing.T) {
+	for _, typ := range []string{"Text", "Column", "Row", "Box"} {
+		out := ExportHTML(&core.Node{Type: typ, Props: map[string]any{"content": "x"}, Style: &core.Style{FlexGrow: 1}})
+		if !strings.Contains(out, "min-width:0") {
+			t.Errorf("a growing %s exports without min-width:0:\n%s", typ, out)
+		}
+	}
+	if field := ExportHTML(&core.Node{Type: "Input", Props: map[string]any{"value": ""}, Style: &core.Style{}}); !strings.Contains(field, "min-width:0") {
+		t.Errorf("a text field that does not grow lost its floor rule:\n%s", field)
+	}
+	stated := ExportHTML(&core.Node{Type: "Text", Props: map[string]any{"content": "x"}, Style: &core.Style{FlexGrow: 1, MinWidth: "40px"}})
+	if !strings.Contains(stated, "min-width:40px") || strings.Contains(stated, "min-width:0") {
+		t.Errorf("a stated MinWidth should be the only floor:\n%s", stated)
+	}
+	if still := ExportHTML(&core.Node{Type: "Text", Props: map[string]any{"content": "x"}, Style: &core.Style{FlexShrink: 1}}); strings.Contains(still, "min-width") {
+		t.Errorf("a Text that does not grow keeps the automatic minimum:\n%s", still)
+	}
+}
+
 // --- The document head (N-096) ----------------------------------------------
 
 // Every export carries the charset and viewport metas, a still tree included,

@@ -439,10 +439,28 @@ var fieldFloorTypes = map[string]bool{
 	"TextArea":      true,
 }
 
-// ZeroesFieldFloor reports whether a node type gets min-width:0 when its style
-// states no MinWidth. See fieldFloorTypes.
-func ZeroesFieldFloor(nodeType string) bool {
-	return fieldFloorTypes[nodeType]
+// ZeroesFieldFloor reports whether a node gets min-width:0 when its style
+// states no MinWidth: a text field (see fieldFloorTypes), or any node that
+// grows (flexGrow > 0).
+//
+// The grow arm is the same floor one level up. A flex item's automatic
+// minimum is its min-content width, and for text that is its longest word, so
+// a growing Text or Column holding a long identifier could not shrink below
+// it and spilled out of its Row. That happened on CI's Linux fonts at 360px
+// and not on macOS's narrower ones (browser check 24, N-109):
+//
+//	Row 48..312 ─────────────────────────────┐
+//	│ •  core.AccessibilityKeyShortcuts presses│ a…   ← the grower's floor is
+//	└──────────────────────────────────────────┘        its longest word
+//
+// A grower is a Compose weight and a SwiftUI flexible frame, and both give
+// the child its share with no content floor; the word then breaks under
+// overflow-wrap: break-word (bodyStyle), as it does on both natives.
+// min-width is inert where the node is not a Row's item: it is a column's
+// cross axis, and a block's automatic minimum is already 0. The WASM
+// runtime's styleFromGrMob applies the same rule.
+func ZeroesFieldFloor(nodeType string, flexGrow float64) bool {
+	return fieldFloorTypes[nodeType] || flexGrow > 0
 }
 
 // FieldFloorTypes returns those node types, sorted, for the WASM conformance

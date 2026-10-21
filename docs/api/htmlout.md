@@ -151,7 +151,7 @@ func BorderResetTypes() []string
 
 BorderResetTypes returns those node types, sorted so that a test looping over them reports in a stable order. Exported for the reason GenericTags is: the WASM conformance test has to compare set against set.
 
-<small>[htmlout/tag.go:468](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L468)</small>
+<small>[htmlout/tag.go:486](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L486)</small>
 
 ### func CanvasClip
 
@@ -395,7 +395,7 @@ func FieldFloorTypes() []string
 
 FieldFloorTypes returns those node types, sorted, for the WASM conformance test to compare set against set (BorderResetTypes' reason).
 
-<small>[htmlout/tag.go:450](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L450)</small>
+<small>[htmlout/tag.go:468](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L468)</small>
 
 ### func GenericTags
 
@@ -549,7 +549,7 @@ func ResetsUABorder(nodeType string) bool
 
 ResetsUABorder reports whether a node type needs an explicit "no border" written for it when the style declares none. See borderResetTypes.
 
-<small>[htmlout/tag.go:461](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L461)</small>
+<small>[htmlout/tag.go:479](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L479)</small>
 
 ### func StackAxes
 
@@ -668,10 +668,18 @@ TransparentTypes returns the transparent node types, sorted so that a test loopi
 ### func ZeroesFieldFloor
 
 ```go
-func ZeroesFieldFloor(nodeType string) bool
+func ZeroesFieldFloor(nodeType string, flexGrow float64) bool
 ```
 
-ZeroesFieldFloor reports whether a node type gets min-width:0 when its style states no MinWidth. See fieldFloorTypes.
+ZeroesFieldFloor reports whether a node gets min-width:0 when its style states no MinWidth: a text field (see fieldFloorTypes), or any node that grows (flexGrow > 0).
 
-<small>[htmlout/tag.go:444](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L444)</small>
+The grow arm is the same floor one level up. A flex item's automatic minimum is its min-content width, and for text that is its longest word, so a growing Text or Column holding a long identifier could not shrink below it and spilled out of its Row. That happened on CI's Linux fonts at 360px and not on macOS's narrower ones (browser check 24, N-109):
+
+	Row 48..312 ─────────────────────────────┐
+	│ •  core.AccessibilityKeyShortcuts presses│ a…   ← the grower's floor is
+	└──────────────────────────────────────────┘        its longest word
+
+A grower is a Compose weight and a SwiftUI flexible frame, and both give the child its share with no content floor; the word then breaks under overflow-wrap: break-word (bodyStyle), as it does on both natives. min-width is inert where the node is not a Row's item: it is a column's cross axis, and a block's automatic minimum is already 0. The WASM runtime's styleFromGrMob applies the same rule.
+
+<small>[htmlout/tag.go:462](https://github.com/rohanthewiz/grmob/blob/master/htmlout/tag.go#L462)</small>
 

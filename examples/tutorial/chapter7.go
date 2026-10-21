@@ -494,6 +494,11 @@ func themePreview(following bool, onFollow func()) core.View {
 			core.Row(
 				core.Gap(8),
 				core.AlignItemsProp(core.AlignItemsCenter),
+				// Wraps so the badge drops under the name when the two cannot
+				// share a line. At 360px under a wide face (CI's Linux fonts)
+				// the title's floor is "McGrMob" at Title size, and the badge
+				// ran 2px past the card (browser check 24, N-109).
+				core.FlexWrap(true),
 				core.Text("Gopher McGrMob", core.UseStyle(t.Typography.Title)),
 				core.Box(core.FlexGrow(1)), // slack, so the badge pins right
 				comps.Badge{Text: "PRO"},

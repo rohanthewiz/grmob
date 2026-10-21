@@ -7635,7 +7635,22 @@ const GrMob = (() => {
         // flex row treats as a floor, so a growing field could never shrink
         // and pushed its row's button off the edge. Neither native has the
         // floor. See FIELD_FLOOR_TYPES above.
-        out.minWidth = style.MinWidth || (FIELD_FLOOR_TYPES.has(nodeType) ? "0" : "");
+        //
+        // A grower (FlexGrow > 0) gets the same "0", whatever its type. A flex
+        // item's automatic minimum is its min-content width, which for text is
+        // its longest word, so a growing Text or Column holding a long
+        // identifier ("core.AccessibilityKeyShortcuts") could not shrink below
+        // that word and spilled out of its Row. On a phone that depends on the
+        // font: CI's Linux faces are wider than macOS's, and browser check 24
+        // found the spill only there (N-109). A grower is a Compose weight or a
+        // SwiftUI flexible frame, and both give the child exactly its share,
+        // with no content floor; the word then breaks under the mount point's
+        // overflow-wrap: break-word, as it does on both natives. Inert where
+        // it is not a Row's item: min-width is a column's cross axis, and a
+        // block's auto minimum is already 0. htmlout writes the same rule
+        // (ZeroesFieldFloor's grow argument).
+        out.minWidth = style.MinWidth ||
+            (FIELD_FLOOR_TYPES.has(nodeType) || style.FlexGrow > 0 ? "0" : "");
         out.minHeight = style.MinHeight || "";
         out.maxWidth = style.MaxWidth || "";
         out.maxHeight = style.MaxHeight || "";

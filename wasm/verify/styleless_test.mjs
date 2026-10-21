@@ -273,6 +273,24 @@ test("a text field gives up its intrinsic width unless a floor is stated", () =>
     assert.equal(at(3).style.minWidth, "120px");
 });
 
+test("a grower gives up its longest word unless a floor is stated", () => {
+    // A flex item's automatic minimum is its min-content width, so a growing
+    // Text or Column holding a long identifier spilled out of its Row under
+    // CI's wider Linux fonts (N-109). Any FlexGrow > 0 writes min-width: 0,
+    // as htmlout's ZeroesFieldFloor does; a stated MinWidth still wins, and
+    // a node that does not grow keeps the automatic minimum.
+    const { at } = mount([
+        { Type: "Text", Props: { content: "core.AccessibilityKeyShortcuts" }, Style: { FlexGrow: 1 } },
+        { Type: "Column", Props: {}, Style: { FlexGrow: 2 }, Children: [] },
+        { Type: "Text", Props: { content: "x" }, Style: { FlexGrow: 1, MinWidth: "40px" } },
+        { Type: "Text", Props: { content: "x" }, Style: { FlexShrink: 1 } },
+    ]);
+    assert.equal(at(0).style.minWidth, "0");
+    assert.equal(at(1).style.minWidth, "0");
+    assert.equal(at(2).style.minWidth, "40px");
+    assert.equal(at(3).style.minWidth, "");
+});
+
 test("a Fragment or a Theme draws no box, so a Fill child can grow", () => {
     // The element stays (patches address it by path) but generates no box:
     // `display: contents` hands its children to the grandparent's flex

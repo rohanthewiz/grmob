@@ -2213,11 +2213,12 @@ func styleValue(s *core.Style, nodeType string) string {
 	// the enums (Position, AlignItems, FlexWrap, Overflow, WhiteSpace) hold
 	// the CSS keywords themselves.
 	// The else arm: a text field's element has an intrinsic width that a
-	// flex row would treat as a floor, and no native has one. See
-	// fieldFloorTypes in tag.go.
+	// flex row would treat as a floor, and no native has one; nor does a
+	// grower's content, whose floor is its longest word. See fieldFloorTypes
+	// and ZeroesFieldFloor in tag.go.
 	if s.MinWidth != "" {
 		styles = append(styles, "min-width:"+s.MinWidth)
-	} else if ZeroesFieldFloor(nodeType) {
+	} else if ZeroesFieldFloor(nodeType, s.FlexGrow) {
 		styles = append(styles, "min-width:0")
 	}
 	if s.MinHeight != "" {

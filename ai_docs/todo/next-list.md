@@ -136,24 +136,6 @@ with each item's `raised` traced back through all session docs.
   2026-10-10, where it sat as a check whose answer was already known. N-001
   declines composing the shut panel differently. This item is only the
   focus gate.
-- **N-109** · raised `2026-1011-2237-v0.6.0-release-on-red-ci` · value high
-  **Browser check 24 (the overflow sweep) fails in the site workflow**, red on
-  master since about 2026-09-24 and still red at `cbe9c6d`. In CI's Chrome a
-  Text or Checkbox overflows its parent Row on tutorial lessons 2.2, 4.29,
-  5.3 and 6.5 (each a 66.88px-inset Text, so likely one bullet or note
-  pattern), 7.2 (a Column and its Checkbox) and 7.4 (the "PRO" badge), at 360
-  and/or 390px. Example: `5.3: Text "The blur listener is attached only
-  under": x 66.88..345.5 outside its parent Row's x 48..342`. Not yet run
-  locally, so it is unknown whether the overflow happens only with CI's fonts.
-  v0.6.0 was tagged on this red, at the user's call.
-  - Run locally 2026-10-11 (`/next-list`): `wasm/verify/run.sh` passes on
-    macOS with Chrome 152, check 24 included. The overflow is specific to
-    CI's ubuntu-latest runner, its fonts or its Chrome. To reproduce it, run
-    the suite on Linux or with CI's font stack.
-  - Re-rated high from medium: in `.github/workflows/site.yml`, `deploy`
-    `needs: verify`, so every red run skips the GitHub Pages deploy. The
-    published tutorial site has not been updated since the last green run
-    (2026-09-24).
 - **N-113** · raised `2026-1017-2211-gallery-widget` · value low
   **core's paint transforms stop at Rotate and Translate.** A 3-D card flip
   needs rotation about the vertical axis with perspective, and a real zoom
@@ -816,6 +798,23 @@ defect, which then becomes its own Open item.
 
 ## Closed
 
+- **N-109** · raised `2026-1011-2237-v0.6.0-release-on-red-ci` · value high
+  · closed 2026-10-21, `2026-1021-1132-work-next-list-n110-n109` — check 24 failed only on CI's wider Linux
+  fonts. Reproduced on macOS by swapping the site page's face for Verdana
+  (the same eight findings, plus one). Two causes:
+  - A growing Text or Column's flex floor was its longest word
+    ("core.AccessibilityKeyShortcuts", "UseStyle(Style{BorderRadius:"), so
+    BulletList items and 7.2's CheckboxRow column spilled their Row. Now
+    any FlexGrow > 0 with no stated MinWidth gets `min-width: 0` (the
+    runtime's `styleFromGrMob` and htmlout's `ZeroesFieldFloor`), which
+    matches a Compose weight. The word breaks under `overflow-wrap:
+    break-word`.
+  - 7.4's title row could not fit "McGrMob" at Title size beside the PRO
+    badge. That row now wraps.
+
+  Checked with `wasm/verify/run.sh` passing under Verdana and under the
+  system face (258 lesson views). New tests in htmlout
+  (`TestAGrowerGivesUpItsLongestWord`) and styleless_test.mjs.
 - **N-110** · raised `2026-1011-2237-v0.6.0-release-on-red-ci` · value high
   · closed 2026-10-21, `2026-1021-1132-work-next-list-n110-n109` — `go test -race ./comps` failed on the
   EditableGrid harness, not the grid: the blur grace's commit calls
