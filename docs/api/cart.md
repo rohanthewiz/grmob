@@ -107,11 +107,13 @@ A Cart handed out by a Store, or produced by Reduce, is never modified afterward
 
 ErrUnknownCode is ApplyCode's answer for a code no Rule names, under the default Config.AcceptCode.
 
+Its text is lower case, as Go error strings are, so it composes into a longer message. comps.PromoCodeField sentence-cases a refusal when it draws one ("That code isn't valid"), and its ErrorText takes a translation; the error itself stays comparable with errors.Is.
+
 ```go
 var ErrUnknownCode = errors.New("that code isn't valid")
 ```
 
-<small>[cart/reduce.go:11](https://github.com/rohanthewiz/grmob/blob/master/cart/reduce.go#L11)</small>
+<small>[cart/reduce.go:16](https://github.com/rohanthewiz/grmob/blob/master/cart/reduce.go#L16)</small>
 
 ## Functions
 
@@ -123,7 +125,7 @@ func NormalizeCode(code string) string
 
 NormalizeCode is a promo code as the cart stores and compares it: trimmed and upper-cased, so " spring10" typed on a phone matches the "SPRING10" a Rule names.
 
-<small>[cart/reduce.go:69](https://github.com/rohanthewiz/grmob/blob/master/cart/reduce.go#L69)</small>
+<small>[cart/reduce.go:74](https://github.com/rohanthewiz/grmob/blob/master/cart/reduce.go#L74)</small>
 
 ## Types
 
@@ -137,7 +139,7 @@ type Action interface {
 
 Action is a change to a cart, applied by Config.Reduce or Store.Dispatch. The set is closed (the method is unexported) so Reduce can promise to handle every Action there is.
 
-<small>[cart/reduce.go:74](https://github.com/rohanthewiz/grmob/blob/master/cart/reduce.go#L74)</small>
+<small>[cart/reduce.go:79](https://github.com/rohanthewiz/grmob/blob/master/cart/reduce.go#L79)</small>
 
 ### type Add
 
@@ -147,7 +149,7 @@ type Add struct{ Item Item }
 
 Add puts Item in the cart. A line with the same ID gains Item's quantity and takes Item's other fields (the newest label and price win, which is what a re-added catalog item means), keeping its place in the order. The quantity is clamped to the line's cap.
 
-<small>[cart/reduce.go:80](https://github.com/rohanthewiz/grmob/blob/master/cart/reduce.go#L80)</small>
+<small>[cart/reduce.go:85](https://github.com/rohanthewiz/grmob/blob/master/cart/reduce.go#L85)</small>
 
 ### type Adjustment
 
@@ -174,7 +176,7 @@ type ApplyCode struct{ Code string }
 
 ApplyCode adds a promo code. Reduce applies it without asking AcceptCode, because a reducer cannot return an error; Store.ApplyCode is the checked path the widgets use.
 
-<small>[cart/reduce.go:95](https://github.com/rohanthewiz/grmob/blob/master/cart/reduce.go#L95)</small>
+<small>[cart/reduce.go:100](https://github.com/rohanthewiz/grmob/blob/master/cart/reduce.go#L100)</small>
 
 ### type Cart
 
@@ -247,7 +249,7 @@ type Clear struct{}
 
 Clear empties the cart, codes included: what happens after a successful payment.
 
-<small>[cart/reduce.go:102](https://github.com/rohanthewiz/grmob/blob/master/cart/reduce.go#L102)</small>
+<small>[cart/reduce.go:107](https://github.com/rohanthewiz/grmob/blob/master/cart/reduce.go#L107)</small>
 
 ### type Config
 
@@ -283,7 +285,7 @@ type Config struct {
 
 Config is everything about a cart that is policy rather than contents: the currency, the quantity cap, the pricing rules, which codes are accepted, and where the cart is kept between launches. Every field's zero value is usable; Config{} is a USD cart with no cap, no rules and no persistence.
 
-<small>[cart/reduce.go:17](https://github.com/rohanthewiz/grmob/blob/master/cart/reduce.go#L17)</small>
+<small>[cart/reduce.go:22](https://github.com/rohanthewiz/grmob/blob/master/cart/reduce.go#L22)</small>
 
 #### func (Config) Price
 
@@ -307,7 +309,7 @@ Reduce returns the cart after action. It never modifies c: every change builds n
 
 A nil action returns c unchanged.
 
-<small>[cart/reduce.go:116](https://github.com/rohanthewiz/grmob/blob/master/cart/reduce.go#L116)</small>
+<small>[cart/reduce.go:121](https://github.com/rohanthewiz/grmob/blob/master/cart/reduce.go#L121)</small>
 
 ### type Item
 
@@ -455,7 +457,7 @@ type Remove struct{ ID string }
 
 Remove takes the line with ID out of the cart.
 
-<small>[cart/reduce.go:90](https://github.com/rohanthewiz/grmob/blob/master/cart/reduce.go#L90)</small>
+<small>[cart/reduce.go:95](https://github.com/rohanthewiz/grmob/blob/master/cart/reduce.go#L95)</small>
 
 ### type RemoveCode
 
@@ -465,7 +467,7 @@ type RemoveCode struct{ Code string }
 
 RemoveCode takes a promo code off.
 
-<small>[cart/reduce.go:98](https://github.com/rohanthewiz/grmob/blob/master/cart/reduce.go#L98)</small>
+<small>[cart/reduce.go:103](https://github.com/rohanthewiz/grmob/blob/master/cart/reduce.go#L103)</small>
 
 ### type Replace
 
@@ -475,7 +477,7 @@ type Replace struct{ Cart Cart }
 
 Replace swaps in a whole cart: loading one the server holds, or undoing a removal (keep the Cart from before the Remove and Replace it back, which also restores the line's position).
 
-<small>[cart/reduce.go:107](https://github.com/rohanthewiz/grmob/blob/master/cart/reduce.go#L107)</small>
+<small>[cart/reduce.go:112](https://github.com/rohanthewiz/grmob/blob/master/cart/reduce.go#L112)</small>
 
 ### type Rule
 
@@ -556,7 +558,7 @@ type SetQuantity struct {
 
 SetQuantity sets the line with ID to Quantity, clamped to its cap. Below one removes the line. An unknown ID is ignored.
 
-<small>[cart/reduce.go:84](https://github.com/rohanthewiz/grmob/blob/master/cart/reduce.go#L84)</small>
+<small>[cart/reduce.go:89](https://github.com/rohanthewiz/grmob/blob/master/cart/reduce.go#L89)</small>
 
 ### type Store
 

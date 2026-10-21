@@ -8,6 +8,11 @@ import (
 
 // ErrUnknownCode is ApplyCode's answer for a code no Rule names, under the
 // default Config.AcceptCode.
+//
+// Its text is lower case, as Go error strings are, so it composes into a
+// longer message. comps.PromoCodeField sentence-cases a refusal when it
+// draws one ("That code isn't valid"), and its ErrorText takes a
+// translation; the error itself stays comparable with errors.Is.
 var ErrUnknownCode = errors.New("that code isn't valid")
 
 // Config is everything about a cart that is policy rather than contents: the

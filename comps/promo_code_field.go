@@ -3,6 +3,8 @@ package comps
 import (
 	"strings"
 	"sync"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/rohanthewiz/grmob/core"
 )
@@ -78,6 +80,17 @@ const ConcernPromoCodeFieldInert = "promo-code-field-inert"
 // OnApplyAsync wins when both are set, as StripeCheckout's OnPay wins over
 // its CheckoutURL.
 //
+// # An error becomes a sentence here
+//
+// Go error strings start in lower case, by convention, because they are
+// composed into longer messages ("apply code: that code isn't valid"). Drawn
+// alone under a field, the same text reads as a fragment. The widget is the
+// point where an error turns into on-screen copy, so that is where it is
+// sentence-cased: the first letter is upper-cased and nothing else changes.
+// ErrorText replaces that wholesale, for a translation or for errors whose
+// text was never meant for a reader (a transport error, say). The errors
+// themselves are left alone, so errors.Is and logging see the originals.
+//
 // # The draft and the error are the widget's
 //
 // TagInput's test: no application wants a half-typed code, and the refusal
@@ -115,6 +128,10 @@ type PromoCodeField struct {
 
 	// OnRemove takes an applied code off. Nil draws the pills without ✕.
 	OnRemove func(code string)
+
+	// ErrorText turns a refusal into the text drawn under the input. Nil
+	// upper-cases the error's first letter. See the type doc.
+	ErrorText func(error) string
 
 	// Label names the input for assistive technology. Empty is "Promo code".
 	Label string
@@ -154,9 +171,13 @@ func (p PromoCodeField) Render(ctx *core.Context) *core.Node {
 
 	label := orDefault(p.Label, "Promo code")
 	// answer settles an attempt the same way whichever path produced it.
+	errorText := p.ErrorText
+	if errorText == nil {
+		errorText = sentenceCase
+	}
 	answer := func(err error) {
 		if err != nil {
-			refusal.Set(err.Error())
+			refusal.Set(errorText(err))
 			return
 		}
 		draft.Set("")
@@ -258,4 +279,15 @@ func (p PromoCodeField) Render(ctx *core.Context) *core.Node {
 	}
 
 	return core.Column(items...).Render(ctx)
+}
+
+// sentenceCase is err's text with its first letter upper-cased, the default
+// PromoCodeField.ErrorText.
+func sentenceCase(err error) string {
+	msg := err.Error()
+	r, size := utf8.DecodeRuneInString(msg)
+	if r == utf8.RuneError || !unicode.IsLower(r) {
+		return msg
+	}
+	return string(unicode.ToUpper(r)) + msg[size:]
 }

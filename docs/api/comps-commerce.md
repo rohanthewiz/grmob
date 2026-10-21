@@ -53,7 +53,7 @@ ConcernPromoCodeFieldInert is raised, in debug builds only, when a PromoCodeFiel
 const ConcernPromoCodeFieldInert = "promo-code-field-inert"
 ```
 
-<small>[comps/promo_code_field.go:13](https://github.com/rohanthewiz/grmob/blob/master/comps/promo_code_field.go#L13)</small>
+<small>[comps/promo_code_field.go:15](https://github.com/rohanthewiz/grmob/blob/master/comps/promo_code_field.go#L15)</small>
 
 ConcernStripeCheckoutInert is raised, in debug builds only, when a StripeCheckout has neither OnPay nor CheckoutURL and is not Disabled. Its Pay button looks ready and does nothing, on the one screen where a reader is most sure what a button should do.
 
@@ -530,6 +530,10 @@ type PromoCodeField struct {
 	// OnRemove takes an applied code off. Nil draws the pills without ✕.
 	OnRemove func(code string)
 
+	// ErrorText turns a refusal into the text drawn under the input. Nil
+	// upper-cases the error's first letter. See the type doc.
+	ErrorText func(error) string
+
 	// Label names the input for assistive technology. Empty is "Promo code".
 	Label string
 
@@ -600,6 +604,10 @@ Dispatch rather than Store.ApplyCode, because the server has already accepted th
 
 A callback rather than a Pending field the caller drives: the pending state belongs to one attempt, and a done func ties the answer to the attempt that asked, with nothing for the caller to keep in step. The input is locked while an attempt is out, so there is only ever one. OnApplyAsync wins when both are set, as StripeCheckout's OnPay wins over its CheckoutURL.
 
+#### An error becomes a sentence here
+
+Go error strings start in lower case, by convention, because they are composed into longer messages ("apply code: that code isn't valid"). Drawn alone under a field, the same text reads as a fragment. The widget is the point where an error turns into on-screen copy, so that is where it is sentence-cased: the first letter is upper-cased and nothing else changes. ErrorText replaces that wholesale, for a translation or for errors whose text was never meant for a reader (a transport error, say). The errors themselves are left alone, so errors.Is and logging see the originals.
+
 #### The draft and the error are the widget's
 
 TagInput's test: no application wants a half-typed code, and the refusal is about the last attempt, not about the cart. They, and the pending attempt, live in hooks here, so the hook rules apply: render a PromoCodeField unconditionally, in a stable position.
@@ -615,7 +623,7 @@ The input is named by Label. A refusal is a RoleAlert, so a reader who pressed A
 	Error    Typography.Caption, Colors.Error
 	Pills    as TagInput's: Colors.Surface fill, ColorPalette.BorderColor hairline
 
-<small>[comps/promo_code_field.go:102](https://github.com/rohanthewiz/grmob/blob/master/comps/promo_code_field.go#L102)</small>
+<small>[comps/promo_code_field.go:115](https://github.com/rohanthewiz/grmob/blob/master/comps/promo_code_field.go#L115)</small>
 
 #### func (PromoCodeField) Render
 
@@ -625,7 +633,7 @@ func (p PromoCodeField) Render(ctx *core.Context) *core.Node
 
 Render draws the field. It takes three hooks before any branch: the draft, the last refusal, and whether an async attempt is pending.
 
-<small>[comps/promo_code_field.go:144](https://github.com/rohanthewiz/grmob/blob/master/comps/promo_code_field.go#L144)</small>
+<small>[comps/promo_code_field.go:161](https://github.com/rohanthewiz/grmob/blob/master/comps/promo_code_field.go#L161)</small>
 
 ### type StripeCheckout
 

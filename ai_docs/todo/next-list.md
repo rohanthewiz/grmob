@@ -175,14 +175,6 @@ with each item's `raised` traced back through all session docs.
   nobody has asked for a gliding one. `core.ScrollIntoView` is not a
   substitute, because it is one app-wide command and would pull the page
   back to the tape. Related to N-113 (paint transforms).
-- **N-125** · raised `2026-1021-1113-shopping-cart-library` · value low
-  **The cart's built-in refusal is a Go error string.**
-  `cart.ErrUnknownCode` reads "that code isn't valid", lowercase by Go
-  convention, and `PromoCodeField` draws `err.Error()` as-is, so the lesson
-  shows it uncapitalised. An app can return its own wording from
-  `Config.AcceptCode`. Decide whether the cart should carry display text
-  apart from error text, and whether its other English defaults ("1 item",
-  "Free", "Your cart is empty") need more than their per-field overrides.
 
 ## Validate
 
@@ -842,6 +834,14 @@ defect, which then becomes its own Open item.
 
 ## Closed
 
+- **N-125** · raised `2026-1021-1113-shopping-cart-library` · value low
+  · closed 2026-10-21, `2026-1021-1122-n124-n125-promo-code-async-and-text` — the refusal was drawn as a raw,
+  lowercase Go error string. `comps.PromoCodeField` now sentence-cases a
+  refusal (first letter only) and takes `ErrorText func(error) string` to
+  replace that; `cart.ErrUnknownCode` keeps its lowercase text so it still
+  composes and compares with `errors.Is`. Decided: the cart's other English
+  defaults stay per-field overrides, the way every comps widget localises,
+  with no cart-wide string bundle. Tested in `comps` and lesson 4.43.
 - **N-124** · raised `2026-1021-1113-shopping-cart-library` · value low
   · closed 2026-10-21, `2026-1021-1122-n124-n125-promo-code-async-and-text` — a promo code could only be checked
   synchronously. `comps.PromoCodeField.OnApplyAsync(code, done)` returns at

@@ -640,6 +640,13 @@ text is drawn under the input as an alert, and the draft stays so a typo can be
 fixed; typing again clears it. `cart.Store.ApplyCode` has this shape, and
 answers `cart.ErrUnknownCode` for a code no rule names.
 
+**An error becomes a sentence here.** Go error strings are lower case by
+convention, so the field upper-cases the first letter when it draws one
+("That code isn't valid") and changes nothing else. `ErrorText` replaces
+that, for a translation or for errors never meant for a reader. Every other
+English default (the labels, "Apply", "Checking…") is a field, as on every
+comps widget; there is no separate string bundle.
+
 **A server check: `OnApplyAsync`.** It gets the code and a `done(err)` func and
 returns at once. Until `done` is called, the input and Apply are disabled and
 the button reads "Checking…" (`PendingLabel`). `done` may come from any

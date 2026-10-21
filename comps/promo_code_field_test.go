@@ -67,7 +67,7 @@ func TestPromoCodeFieldAppliesRefusesAndRemoves(t *testing.T) {
 	h.typeText("nope")
 	h.ctx.TriggerCallback(findButton(h.node, "Apply").Props["onClick"].(string))
 	h.render()
-	if h.alert() != cart.ErrUnknownCode.Error() || h.input().Props["value"] != "nope" {
+	if h.alert() != "That code isn't valid" || h.input().Props["value"] != "nope" {
 		t.Fatalf("alert %q draft %q", h.alert(), h.input().Props["value"])
 	}
 	// Typing again clears the stale refusal.
@@ -205,4 +205,35 @@ func TestPromoCodeFieldAsyncApplyIsPendingUntilDone(t *testing.T) {
 
 func TestPromoCodeFieldAsyncAloneIsNotInert(t *testing.T) {
 	renderDebug(t, PromoCodeField{OnApplyAsync: func(string, func(error)) {}, PendingLabel: "…"})
+}
+
+func TestPromoCodeFieldErrorTextIsSentenceCasedOrTheCallers(t *testing.T) {
+	refuse := func(msg string, text func(error) string) string {
+		h := newRowHarness(t, func() core.View {
+			return PromoCodeField{OnApply: func(string) error { return errors.New(msg) }, ErrorText: text}
+		})
+		in := findFirst(h.node, func(n *core.Node) bool { return n.Type == "Input" })
+		h.ctx.TriggerTextCallback(in.Props["onChange"].(string), "X")
+		h.render()
+		h.ctx.TriggerCallback(findButton(h.node, "Apply").Props["onClick"].(string))
+		h.render()
+		a := findFirst(h.node, func(n *core.Node) bool {
+			return n.Style != nil && n.Style.AccessibilityRole == core.RoleAlert
+		})
+		return a.Props["content"].(string)
+	}
+	cases := map[string]string{
+		"that code isn't valid": "That code isn't valid",
+		"Already capital":       "Already capital",
+		"élan required":         "Élan required",
+		"42 is not a code":      "42 is not a code",
+	}
+	for in, want := range cases {
+		if got := refuse(in, nil); got != want {
+			t.Errorf("default text for %q = %q, want %q", in, got, want)
+		}
+	}
+	if got := refuse("code expired", func(err error) string { return "Code expiré" }); got != "Code expiré" {
+		t.Errorf("ErrorText replaces it: %q", got)
+	}
 }

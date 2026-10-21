@@ -3694,7 +3694,7 @@ func TestShoppingCartLesson(t *testing.T) {
 	// A refused code is announced; a good one is priced and shown as a pill.
 	typeField(t, mgr, "Promo code", "nope")
 	tap(t, mgr, "Apply")
-	if !hasText(tree(t, mgr), "that code isn't valid") {
+	if !hasText(tree(t, mgr), "That code isn't valid") {
 		t.Error("a refused code shows why")
 	}
 	typeField(t, mgr, "Promo code", "spring10")
