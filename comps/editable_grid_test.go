@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -23,8 +24,17 @@ type gridChange struct {
 // gridHarness holds the caller's half of the contract: the rows, their ids,
 // and a record of what the grid reported. OnChange writes back, so the next
 // pass draws what a real caller would draw.
+//
+// mu orders the blur grace's commit against the test goroutine. That commit
+// runs on UseTimeoutWhile's time.AfterFunc goroutine and calls OnChange, so
+// rows and changes are written off the test goroutine, and a time.Sleep in
+// the test does not order the two (N-110). OnChange writes under mu, a pass
+// snapshots rows under mu, and assertions read changes through reported().
+// The grid itself needs no lock: a real host serializes callbacks and
+// renders, and the race was only ever in this harness.
 type gridHarness struct {
 	*rowHarness
+	mu      sync.Mutex
 	rows    [][]string
 	ids     []string
 	changes []gridChange
@@ -62,12 +72,17 @@ func newGridHarness(t *testing.T, tweak func(*EditableGrid)) *gridHarness {
 		ids: []string{"a", "b", "c"},
 	}
 	g.rowHarness = newRowHarness(t, func() core.View {
+		g.mu.Lock()
+		rows := g.rows
+		g.mu.Unlock()
 		grid := EditableGrid{
 			Label:   "Budget",
 			Columns: budgetColumns(),
-			Rows:    g.rows,
+			Rows:    rows,
 			Key:     func(r int) string { return g.ids[r] },
 			OnChange: func(r, c int, v string) {
+				g.mu.Lock()
+				defer g.mu.Unlock()
 				g.changes = append(g.changes, gridChange{r, c, v})
 				// Replaced, not mutated: the caller's half of the state rule.
 				next := make([][]string, len(g.rows))
@@ -84,6 +99,14 @@ func newGridHarness(t *testing.T, tweak func(*EditableGrid)) *gridHarness {
 		return grid
 	})
 	return g
+}
+
+// reported is a copy of the OnChange calls so far, taken under mu so a commit
+// from the blur grace's timer goroutine is ordered before the read.
+func (g *gridHarness) reported() []gridChange {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return append([]gridChange(nil), g.changes...)
 }
 
 // cell finds a body cell by the start of its spoken name.
@@ -234,16 +257,16 @@ func TestEditableGridEditCommitsOnceOnReturn(t *testing.T) {
 	}
 	g.typeText("Ren")
 	g.typeText("Rent 2")
-	if len(g.changes) != 0 {
-		t.Fatalf("a keystroke is not a commit: %+v", g.changes)
+	if len(g.reported()) != 0 {
+		t.Fatalf("a keystroke is not a commit: %+v", g.reported())
 	}
 	if got := g.editor().Props["value"]; got != "Rent 2" {
 		t.Fatalf("the field draws the draft, got %v", got)
 	}
 
 	g.fire("onSubmit")
-	if len(g.changes) != 1 || g.changes[0] != (gridChange{0, 0, "Rent 2"}) {
-		t.Fatalf("changes = %+v", g.changes)
+	if len(g.reported()) != 1 || g.reported()[0] != (gridChange{0, 0, "Rent 2"}) {
+		t.Fatalf("changes = %+v", g.reported())
 	}
 	if g.editor() != nil {
 		t.Error("the editor closes on commit")
@@ -272,8 +295,8 @@ func TestEditableGridNumberEditsTheRawValue(t *testing.T) {
 	}
 	g.typeText(" 5.25 ")
 	g.fire("onSubmit")
-	if len(g.changes) != 1 || g.changes[0] != (gridChange{1, 2, "5.25"}) {
-		t.Fatalf("changes = %+v", g.changes)
+	if len(g.reported()) != 1 || g.reported()[0] != (gridChange{1, 2, "5.25"}) {
+		t.Fatalf("changes = %+v", g.reported())
 	}
 	if g.cell("Amount, row 2, $5.25") == nil {
 		t.Error("the committed value is drawn through Format")
@@ -291,8 +314,8 @@ func TestEditableGridValidateKeepsTheEditor(t *testing.T) {
 	if msg, hidden := g.alert(); hidden || !strings.Contains(msg, "not a number") {
 		t.Fatalf("alert = %q hidden=%v", msg, hidden)
 	}
-	if g.editor() == nil || len(g.changes) != 0 {
-		t.Fatalf("a refused commit stays in EDIT and reports nothing: %+v", g.changes)
+	if g.editor() == nil || len(g.reported()) != 0 {
+		t.Fatalf("a refused commit stays in EDIT and reports nothing: %+v", g.reported())
 	}
 
 	g.typeText("-3")
@@ -306,8 +329,8 @@ func TestEditableGridValidateKeepsTheEditor(t *testing.T) {
 
 	g.typeText("3")
 	g.fire("onSubmit")
-	if len(g.changes) != 1 || g.changes[0].value != "3" || g.editor() != nil {
-		t.Fatalf("changes = %+v, editor = %v", g.changes, g.editor())
+	if len(g.reported()) != 1 || g.reported()[0].value != "3" || g.editor() != nil {
+		t.Fatalf("changes = %+v, editor = %v", g.reported(), g.editor())
 	}
 }
 
@@ -322,8 +345,8 @@ func TestEditableGridDiscard(t *testing.T) {
 		t.Fatalf("the editing cell ends in a discard button, got %+v", x)
 	}
 	g.tap(x)
-	if len(g.changes) != 0 || g.editor() != nil {
-		t.Fatalf("discard reported %+v", g.changes)
+	if len(g.reported()) != 0 || g.editor() != nil {
+		t.Fatalf("discard reported %+v", g.reported())
 	}
 	if got := g.cell("Item, row 2, Bread").Props["focusAction"]; got != "focus" {
 		t.Errorf("focus returns to the discarded cell, got %v", got)
@@ -341,13 +364,13 @@ func TestEditableGridBlurCommitsAfterTheGrace(t *testing.T) {
 	g.tap(g.cell("Item, row 3"))
 	g.typeText("Oat milk")
 	g.fire("onBlur")
-	if len(g.changes) != 0 || g.editor() == nil {
-		t.Fatalf("a blur does not commit at once: %+v", g.changes)
+	if len(g.reported()) != 0 || g.editor() == nil {
+		t.Fatalf("a blur does not commit at once: %+v", g.reported())
 	}
 	time.Sleep(80 * time.Millisecond)
 	g.render()
-	if len(g.changes) != 1 || g.changes[0] != (gridChange{2, 0, "Oat milk"}) || g.editor() != nil {
-		t.Fatalf("after the grace: changes %+v, editor %v", g.changes, g.editor() != nil)
+	if len(g.reported()) != 1 || g.reported()[0] != (gridChange{2, 0, "Oat milk"}) || g.editor() != nil {
+		t.Fatalf("after the grace: changes %+v, editor %v", g.reported(), g.editor() != nil)
 	}
 	if got := g.cell("Item, row 3").Props["focusAction"]; got == "focus" {
 		t.Error("a blur's commit does not take focus back: the reader put it elsewhere")
@@ -360,8 +383,8 @@ func TestEditableGridBlurCommitsAfterTheGrace(t *testing.T) {
 	g.tap(findFirst(g.node, func(n *core.Node) bool { return n.Style.AccessibilityLabel == "Discard edit" }))
 	time.Sleep(80 * time.Millisecond)
 	g.render()
-	if len(g.changes) != 1 {
-		t.Fatalf("the ✕ won the race and the timer found nothing to commit: %+v", g.changes)
+	if len(g.reported()) != 1 {
+		t.Fatalf("the ✕ won the race and the timer found nothing to commit: %+v", g.reported())
 	}
 }
 
@@ -400,13 +423,13 @@ func TestEditableGridDiscardIsOneFocusUnitWithTheField(t *testing.T) {
 	fireOn(discard(), "onFocus")
 	time.Sleep(80 * time.Millisecond)
 	g.render()
-	if len(g.changes) != 0 || g.editor() == nil {
-		t.Fatalf("Tab onto the ✕ committed: changes %+v, editor %v", g.changes, g.editor() != nil)
+	if len(g.reported()) != 0 || g.editor() == nil {
+		t.Fatalf("Tab onto the ✕ committed: changes %+v, editor %v", g.reported(), g.editor() != nil)
 	}
 	// Enter on the ✕ is its click.
 	g.tap(discard())
-	if len(g.changes) != 0 || g.editor() != nil {
-		t.Fatalf("Enter on the ✕ did not discard: %+v", g.changes)
+	if len(g.reported()) != 0 || g.editor() != nil {
+		t.Fatalf("Enter on the ✕ did not discard: %+v", g.reported())
 	}
 
 	// Tab past the ✕: its blur arms the timer as the field's would.
@@ -417,8 +440,8 @@ func TestEditableGridDiscardIsOneFocusUnitWithTheField(t *testing.T) {
 	fireOn(discard(), "onBlur")
 	time.Sleep(80 * time.Millisecond)
 	g.render()
-	if len(g.changes) != 1 || g.changes[0] != (gridChange{0, 0, "Rent!"}) {
-		t.Fatalf("leaving the ✕ did not commit after the grace: %+v", g.changes)
+	if len(g.reported()) != 1 || g.reported()[0] != (gridChange{0, 0, "Rent!"}) {
+		t.Fatalf("leaving the ✕ did not commit after the grace: %+v", g.reported())
 	}
 }
 
@@ -430,8 +453,8 @@ func TestEditableGridTapAnotherCellCommitsFirst(t *testing.T) {
 	g.typeText("Mortgage")
 	g.tap(g.cell("Item, row 2"))
 
-	if len(g.changes) != 1 || g.changes[0] != (gridChange{0, 0, "Mortgage"}) {
-		t.Fatalf("changes = %+v", g.changes)
+	if len(g.reported()) != 1 || g.reported()[0] != (gridChange{0, 0, "Mortgage"}) {
+		t.Fatalf("changes = %+v", g.reported())
 	}
 	if ed := g.editor(); ed == nil || ed.Props["value"] != "Bread" {
 		t.Fatalf("the editor moved to row 2, got %+v", ed)
@@ -451,8 +474,8 @@ func TestEditableGridUnchangedCommitIsSilent(t *testing.T) {
 	g := newGridHarness(t, nil)
 	g.tap(g.cell("Item, row 1"))
 	g.fire("onSubmit")
-	if len(g.changes) != 0 {
-		t.Fatalf("changes = %+v", g.changes)
+	if len(g.reported()) != 0 {
+		t.Fatalf("changes = %+v", g.reported())
 	}
 }
 
@@ -460,8 +483,8 @@ func TestEditableGridUnchangedCommitIsSilent(t *testing.T) {
 func TestEditableGridBoolAndChoice(t *testing.T) {
 	g := newGridHarness(t, nil)
 	g.tap(g.cell("Paid, row 2"))
-	if len(g.changes) != 1 || g.changes[0] != (gridChange{1, 3, "true"}) || g.editor() != nil {
-		t.Fatalf("changes = %+v", g.changes)
+	if len(g.reported()) != 1 || g.reported()[0] != (gridChange{1, 3, "true"}) || g.editor() != nil {
+		t.Fatalf("changes = %+v", g.reported())
 	}
 	if g.cell("Paid, row 2, checked") == nil {
 		t.Error("the toggled cell says so")
@@ -472,8 +495,8 @@ func TestEditableGridBoolAndChoice(t *testing.T) {
 	})
 	g.ctx.TriggerTextCallback(sel.Props["onChange"].(string), "Home")
 	g.render()
-	if len(g.changes) != 2 || g.changes[1] != (gridChange{2, 1, "Home"}) {
-		t.Fatalf("changes = %+v", g.changes)
+	if len(g.reported()) != 2 || g.reported()[1] != (gridChange{2, 1, "Home"}) {
+		t.Fatalf("changes = %+v", g.reported())
 	}
 }
 
@@ -537,8 +560,8 @@ func TestEditableGridRowMenuAndKeys(t *testing.T) {
 	g.tap(g.cell("Item, row 3"))
 	g.typeText("Oat milk")
 	g.tap(head)
-	if len(g.changes) != 1 || g.editor() != nil {
-		t.Fatalf("opening the menu commits the open edit: %+v", g.changes)
+	if len(g.reported()) != 1 || g.editor() != nil {
+		t.Fatalf("opening the menu commits the open edit: %+v", g.reported())
 	}
 	if sheet().Props["visible"] != true {
 		t.Fatal("the header opens the menu")

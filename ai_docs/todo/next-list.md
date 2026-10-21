@@ -643,24 +643,6 @@ defect, which then becomes its own Open item.
   harness can. N-058's fix (2026-10-11) does not change that: Tab visits
   controls, and the question is about the texts a swipe stops on.
 
-- **N-110** · raised `2026-1011-2237-v0.6.0-release-on-red-ci` · value high
-  **`go test -race ./comps` fails in CI: the EditableGrid harness races its
-  own timer.** Red on master since about 2026-09-21, and it reproduces locally.
-  `TestEditableGridBlurCommitsAfterTheGrace` and
-  `TestEditableGridDiscardIsOneFocusUnitWithTheField` fail. The blur-grace
-  commit runs on `UseTimeoutWhile`'s `time.AfterFunc` goroutine and calls the
-  harness's `OnChange`, which writes `g.rows`/`g.changes`
-  (`comps/editable_grid_test.go:68-78`). The test goroutine reads them after a
-  `time.Sleep`, and a sleep does not order the two goroutines. Every racing
-  pair runs through that closure, so the race is the harness's and not the
-  grid's. Fix: guard the harness fields with a mutex and read `changes`
-  through a locked accessor. While it is red, the CI job skips the steps after
-  `go test -race`: the docs server build, the WASM build and
-  `wasm/verify/run.sh`.
-  - Re-rated high from medium (2026-10-11, `/next-list`): it is worked around
-    today. v0.6.0 was tagged on the red, and while the job fails, a new
-    failure in any of the skipped steps goes unseen. Still reproduces locally
-    (`go test -race -count=3 -run TestEditableGrid ./comps/`).
 - **N-111** · raised `2026-1017-2211-gallery-widget` · value medium
   **`comps.Gallery` has been seen on the web and partly on Compose** (headless
   Chrome shots of lesson 4.41: theme, cinema with deck and thumbnails,
@@ -834,6 +816,15 @@ defect, which then becomes its own Open item.
 
 ## Closed
 
+- **N-110** · raised `2026-1011-2237-v0.6.0-release-on-red-ci` · value high
+  · closed 2026-10-21, `2026-1021-1132-work-next-list-n110-n109` — `go test -race ./comps` failed on the
+  EditableGrid harness, not the grid: the blur grace's commit calls
+  `OnChange` from `UseTimeoutWhile`'s timer goroutine, and the test read
+  `rows`/`changes` after a `time.Sleep`. `gridHarness` now holds a mutex:
+  OnChange writes under it, each pass snapshots `rows` under it, and
+  assertions read `reported()`, a locked copy. Checked with `go test -race
+  -count=5 -run TestEditableGrid ./comps/` and a clean `go test -race ./...`,
+  plus the steps CI was skipping (docs server build, WASM build).
 - **N-125** · raised `2026-1021-1113-shopping-cart-library` · value low
   · closed 2026-10-21, `2026-1021-1122-n124-n125-promo-code-async-and-text` — the refusal was drawn as a raw,
   lowercase Go error string. `comps.PromoCodeField` now sentence-cases a
