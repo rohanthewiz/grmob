@@ -151,6 +151,9 @@ const GrMob = (() => {
             // path repeats the call with the whole new map, so a node that
             // drops the prop drops the behaviour.
             applyPressKeepsFocus(el, node.Props);
+            // core.OnSwipe and core.OnVerticalSwipe, total the same way; the
+            // per-key loop below skips both keys.
+            applySwipe(el, node.Props);
             applyMapProps(el, node.Props, node.Type);
             // The canvas nodes' SVG attributes. Same shape as the map call:
             // total, gated on its own node types, and repeated on the
@@ -274,6 +277,10 @@ const GrMob = (() => {
                     // core.Shape.OnClick. No "shapetap" DOM event: it is a
                     // click, located. See "Canvas taps".
                     attachShapeTap(el, value);
+                } else if (key === "onSwipe" || key === "onVerticalSwipe") {
+                    // Wired by applySwipe above the loop. Ahead of the
+                    // generic on* branch, which would attach a listener for a
+                    // "swipe" DOM event that does not exist.
                 } else if (key.startsWith("on")) {
                     const event = mapEventName(key);
                     el.dataset[`listener_${key}`] = value;
@@ -3404,8 +3411,14 @@ const GrMob = (() => {
             }
         };
 
-        el.addEventListener("pointerdown", () => {
+        // Where the press went down, so a press that turns into a drag can
+        // stop being a long press (the pointermove listener below).
+        let downX = 0, downY = 0;
+
+        el.addEventListener("pointerdown", (e) => {
             disarm();
+            downX = e.clientX;
+            downY = e.clientY;
             timer = setTimeout(() => {
                 timer = null;
                 // Re-read at fire time, exactly as every other listener here
@@ -3423,6 +3436,17 @@ const GrMob = (() => {
         for (const ev of ["pointerup", "pointercancel", "pointerleave"]) {
             el.addEventListener(ev, disarm);
         }
+        // A press that travels past the slop is a drag, which both native
+        // recognizers stop treating as a long press (UIKit's
+        // allowableMovement, Compose's touch slop). Without this a slow swipe
+        // across a Gallery card's middle zone fired the zoom after 500ms as
+        // well as the swipe. A move with no coordinates (a synthetic event)
+        // is not a move.
+        el.addEventListener("pointermove", (e) => {
+            if (timer === null) return;
+            const dx = e.clientX - downX, dy = e.clientY - downY;
+            if (Math.hypot(dx, dy) > SWIPE_SLOP) disarm();
+        });
     }
 
     // Wires core.PressKeepsFocus: a press on this element leaves the focus
@@ -3450,6 +3474,177 @@ const GrMob = (() => {
         el.dataset.has_listener_pressKeepsFocus = "true";
         el.addEventListener("mousedown", (e) => {
             if (el.dataset.pressKeepsFocus) e.preventDefault();
+        });
+    }
+
+    // --- Swipes (core.OnSwipe, core.OnVerticalSwipe) -------------------------
+    //
+    // The DOM has no swipe event, so this tracks one pointer from down to up
+    // and reports the direction at release. It never reports during the
+    // move: the Go doc says why the gesture is discrete.
+    //
+    //   pointerdown ──▶ start {id, x, y}
+    //   pointermove ──▶ past SWIPE_SLOP? take pointer capture (once)
+    //   pointerup   ──▶ swipeDirections(dx, dy) ──▶ dispatch, swallow the click
+    //   pointercancel ▶ forget it (the browser took the pointer to pan)
+    //
+    // Which axes the element claims is decided by CSS touch-action, not by
+    // this code. For a touch, the browser decides at the first move whether
+    // the motion is a pan it owns. touch-action: pan-y gives it the vertical
+    // pans, and it sends pointercancel for those, and leaves horizontal
+    // motion to the page. A mouse or pen never pans, so for those the
+    // "further along this axis than the other" rule is the only filter, and
+    // it is the same rule the natives apply.
+
+    // core.SwipeMinDistance, in CSS px: the travel along the axis, press to
+    // release, that makes the gesture a swipe.
+    const SWIPE_MIN_DISTANCE = 40;
+
+    // How far a press may wander before it is a drag and not a tap. 10px is
+    // UIKit's long-press allowableMovement, and close to Android's 8dp touch
+    // slop. attachLongPress disarms at the same distance, so a drag that
+    // starts on a child with a long press never also fires it.
+    const SWIPE_SLOP = 10;
+
+    // The element whose swipe has just fired, for the click the browser
+    // sends after the release (see swipeClaimsClick). Cleared by a timer set
+    // at the release. A mouse's click is dispatched in the same task as its
+    // pointerup, so the timer runs after it.
+    let swipeSwallowsClick = null;
+
+    // The two swipe props, by axis. The payload words are core's
+    // SwipeDirection values.
+    const SWIPE_PROPS = ["onSwipe", "onVerticalSwipe"];
+
+    // The directions a release reports, one per claimed axis that it
+    // qualifies on. The axis rule is the Go doc's: at least the minimum
+    // along it, and strictly further along it than across it. A tie is
+    // neither axis. Since only one axis can be strictly the longer, at most
+    // one direction comes back, whichever props the element carries.
+    //
+    // dx is physical (clientX grows rightwards whatever the page's
+    // direction), so the horizontal pair is resolved to leading and trailing
+    // here, with the direction the element itself was laid out in.
+    function swipeDirections(el, dx, dy) {
+        const ax = Math.abs(dx), ay = Math.abs(dy);
+        if (ax >= SWIPE_MIN_DISTANCE && ax > ay && el.dataset.listener_onSwipe) {
+            const towardLeft = dx < 0;
+            // Leading is left in LTR, right in RTL.
+            const leading = isRightToLeft(el) ? !towardLeft : towardLeft;
+            return { key: "onSwipe", value: leading ? "leading" : "trailing" };
+        }
+        if (ay >= SWIPE_MIN_DISTANCE && ay > ax && el.dataset.listener_onVerticalSwipe) {
+            return { key: "onVerticalSwipe", value: dy < 0 ? "up" : "down" };
+        }
+        return null;
+    }
+
+    // Whether a click is the tail of a swipe that just fired, on the swiping
+    // element or anything inside it. Pointer clicks only (detail > 0): a
+    // keyboard activation is never a swipe's.
+    //
+    // Walked by parentNode rather than Node.contains so wasm/verify's shim,
+    // which has no contains, reaches the same answer.
+    function swipeClaimsClick(el, e) {
+        if (!swipeSwallowsClick || !e || !(e.detail > 0)) return false;
+        for (let n = el; n; n = n.parentNode) {
+            if (n === swipeSwallowsClick) return true;
+        }
+        return false;
+    }
+
+    // The CSS touch-action for the axes an element claims: the browser keeps
+    // the pans of the axis it does not, and pinch-zoom always, since a pinch
+    // is two fingers and never a swipe.
+    function swipeTouchAction(h, v) {
+        if (h && v) return "pinch-zoom";
+        if (h) return "pan-y pinch-zoom";
+        if (v) return "pan-x pinch-zoom";
+        return "";
+    }
+
+    // Wires both swipe props, total like applyPressKeepsFocus: the create and
+    // update-props paths both call it with the whole prop map, so a prop that
+    // is absent is a claim that has ended.
+    //
+    // The listeners are installed once per element and read the listener_
+    // slots at release, as every listener here does, so a pass that
+    // renumbers the callback mid-gesture dispatches the new ID. touch-action
+    // is written only when it changes, and cleared only if this code wrote
+    // it (the swipeTouchAction mark), so an element that never swiped keeps
+    // whatever its CSS says.
+    function applySwipe(el, props) {
+        for (const key of SWIPE_PROPS) {
+            const id = props[key];
+            if (typeof id === "string" && id) {
+                el.dataset[`listener_${key}`] = id;
+            } else {
+                delete el.dataset[`listener_${key}`];
+            }
+        }
+        const action = swipeTouchAction(!!el.dataset.listener_onSwipe, !!el.dataset.listener_onVerticalSwipe);
+        if (action) {
+            if (el.style.touchAction !== action) el.style.touchAction = action;
+            el.dataset.swipeTouchAction = "true";
+        } else if (el.dataset.swipeTouchAction) {
+            el.style.touchAction = "";
+            delete el.dataset.swipeTouchAction;
+        }
+        if (!action || el.dataset.has_listener_swipe) return;
+        el.dataset.has_listener_swipe = "true";
+
+        // The press being tracked, or null. One at a time: a second finger
+        // going down while one is tracked is a pinch or a stray, not a new
+        // swipe, so it is ignored rather than allowed to restart the first.
+        let start = null;
+
+        el.addEventListener("pointerdown", (e) => {
+            if (start) return;
+            // Primary button only: a right-drag is a context menu, a
+            // middle-drag an autoscroll.
+            if (e.button > 0) return;
+            if (!el.dataset.listener_onSwipe && !el.dataset.listener_onVerticalSwipe) return;
+            start = { id: e.pointerId, x: e.clientX, y: e.clientY, dragging: false };
+        });
+        el.addEventListener("pointermove", (e) => {
+            if (!start || e.pointerId !== start.id || start.dragging) return;
+            if (Math.hypot(e.clientX - start.x, e.clientY - start.y) <= SWIPE_SLOP) return;
+            start.dragging = true;
+            // Capture, so a release past the element's edge (a fast swipe
+            // usually ends outside a small card) still reaches pointerup
+            // here. Taken at the slop and not at the press, because a
+            // captured press retargets its click to this element, and a tap
+            // must still land on the child it was aimed at.
+            try {
+                if (typeof el.setPointerCapture === "function") el.setPointerCapture(e.pointerId);
+            } catch {
+                // The pointer is already gone (released between events);
+                // pointerup or pointercancel ends the press anyway.
+            }
+        });
+        el.addEventListener("pointerup", (e) => {
+            if (!start || e.pointerId !== start.id) return;
+            const dx = e.clientX - start.x, dy = e.clientY - start.y;
+            start = null;
+            const dir = swipeDirections(el, dx, dy);
+            if (!dir) return;
+            const latest = el.dataset[`listener_${dir.key}`];
+            if (!latest) return;
+            swipeSwallowsClick = el;
+            setTimeout(() => {
+                if (swipeSwallowsClick === el) swipeSwallowsClick = null;
+            }, 0);
+            dispatchFromElement(el, dir.key, latest, { value: dir.value });
+        });
+        el.addEventListener("pointercancel", (e) => {
+            if (start && e.pointerId === start.id) start = null;
+        });
+        // A drag that starts on an <img> (comps.Gallery's cards are images)
+        // or a link is a native drag-and-drop by default. Chrome then sends
+        // pointercancel and the swipe is lost. Nothing in a swipe region is
+        // meant to be dragged out of the page.
+        el.addEventListener("dragstart", (e) => {
+            if (el.dataset.listener_onSwipe || el.dataset.listener_onVerticalSwipe) e.preventDefault();
         });
     }
 
@@ -4384,6 +4579,8 @@ const GrMob = (() => {
         el.addEventListener("click", (e) => {
             const latest = el.dataset.listener_onShapeTap;
             if (!latest || !(e.detail > 0)) return;
+            // A swipe across the canvas is not a tap on a shape either.
+            if (swipeClaimsClick(el, e)) return;
             // One gesture, one handler, as eventQualifies keeps it for
             // onClick: a press that already fired onLongPress is not also a
             // tap. Consumed here, because a canvas with onShapeTap leaves the
@@ -8117,6 +8314,13 @@ const GrMob = (() => {
             // that flag is left for the shape tap's listener to consume.
             return false;
         }
+        if (propKey === "onClick" && el && swipeClaimsClick(el, e)) {
+            // One gesture, one handler again: the press was a swipe that has
+            // fired (see applySwipe), and the click the browser sends after a
+            // mouse's release is its tail, not a tap on whatever child the
+            // release landed on.
+            return false;
+        }
         if (propKey === "onClick" && el && el.dataset.longPressFired) {
             // One gesture, one handler: the press already fired onLongPress
             // (see attachLongPress), and the browser's synthetic click on
@@ -8674,6 +8878,8 @@ const GrMob = (() => {
                     applyInputMode(el, p.Changes);
                     // core.PressKeepsFocus, total as on the create path.
                     applyPressKeepsFocus(el, p.Changes);
+                    // The swipe props, total as on the create path.
+                    applySwipe(el, p.Changes);
                     // The map nodes' dataset, before the per-key loop and for
                     // the same reason the hint is: the sync pass reads lat, lng
                     // and zoom together, and the patch carries the whole new
@@ -8847,6 +9053,9 @@ const GrMob = (() => {
                             // As on the create path; pruneStaleListeners
                             // drops it when no shape is tappable any more.
                             attachShapeTap(el, v);
+                        } else if (k === "onSwipe" || k === "onVerticalSwipe") {
+                            // Wired by applySwipe above the loop, as on the
+                            // create path.
                         } else if (k.startsWith("on")) {
                             const event = mapEventName(k);
                             el.dataset[`listener_${k}`] = v;

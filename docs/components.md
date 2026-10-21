@@ -3216,8 +3216,11 @@ own frame clock. Reduced motion makes every animation snap.
 
 **Touch, mouse and keyboard.** Invisible tap zones over the card step back
 (leading quarter), flip (middle) and step forward (trailing quarter). A long
-press in the middle zooms. The buttons below the stage do the same things for
-readers and keyboards, so the zones are hidden from assistive technology.
+press in the middle zooms. A sideways swipe on the stage (`core.OnSwipe`)
+steps too: toward the leading edge for the next card, toward the trailing edge
+for the previous one, and it never also taps the zone it crossed. The buttons
+below the stage do the same things for readers and keyboards, so the zones are
+hidden from assistive technology.
 Escape and Android back turn a flipped card back or leave an in-place zoom.
 
 **Looks.** `GalleryLookTheme` and `GalleryLookMinimal` follow the app theme.

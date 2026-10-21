@@ -1537,7 +1537,7 @@ Every setting at once, with the state owned by the caller:
 The tree:
 
 	┌ Column  role=group "Gallery", then Style ──────────────────────────┐
-	│ ┌ ZStack stage  Height (→ ZoomedHeight), clipped, then StageStyle ┐ │
+	│ ┌ ZStack stage  Height (→ ZoomedHeight), clipped, OnSwipe, StageStyle │
 	│ │ ┌ Keyed card layer × n, last item first ───────────────────────┐ │ │
 	│ │ │ Box 100%×100%, inset; Translate/Opacity/Rotate per Motion    │ │ │
 	│ │ │ └ Theme(card theme) ─ ZStack frame, then CardStyle           │ │ │
@@ -1586,7 +1586,7 @@ A flip is not a 3-D turn. core.Rotate turns a node about the axis out of the scr
 
 The stage carries three invisible tap zones over the current card's front: the leading quarter steps back, the trailing quarter steps forward, and the middle flips the card when it has a back, the way story viewers work. A long press in the middle zooms. The zones are a pointer convenience over the buttons below, which do the same things, so the zones are hidden from assistive technology and every action has a named control.
 
-A swipe is not among them. core has no drag or swipe gesture; the closest primitive is a horizontal core.Scroll, and a scroll reports no position, so nothing could say which card a swipe stopped on. A swipe is a core gesture primitive waiting to be added, not a widget problem.
+A horizontal swipe on the stage steps too (core.OnSwipe): toward the leading edge for the next card, toward the trailing edge for the previous one, so the cards follow the finger in either layout direction. It sits on the stage rather than the tap-zone layer, so it also works while a card is flipped (stepping shows the next card's front, as every step does), and on iOS it hit-tests on the pictures, which always draw. A swipe that fires is not also a tap on the zone it crossed. The swipe claims only the horizontal axis, so a gallery inside a vertical scroll still scrolls the page, and a flipped card's back face still scrolls its own text.
 
 While the card is flipped or zoomed in place, Escape (any host with a keyboard) and Android's system back put it back, the way a Drawer claims both while open. Neither is claimed otherwise.
 
@@ -1645,7 +1645,7 @@ Every glyph button has a spoken name. Details states its expansion (core.Accessi
 	             TextSecondary (in the card's theme)
 	Spacing      XS, SM and MD for gaps and insets
 
-<small>[comps/gallery.go:242](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L242)</small>
+<small>[comps/gallery.go:247](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L247)</small>
 
 #### func (Gallery) Render
 
@@ -1655,7 +1655,7 @@ func (g Gallery) Render(ctx *core.Context) *core.Node
 
 Render builds the tree drawn in the type doc.
 
-<small>[comps/gallery.go:540](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L540)</small>
+<small>[comps/gallery.go:545](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L545)</small>
 
 ### type GalleryFlip
 
@@ -1665,7 +1665,7 @@ type GalleryFlip string
 
 GalleryFlip is how a Gallery card shows its back.
 
-<small>[comps/gallery.go:423](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L423)</small>
+<small>[comps/gallery.go:428](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L428)</small>
 
 ```go
 const (
@@ -1687,7 +1687,7 @@ type GalleryIndicator string
 
 GalleryIndicator is what a Gallery draws between its arrows.
 
-<small>[comps/gallery.go:448](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L448)</small>
+<small>[comps/gallery.go:453](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L453)</small>
 
 ```go
 const (
@@ -1756,7 +1756,7 @@ type GalleryItem struct {
 
 GalleryItem is one card of a Gallery.
 
-<small>[comps/gallery.go:335](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L335)</small>
+<small>[comps/gallery.go:340](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L340)</small>
 
 ### type GalleryLabels
 
@@ -1792,7 +1792,7 @@ type GalleryLabels struct {
 
 GalleryLabels are a Gallery's words. Every empty field takes the English default noted, so a localised app sets the ones it translates.
 
-<small>[comps/gallery.go:484](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L484)</small>
+<small>[comps/gallery.go:489](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L489)</small>
 
 ### type GalleryLook
 
@@ -1802,7 +1802,7 @@ type GalleryLook string
 
 GalleryLook is a Gallery's visual style; see "Looks" on Gallery.
 
-<small>[comps/gallery.go:393](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L393)</small>
+<small>[comps/gallery.go:398](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L398)</small>
 
 ```go
 const (
@@ -1838,7 +1838,7 @@ type GalleryMotion struct {
 
 GalleryMotion configures a Gallery's animations. Every duration is in milliseconds: zero is the default noted, and negative snaps.
 
-<small>[comps/gallery.go:467](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L467)</small>
+<small>[comps/gallery.go:472](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L472)</small>
 
 ### type GalleryState
 
@@ -1857,7 +1857,7 @@ type GalleryState struct {
 
 GalleryState is what a Gallery shows. It is comparable, so a caller can test two for equality, and OnChange is never called with an unchanged one.
 
-<small>[comps/gallery.go:381](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L381)</small>
+<small>[comps/gallery.go:386](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L386)</small>
 
 ### type GalleryTransition
 
@@ -1867,7 +1867,7 @@ type GalleryTransition string
 
 GalleryTransition is how a Gallery moves between cards.
 
-<small>[comps/gallery.go:407](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L407)</small>
+<small>[comps/gallery.go:412](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L412)</small>
 
 ```go
 const (
@@ -1892,7 +1892,7 @@ type GalleryZoom string
 
 GalleryZoom is what zooming a Gallery card does; see "Zoom" on Gallery.
 
-<small>[comps/gallery.go:436](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L436)</small>
+<small>[comps/gallery.go:441](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L441)</small>
 
 ```go
 const (

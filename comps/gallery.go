@@ -49,7 +49,7 @@ const ConcernGalleryFrozen = "gallery-frozen"
 // The tree:
 //
 //	┌ Column  role=group "Gallery", then Style ──────────────────────────┐
-//	│ ┌ ZStack stage  Height (→ ZoomedHeight), clipped, then StageStyle ┐ │
+//	│ ┌ ZStack stage  Height (→ ZoomedHeight), clipped, OnSwipe, StageStyle │
 //	│ │ ┌ Keyed card layer × n, last item first ───────────────────────┐ │ │
 //	│ │ │ Box 100%×100%, inset; Translate/Opacity/Rotate per Motion    │ │ │
 //	│ │ │ └ Theme(card theme) ─ ZStack frame, then CardStyle           │ │ │
@@ -128,10 +128,15 @@ const ConcernGalleryFrozen = "gallery-frozen"
 // the buttons below, which do the same things, so the zones are hidden from
 // assistive technology and every action has a named control.
 //
-// A swipe is not among them. core has no drag or swipe gesture; the closest
-// primitive is a horizontal core.Scroll, and a scroll reports no position, so
-// nothing could say which card a swipe stopped on. A swipe is a core gesture
-// primitive waiting to be added, not a widget problem.
+// A horizontal swipe on the stage steps too (core.OnSwipe): toward the
+// leading edge for the next card, toward the trailing edge for the previous
+// one, so the cards follow the finger in either layout direction. It sits on
+// the stage rather than the tap-zone layer, so it also works while a card is
+// flipped (stepping shows the next card's front, as every step does), and on
+// iOS it hit-tests on the pictures, which always draw. A swipe that fires is
+// not also a tap on the zone it crossed. The swipe claims only the
+// horizontal axis, so a gallery inside a vertical scroll still scrolls the
+// page, and a flipped card's back face still scrolls its own text.
 //
 // While the card is flipped or zoomed in place, Escape (any host with a
 // keyboard) and Android's system back put it back, the way a Drawer claims
@@ -719,6 +724,13 @@ func (r galleryRender) stage() core.View {
 			core.UseStyle(r.t.Typography.Body),
 			core.TextColor(r.t.Colors.TextSecondary)))
 		return core.ZStack(items...)
+	}
+
+	if r.n > 1 {
+		// Before the cards, so the stage's own callback takes its ID ahead
+		// of every card's and keeps it whatever a card registers. See "Touch,
+		// mouse and keyboard" for why the stage and not the zone layer.
+		items = append(items, core.OnSwipe(r.swipe()))
 	}
 
 	// Last item first; see "Every card is in the tree".
@@ -1413,6 +1425,21 @@ func (r galleryRender) step(delta int) func() {
 	n, wrap := r.n, r.g.Wrap
 	return func() {
 		r.update(func(s *GalleryState) { s.Index = galleryStep(s.Index, delta, n, wrap) })
+	}
+}
+
+// swipe returns the stage's swipe handler. SwipeLeading means the finger
+// moved toward the leading edge, which pulls the next card in from the
+// trailing side, as a tap on the trailing zone does. At either end of a
+// gallery that does not wrap, step's update drops the no-op.
+func (r galleryRender) swipe() func(core.SwipeDirection) {
+	next, prev := r.step(1), r.step(-1)
+	return func(d core.SwipeDirection) {
+		if d == core.SwipeLeading {
+			next()
+		} else {
+			prev()
+		}
 	}
 }
 

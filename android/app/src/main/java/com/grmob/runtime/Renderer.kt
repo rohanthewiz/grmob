@@ -571,6 +571,15 @@ fun RenderNode(node: GrMobNode, extra: Modifier = Modifier) {
     // pays for the requester; the `if` is its own group, as onBack's is.
     val scrollEpoch = node.intProp("scrollEpoch")
     if (scrollEpoch > 0) mods = mods.then(scrollCommand(scrollEpoch))
+    // core.OnSwipe / core.OnVerticalSwipe, at the funnel for the reason
+    // onBack is: any node type may carry them. Before boxModifier's own
+    // modifiers, so the padding takes the press too. Only a node carrying one
+    // pays for the detector, and the `if` is its own group, as onBack's is.
+    val onSwipe = node.stringProp("onSwipe")
+    val onVerticalSwipe = node.stringProp("onVerticalSwipe")
+    if (onSwipe.isNotEmpty() || onVerticalSwipe.isNotEmpty()) {
+        mods = mods.then(swipeGesture(onSwipe, onVerticalSwipe))
+    }
 
     // Opening the disabled scope here, once, rather than inside every control
     // means a container's flag reaches leaves it does not know about. The

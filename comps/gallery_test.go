@@ -322,6 +322,49 @@ func TestGalleryTapZones(t *testing.T) {
 	}
 }
 
+// A swipe on the stage steps: leading for the next card, trailing for the
+// previous one, and it still steps while the card is flipped, showing the
+// next card's front. A single card has nowhere to go, so its stage claims no
+// swipe and a Scroll around it keeps every drag.
+func TestGallerySwipeSteps(t *testing.T) {
+	var got []int
+	g := Gallery{Items: galleryItems(), OnChange: func(s GalleryState) { got = append(got, s.Index) }}
+	ctx, n := renderDebug(t, g)
+
+	swipe := func(n *core.Node, d core.SwipeDirection) {
+		t.Helper()
+		stage := findFirst(n, func(x *core.Node) bool { _, ok := x.Props["onSwipe"]; return ok })
+		if stage == nil || stage.Type != "ZStack" {
+			t.Fatalf("the stage carries onSwipe, got %+v", stage)
+		}
+		ctx.TriggerTextCallback(stage.Props["onSwipe"].(string), string(d))
+	}
+
+	// Trailing on the first card of a gallery that does not wrap is a no-op
+	// OnChange never hears.
+	swipe(n, core.SwipeTrailing)
+	swipe(n, core.SwipeLeading)
+	n = galleryPass(t, ctx, g)
+	swipe(n, core.SwipeLeading)
+	n = galleryPass(t, ctx, g)
+	// The third card has a back; flip it, then swipe back from the back face.
+	galleryTap(t, ctx, n, "Details")
+	n = galleryPass(t, ctx, g)
+	swipe(n, core.SwipeTrailing)
+	if fmt.Sprint(got) != "[1 2 2 1]" {
+		t.Errorf("trailing, leading, leading, flip, trailing gave indexes %v, want [1 2 2 1]", got)
+	}
+	n = galleryPass(t, ctx, g)
+	if c := galleryCard(n, "2 of 3, Dune"); c == nil || c.Style.AccessibilityHidden {
+		t.Error("the second card is current, front up, after the swipe back")
+	}
+
+	_, one := renderDebug(t, Gallery{Items: galleryItems()[:1]})
+	if s := findFirst(one, func(x *core.Node) bool { _, ok := x.Props["onSwipe"]; return ok }); s != nil {
+		t.Error("a one-card gallery claims no swipe")
+	}
+}
+
 // The tap zones paint above every card on the web, whatever the transition
 // and whichever card is current. The card layers carry core.ZIndex, and a
 // zone row without one painted under them all, so in the browser the

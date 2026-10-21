@@ -196,8 +196,8 @@ var Packages = []Pkg{
 		}, {
 			Slug:  "events",
 			Title: "Events & focus",
-			Blurb: "Event props, host and system events, focus refs and focus order, and scrolling a node into view.",
-			Files: []string{"event.go", "behavioral_props.go", "host_events.go", "sys_events.go", "focus.go",
+			Blurb: "Event props and swipes, host and system events, focus refs and focus order, and scrolling a node into view.",
+			Files: []string{"event.go", "behavioral_props.go", "swipe.go", "host_events.go", "sys_events.go", "focus.go",
 				"focus_order.go", "scroll_to.go"},
 		}, {
 			Slug:  "navigation",

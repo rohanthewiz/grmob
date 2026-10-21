@@ -93,6 +93,10 @@ struct RenderNode: View {
             // core.OnEscape, for any node type, in the same unconditional
             // shape: a node with no claim gets its content back.
             .modifier(GrMobEscapeClaim(id: node.stringProp("onEscape")))
+            // core.OnSwipe / core.OnVerticalSwipe, the same unconditional
+            // shape again; see GrMobSwipe.
+            .modifier(GrMobSwipe(horizontal: node.stringProp("onSwipe"),
+                                 vertical: node.stringProp("onVerticalSwipe")))
     }
 
     @ViewBuilder private var content: some View {
@@ -269,6 +273,71 @@ private struct GrMobEscapeClaim: ViewModifier {
                 GrMobShortcutButtons(chords: [(key: .escape, modifiers: [])]) { dispatch?(id) }
             }
         }
+    }
+}
+
+/// core.SwipeMinDistance, in points: the travel along the axis, press to
+/// release, that makes a drag a swipe. The web runtime and Compose read the
+/// same number.
+private let grMobSwipeMinDistance: CGFloat = 40
+
+/// core.OnSwipe and core.OnVerticalSwipe: one report per press, at release,
+/// as a direction word on the text channel ("leading", "trailing", "up",
+/// "down").
+///
+/// A DragGesture attached with `simultaneousGesture`, for two reasons:
+///
+/// - It never blocks the gestures around and under it. A swipeable card in a
+///   vertical ScrollView still scrolls, because the ScrollView's pan and this
+///   drag both run, and a vertical drag simply reports nothing here. Plain
+///   `.gesture` on content inside a ScrollView is the arrangement iOS 18
+///   broke scrolling for. `highPriorityGesture` would also starve a child's
+///   tap, because the child has to wait for the drag to fail.
+/// - A child's tap still lands on a press that did not travel. One that did
+///   travel should be no tap: UIKit's tap recognizer fails once the finger
+///   moves about 10pt, and SwiftUI's tap is expected to do the same, so a
+///   swipe across Gallery's tap zones does not also step or flip. Not yet
+///   checked on a simulator; a child Button tracks its own touch and fires
+///   if the release is still inside it.
+///
+/// The axis is decided at release by core's rule: at least the minimum along
+/// a claimed axis, and strictly further along it than across. So unlike
+/// Compose and the web, iOS never *claims* an axis before release. It
+/// reports and leaves the ScrollView to do as it would.
+///
+/// `minimumDistance` is 10pt, UIKit's long-press allowableMovement and the
+/// web runtime's SWIPE_SLOP, so a resting finger never starts the drag.
+///
+/// The translation is read in the global space. That space is the window's,
+/// whose x always grows to the right. A local space would have to be checked
+/// against how SwiftUI mirrors a right-to-left layout, so the horizontal word
+/// is resolved here from the environment's layoutDirection instead: leading
+/// is left in LTR and right in RTL. Not yet verified on a simulator in RTL.
+///
+/// `including:` keeps the view's type the same whether or not a swipe is
+/// claimed (see GrMobEscapeClaim for why that matters). `.subviews` leaves
+/// the gesture off this view and the content's own gestures as they were.
+private struct GrMobSwipe: ViewModifier {
+    let horizontal: String
+    let vertical: String
+    @Environment(\.grMobRuntime) private var runtime
+    @Environment(\.layoutDirection) private var layoutDirection
+
+    func body(content: Content) -> some View {
+        content.simultaneousGesture(
+            DragGesture(minimumDistance: 10, coordinateSpace: .global).onEnded { value in
+                let dx = value.translation.width, dy = value.translation.height
+                let ax = abs(dx), ay = abs(dy)
+                if !horizontal.isEmpty, ax >= grMobSwipeMinDistance, ax > ay {
+                    let towardLeft = dx < 0
+                    let leading = layoutDirection == .rightToLeft ? !towardLeft : towardLeft
+                    runtime?.textChanged(horizontal, leading ? "leading" : "trailing")
+                } else if !vertical.isEmpty, ay >= grMobSwipeMinDistance, ay > ax {
+                    runtime?.textChanged(vertical, dy < 0 ? "up" : "down")
+                }
+            },
+            including: horizontal.isEmpty && vertical.isEmpty ? .subviews : .all
+        )
     }
 }
 

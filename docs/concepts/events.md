@@ -131,6 +131,38 @@ core.Button("Delete", onDelete,
     the call site if the wrapper's public field should stay style-only
     (`comps.Button` and `comps.Chip` take the second route).
 
+## Swipes
+
+`core.OnSwipe` reports a horizontal swipe on any node, and
+`core.OnVerticalSwipe` a vertical one. Each fires once, when the finger lifts,
+with a `core.SwipeDirection`:
+
+```go
+core.Box(
+    core.OnSwipe(func(d core.SwipeDirection) {
+        if d == core.SwipeLeading { next() } else { prev() }
+    }),
+    card,
+)
+```
+
+- **Leading and trailing, not left and right.** `SwipeLeading` is the finger
+  moving toward the leading edge, which is left in a left-to-right layout and
+  right in a right-to-left one. The host resolves it, because only the host
+  knows the direction it laid the node out in.
+- **A swipe is `core.SwipeMinDistance` (40 units) along the axis, and further
+  along it than across.** Every host applies the same rule at release, with no
+  velocity or fling.
+- **One axis is claimed.** A card with `OnSwipe` inside a vertical `Scroll`
+  still scrolls the page.
+- **A swipe that fires is not also a tap.** A child's `OnClick` or
+  `OnLongPress` under the finger does not run for the same press.
+- **No stream of deltas.** The gesture reports "which way", not where the
+  finger is, so content does not track the finger while it moves.
+
+`comps.Gallery` steps through its cards with it. See the
+[API reference](../api/core-events.md) for how each host implements it.
+
 ## System back
 
 `core.OnBack` claims Android's back button and back gesture while the node

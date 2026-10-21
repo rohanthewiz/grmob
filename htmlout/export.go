@@ -504,6 +504,11 @@ func renderNode(b *element.Builder, node *core.Node, from imposed, path string) 
 		// core.Shape.OnClick's one canvas-wide callback, recorded the same
 		// way: a loader that reports "x,y,w,h" to it gets Go's hit-test.
 		{"onShapeTap", "data-onshapetap"},
+		// core.OnSwipe and core.OnVerticalSwipe, recorded the same way: a
+		// static page has no pointer to track, but a loader that does track
+		// one reports "leading"/"trailing" or "up"/"down" to these IDs.
+		{"onSwipe", "data-onswipe"},
+		{"onVerticalSwipe", "data-onverticalswipe"},
 	} {
 		if id, ok := node.Props[cb.prop].(string); ok {
 			attrs = append(attrs, cb.attr, id)
