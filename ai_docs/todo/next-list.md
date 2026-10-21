@@ -661,6 +661,13 @@ defect, which then becomes its own Open item.
   - TalkBack and VoiceOver reading each quote as one sentence ("Apple, AAPL,
     189.12, up 1.23, 0.65 percent"), the tape as a list, and as a group of
     buttons with `OnTap`.
+  - Looked at on the iOS 26.5 simulator, 2026-10-21
+    (`2026-1021-1132-work-next-list-n110-n109`, two `simctl io` shots of 4.42
+    three seconds apart): each quote keeps its width, and the next one is
+    cut at the tape's trailing edge rather than squeezed. ▲ and ▼ draw in SF
+    in green and red. The tape steps (MSFT first, then AMZN). Still unseen on
+    iOS: the sideways pan (simctl cannot swipe) and whether a step is a
+    move of keyed quotes. Compose is not looked at.
 - **N-122** · raised `2026-1020-1933-core-swipe-gesture` · value medium
   **`core.OnSwipe` / `OnVerticalSwipe` on the natives and under real touch.**
   Checked so far: the Go tests and the DOM shim's tests. In headless Chrome
