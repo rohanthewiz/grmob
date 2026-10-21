@@ -7104,8 +7104,9 @@ func lessonGallery() Lesson {
 				prose("Cinema and Polaroid look the same in every theme. They render the card under "+
 					"DarkTheme and DefaultTheme, so the Details list and any Back view stay "+
 					"legible. Theme and Minimal follow the app's theme."),
-				prose("Share calls OnShare, or copies the title and ShareURL with a toast, because "+
-					"core has no system share sheet. Learn more calls OnAction, or opens ActionURL. "+
+				prose("Share calls OnShare, or opens the system share sheet with core.Share. Where "+
+					"there is no sheet, a desktop browser without the Web Share API, it copies the "+
+					"title and ShareURL with a toast. Learn more calls OnAction, or opens ActionURL. "+
 					"The tap zones are a pointer shortcut for the buttons below the stage, so "+
 					"screen readers skip them and use the named buttons."),
 				keyPoints(

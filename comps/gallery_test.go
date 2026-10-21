@@ -226,15 +226,50 @@ func TestGalleryBackSlotWins(t *testing.T) {
 	}
 }
 
-// The default share copies the share text and confirms it; OnShare and
-// OnAction replace the defaults and receive the current item.
+// galleryShareHost records system events as recordSystemEvents does, and
+// answers each share request with sheet: true when the host showed a sheet,
+// false when it could not (a desktop browser with no Web Share API).
+func galleryShareHost(t *testing.T, sheet bool) *[]string {
+	t.Helper()
+	var seen []string
+	t.Cleanup(func() { core.SetSystemEventHandler(nil) })
+	core.SetSystemEventHandler(func(name string, data map[string]any) {
+		switch name {
+		case "share":
+			seen = append(seen, "share:"+data["text"].(string)+"|"+data["url"].(string))
+			core.ReceiveHostEvent("share", map[string]any{"id": data["id"], "ok": sheet})
+		case "clipboard":
+			seen = append(seen, "clipboard:"+data["command"].(string)+":"+data["text"].(string))
+		case "haptic":
+			seen = append(seen, "haptic:"+data["kind"].(string))
+		case "toast":
+			seen = append(seen, "toast:"+data["message"].(string))
+		default:
+			seen = append(seen, name)
+		}
+	})
+	return &seen
+}
+
+// The default share opens the share sheet with the text and the link apart;
+// where no sheet can be shown it copies the two joined and confirms it.
+// OnShare and OnAction replace the defaults and receive the current item.
 func TestGalleryShareAndAction(t *testing.T) {
-	seen := recordSystemEvents(t)
+	seen := galleryShareHost(t, true)
 	ctx, n := renderDebug(t, Gallery{Items: galleryItems()})
 	galleryTap(t, ctx, n, "Share")
-	want := []string{"clipboard:write:Fjord https://example.com/p/fjord", "haptic:light", "toast:Copied to clipboard"}
+	want := []string{"share:Fjord|https://example.com/p/fjord"}
 	if fmt.Sprint(*seen) != fmt.Sprint(want) {
-		t.Errorf("default share = %v, want %v", *seen, want)
+		t.Errorf("default share with a sheet = %v, want %v", *seen, want)
+	}
+
+	seen = galleryShareHost(t, false)
+	ctx, n = renderDebug(t, Gallery{Items: galleryItems()})
+	galleryTap(t, ctx, n, "Share")
+	want = []string{"share:Fjord|https://example.com/p/fjord",
+		"clipboard:write:Fjord https://example.com/p/fjord", "haptic:light", "toast:Copied to clipboard"}
+	if fmt.Sprint(*seen) != fmt.Sprint(want) {
+		t.Errorf("default share with no sheet = %v, want %v", *seen, want)
 	}
 
 	var shared, acted []string

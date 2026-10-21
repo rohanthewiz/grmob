@@ -55,7 +55,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
 | [Events & focus](core-events.md) | Event props and swipes, host and system events, focus refs and focus order, and scrolling a node into view. | 3 types, 25 functions and methods |
 | [Navigation & overlays](core-navigation.md) | The navigator stack, modals, toasts, deep links and opening URLs. | 4 types, 19 functions and methods |
 | [Accessibility](core-accessibility.md) | Roles, selected, expanded and current states, value ranges and the accessibility audit. | 13 types, 20 functions and methods |
-| [Device services](core-device.md) | Audio, camera, clipboard, haptics, local notifications, compass heading, location, maps, the app lifecycle, and the window's size and fold. | 21 types, 71 functions and methods |
+| [Device services](core-device.md) | Audio, camera, clipboard, the share sheet, haptics, local notifications, compass heading, location, maps, the app lifecycle, and the window's size and fold. | 21 types, 72 functions and methods |
 
 ## Index
 
@@ -451,6 +451,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
     - [`func ReceiveLifecycle`](core-device.md#func-receivelifecycle)
     - [`func ReceiveLocation`](core-device.md#func-receivelocation)
     - [`func ReceiveWindow`](core-device.md#func-receivewindow)
+    - [`func Share`](core-device.md#func-share)
     - [`func ShowUserLocation`](core-device.md#func-showuserlocation)
     - [`func StartHeading`](core-device.md#func-startheading)
     - [`func StartLocation`](core-device.md#func-startlocation)

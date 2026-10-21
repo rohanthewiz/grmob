@@ -24,6 +24,7 @@ import org.json.JSONObject
  *   core.StartLocation ▶ "sensor"   ──▶ LocationSensor (LocationManager)
  *   permission.Check  ▶ "permission"──▶ Permissions (runtime permissions)
  *   core.*Clipboard ──▶ "clipboard" ──▶ Clipboard (ClipboardManager)
+ *   core.Share      ──▶ "share"     ──▶ Share (ACTION_SEND chooser)
  *   core.Haptic     ──▶ "haptic"    ──▶ Haptics (Vibrator)
  *   core.*Notification ▶ "notification" ▶ Notifications (NotificationCompat)
  *   keystore.*      ──▶ "keystore"  ──▶ Keystore (AndroidKeyStore + SharedPreferences)
@@ -61,6 +62,7 @@ object SystemEvents {
         HeadingSensor.attach(appContext, runtime::hostEvent)
         LocationSensor.attach(appContext, runtime::hostEvent)
         Clipboard.attach(appContext, runtime::hostEvent)
+        Share.attach(appContext, runtime::hostEvent)
         Keystore.attach(appContext, runtime::hostEvent)
         Haptics.attach(appContext)
         // Creates the notification channel. The tap comes back through
@@ -107,6 +109,10 @@ object SystemEvents {
             // Write is fire-and-forget; a read is answered over the host-event
             // channel with the id it carried (core/clipboard.go).
             "clipboard" -> Clipboard.handle(data)
+            // The system share sheet; answered over the host-event channel
+            // with the id it carried, ok when the chooser started
+            // (core/share.go).
+            "share" -> Share.handle(data)
             // Save, get or delete one secret; every command is answered over
             // the host-event channel with the id it carried, from Keystore's
             // own worker thread (keystore/keystore.go).

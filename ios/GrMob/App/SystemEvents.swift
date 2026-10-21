@@ -11,6 +11,7 @@ import UIKit
 ///     core.StartLocation ▶ "sensor"   ──▶ LocationSensor (CLLocationManager)
 ///     permission.Check  ▶ "permission"──▶ Permissions (AVFoundation/Photos/CL)
 ///     core.*Clipboard ──▶ "clipboard" ──▶ Clipboard (UIPasteboard)
+///     core.Share      ──▶ "share"     ──▶ Share (UIActivityViewController)
 ///     core.Haptic     ──▶ "haptic"    ──▶ Haptics (UIKit feedback generators)
 ///     core.*Notification ▶ "notification" ▶ Notifications (UNUserNotificationCenter)
 ///     keystore.*      ──▶ "keystore"  ──▶ Keystore (Keychain Services)
@@ -38,6 +39,7 @@ enum SystemEvents {
         LocationSensor.shared.report = { name, payload in runtime.hostEvent(name, payload) }
         Permissions.shared.report = { name, payload in runtime.hostEvent(name, payload) }
         Clipboard.shared.report = { name, payload in runtime.hostEvent(name, payload) }
+        Share.shared.report = { name, payload in runtime.hostEvent(name, payload) }
         Keystore.shared.report = { name, payload in runtime.hostEvent(name, payload) }
         Notifications.shared.report = { name, payload in runtime.hostEvent(name, payload) }
         // Here rather than lazily: the notification center's delegate has to be
@@ -83,6 +85,9 @@ enum SystemEvents {
         // Write is fire-and-forget; a read is answered over the host-event
         // channel with the id it carried (core/clipboard.go).
         case "clipboard": Clipboard.shared.handle(object)
+        // The system share sheet; answered over the host-event channel with
+        // the id it carried, ok once the sheet is up (core/share.go).
+        case "share": Share.shared.handle(object)
         // Save, get or delete one secret; every command is answered over the
         // host-event channel with the id it carried, after the Keychain call
         // has run on Keystore's own queue (keystore/keystore.go).

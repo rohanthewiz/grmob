@@ -121,12 +121,6 @@ with each item's `raised` traced back through all session docs.
   needs a scale transform (plus pinch). `comps.Gallery` uses a crossfade or a
   rise for the flip, and a taller stage or a Lightbox for the zoom. Nobody
   has asked for more than that yet.
-- **N-114** · raised `2026-1017-2211-gallery-widget` · value medium
-  **No system share sheet.** `comps.Gallery`'s Share falls back to the
-  clipboard and a toast (CopyButton's behaviour) unless the app passes
-  `OnShare`. A `core.Share(text, url)` command would need a host event on
-  each target: `navigator.share` on the web, `Intent.ACTION_SEND` on Android,
-  `UIActivityViewController` on iOS.
 - **N-120** · raised `2026-1020-1656-stock-ticker-widget` · value low
   **core has no looping translate, so a ticker cannot glide.**
   `comps.StockTicker` steps instead: the caller advances `Start` on a
@@ -632,6 +626,31 @@ defect, which then becomes its own Open item.
     untapped;
   - the `core.WithTheme` wrapper around a card;
   - TalkBack and VoiceOver reaching only the current card.
+- **N-114** · raised `2026-1017-2211-gallery-widget` · value medium
+  **`core.Share`, the system share sheet, seen on iOS only.** Added
+  2026-10-21 (`2026-1021-1132-work-next-list-n110-n109`): `core.Share(text,
+  url, done)` sends a "share" system event with an id; each host answers
+  `{id, ok}`, where ok means a sheet was shown (a dismissal still counts).
+  The web uses `navigator.share` (ok:false without it, when canShare says
+  no, or on any rejection except AbortError). Android sends ACTION_SEND
+  through `Intent.createChooser` (`Share.kt`). iOS presents a
+  UIActivityViewController over the top presented controller, anchored
+  centre on iPad (`Share.swift`). `comps.Gallery`'s default Share now calls
+  it, and falls back to the clipboard and a toast on ok:false. Checked so
+  far: core and Gallery Go tests; share_test.mjs; mobile/verify's spelling
+  and dispatch tests; a Kotlin compile (`:app:compileDebugKotlin`) and an
+  iOS simulator build. On the iOS 26.5 simulator,
+  `TutorialShareSheetUITests` taps 4.41's Share and the sheet comes up,
+  with the picsum.photos link preview, Copy and Add to Reading List. Still
+  to check:
+  - Android: the chooser opening from 4.41 on the emulator or the Fold6,
+    and the text and link arriving joined in a messenger;
+  - the web in a phone browser (Chrome on Android, Safari on iOS), where
+    the tap's user activation must reach `navigator.share` through the
+    wasm callback;
+  - a desktop browser without the Web Share API (Firefox) falling back to
+    the clipboard toast;
+  - the iPad popover anchor.
 - **N-121** · raised `2026-1020-1656-stock-ticker-widget` · value medium
   **`comps.StockTicker` and lesson 4.42 on the natives.** Checked so far:
   web only (wasm shot, 2026-10-20) and the Go tests. Still to check:

@@ -209,10 +209,12 @@ const ConcernGalleryFrozen = "gallery-frozen"
 // ActionURL is opened with core.OpenURL.
 //
 // The share button is drawn for an item with a ShareURL or ShareText, or for
-// every item when OnShare is set. With OnShare nil, the share text (ShareText
-// or the Title, then the ShareURL) is put on the clipboard and confirmed by a
-// toast, CopyButton's behaviour. core has no system share sheet, so an app
-// that wants one passes OnShare and calls its own.
+// every item when OnShare is set. With OnShare nil, it opens the system share
+// sheet (core.Share) with the share text (ShareText, or the Title when there
+// is a ShareURL) and the ShareURL. Where no sheet can be shown, a desktop
+// browser without the Web Share API for one, the same text is put on the
+// clipboard and confirmed by a toast, CopyButton's behaviour. An app with its
+// own share flow passes OnShare.
 //
 // # Accessibility
 //
@@ -312,8 +314,9 @@ type Gallery struct {
 	// opens the item's ActionURL. See "Learn more and Share".
 	OnAction func(item GalleryItem, index int)
 
-	// OnShare is called by the share button with the current item. Nil puts
-	// the share text on the clipboard. See "Learn more and Share".
+	// OnShare is called by the share button with the current item. Nil opens
+	// the system share sheet, or the clipboard where there is none. See
+	// "Learn more and Share".
 	OnShare func(item GalleryItem, index int)
 
 	// HideControls removes the row of tool buttons and the action button
@@ -375,8 +378,9 @@ type GalleryItem struct {
 	// nil. Empty, with OnAction nil, draws no action button for this card.
 	ActionURL string
 
-	// ShareURL and ShareText are what is shared. With OnShare nil, the
-	// clipboard gets ShareText (or Title), then ShareURL.
+	// ShareURL and ShareText are what is shared. With OnShare nil, the share
+	// sheet gets ShareText (or Title) and ShareURL, and the clipboard fallback
+	// gets the two joined.
 	ShareURL  string
 	ShareText string
 }
@@ -500,7 +504,7 @@ type GalleryLabels struct {
 	Zoom string
 	// Share is the share button's caption and name; "Share".
 	Share string
-	// Shared is the toast after a clipboard share; "Copied to clipboard".
+	// Shared is the toast after the clipboard fallback; "Copied to clipboard".
 	Shared string
 	// Autoplay names the pause/play toggle; "Autoplay".
 	Autoplay string
@@ -1452,13 +1456,22 @@ func (r galleryRender) toggleZoom() func() {
 }
 
 // share returns the share button's handler: the caller's OnShare, or the
-// clipboard with a confirming toast and haptic, CopyButton's behaviour.
+// system share sheet, falling back to the clipboard with a confirming toast
+// and haptic (CopyButton's behaviour) where no sheet can be shown.
 // The item is captured by value, so a tap acts on the card this pass drew.
+//
+//	tap ──▶ core.Share(text, url) ──ok──▶ the sheet is the confirmation
+//	                              └─not ok─▶ clipboard + haptic + toast
+//
+// The fallback runs from Share's done, which may be on the host-event
+// goroutine; WriteClipboard, Haptic and ShowToast are fire-and-forget system
+// events and safe from any goroutine.
 func (r galleryRender) share(it GalleryItem, i int) func() {
 	if r.g.OnShare != nil {
 		onShare := r.g.OnShare
 		return func() { onShare(it, i) }
 	}
+	sheetText, url := galleryShareParts(it)
 	text := galleryShareText(it)
 	message := orDefault(r.g.Labels.Shared, "Copied to clipboard")
 	return func() {
@@ -1466,9 +1479,14 @@ func (r galleryRender) share(it GalleryItem, i int) func() {
 		if text == "" {
 			return
 		}
-		core.WriteClipboard(text)
-		core.Haptic(core.HapticLight)
-		core.ShowToast(message)
+		core.Share(sheetText, url, func(ok bool) {
+			if ok {
+				return
+			}
+			core.WriteClipboard(text)
+			core.Haptic(core.HapticLight)
+			core.ShowToast(message)
+		})
 	}
 }
 
@@ -1623,14 +1641,22 @@ func galleryFlippable(it GalleryItem) bool {
 	return it.Back != nil || len(it.Details) > 0
 }
 
-// galleryShareText is what the default share puts on the clipboard:
-// ShareText, or the Title, followed by the ShareURL.
-func galleryShareText(it GalleryItem) string {
-	text := it.ShareText
+// galleryShareParts is what the default share hands the share sheet: the
+// text (ShareText, or the Title when there is a link to caption) and the link,
+// kept apart because the platforms place them apart (core.Share).
+func galleryShareParts(it GalleryItem) (text, url string) {
+	text = it.ShareText
 	if text == "" && it.ShareURL != "" {
 		text = it.Title
 	}
-	return joinNonEmpty(" ", text, it.ShareURL)
+	return text, it.ShareURL
+}
+
+// galleryShareText is what the clipboard fallback puts on the clipboard:
+// galleryShareParts' text followed by the link, on one line.
+func galleryShareText(it GalleryItem) string {
+	text, url := galleryShareParts(it)
+	return joinNonEmpty(" ", text, url)
 }
 
 // galleryItemKey is item i's identity: its Key, or its index.

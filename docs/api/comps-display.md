@@ -1481,8 +1481,9 @@ type Gallery struct {
 	// opens the item's ActionURL. See "Learn more and Share".
 	OnAction func(item GalleryItem, index int)
 
-	// OnShare is called by the share button with the current item. Nil puts
-	// the share text on the clipboard. See "Learn more and Share".
+	// OnShare is called by the share button with the current item. Nil opens
+	// the system share sheet, or the clipboard where there is none. See
+	// "Learn more and Share".
 	OnShare func(item GalleryItem, index int)
 
 	// HideControls removes the row of tool buttons and the action button
@@ -1625,7 +1626,7 @@ Zoom picks what zooming the current card does. The zero value grows it in place:
 
 The action button is drawn for an item with an ActionURL, or for every item when OnAction is set. OnAction receives the item; with it nil, the ActionURL is opened with core.OpenURL.
 
-The share button is drawn for an item with a ShareURL or ShareText, or for every item when OnShare is set. With OnShare nil, the share text (ShareText or the Title, then the ShareURL) is put on the clipboard and confirmed by a toast, CopyButton's behaviour. core has no system share sheet, so an app that wants one passes OnShare and calls its own.
+The share button is drawn for an item with a ShareURL or ShareText, or for every item when OnShare is set. With OnShare nil, it opens the system share sheet (core.Share) with the share text (ShareText, or the Title when there is a ShareURL) and the ShareURL. Where no sheet can be shown, a desktop browser without the Web Share API for one, the same text is put on the clipboard and confirmed by a toast, CopyButton's behaviour. An app with its own share flow passes OnShare.
 
 #### Accessibility
 
@@ -1645,7 +1646,7 @@ Every glyph button has a spoken name. Details states its expansion (core.Accessi
 	             TextSecondary (in the card's theme)
 	Spacing      XS, SM and MD for gaps and insets
 
-<small>[comps/gallery.go:247](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L247)</small>
+<small>[comps/gallery.go:249](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L249)</small>
 
 #### func (Gallery) Render
 
@@ -1655,7 +1656,7 @@ func (g Gallery) Render(ctx *core.Context) *core.Node
 
 Render builds the tree drawn in the type doc.
 
-<small>[comps/gallery.go:545](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L545)</small>
+<small>[comps/gallery.go:549](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L549)</small>
 
 ### type GalleryFlip
 
@@ -1665,7 +1666,7 @@ type GalleryFlip string
 
 GalleryFlip is how a Gallery card shows its back.
 
-<small>[comps/gallery.go:428](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L428)</small>
+<small>[comps/gallery.go:432](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L432)</small>
 
 ```go
 const (
@@ -1687,7 +1688,7 @@ type GalleryIndicator string
 
 GalleryIndicator is what a Gallery draws between its arrows.
 
-<small>[comps/gallery.go:453](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L453)</small>
+<small>[comps/gallery.go:457](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L457)</small>
 
 ```go
 const (
@@ -1747,8 +1748,9 @@ type GalleryItem struct {
 	// nil. Empty, with OnAction nil, draws no action button for this card.
 	ActionURL string
 
-	// ShareURL and ShareText are what is shared. With OnShare nil, the
-	// clipboard gets ShareText (or Title), then ShareURL.
+	// ShareURL and ShareText are what is shared. With OnShare nil, the share
+	// sheet gets ShareText (or Title) and ShareURL, and the clipboard fallback
+	// gets the two joined.
 	ShareURL  string
 	ShareText string
 }
@@ -1756,7 +1758,7 @@ type GalleryItem struct {
 
 GalleryItem is one card of a Gallery.
 
-<small>[comps/gallery.go:340](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L340)</small>
+<small>[comps/gallery.go:343](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L343)</small>
 
 ### type GalleryLabels
 
@@ -1775,7 +1777,7 @@ type GalleryLabels struct {
 	Zoom string
 	// Share is the share button's caption and name; "Share".
 	Share string
-	// Shared is the toast after a clipboard share; "Copied to clipboard".
+	// Shared is the toast after the clipboard fallback; "Copied to clipboard".
 	Shared string
 	// Autoplay names the pause/play toggle; "Autoplay".
 	Autoplay string
@@ -1792,7 +1794,7 @@ type GalleryLabels struct {
 
 GalleryLabels are a Gallery's words. Every empty field takes the English default noted, so a localised app sets the ones it translates.
 
-<small>[comps/gallery.go:489](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L489)</small>
+<small>[comps/gallery.go:493](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L493)</small>
 
 ### type GalleryLook
 
@@ -1802,7 +1804,7 @@ type GalleryLook string
 
 GalleryLook is a Gallery's visual style; see "Looks" on Gallery.
 
-<small>[comps/gallery.go:398](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L398)</small>
+<small>[comps/gallery.go:402](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L402)</small>
 
 ```go
 const (
@@ -1838,7 +1840,7 @@ type GalleryMotion struct {
 
 GalleryMotion configures a Gallery's animations. Every duration is in milliseconds: zero is the default noted, and negative snaps.
 
-<small>[comps/gallery.go:472](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L472)</small>
+<small>[comps/gallery.go:476](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L476)</small>
 
 ### type GalleryState
 
@@ -1857,7 +1859,7 @@ type GalleryState struct {
 
 GalleryState is what a Gallery shows. It is comparable, so a caller can test two for equality, and OnChange is never called with an unchanged one.
 
-<small>[comps/gallery.go:386](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L386)</small>
+<small>[comps/gallery.go:390](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L390)</small>
 
 ### type GalleryTransition
 
@@ -1867,7 +1869,7 @@ type GalleryTransition string
 
 GalleryTransition is how a Gallery moves between cards.
 
-<small>[comps/gallery.go:412](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L412)</small>
+<small>[comps/gallery.go:416](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L416)</small>
 
 ```go
 const (
@@ -1892,7 +1894,7 @@ type GalleryZoom string
 
 GalleryZoom is what zooming a Gallery card does; see "Zoom" on Gallery.
 
-<small>[comps/gallery.go:441](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L441)</small>
+<small>[comps/gallery.go:445](https://github.com/rohanthewiz/grmob/blob/master/comps/gallery.go#L445)</small>
 
 ```go
 const (

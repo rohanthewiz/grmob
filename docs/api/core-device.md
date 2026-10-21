@@ -4,9 +4,9 @@
 import "github.com/rohanthewiz/grmob/core"
 ```
 
-Audio, camera, clipboard, haptics, local notifications, compass heading, location, maps, the app lifecycle, and the window's size and fold.
+Audio, camera, clipboard, the share sheet, haptics, local notifications, compass heading, location, maps, the app lifecycle, and the window's size and fold.
 
-One of 11 topic pages of [package core](core.md), which has the package overview and an index of every topic. This page documents the declarations in `core/audio.go`, `core/camera.go`, `core/clipboard.go`, `core/haptics.go`, `core/notifications.go`, `core/heading.go`, `core/location.go`, `core/mapview.go`, `core/lifecycle.go`, `core/window.go`.
+One of 11 topic pages of [package core](core.md), which has the package overview and an index of every topic. This page documents the declarations in `core/audio.go`, `core/camera.go`, `core/clipboard.go`, `core/share.go`, `core/haptics.go`, `core/notifications.go`, `core/heading.go`, `core/location.go`, `core/mapview.go`, `core/lifecycle.go`, `core/window.go`.
 
 ## Index
 
@@ -50,6 +50,7 @@ One of 11 topic pages of [package core](core.md), which has the package overview
 - [`func ReceiveLifecycle`](#func-receivelifecycle)
 - [`func ReceiveLocation`](#func-receivelocation)
 - [`func ReceiveWindow`](#func-receivewindow)
+- [`func Share`](#func-share)
 - [`func ShowUserLocation`](#func-showuserlocation)
 - [`func StartHeading`](#func-startheading)
 - [`func StartLocation`](#func-startlocation)
@@ -657,6 +658,22 @@ Validation is split by what a bad value would do downstream:
 Received is set here, whatever the caller passed, since arriving through this function is what receiving means. A repeat of the current window is absorbed silently. Subscribers are notified outside the lock.
 
 <small>[core/window.go:409](https://github.com/rohanthewiz/grmob/blob/master/core/window.go#L409)</small>
+
+### func Share
+
+```go
+func Share(text, url string, done func(ok bool))
+```
+
+Share opens the platform's share sheet with text and url, and calls done with whether a sheet was shown: true even if the person then dismisses it, false when none could be (a browser without the Web Share API, no app to take it, no host). A caller with a fallback, such as copying the link, runs it on false.
+
+Either of text and url may be empty, not both: with nothing to share, done runs at once with false and nothing is sent. The two travel separately because the platforms place them separately (the Web Share API's text and url, a link preview above the text on iOS); a host with one slot (Android's EXTRA\_TEXT) joins them with a newline.
+
+done may be nil, for a caller with no fallback. With no host registered (a headless test, htmlout) done runs immediately with false on the caller's goroutine, rather than leaving the caller waiting on a reply that cannot come.
+
+Call it from a tap handler. A browser shows the sheet only during a user gesture, and the natives present it over the screen the person is looking at, so a share from a timer can be refused on the web.
+
+<small>[core/share.go:81](https://github.com/rohanthewiz/grmob/blob/master/core/share.go#L81)</small>
 
 ### func ShowUserLocation
 

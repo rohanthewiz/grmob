@@ -212,8 +212,8 @@ var Packages = []Pkg{
 		}, {
 			Slug:  "device",
 			Title: "Device services",
-			Blurb: "Audio, camera, clipboard, haptics, local notifications, compass heading, location, maps, the app lifecycle, and the window's size and fold.",
-			Files: []string{"audio.go", "camera.go", "clipboard.go", "haptics.go", "notifications.go", "heading.go", "location.go", "mapview.go", "lifecycle.go", "window.go"},
+			Blurb: "Audio, camera, clipboard, the share sheet, haptics, local notifications, compass heading, location, maps, the app lifecycle, and the window's size and fold.",
+			Files: []string{"audio.go", "camera.go", "clipboard.go", "share.go", "haptics.go", "notifications.go", "heading.go", "location.go", "mapview.go", "lifecycle.go", "window.go"},
 		}},
 	},
 	{

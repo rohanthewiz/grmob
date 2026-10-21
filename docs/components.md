@@ -3450,8 +3450,11 @@ the card stays legible, including a caller's `Back` view. `CardTheme`
 overrides the theme for any look.
 
 **Learn more and Share.** The action button opens `ActionURL`, or calls
-`OnAction` when it is set. The share button calls `OnShare`, or puts the share
-text (`ShareText` or the title, then `ShareURL`) on the clipboard with a toast.
+`OnAction` when it is set. The share button calls `OnShare`, or opens the
+system share sheet (`core.Share`) with the share text (`ShareText`, or the
+title when there is a `ShareURL`) and the `ShareURL`. Where no sheet can be
+shown, such as a desktop browser without the Web Share API, it puts the two on
+the clipboard with a toast instead.
 
 Other notes:
 
@@ -3461,10 +3464,9 @@ Other notes:
 - Details states its expansion, and the in-place Zoom and Autoplay state
   whether they are on. Autoplay always has a pause control (WCAG 2.2.2) and
   pauses while a card is flipped or zoomed.
-- What core does not have yet: a swipe gesture, a 3-D flip (`Rotate` turns
-  only about the axis out of the screen), a scale transform or pinch, and a
-  system share sheet. The gallery uses the closest portable stand-in for each
-  and says so in its doc.
+- What core does not have yet: a 3-D flip (`Rotate` turns only about the
+  axis out of the screen), and a scale transform or pinch. The gallery uses
+  the closest portable stand-in for each and says so in its doc.
 - Controlled with no `OnChange` raises `ConcernGalleryFrozen`.
 
 ## ActionSheet

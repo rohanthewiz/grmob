@@ -10002,6 +10002,59 @@ const GrMob = (() => {
         return { handle };
     })();
 
+    // The browser half of core.Share (core/share.go): the Web Share API.
+    // navigator.share shows the platform's own sheet (Android's chooser in
+    // Chrome, iOS's in Safari, the OS sheet on macOS and Windows). Every
+    // request is answered, because Go holds done until its id comes back.
+    //
+    // ok means "a sheet was shown", so the caller's fallback (comps.Gallery's
+    // clipboard and toast) runs only where no sheet could be:
+    //   - no navigator.share at all: Firefox on a desktop, an insecure
+    //     context, a vm sandbox;
+    //   - canShare says no to this payload;
+    //   - share() rejects with anything but AbortError: NotAllowedError when
+    //     the call came outside a user gesture, TypeError for a bad url.
+    // AbortError is the person dismissing the sheet, which answers ok:true:
+    // the sheet was shown, and a dismissal is not a failure to cover for.
+    //
+    // text and url are passed only when set: Chrome's share target treats an
+    // empty url as a url, and a share of text alone grew a blank link line.
+    const share = (() => {
+        function send(id, ok) {
+            const host = window.GrMobWASM;
+            if (!host || typeof host.HostEvent !== "function") return;
+            host.HostEvent("share", JSON.stringify({ "id": id, "ok": ok }));
+        }
+        function handle(data) {
+            if (!data.id) return;
+            const nav = typeof navigator !== "undefined" ? navigator : undefined;
+            const payload = {};
+            if (data.text) payload.text = data.text;
+            if (data.url) payload.url = data.url;
+            if (!nav || typeof nav.share !== "function" ||
+                (typeof nav.canShare === "function" && !nav.canShare(payload))) {
+                // Answered in a microtask, as the keystore's refusal is: a
+                // caller should not see done run before Share has returned
+                // here and after it on every other host.
+                Promise.resolve().then(() => send(data.id, false));
+                return;
+            }
+            let shown;
+            try {
+                shown = nav.share(payload);
+            } catch (e) {
+                // A synchronous throw (an old polyfill) is a refusal too.
+                Promise.resolve().then(() => send(data.id, false));
+                return;
+            }
+            Promise.resolve(shown).then(
+                () => send(data.id, true),
+                (err) => send(data.id, !!err && err.name === "AbortError"),
+            );
+        }
+        return { handle };
+    })();
+
     // The browser half of Go's keystore package (keystore/keystore.go), which
     // is a refusal on purpose. A page has no secure store: localStorage,
     // IndexedDB and script-readable cookies are all open to any script on the
@@ -10413,6 +10466,7 @@ const GrMob = (() => {
         heading,
         permission,
         clipboard,
+        share,
         keystore,
         haptics,
         notifications,
@@ -10451,6 +10505,12 @@ window.GrMobSystemEvent = function (name, payloadJSON) {
         // core's clipboard (core/clipboard.go): a write, or a read answered
         // over GrMobWASM.HostEvent with the id it carried.
         GrMob.clipboard.handle(JSON.parse(payloadJSON));
+        return;
+    }
+    if (name === "share") {
+        // core.Share (core/share.go): the Web Share API, answered over
+        // GrMobWASM.HostEvent with the id it carried.
+        GrMob.share.handle(JSON.parse(payloadJSON));
         return;
     }
     if (name === "keystore") {
