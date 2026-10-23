@@ -36,7 +36,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-126
+**Next ID:** N-128
 
 ## Open
 
@@ -130,6 +130,16 @@ with each item's `raised` traced back through all session docs.
   nobody has asked for a gliding one. `core.ScrollIntoView` is not a
   substitute, because it is one app-wide command and would pull the page
   back to the tape. Related to N-113 (paint transforms).
+
+- **N-127** · raised `2026-1023-1428-bible-study-widget` · value low
+  **BibleStudy's verse text does not line up across one- and two-digit
+  numbers.** Each verse row puts its number and then the text, which starts
+  wherever the number ends. So verse 1's text sits a few pixels to the left
+  of verse 2's, and in a passage that runs from 9 to 10, verse 10's text
+  starts further right again. A printed Bible hangs its numbers in a fixed
+  gutter. A fixed width sized to the passage's widest number, or a
+  core-level min-width on the number Text, would fix it. Seen in the 4.44
+  browser shot; nobody has complained.
 
 ## Validate
 
@@ -701,6 +711,20 @@ defect, which then becomes its own Open item.
   - SwipeToRemove under real touch, with N-122's checks;
   - `cartdb` on a device: a cart under `mobile.DataDir()` survives killing
     the app.
+
+- **N-126** · raised `2026-1023-1428-bible-study-widget` · value medium
+  **BibleStudy on the natives and with a screen reader.** Checked so far:
+  Go tests (comps, blb, lesson 4.44), browser shots of lesson 4.44 with the
+  rows and the open sheet, and the live BLB check that
+  `StudyURL(17, ToolCrossRefs)` opens John 3:17's page. Still to check:
+  - Android and iOS: verse rows as tap targets inside the card, the hanging
+    number on a wrapped verse, the ActionSheet sibling opening over the
+    card, and `core.OpenURL` opening the BLB study tab in the browser;
+  - TalkBack and VoiceOver: each row read as "Verse 2, He maketh me…" with
+    the hint, the prompt caption skipped, and the sheet named
+    "Psalms 23:2 (KJV)";
+  - BLB's study page on a phone browser landing on the named tab
+    (Cross-Refs, not the default Interlinear).
 
 ## Non-goals
 

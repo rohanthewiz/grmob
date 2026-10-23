@@ -76,6 +76,9 @@ type BibleVerseLine struct {
 // a working address from a reference alone, for the case where the fetch
 // failed and Passage.URL never arrived.
 //
+// BibleStudy is this card with each verse a row to tap, opening a sheet of
+// BLB's study tools (interlinear, cross-references, commentaries) for it.
+//
 // # No hooks
 //
 // Everything is the caller's, so BibleVerse may be rendered conditionally.
@@ -136,6 +139,16 @@ type BibleVerse struct {
 
 // Render draws the card. It takes no hook slot.
 func (v BibleVerse) Render(ctx *core.Context) *core.Node {
+	return v.card(ctx, nil)
+}
+
+// card is Render with the quoted text replaceable. body stands in for the
+// Paragraph when the passage has text to show; the loading and failed
+// states, the reference line and the link are the card's either way.
+// BibleStudy passes its tappable verse rows here, so the two widgets share
+// one card and cannot drift apart in how they load, fail or link back. Nil
+// draws the Paragraph.
+func (v BibleVerse) card(ctx *core.Context, body core.View) *core.Node {
 	t := ctx.Theme()
 
 	items := make([]core.PropsAndChildren, 0, len(v.Style)+5)
@@ -168,7 +181,10 @@ func (v BibleVerse) Render(ctx *core.Context) *core.Node {
 		}
 		items = append(items, Skeleton{Lines: 3, AccessibilityLabel: label})
 	case len(v.Verses) > 0 || v.Text != "":
-		items = append(items, v.passage(t))
+		if body == nil {
+			body = v.passage(t)
+		}
+		items = append(items, body)
 	default:
 		if core.IsDebugMode() {
 			core.ReportConcern(ConcernBibleVerseEmpty,

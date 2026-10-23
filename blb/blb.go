@@ -7,6 +7,13 @@
 //	// p.Verses [{16 "For God so loved…"} {17 …} {18 …}],
 //	// p.URL "https://www.blueletterbible.org/esv/jhn/3/16/"
 //
+//	p.StudyURL(17, blb.ToolCrossRefs)
+//	// "https://www.blueletterbible.org/esv/jhn/3/17/t_corr_1000017"
+//
+// StudyURL links one verse's study tools on BLB (interlinear and Strong's,
+// cross-references, commentaries, dictionaries), the addresses
+// comps.BibleStudy opens when a reader taps a verse to dig deeper.
+//
 // # Where the text comes from
 //
 // Blue Letter Bible has no open JSON API. What it does publish, for anyone to
@@ -109,6 +116,82 @@ type Passage struct {
 	// URL is the passage's page on blueletterbible.org, the link the text
 	// owes its source. Empty only if BLB's reply carried no passage link.
 	URL string
+
+	// ChapterID is BLB's running number for the passage's chapter, counted
+	// across the whole Bible: Genesis 1 is 1, John 3 is 1000, Revelation 22
+	// is 1189. It is what BLB's study pages key a verse by (see StudyURL),
+	// read from the s_ segment of the reply's passage link. Zero when the
+	// reply carried no such segment, and StudyURL then has nothing to build.
+	ChapterID int
+}
+
+// The study tools BLB shows under a verse, one tab each on the verse's study
+// page. The values are BLB's own tab keys (the page's data-bible-tool
+// attributes); StudyURL puts them in the address so the page opens on that
+// tab. Untyped string constants, so a StudyURL method value fits a
+// func(int, string) string field such as comps.BibleStudy.StudyURL.
+const (
+	// ToolInterlinear is the verse word by word against the Hebrew or
+	// Greek, each word's Strong's number linking to its lexicon entry. It is
+	// the tab BLB opens on when none is named.
+	ToolInterlinear = "conc"
+	// ToolBibles is the verse in every translation BLB carries.
+	ToolBibles = "bibles"
+	// ToolCrossRefs is the Treasury of Scripture Knowledge's references.
+	ToolCrossRefs = "corr"
+	// ToolCommentaries lists the commentaries that discuss the verse.
+	ToolCommentaries = "comms"
+	// ToolDictionaries lists dictionary and encyclopedia entries that cite
+	// the verse. BLB labels the tab "Dictionaries" and keys it "refs";
+	// "dict", the guess the label invites, redirects away from the verse.
+	ToolDictionaries = "refs"
+	// ToolMisc is BLB's miscellany: images, maps, outlines.
+	ToolMisc = "misc"
+)
+
+// StudyURL is the study page on Blue Letter Bible for one verse of the
+// passage, opened on tool's tab (one of the Tool constants; "" opens BLB's
+// default, the interlinear). The verse is a number within the passage's
+// chapter and need not be one of p.Verses: a passage of John 3:16 can link
+// the study page of 3:17.
+//
+//	p.StudyURL(17, blb.ToolCrossRefs)
+//	// "https://www.blueletterbible.org/kjv/jhn/3/17/t_corr_1000017"
+//
+// The address is the passage page's, with the verse swapped in, followed by
+// a segment naming the tab and BLB's verse id:
+//
+//	/kjv/jhn/3/17/t_corr_1000017
+//	 └┬┘ └┬┘ │ └┤   └┬─┘ └──┬──┘
+//	  │   │  │  │    │      └ ChapterID × 1000 + verse
+//	  │   │  │  │    └ tab key
+//	  │   │  │  └ verse
+//	  │   │  └ chapter
+//	  │   └ BLB's book code
+//	  └ translation
+//
+// BLB's verse id is not something it documents. The ids in every saved
+// reply (Genesis 3:1 is s_3001, Psalm 117:1 s_595001, Romans 1:16
+// s_1047016) are this product, and the live check in blb_test.go follows
+// the rule for a verse no reply named.
+//
+// Empty when the passage has no URL or ChapterID to build from, as for a
+// Passage put together by hand: link the passage itself (URL, or SearchURL)
+// instead.
+func (p Passage) StudyURL(verse int, tool string) string {
+	if p.ChapterID <= 0 || verse <= 0 {
+		return ""
+	}
+	m := chapterPage.FindStringSubmatch(p.URL)
+	if m == nil {
+		return ""
+	}
+	id := strconv.Itoa(p.ChapterID*1000 + verse)
+	seg := "s_" + id
+	if tool != "" {
+		seg = "t_" + tool + "_" + id
+	}
+	return m[1] + strconv.Itoa(verse) + "/" + seg
 }
 
 // Text is the passage as one paragraph, verses joined by a space and their
@@ -301,11 +384,15 @@ var (
 	// parenthesised word, so a reference can never be mistaken for it.
 	titleParts = regexp.MustCompile(`^(.*\S)\s*\(([^()]+)\)$`)
 	verseMark  = regexp.MustCompile(`<span class="vRef">(\d+)</span>`)
-	passageRef = regexp.MustCompile(`href="(https?://[^"]*blueletterbible\.org/[a-z0-9]+/[a-z0-9]+/\d+/\d+/)(?:s_\d+)?"`)
-	tag        = regexp.MustCompile(`<[^>]*>`)
-	space      = regexp.MustCompile(`\s+`)
-	footnote   = regexp.MustCompile(`\*`)
-	bracket    = regexp.MustCompile(`[\[\]]`)
+	passageRef = regexp.MustCompile(`href="(https?://[^"]*blueletterbible\.org/[a-z0-9]+/[a-z0-9]+/\d+/\d+/)(?:s_(\d+))?"`)
+	// chapterPage splits a passage URL before its verse segment, the part
+	// StudyURL keeps. It does not insist on blueletterbible.org, so a
+	// Passage whose URL was pointed at a mirror still builds there.
+	chapterPage = regexp.MustCompile(`^(https?://.*/[a-z0-9]+/[a-z0-9]+/\d+/)\d+/$`)
+	tag         = regexp.MustCompile(`<[^>]*>`)
+	space       = regexp.MustCompile(`\s+`)
+	footnote    = regexp.MustCompile(`\*`)
+	bracket     = regexp.MustCompile(`[\[\]]`)
 )
 
 // parseReply reads a Passage out of the tagger's JavaScript reply.
@@ -344,6 +431,11 @@ func parseReply(reply string, keepMarkers bool) (Passage, error) {
 		// study page's interlinear. Without it the address is the plain
 		// passage page, which is the one to share.
 		p.URL = m[1]
+		// The id is chapter × 1000 + verse (see StudyURL); only the chapter
+		// is kept, since every other verse's id follows from it.
+		if id, err := strconv.Atoi(m[2]); err == nil && id >= 1000 {
+			p.ChapterID = id / 1000
+		}
 	}
 
 	// Each verse runs from the end of its marker to the start of the next,

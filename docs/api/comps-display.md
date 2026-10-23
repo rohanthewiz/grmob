@@ -4,13 +4,13 @@
 import "github.com/rohanthewiz/grmob/comps"
 ```
 
-Avatars and avatar stacks, stat tiles, stock tickers, the compass, clocks, countdowns and alarms, an audio player, an immersive picture gallery, message bubbles and threads, typing indicators, reaction bars, polls, threaded discussions, expandable text, Bible verses, QR codes, map panels and static maps.
+Avatars and avatar stacks, stat tiles, stock tickers, the compass, clocks, countdowns and alarms, an audio player, an immersive picture gallery, message bubbles and threads, typing indicators, reaction bars, polls, threaded discussions, expandable text, Bible verses and verse-by-verse Bible study, QR codes, map panels and static maps.
 
-One of 8 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/avatar.go`, `comps/avatar_stack.go`, `comps/stat_tile.go`, `comps/stock_ticker.go`, `comps/compass.go`, `comps/clock.go`, `comps/timers.go`, `comps/alarm.go`, `comps/audio_player.go`, `comps/gallery.go`, `comps/message_bubble.go`, `comps/message_thread.go`, `comps/typing_indicator.go`, `comps/reaction_bar.go`, `comps/poll.go`, `comps/expandable_text.go`, `comps/qr_code.go`, `comps/map_panel.go`, `comps/static_map.go`, `comps/bible_verse.go`, `comps/discussion.go`.
+One of 8 topic pages of [package comps](comps.md), which has the package overview and an index of every topic. This page documents the declarations in `comps/avatar.go`, `comps/avatar_stack.go`, `comps/stat_tile.go`, `comps/stock_ticker.go`, `comps/compass.go`, `comps/clock.go`, `comps/timers.go`, `comps/alarm.go`, `comps/audio_player.go`, `comps/gallery.go`, `comps/message_bubble.go`, `comps/message_thread.go`, `comps/typing_indicator.go`, `comps/reaction_bar.go`, `comps/poll.go`, `comps/expandable_text.go`, `comps/qr_code.go`, `comps/map_panel.go`, `comps/static_map.go`, `comps/bible_verse.go`, `comps/bible_study.go`, `comps/discussion.go`.
 
 ## Index
 
-- [Constants](#constants) — `ConcernAudioPlayerNoTrack`, `ConcernBibleVerseEmpty`, `ConcernCountdownUntilUnset`, `ConcernDiscussionReplyTargetMissing`, `ConcernGalleryFrozen`, `ConcernNoMapProvider`, `ConcernPollInert`, `ConcernQRDataTooLong`, `ConcernReactionBarInert`, `ConcernStopwatchSinceUnset`, `DefaultMapHeight`, `DefaultMapPanelHeight`, and 11 more
+- [Constants](#constants) — `ConcernAudioPlayerNoTrack`, `ConcernBibleStudyInert`, `ConcernBibleStudyNoVerses`, `ConcernBibleVerseEmpty`, `ConcernCountdownUntilUnset`, `ConcernDiscussionReplyTargetMissing`, `ConcernGalleryFrozen`, `ConcernNoMapProvider`, `ConcernPollInert`, `ConcernQRDataTooLong`, `ConcernReactionBarInert`, `ConcernStopwatchSinceUnset`, and 13 more
 - [`func FitRegion`](#func-fitregion)
 - [`func GoogleMapsHandoff`](#func-googlemapshandoff)
 - [`func OSMStaticMap`](#func-osmstaticmap)
@@ -28,6 +28,10 @@ One of 8 topic pages of [package comps](comps.md), which has the package overvie
     - [`func (Avatar) Render`](#func-avatar-render)
 - [`type AvatarStack`](#type-avatarstack)
     - [`func (AvatarStack) Render`](#func-avatarstack-render)
+- [`type BibleStudy`](#type-biblestudy)
+    - [`func (BibleStudy) Render`](#func-biblestudy-render)
+- [`type BibleStudyTool`](#type-biblestudytool)
+    - [`func DefaultBibleStudyTools`](#func-defaultbiblestudytools)
 - [`type BibleVerse`](#type-bibleverse)
     - [`func (BibleVerse) Render`](#func-bibleverse-render)
 - [`type BibleVerseLine`](#type-bibleverseline)
@@ -190,6 +194,22 @@ const ConcernAudioPlayerNoTrack = "audio-player-no-track"
 ```
 
 <small>[comps/audio_player.go:15](https://github.com/rohanthewiz/grmob/blob/master/comps/audio_player.go#L15)</small>
+
+ConcernBibleStudyInert is raised, in debug builds only, when a BibleStudy has neither StudyURL nor OnStudy. Its verses would then lead nowhere, so it draws a plain BibleVerse instead of rows that look tappable and are not.
+
+```go
+const ConcernBibleStudyInert = "bible-study-inert"
+```
+
+<small>[comps/bible_study.go:13](https://github.com/rohanthewiz/grmob/blob/master/comps/bible_study.go#L13)</small>
+
+ConcernBibleStudyNoVerses is raised, in debug builds only, when a BibleStudy's passage has Text but no Verses. A single run of text has no verse to study, so it draws as a plain BibleVerse.
+
+```go
+const ConcernBibleStudyNoVerses = "bible-study-no-verses"
+```
+
+<small>[comps/bible_study.go:18](https://github.com/rohanthewiz/grmob/blob/master/comps/bible_study.go#L18)</small>
 
 ConcernBibleVerseEmpty is raised, in debug builds only, when a BibleVerse has no text, no verses, no error and is not Loading. It draws a card with a reference and nothing quoted under it, which reads as a failed load that nobody reported.
 
@@ -784,6 +804,146 @@ Render builds ZStack(ring, face, ring, face, …, ring, +N).
 
 <small>[comps/avatar_stack.go:118](https://github.com/rohanthewiz/grmob/blob/master/comps/avatar_stack.go#L118)</small>
 
+### type BibleStudy
+
+```go
+type BibleStudy struct {
+	// Passage is the card: everything BibleVerse draws, configured the same
+	// way. See "Built on BibleVerse".
+	Passage BibleVerse
+
+	// StudyURL is the address of verse's study page opened on tool, where
+	// verse is a BibleVerseLine.Number and tool a BibleStudyTool.Tool. The
+	// fetched passage's blb.Passage.StudyURL. Used when OnStudy is nil.
+	StudyURL func(verse int, tool string) string
+
+	// OnStudy handles a tool instead of opening StudyURL's address. The
+	// sheet closes after it, as ActionSheet closes after any action.
+	OnStudy func(verse BibleVerseLine, tool string)
+
+	// Tools are the sheet's actions, top to bottom. Empty uses
+	// DefaultBibleStudyTools.
+	Tools []BibleStudyTool
+
+	// Prompt replaces "Tap a verse to dig deeper on Blue Letter Bible", the
+	// caption under the verses that says they can be tapped.
+	Prompt string
+
+	// HidePrompt leaves the caption out, for an app whose readers already
+	// know the verses are tappable.
+	HidePrompt bool
+
+	// VerseHint replaces "Opens study tools on Blue Letter Bible", what a
+	// screen reader says a verse row does.
+	VerseHint string
+
+	// CancelLabel replaces "Cancel", the sheet's way out.
+	CancelLabel string
+}
+```
+
+BibleStudy is a BibleVerse whose verses can be tapped to dig deeper: each verse is a row of its own, and a tap opens a sheet of Blue Letter Bible's study tools for that verse (the interlinear with Strong's numbers, cross-references, commentaries, dictionaries, other translations). The passage a study app opens on, a devotional's verse with "go deeper" under it.
+
+	p, err := blb.Fetch(ctx, "John 3:16-18", "KJV") // off the render path
+	comps.BibleStudy{
+	    Passage: comps.BibleVerse{
+	        Reference:   p.Reference,
+	        Translation: p.Translation,
+	        Verses:      lines(p.Verses), // []blb.Verse → []comps.BibleVerseLine
+	        URL:         p.URL,
+	    },
+	    StudyURL: p.StudyURL, // a verse's study tab on BLB
+	}
+
+	┌ Box ─────────────────────────────────────────────┐
+	│ ┌ Card (BibleVerse's) ─────────────────────────┐ │
+	│ │ ┌ Row, button "Verse 16, For God so…" ─────┐ │ │
+	│ │ │ 16  For God so loved the world, that he  │ │ │  one row per verse,
+	│ │ │     gave his only begotten Son…          │ │ │  the whole row the
+	│ │ └──────────────────────────────────────────┘ │ │  tap target
+	│ │ ┌ Row, button "Verse 17, …" ───────────────┐ │ │
+	│ │ │ 17  For God sent not his Son into…       │ │ │
+	│ │ └──────────────────────────────────────────┘ │ │
+	│ │ Tap a verse to dig deeper on Blue Letter…    │ │  Prompt (hidden from
+	│ │                                              │ │  readers: the rows'
+	│ │ John 3:16-17 (KJV)                           │ │  hint says it)
+	│ │ Read on Blue Letter Bible                    │ │
+	│ └──────────────────────────────────────────────┘ │
+	│ ActionSheet  "John 3:17 (KJV)"                   │  sibling, not child:
+	│   Interlinear & Strong's / Cross-references /    │  shown while a verse
+	│   Commentaries / Dictionaries /                  │  is picked
+	│   Compare translations / Cancel                  │
+	└──────────────────────────────────────────────────┘
+
+#### Built on BibleVerse
+
+Passage is the card, configured exactly as a BibleVerse is: Reference, Translation, Verses, URL, OnOpen, LinkLabel, Loading, Error, OnRetry, RetryLabel and Style all mean what they mean there, and Loading and Error draw BibleVerse's skeleton and message. Only the quoted text changes, from one Paragraph to a row per verse, because a run inside a Paragraph can be a link but a verse-long link would colour the whole passage as one. Rows read one verse to a line, the layout BLB's own chapter view uses for the same reason: each verse is something to tap.
+
+HideNumbers drops the numbers as it does on BibleVerse, and a single verse has none; the rows stay tappable either way. Text has no verses to study: a passage with Text and no Verses draws as the plain BibleVerse, and raises ConcernBibleStudyNoVerses.
+
+#### Where a tool goes
+
+OnStudy, when set, is called with the verse and the tool's key: an app that opens the study page in its own web view, or that keeps a history. Otherwise StudyURL builds the address and core.OpenURL opens it; pass the fetched passage's blb.Passage.StudyURL method. When StudyURL returns "" (a hand-built passage blb could not key), the passage's URL opens instead, so a tap never does nothing while a link exists. With neither callback the rows would be inert, so BibleStudy draws a plain BibleVerse and raises ConcernBibleStudyInert.
+
+The tool keys are Tools' (DefaultBibleStudyTools when empty). They are opaque to the widget, which only hands them back, so a caller can point StudyURL at another site's study pages with keys of its own.
+
+#### One hook
+
+Which verse's sheet is open is BibleStudy's own state: no app reads or drives it, as with an Accordion's open section. So BibleStudy takes one hook slot and must be rendered unconditionally, every pass; switch it between loading, failed and loaded with Passage's fields, never by rendering it inside core.If.
+
+#### Accessibility
+
+Each verse row is a button named "Verse 16, " and the verse's text, with VerseHint saying what the tap does. A row's children are presentational, so the name carries the whole verse; a reader moving through the passage hears it a verse at a time, which is how a passage is read aloud. The sheet is named for the verse ("John 3:17 (KJV)"), so a reader landing in it knows which verse its tools are for.
+
+#### Theme roles read
+
+	Card         as BibleVerse
+	Rows         Spacing.XS between them and between number and text
+	Verse text   Typography.Body, Colors.TextPrimary
+	Numbers      Typography.Body, Colors.TextSecondary, bold
+	Prompt       Typography.Caption, Colors.TextSecondary
+	Sheet        as ActionSheet
+
+<small>[comps/bible_study.go:143](https://github.com/rohanthewiz/grmob/blob/master/comps/bible_study.go#L143)</small>
+
+#### func (BibleStudy) Render
+
+```go
+func (s BibleStudy) Render(ctx *core.Context) *core.Node
+```
+
+Render draws the card and the sheet beside it. It takes one hook slot, on every pass, before anything that could branch.
+
+<small>[comps/bible_study.go:179](https://github.com/rohanthewiz/grmob/blob/master/comps/bible_study.go#L179)</small>
+
+### type BibleStudyTool
+
+```go
+type BibleStudyTool struct {
+	// Tool is the key BibleStudy passes to StudyURL and OnStudy. For Blue
+	// Letter Bible it is one of blb's Tool constants (blb.ToolCrossRefs,
+	// …), which are BLB's names for the tabs of a verse's study page.
+	Tool string
+
+	// Label is the action's caption in the sheet.
+	Label string
+}
+```
+
+BibleStudyTool is one entry in BibleStudy's sheet: a study tool on Blue Letter Bible, opened for the tapped verse.
+
+<small>[comps/bible_study.go:22](https://github.com/rohanthewiz/grmob/blob/master/comps/bible_study.go#L22)</small>
+
+#### func DefaultBibleStudyTools
+
+```go
+func DefaultBibleStudyTools() []BibleStudyTool
+```
+
+DefaultBibleStudyTools is the sheet BibleStudy shows when its Tools is empty: the five study tabs Blue Letter Bible keeps for every verse, in the order its own verse menu lists them, without Misc (images and maps that most verses have none of). The keys match blb's Tool constants; a test in blb holds the two lists together, since comps cannot import blb (see BibleVerse, "Where the text comes from"). Each call returns a fresh slice, so a caller can edit one into its own list.
+
+<small>[comps/bible_study.go:39](https://github.com/rohanthewiz/grmob/blob/master/comps/bible_study.go#L39)</small>
+
 ### type BibleVerse
 
 ```go
@@ -871,6 +1031,8 @@ Drawn before each verse when there are two or more, in the secondary text colour
 
 Blue Letter Bible serves its text to embedders on the understanding that it links back, so the link is drawn whenever there is somewhere for it to go: OnOpen if set (an in-app reader), else URL, opened with core.OpenURL. With neither the link is left out rather than drawn inert. blb.SearchURL builds a working address from a reference alone, for the case where the fetch failed and Passage.URL never arrived.
 
+BibleStudy is this card with each verse a row to tap, opening a sheet of BLB's study tools (interlinear, cross-references, commentaries) for it.
+
 #### No hooks
 
 Everything is the caller's, so BibleVerse may be rendered conditionally.
@@ -884,7 +1046,7 @@ Everything is the caller's, so BibleVerse may be rendered conditionally.
 	Error        Typography.Body, Colors.Error
 	Link         as Link: Colors.Primary's ink tone
 
-<small>[comps/bible_verse.go:91](https://github.com/rohanthewiz/grmob/blob/master/comps/bible_verse.go#L91)</small>
+<small>[comps/bible_verse.go:94](https://github.com/rohanthewiz/grmob/blob/master/comps/bible_verse.go#L94)</small>
 
 #### func (BibleVerse) Render
 
@@ -894,7 +1056,7 @@ func (v BibleVerse) Render(ctx *core.Context) *core.Node
 
 Render draws the card. It takes no hook slot.
 
-<small>[comps/bible_verse.go:138](https://github.com/rohanthewiz/grmob/blob/master/comps/bible_verse.go#L138)</small>
+<small>[comps/bible_verse.go:141](https://github.com/rohanthewiz/grmob/blob/master/comps/bible_verse.go#L141)</small>
 
 ### type BibleVerseLine
 

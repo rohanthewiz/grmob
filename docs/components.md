@@ -4650,6 +4650,67 @@ Other notes:
 - Lesson 4.39 in the interactive tutorial shows it with canned KJV passages,
   since the browser build cannot reach the feed.
 
+## BibleStudy
+
+A `BibleVerse` whose verses can be tapped to dig deeper on Blue Letter
+Bible. Each verse gets its own row. Tapping one opens a sheet of BLB's study
+tools for that verse: the interlinear with Strong's numbers,
+cross-references, commentaries, dictionaries and other translations.
+
+```go
+p, err := blb.Fetch(ctx, "John 3:16-18", "KJV") // off the render path
+
+comps.BibleStudy{
+    Passage: comps.BibleVerse{
+        Reference:   p.Reference,
+        Translation: p.Translation,
+        Verses:      lines, // []blb.Verse → []comps.BibleVerseLine, as above
+        URL:         p.URL,
+        Loading:     fetching.Get(),
+        Error:       loadErr.Get(),
+    },
+    StudyURL: p.StudyURL, // e.g. …/kjv/jhn/3/17/t_corr_1000017
+}
+```
+
+- **Built on BibleVerse.** `Passage` is a `BibleVerse` and takes the same
+  fields. Loading, the error with Retry, the reference line and the link back
+  all look the same as on `BibleVerse`. The only change is the quoted text,
+  which becomes a tappable row per verse instead of one `Paragraph`.
+  `HideNumbers` works as it does on `BibleVerse`. A passage with only `Text`
+  has no verses to tap, so it draws as a plain `BibleVerse`.
+- **Where a tool goes.** If `OnStudy(verse, tool)` is set, it gets the tap,
+  for example to open an in-app web view. Otherwise `StudyURL(verse, tool)`
+  builds the address and `core.OpenURL` opens it. If `StudyURL` returns `""`,
+  the passage `URL` opens instead. `blb.Passage.StudyURL` fits the field
+  directly. `Tools` replaces the sheet's entries, which default to
+  `comps.DefaultBibleStudyTools()`. The keys are blb's `Tool` constants
+  (`blb.ToolCrossRefs` and the others), and the widget passes them back to
+  your callback without reading them.
+- **One hook.** Which verse's sheet is open belongs to the widget, so render
+  it unconditionally and switch between loading, error and loaded through
+  `Passage`'s fields.
+- **Accessibility.** Each row is a button named "Verse 17, " followed by the
+  verse text, with a hint ("Opens study tools on Blue Letter Bible",
+  `VerseHint`). The sheet is named after the verse ("John 3:17 (KJV)"). The
+  caption under the verses ("Tap a verse to dig deeper…", `Prompt`, or hide
+  it with `HidePrompt`) is hidden from screen readers, because the hints
+  already say it.
+- If there is no `StudyURL` and no `OnStudy`, debug builds raise
+  `ConcernBibleStudyInert`. If the passage has `Text` but no `Verses`, they
+  raise `ConcernBibleStudyNoVerses`. In both cases the widget draws a plain
+  `BibleVerse`.
+
+Other notes:
+
+- `blb.Passage.ChapterID` is BLB's running chapter number (John 3 is
+  1000), read from the passage link in the reply. A study page's verse id is
+  `ChapterID × 1000 + verse`, so any verse of the chapter can be linked.
+  BLB doesn't document this rule. Every saved reply follows it, and
+  `GRMOB_BLB_LIVE=1 go test ./blb/` checks a verse that no reply named.
+- A `Passage` you build yourself has no `ChapterID`, so `StudyURL` returns
+  `""` for it and a tool opens the passage page instead.
+
 ## QRCode
 
 A string drawn as a QR Code, encoded in Go.

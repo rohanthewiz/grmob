@@ -11,6 +11,11 @@ Package blb fetches Bible passages from Blue Letter Bible (blueletterbible.org),
 	// p.Verses [{16 "For God so loved…"} {17 …} {18 …}],
 	// p.URL "https://www.blueletterbible.org/esv/jhn/3/16/"
 
+	p.StudyURL(17, blb.ToolCrossRefs)
+	// "https://www.blueletterbible.org/esv/jhn/3/17/t_corr_1000017"
+
+StudyURL links one verse's study tools on BLB (interlinear and Strong's, cross-references, commentaries, dictionaries), the addresses comps.BibleStudy opens when a reader taps a verse to dig deeper.
+
 ## Where the text comes from
 
 Blue Letter Bible has no open JSON API. What it does publish, for anyone to embed, is the BLB ScriptTagger (blueletterbible.org/webtools): a script a site includes so that every reference on its pages shows the verse in a hover bubble. The bubble's contents arrive from one endpoint,
@@ -31,7 +36,7 @@ The translation is BLB's code, upper-case: KJV, NKJV, NLT, NIV, ESV, CSB, NASB20
 
 ## Index
 
-- [Constants](#constants) — `DefaultBaseURL`, `DefaultTranslation`, `EndpointPath`
+- [Constants](#constants) — `DefaultBaseURL`, `DefaultTranslation`, `EndpointPath`, `ToolBibles`, `ToolCommentaries`, `ToolCrossRefs`, `ToolDictionaries`, `ToolInterlinear`, `ToolMisc`
 - [Variables](#variables) — `DefaultClient`, `ErrInvalidReference`, `ErrUnexpectedResponse`
 - [`func PassageID`](#func-passageid)
 - [`func SearchURL`](#func-searchurl)
@@ -39,6 +44,7 @@ The translation is BLB's code, upper-case: KJV, NKJV, NLT, NIV, ESV, CSB, NASB20
     - [`func (*Client) Fetch`](#func-client-fetch)
 - [`type Passage`](#type-passage)
     - [`func Fetch`](#func-fetch)
+    - [`func (Passage) StudyURL`](#func-passage-studyurl)
     - [`func (Passage) Text`](#func-passage-text)
 - [`type Proxy`](#type-proxy)
     - [`func (*Proxy) Forward`](#func-proxy-forward)
@@ -48,13 +54,38 @@ The translation is BLB's code, upper-case: KJV, NKJV, NLT, NIV, ESV, CSB, NASB20
 
 ## Constants
 
+The study tools BLB shows under a verse, one tab each on the verse's study page. The values are BLB's own tab keys (the page's data-bible-tool attributes); StudyURL puts them in the address so the page opens on that tab. Untyped string constants, so a StudyURL method value fits a func(int, string) string field such as comps.BibleStudy.StudyURL.
+
+```go
+const (
+	// ToolInterlinear is the verse word by word against the Hebrew or
+	// Greek, each word's Strong's number linking to its lexicon entry. It is
+	// the tab BLB opens on when none is named.
+	ToolInterlinear = "conc"
+	// ToolBibles is the verse in every translation BLB carries.
+	ToolBibles = "bibles"
+	// ToolCrossRefs is the Treasury of Scripture Knowledge's references.
+	ToolCrossRefs = "corr"
+	// ToolCommentaries lists the commentaries that discuss the verse.
+	ToolCommentaries = "comms"
+	// ToolDictionaries lists dictionary and encyclopedia entries that cite
+	// the verse. BLB labels the tab "Dictionaries" and keys it "refs";
+	// "dict", the guess the label invites, redirects away from the verse.
+	ToolDictionaries = "refs"
+	// ToolMisc is BLB's miscellany: images, maps, outlines.
+	ToolMisc = "misc"
+)
+```
+
+<small>[blb/blb.go:133](https://github.com/rohanthewiz/grmob/blob/master/blb/blb.go#L133)</small>
+
 DefaultBaseURL is Blue Letter Bible's origin.
 
 ```go
 const DefaultBaseURL = "https://www.blueletterbible.org"
 ```
 
-<small>[blb/blb.go:69](https://github.com/rohanthewiz/grmob/blob/master/blb/blb.go#L69)</small>
+<small>[blb/blb.go:76](https://github.com/rohanthewiz/grmob/blob/master/blb/blb.go#L76)</small>
 
 DefaultTranslation is used when neither the call nor the Client names one. The King James is the one translation BLB serves that is in the public domain everywhere it is read (outside the UK's Crown patent), which makes it the safe default for an app that has not thought about licensing yet.
 
@@ -62,7 +93,7 @@ DefaultTranslation is used when neither the call nor the Client names one. The K
 const DefaultTranslation = "KJV"
 ```
 
-<small>[blb/blb.go:79](https://github.com/rohanthewiz/grmob/blob/master/blb/blb.go#L79)</small>
+<small>[blb/blb.go:86](https://github.com/rohanthewiz/grmob/blob/master/blb/blb.go#L86)</small>
 
 EndpointPath is the ScriptTagger endpoint's path, the one Client.Fetch requests under Client.BaseURL. It is also the one path a same-origin proxy for a browser build must answer on (see Proxy).
 
@@ -80,7 +111,7 @@ DefaultClient is used by the package-level Fetch.
 var DefaultClient = &Client{}
 ```
 
-<small>[blb/blb.go:147](https://github.com/rohanthewiz/grmob/blob/master/blb/blb.go#L147)</small>
+<small>[blb/blb.go:230](https://github.com/rohanthewiz/grmob/blob/master/blb/blb.go#L230)</small>
 
 ErrInvalidReference is returned when BLB does not recognise the reference ("Hezekiah 1:1", "John 99:1"). Test for it with errors.Is.
 
@@ -88,7 +119,7 @@ ErrInvalidReference is returned when BLB does not recognise the reference ("Heze
 var ErrInvalidReference = errors.New("blb: invalid scripture reference")
 ```
 
-<small>[blb/blb.go:83](https://github.com/rohanthewiz/grmob/blob/master/blb/blb.go#L83)</small>
+<small>[blb/blb.go:90](https://github.com/rohanthewiz/grmob/blob/master/blb/blb.go#L90)</small>
 
 ErrUnexpectedResponse is returned when the reply parses as neither a passage nor BLB's error bubble: the endpoint changed shape, or a proxy in front of it answered with something else.
 
@@ -96,7 +127,7 @@ ErrUnexpectedResponse is returned when the reply parses as neither a passage nor
 var ErrUnexpectedResponse = errors.New("blb: unexpected response")
 ```
 
-<small>[blb/blb.go:88](https://github.com/rohanthewiz/grmob/blob/master/blb/blb.go#L88)</small>
+<small>[blb/blb.go:95](https://github.com/rohanthewiz/grmob/blob/master/blb/blb.go#L95)</small>
 
 ## Functions
 
@@ -113,7 +144,7 @@ PassageID builds the tagger's id for ref: translation, book with its spaces remo
 
 BLB resolves the book name itself, abbreviations included, so this does no book lookup of its own and an unknown book is reported by BLB (ErrInvalidReference from Fetch), not here. An error here means the reference has no chapter number to send.
 
-<small>[blb/blb.go:239](https://github.com/rohanthewiz/grmob/blob/master/blb/blb.go#L239)</small>
+<small>[blb/blb.go:322](https://github.com/rohanthewiz/grmob/blob/master/blb/blb.go#L322)</small>
 
 ### func SearchURL
 
@@ -123,7 +154,7 @@ func SearchURL(ref, translation string) string
 
 SearchURL is a link to ref on Blue Letter Bible that needs no fetch first: BLB's own search, which opens the passage when the query is a reference. It is what the ScriptTagger links a reference to, and the fallback for a comps.BibleVerse whose fetch failed.
 
-<small>[blb/blb.go:268](https://github.com/rohanthewiz/grmob/blob/master/blb/blb.go#L268)</small>
+<small>[blb/blb.go:351](https://github.com/rohanthewiz/grmob/blob/master/blb/blb.go#L351)</small>
 
 ## Types
 
@@ -154,7 +185,7 @@ type Client struct {
 
 Client fetches passages. The zero value is ready to use.
 
-<small>[blb/blb.go:125](https://github.com/rohanthewiz/grmob/blob/master/blb/blb.go#L125)</small>
+<small>[blb/blb.go:208](https://github.com/rohanthewiz/grmob/blob/master/blb/blb.go#L208)</small>
 
 #### func (*Client) Fetch
 
@@ -164,7 +195,7 @@ func (c *Client) Fetch(ctx context.Context, ref, translation string) (Passage, e
 
 Fetch fetches ref ("John 3:16", "1 John 4:7-8", "Psalm 23", "Rom 8:28,31") in translation ("" for the Client's default).
 
-<small>[blb/blb.go:165](https://github.com/rohanthewiz/grmob/blob/master/blb/blb.go#L165)</small>
+<small>[blb/blb.go:248](https://github.com/rohanthewiz/grmob/blob/master/blb/blb.go#L248)</small>
 
 ### type Passage
 
@@ -184,12 +215,19 @@ type Passage struct {
 	// URL is the passage's page on blueletterbible.org, the link the text
 	// owes its source. Empty only if BLB's reply carried no passage link.
 	URL string
+
+	// ChapterID is BLB's running number for the passage's chapter, counted
+	// across the whole Bible: Genesis 1 is 1, John 3 is 1000, Revelation 22
+	// is 1189. It is what BLB's study pages key a verse by (see StudyURL),
+	// read from the s_ segment of the reply's passage link. Zero when the
+	// reply carried no such segment, and StudyURL then has nothing to build.
+	ChapterID int
 }
 ```
 
 Passage is a fetched reference.
 
-<small>[blb/blb.go:97](https://github.com/rohanthewiz/grmob/blob/master/blb/blb.go#L97)</small>
+<small>[blb/blb.go:104](https://github.com/rohanthewiz/grmob/blob/master/blb/blb.go#L104)</small>
 
 #### func Fetch
 
@@ -199,7 +237,35 @@ func Fetch(ctx context.Context, ref, translation string) (Passage, error)
 
 Fetch fetches ref in translation with DefaultClient.
 
-<small>[blb/blb.go:159](https://github.com/rohanthewiz/grmob/blob/master/blb/blb.go#L159)</small>
+<small>[blb/blb.go:242](https://github.com/rohanthewiz/grmob/blob/master/blb/blb.go#L242)</small>
+
+#### func (Passage) StudyURL
+
+```go
+func (p Passage) StudyURL(verse int, tool string) string
+```
+
+StudyURL is the study page on Blue Letter Bible for one verse of the passage, opened on tool's tab (one of the Tool constants; "" opens BLB's default, the interlinear). The verse is a number within the passage's chapter and need not be one of p.Verses: a passage of John 3:16 can link the study page of 3:17.
+
+	p.StudyURL(17, blb.ToolCrossRefs)
+	// "https://www.blueletterbible.org/kjv/jhn/3/17/t_corr_1000017"
+
+The address is the passage page's, with the verse swapped in, followed by a segment naming the tab and BLB's verse id:
+
+	/kjv/jhn/3/17/t_corr_1000017
+	 └┬┘ └┬┘ │ └┤   └┬─┘ └──┬──┘
+	  │   │  │  │    │      └ ChapterID × 1000 + verse
+	  │   │  │  │    └ tab key
+	  │   │  │  └ verse
+	  │   │  └ chapter
+	  │   └ BLB's book code
+	  └ translation
+
+BLB's verse id is not something it documents. The ids in every saved reply (Genesis 3:1 is s\_3001, Psalm 117:1 s\_595001, Romans 1:16 s\_1047016) are this product, and the live check in blb\_test.go follows the rule for a verse no reply named.
+
+Empty when the passage has no URL or ChapterID to build from, as for a Passage put together by hand: link the passage itself (URL, or SearchURL) instead.
+
+<small>[blb/blb.go:181](https://github.com/rohanthewiz/grmob/blob/master/blb/blb.go#L181)</small>
 
 #### func (Passage) Text
 
@@ -209,7 +275,7 @@ func (p Passage) Text() string
 
 Text is the passage as one paragraph, verses joined by a space and their numbers left out: the form for a share sheet or a notification.
 
-<small>[blb/blb.go:116](https://github.com/rohanthewiz/grmob/blob/master/blb/blb.go#L116)</small>
+<small>[blb/blb.go:199](https://github.com/rohanthewiz/grmob/blob/master/blb/blb.go#L199)</small>
 
 ### type Proxy
 
@@ -297,5 +363,5 @@ type Verse struct {
 
 Verse is one numbered verse of a passage.
 
-<small>[blb/blb.go:91](https://github.com/rohanthewiz/grmob/blob/master/blb/blb.go#L91)</small>
+<small>[blb/blb.go:98](https://github.com/rohanthewiz/grmob/blob/master/blb/blb.go#L98)</small>
 

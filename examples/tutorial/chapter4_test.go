@@ -3715,3 +3715,45 @@ func TestShoppingCartLesson(t *testing.T) {
 	}
 	assertNoConcerns(t)
 }
+
+// --- 4.44 BibleStudy -----------------------------------------------------------
+
+// 4.44. A verse tapped opens its sheet; a tool opens that verse's study page
+// on BLB, keyed by the canned passage's chapter; switching passages with the
+// sheet open leaves it closed.
+func TestBibleStudyLesson(t *testing.T) {
+	var opened []string
+	core.SetSystemEventHandler(func(name string, data map[string]any) {
+		if name == "open_url" {
+			opened = append(opened, data["url"].(string))
+		}
+	})
+	t.Cleanup(func() { core.SetSystemEventHandler(nil) })
+
+	mgr := newApp(t)
+	openLesson(t, mgr, "Digging deeper on Blue Letter Bible")
+
+	// Psalm 23 opens, as in 4.39: two rows, each a button named for its verse.
+	tapLabelled(t, mgr, "Verse 2, He maketh me to lie down in green pastures: he leadeth me beside the still waters.")
+	if len(openSheets(tree(t, mgr))) != 1 || !hasText(tree(t, mgr), "Psalms 23:2 (KJV)") {
+		t.Fatal("tapping verse 2 should open one sheet, titled \"Psalms 23:2 (KJV)\"")
+	}
+	tapInSheet(t, mgr, "Cross-references")
+	want := "https://www.blueletterbible.org/kjv/psa/23/2/t_corr_501002"
+	if len(opened) != 1 || opened[0] != want {
+		t.Errorf("opened %v, want [%s]", opened, want)
+	}
+	if len(openSheets(tree(t, mgr))) != 0 {
+		t.Error("picking a tool should close the sheet")
+	}
+
+	// John 3:16 is BLB's chapter 1000, and a single verse is still a row.
+	tap(t, mgr, "John 3:16")
+	tapLabelled(t, mgr, "Verse 16, For God so loved the world, that he gave his only begotten Son, "+
+		"that whosoever believeth in him should not perish, but have everlasting life.")
+	tapInSheet(t, mgr, "Interlinear & Strong's")
+	if want := "https://www.blueletterbible.org/kjv/jhn/3/16/t_conc_1000016"; len(opened) != 2 || opened[1] != want {
+		t.Errorf("opened %v, want %s second", opened, want)
+	}
+	assertNoConcerns(t)
+}

@@ -40,7 +40,7 @@ Package comps's reference is split into 8 topic pages by source file. The index 
 | [Buttons & choices](comps-actions.md) | Buttons and their variants, copy buttons, links, chips, segmented controls, steppers, ratings and badges. | 12 types, 14 functions and methods |
 | [Cart & checkout](comps-commerce.md) | Cart lines and lists, the cart summary, the cart button with its count, the promo code field, and the Stripe checkout summary. | 8 types, 9 functions and methods |
 | [Overlays & feedback](comps-overlays.md) | Dialogs, lightboxes, action sheets, menus, snackbars, banners, progress, spinners, skeletons and empty states. | 13 types, 10 functions and methods |
-| [Data display & maps](comps-display.md) | Avatars and avatar stacks, stat tiles, stock tickers, the compass, clocks, countdowns and alarms, an audio player, an immersive picture gallery, message bubbles and threads, typing indicators, reaction bars, polls, threaded discussions, expandable text, Bible verses, QR codes, map panels and static maps. | 44 types, 31 functions and methods |
+| [Data display & maps](comps-display.md) | Avatars and avatar stacks, stat tiles, stock tickers, the compass, clocks, countdowns and alarms, an audio player, an immersive picture gallery, message bubbles and threads, typing indicators, reaction bars, polls, threaded discussions, expandable text, Bible verses and verse-by-verse Bible study, QR codes, map panels and static maps. | 46 types, 33 functions and methods |
 | [Charts](comps-charts.md) | Sparklines, line, area, bar and scatter charts, histograms, heatmaps and calendar heatmaps, donuts and pies, gauges, candlesticks, funnels, radars and audio waveforms, drawn on core.Canvas. | 22 types, 17 functions and methods |
 
 ## Index
@@ -162,7 +162,7 @@ Package comps's reference is split into 8 topic pages by source file. The index 
     - [`type Spinner`](comps-overlays.md#type-spinner)
     - [`type SpinnerSize`](comps-overlays.md#type-spinnersize)
 - [Data display & maps](comps-display.md)
-    - [Constants](comps-display.md#constants) — `ConcernAudioPlayerNoTrack`, `ConcernBibleVerseEmpty`, `ConcernCountdownUntilUnset`, `ConcernDiscussionReplyTargetMissing`, `ConcernGalleryFrozen`, `ConcernNoMapProvider`, `ConcernPollInert`, `ConcernQRDataTooLong`, `ConcernReactionBarInert`, `ConcernStopwatchSinceUnset`, `DefaultMapHeight`, `DefaultMapPanelHeight`, and 11 more
+    - [Constants](comps-display.md#constants) — `ConcernAudioPlayerNoTrack`, `ConcernBibleStudyInert`, `ConcernBibleStudyNoVerses`, `ConcernBibleVerseEmpty`, `ConcernCountdownUntilUnset`, `ConcernDiscussionReplyTargetMissing`, `ConcernGalleryFrozen`, `ConcernNoMapProvider`, `ConcernPollInert`, `ConcernQRDataTooLong`, `ConcernReactionBarInert`, `ConcernStopwatchSinceUnset`, and 13 more
     - [`func FitRegion`](comps-display.md#func-fitregion)
     - [`func GoogleMapsHandoff`](comps-display.md#func-googlemapshandoff)
     - [`func OSMStaticMap`](comps-display.md#func-osmstaticmap)
@@ -174,6 +174,9 @@ Package comps's reference is split into 8 topic pages by source file. The index 
     - [`type AudioPlayer`](comps-display.md#type-audioplayer)
     - [`type Avatar`](comps-display.md#type-avatar)
     - [`type AvatarStack`](comps-display.md#type-avatarstack)
+    - [`type BibleStudy`](comps-display.md#type-biblestudy)
+    - [`type BibleStudyTool`](comps-display.md#type-biblestudytool)
+        - [`func DefaultBibleStudyTools`](comps-display.md#func-defaultbiblestudytools)
     - [`type BibleVerse`](comps-display.md#type-bibleverse)
     - [`type BibleVerseLine`](comps-display.md#type-bibleverseline)
     - [`type Compass`](comps-display.md#type-compass)

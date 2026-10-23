@@ -3,6 +3,7 @@ package blb
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,6 +11,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/rohanthewiz/grmob/comps"
 )
 
 // fixture reads a verbatim reply saved from the live endpoint. The file name
@@ -62,6 +65,9 @@ func TestParseARange(t *testing.T) {
 	}
 	if p.URL != "https://www.blueletterbible.org/kjv/jhn/3/16/" {
 		t.Errorf("URL = %q; the s_ deep-link segment should be dropped", p.URL)
+	}
+	if p.ChapterID != 1000 {
+		t.Errorf("ChapterID = %d, want 1000 (from s_1000016)", p.ChapterID)
 	}
 	nums := []int{}
 	for _, v := range p.Verses {
@@ -186,6 +192,75 @@ func TestSearchURL(t *testing.T) {
 	}
 }
 
+// Every saved reply's s_ id is chapter × 1000 + its first verse, so the
+// chapter comes out as the id's thousands, and StudyURL rebuilds the id the
+// reply carried for that verse.
+func TestStudyURLFromEveryFixture(t *testing.T) {
+	for _, c := range []struct {
+		id      string
+		chapter int
+		verse   int
+		want    string
+	}{
+		{"ESV.Gen.3.1", 3, 1, "https://www.blueletterbible.org/esv/gen/3/1/s_3001"},
+		{"KJV.John.3.16-18", 1000, 16, "https://www.blueletterbible.org/kjv/jhn/3/16/s_1000016"},
+		{"KJV.Psa.117", 595, 1, "https://www.blueletterbible.org/kjv/psa/117/1/s_595001"},
+		{"KJV.Psa.23.1-2", 501, 1, "https://www.blueletterbible.org/kjv/psa/23/1/s_501001"},
+		{"NKJV.Rom.1.16-17", 1047, 16, "https://www.blueletterbible.org/nkjv/rom/1/16/s_1047016"},
+	} {
+		p, err := parseReply(fixture(t, c.id), false)
+		if err != nil {
+			t.Fatalf("%s: %v", c.id, err)
+		}
+		if p.ChapterID != c.chapter {
+			t.Errorf("%s: ChapterID = %d, want %d", c.id, p.ChapterID, c.chapter)
+		}
+		// The bare s_ form is exactly the link in the reply.
+		if got := p.StudyURL(c.verse, ""); got != c.want || !strings.Contains(fixture(t, c.id), got) {
+			t.Errorf("%s: StudyURL(%d, \"\") = %q, want %q (the reply's own link)", c.id, c.verse, got, c.want)
+		}
+	}
+}
+
+// A tab names itself before the id; another verse of the chapter swaps both
+// the path's verse and the id's.
+func TestStudyURLTabsAndOtherVerses(t *testing.T) {
+	p := Passage{URL: "https://www.blueletterbible.org/kjv/jhn/3/16/", ChapterID: 1000}
+	for _, c := range []struct {
+		verse int
+		tool  string
+		want  string
+	}{
+		{16, ToolInterlinear, "https://www.blueletterbible.org/kjv/jhn/3/16/t_conc_1000016"},
+		{17, ToolCrossRefs, "https://www.blueletterbible.org/kjv/jhn/3/17/t_corr_1000017"},
+		{18, ToolCommentaries, "https://www.blueletterbible.org/kjv/jhn/3/18/t_comms_1000018"},
+		{21, ToolDictionaries, "https://www.blueletterbible.org/kjv/jhn/3/21/t_refs_1000021"},
+		{1, ToolBibles, "https://www.blueletterbible.org/kjv/jhn/3/1/t_bibles_1000001"},
+	} {
+		if got := p.StudyURL(c.verse, c.tool); got != c.want {
+			t.Errorf("StudyURL(%d, %q) = %q\nwant %q", c.verse, c.tool, got, c.want)
+		}
+	}
+}
+
+// A Passage built by hand has no ChapterID, and a URL that is not a passage
+// page has no verse segment to swap: no address rather than a wrong one.
+func TestStudyURLNeedsAChapterAndAPassagePage(t *testing.T) {
+	for _, p := range []Passage{
+		{URL: "https://www.blueletterbible.org/kjv/jhn/3/16/"},
+		{ChapterID: 1000},
+		{ChapterID: 1000, URL: SearchURL("John 3:16", "")},
+	} {
+		if got := p.StudyURL(16, ToolCrossRefs); got != "" {
+			t.Errorf("%+v: StudyURL = %q, want empty", p, got)
+		}
+	}
+	p := Passage{URL: "https://www.blueletterbible.org/kjv/jhn/3/16/", ChapterID: 1000}
+	if got := p.StudyURL(0, ""); got != "" {
+		t.Errorf("verse 0: StudyURL = %q, want empty", got)
+	}
+}
+
 // The real endpoint, opt-in: it is the only check that BLB still answers in
 // the shape the fixtures recorded.
 //
@@ -209,7 +284,38 @@ func TestLiveEndpoint(t *testing.T) {
 			t.Errorf("%s: %+v", c.ref, p)
 		}
 	}
+	// StudyURL for a verse no reply named: BLB titles the study page with
+	// the verse's opening words, so the page is the verse's and not merely
+	// the chapter's.
+	p, err := Fetch(context.Background(), "John 3:16", "KJV")
+	if err != nil {
+		t.Fatal(err)
+	}
+	u := p.StudyURL(17, ToolCrossRefs)
+	resp, err := http.Get(u)
+	if err != nil {
+		t.Fatalf("%s: %v", u, err)
+	}
+	page, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(page), "For God sent not his") {
+		t.Errorf("%s: HTTP %d, and the title should quote John 3:17", u, resp.StatusCode)
+	}
 	if _, err := Fetch(context.Background(), "Hezekiah 1:1", ""); !errors.Is(err, ErrInvalidReference) {
 		t.Errorf("Hezekiah: err = %v", err)
 	}
+}
+
+// comps cannot import blb (it would put net/http in every browser build), so
+// comps.DefaultBibleStudyTools spells BLB's tab keys out itself. This holds
+// the two lists together: every default is one of the Tool constants.
+func TestBibleStudyDefaultsAreBLBTools(t *testing.T) {
+	known := []string{ToolInterlinear, ToolBibles, ToolCrossRefs, ToolCommentaries, ToolDictionaries, ToolMisc}
+	for _, tool := range comps.DefaultBibleStudyTools() {
+		if !slices.Contains(known, tool.Tool) {
+			t.Errorf("comps.DefaultBibleStudyTools has %q (%s), which is not a blb Tool constant", tool.Tool, tool.Label)
+		}
+	}
+	// A method value of StudyURL is what BibleStudy.StudyURL takes.
+	_ = comps.BibleStudy{StudyURL: Passage{}.StudyURL}
 }

@@ -77,6 +77,7 @@ func chapter4() Chapter {
 			lessonGallery(),
 			lessonStockTicker(),
 			lessonShoppingCart(),
+			lessonBibleStudy(),
 		},
 	}
 }
@@ -6604,7 +6605,19 @@ type cannedPassage struct {
 	segment   string // the segment's label: short, a phone has three of them in a row
 	reference string // BLB's spelling, which is why the Psalms are plural
 	url       string // blb.Passage.URL: the s_ deep-link segment dropped
+	chapterID int    // blb.Passage.ChapterID: BLB's running chapter number, for 4.44's study links
 	verses    []comps.BibleVerseLine
+}
+
+// studyURL is blb.Passage.StudyURL for a canned passage, spelled out here
+// because the tutorial does not import blb (see tutorialPassages): the
+// passage page with the verse swapped in, then the tab and BLB's verse id,
+// chapter × 1000 + verse. blb's tests check the rule against every saved
+// reply and, live, against BLB itself.
+func (p cannedPassage) studyURL(verse int, tool string) string {
+	page := strings.TrimSuffix(p.url, "/")
+	page = page[:strings.LastIndex(page, "/")+1] // drop the passage's own verse
+	return fmt.Sprintf("%s%d/t_%s_%d", page, verse, tool, p.chapterID*1000+verse)
 }
 
 // tutorialPassages are canned because the tutorial runs in a browser, and
@@ -6621,12 +6634,14 @@ var tutorialPassages = []cannedPassage{{
 	segment:   "John 3:16",
 	reference: "John 3:16",
 	url:       "https://www.blueletterbible.org/kjv/jhn/3/16/",
+	chapterID: 1000,
 	verses: []comps.BibleVerseLine{{Number: 16, Text: "For God so loved the world, that he gave his " +
 		"only begotten Son, that whosoever believeth in him should not perish, but have everlasting life."}},
 }, {
 	segment:   "Psalm 23",
 	reference: "Psalms 23:1-2",
 	url:       "https://www.blueletterbible.org/kjv/psa/23/1/",
+	chapterID: 501,
 	verses: []comps.BibleVerseLine{
 		{Number: 1, Text: "A Psalm of David. The LORD is my shepherd; I shall not want."},
 		{Number: 2, Text: "He maketh me to lie down in green pastures: he leadeth me beside the still waters."},
@@ -6635,6 +6650,7 @@ var tutorialPassages = []cannedPassage{{
 	segment:   "Psalm 117",
 	reference: "Psalms 117",
 	url:       "https://www.blueletterbible.org/kjv/psa/117/1/",
+	chapterID: 595,
 	verses: []comps.BibleVerseLine{
 		{Number: 1, Text: "O praise the LORD, all ye nations: praise him, all ye people."},
 		{Number: 2, Text: "For his merciful kindness is great toward us: and the truth of the LORD " +
@@ -7381,6 +7397,84 @@ comps.CartSummary{Quote: q, Footer: checkoutButton}`),
 					"Config.Reduce and Config.Price are pure: a cart without a store, or priced without a UI.",
 					"A Persister (cartdb for bytdb) keeps the cart between launches; nil keeps it in memory.",
 					"StripeCheckoutFromCart turns the same Quote into the Stripe hand-off of lesson 4.38.",
+				),
+			)
+		},
+	}
+}
+
+// 4.44 — comps.BibleStudy. 4.39's passages again, now each verse a row that
+// opens Blue Letter Bible's study tools for it. The lesson is the one thing
+// BibleStudy adds to BibleVerse: a verse, a tool, and an address on BLB built
+// from the two. Unlike 4.39 nothing here is played: the tools are BLB's real
+// pages, which a browser opens like any link, so the CORS wall that keeps
+// the text canned does not stand in front of them.
+//
+// Appended at the end of the chapter for the reason 4.25 was.
+func lessonBibleStudy() Lesson {
+	return Lesson{
+		Title:   "Digging deeper on Blue Letter Bible",
+		Summary: "comps.BibleStudy: tap a verse for its interlinear, cross-references and commentaries on Blue Letter Bible.",
+		Body: func(ctx *core.Context) core.View {
+			which := core.NewState(ctx, 1)
+			p := tutorialPassages[which.Get()]
+
+			return core.Column(
+				core.Gap(14),
+				prose("BibleStudy is a BibleVerse whose verses can be tapped. Each verse is a row, and a "+
+					"tap opens a sheet of Blue Letter Bible's study tools for that verse: the Hebrew or "+
+					"Greek word by word with Strong's numbers, cross-references, commentaries, "+
+					"dictionaries and other translations."),
+				codeBlock(`p, err := blb.Fetch(ctx, "Psalm 23:1-2", "KJV") // off the render path
+
+comps.BibleStudy{
+    Passage: comps.BibleVerse{
+        Reference:   p.Reference,
+        Translation: p.Translation,
+        Verses:      lines, // as in 4.39
+        URL:         p.URL,
+    },
+    StudyURL: p.StudyURL,
+}`),
+				demoPanel("Tap a verse, then a tool: it opens that verse's page on Blue Letter Bible.",
+					comps.SegmentedControl{
+						Style:     segWrap,
+						Labels:    passageSegments(),
+						Selected:  which.Get(),
+						OnSelect:  func(i int) { which.Set(i) },
+						KeyPrefix: "study-passage-",
+					},
+					// Rendered on every pass, whichever passage is picked:
+					// BibleStudy keeps the open verse in a hook slot.
+					comps.BibleStudy{
+						Passage: comps.BibleVerse{
+							Reference:   p.reference,
+							Translation: "KJV",
+							Verses:      p.verses,
+							URL:         p.url,
+						},
+						StudyURL: p.studyURL,
+					},
+				),
+				prose("Passage is a BibleVerse, set the same way, so loading, the error with Retry, the "+
+					"reference line and the link back all look as they do in 4.39. Only the quoted text "+
+					"changes: one row per verse in place of the single Paragraph, because a passage "+
+					"whose every verse was a link would be drawn as one long link."),
+				prose("blb.Passage.StudyURL builds each address. BLB keys a verse's study page by its "+
+					"chapter's place in the whole Bible times a thousand, plus the verse: John 3 is "+
+					"chapter 1000, so John 3:17's cross-references are t_corr_1000017. The fetch reads "+
+					"the chapter from the link in BLB's reply, and every other verse follows from it. "+
+					"Set OnStudy instead to handle a tool yourself, in an in-app web view for "+
+					"instance, and Tools to change the sheet."),
+				prose("The open verse is BibleStudy's own state, one hook, so render it on every pass and "+
+					"switch it between loading, failed and loaded with Passage's fields. A screen reader "+
+					"hears each row as a button named for the verse, \"Verse 2, He maketh me…\", and the "+
+					"sheet is titled for it, so the tools are never for a verse the reader has to guess."),
+				keyPoints(
+					"BibleStudy is BibleVerse with tappable verses; Passage takes BibleVerse's fields.",
+					"A tap opens a sheet of BLB's study tools for that verse: interlinear, cross-references, commentaries, dictionaries, translations.",
+					"StudyURL: p.StudyURL builds the addresses; OnStudy handles a tool instead.",
+					"One hook: render it unconditionally and drive it through Passage.",
 				),
 			)
 		},

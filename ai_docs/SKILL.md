@@ -530,7 +530,7 @@ widget's exact fields before using it):
 | Buttons & choices | `Button` `CopyButton` `Link` `Chip` `ChipStrip` `SegmentedControl` `Stepper` `Rating` `Badge` |
 | Cart & checkout | `CartList` `CartLine` `CartSummary` `CartButton` `PromoCodeField` `StripeCheckout` (the cart itself is a `cart.Store`, read with `hooks.UseCart`) |
 | Overlays & feedback | `Dialog` `Lightbox` `ActionSheet` `Menu` `Snackbar` `Banner` `ProgressBar` `Spinner` `Skeleton` `EmptyState` |
-| Data display & maps | `Avatar` `AvatarStack` `StatTile` `StockTicker` `Compass` `AnalogClock` `DigitalClock` `Countdown` `Stopwatch` `AlarmRow` `AlarmRinging` `AudioPlayer` `Gallery` `MessageBubble` `MessageThread` `TypingIndicator` `ReactionBar` `Poll` `Discussion` `ExpandableText` `BibleVerse` `QRCode` `MapPanel` `StaticMap` |
+| Data display & maps | `Avatar` `AvatarStack` `StatTile` `StockTicker` `Compass` `AnalogClock` `DigitalClock` `Countdown` `Stopwatch` `AlarmRow` `AlarmRinging` `AudioPlayer` `Gallery` `MessageBubble` `MessageThread` `TypingIndicator` `ReactionBar` `Poll` `Discussion` `ExpandableText` `BibleVerse` `BibleStudy` `QRCode` `MapPanel` `StaticMap` |
 | Charts | `Sparkline` `LineChart` `AreaChart` `BarChart` `ScatterChart` `Histogram` `Heatmap` `CalendarHeatmap` `DonutChart` `PieChart` `Gauge` `CandlestickChart` `FunnelChart` `RadarChart` `Waveform` |
 
 `Screen` is the scaffold: `Children`, `Scroll`, `KeyboardAware`, `Gap`, `Fill`,
