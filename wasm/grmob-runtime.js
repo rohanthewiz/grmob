@@ -6751,12 +6751,72 @@ const GrMob = (() => {
     // The echo ledger is the same one a CodeEditor keeps and a TextArea kept
     // before it: every value sent upstream is queued, and Go's echo of one is
     // dropped rather than applied.
+    //
+    // The document goes up in Go's own spelling (richWireJSON), because the
+    // ledger is compared as strings and Go's echo is encoding/json's bytes.
     function richSendDoc(el, doc) {
         el.__richDoc = doc;
-        const json = JSON.stringify(doc);
+        const json = richWireJSON(doc);
         (el.__richEchoes || (el.__richEchoes = [])).push(json);
         const cbId = el.dataset.listener_onChange;
         if (cbId) window.GoInvokeCallback(cbId, { value: json });
+    }
+
+    // richWireJSON spells a document exactly as Go's richtext.Doc.MarshalJSON
+    // does, byte for byte, from any object of the wire shape.
+    //
+    // The echo guard below compares strings, which is only sound if both sides
+    // write one document as one string. JSON.stringify writes an object's keys
+    // in the order they were added, and the runtime's own documents are built
+    // in whatever order was convenient — the DOM serializer made blocks as
+    // {r, k}, an empty line as {r: []} — so Go's echo of a document holding a
+    // heading or a blank line never matched what was sent. Every echo then
+    // landed as a rewrite, the DOM was rebuilt under the caret, and each
+    // keystroke went in at the start of the document (pbstudy_mobile N-015).
+    // Spelling the wire form in one place, Go's way, closes that for every
+    // caller rather than fixing one constructor's key order.
+    //
+    // Go's rules, from richtext/json.go:
+    //
+    //	{"b":[…]}                 "b" omitted for a document with no blocks: {}
+    //	{"k":…,"r":[…]}           k first; omitted for a paragraph, and an
+    //	                          unknown kind decodes to paragraph
+    //	                          r omitted for a blank line: {}
+    //	{"t":…,"b":1,"i":1,"u":1,"s":1,"c":1,"l":…}
+    //	                          marks only when set, as 1; l only when set;
+    //	                          a run with no text is dropped (Go's decoder
+    //	                          skips it, so its echo never has it)
+    //
+    // and encoding/json's HTML-safe escaping, which JSON.stringify does not do:
+    // <, > and & inside strings become <, > and &, and U+2028
+    // and U+2029 become their \u escapes. None of those characters can occur
+    // outside a string in JSON, so the escaping is applied to the whole text.
+    const RICH_WIRE_MARKS = ["b", "i", "u", "s", "c"];
+    function richWireJSON(doc) {
+        const blocks = [];
+        for (const block of ((doc && Array.isArray(doc.b)) ? doc.b : [])) {
+            const wire = {};
+            const kind = block && block.k;
+            if (kind && kind !== "p" && Object.prototype.hasOwnProperty.call(RICH_BLOCK_TAG, kind)) {
+                wire.k = kind;
+            }
+            const runs = [];
+            for (const run of ((block && Array.isArray(block.r)) ? block.r : [])) {
+                const text = run && run.t != null ? String(run.t) : "";
+                if (text === "") continue;
+                const out = { t: text };
+                for (const mark of RICH_WIRE_MARKS) {
+                    if (run[mark]) out[mark] = 1;
+                }
+                if (run.l) out.l = String(run.l);
+                runs.push(out);
+            }
+            if (runs.length) wire.r = runs;
+            blocks.push(wire);
+        }
+        const json = JSON.stringify(blocks.length ? { b: blocks } : {});
+        return json.replace(/[<>&\u2028\u2029]/g,
+            (c) => "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0"));
     }
 
     // The undo stack: documents, not operations. A stack of values needs no
@@ -6897,7 +6957,11 @@ const GrMob = (() => {
     //
     // The comparison is on the JSON string and not on the parsed value, which is
     // what makes it exact and cheap: Go marshals the document with a fixed key
-    // order, so the same document is always the same bytes.
+    // order, so the same document is always the same bytes — and the editor
+    // sends in that same spelling (richWireJSON), so its own edit comes back
+    // as the bytes it queued. "Already showing it" is decided the same way,
+    // over both sides respelled, so a document mounted from any spelling is
+    // recognised when Go sends it again.
     function applyRichDoc(el, json) {
         const echoes = el.__richEchoes || (el.__richEchoes = []);
         const focused = document.activeElement === el;
@@ -6917,7 +6981,7 @@ const GrMob = (() => {
             // rather than emptying a note because one patch was malformed.
             return;
         }
-        if (JSON.stringify(el.__richDoc) === json) return;
+        if (richWireJSON(el.__richDoc) === richWireJSON(doc)) return;
         el.__richDoc = doc;
         richTextToDOM(el, doc);
         // A rewrite from Go replaced the text the remembered offsets described,

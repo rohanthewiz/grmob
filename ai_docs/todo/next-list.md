@@ -36,7 +36,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-128
+**Next ID:** N-129
 
 ## Open
 
@@ -831,6 +831,23 @@ defect, which then becomes its own Open item.
 
 ## Closed
 
+- **N-128** · raised `pbstudy_mobile 2026-1023-1530-ipad-first-writing-desk` (its N-015) · value high
+  · closed 2026-10-23 — the web RichTextEditor now sends its document in Go's
+  exact spelling (`richWireJSON` in wasm/grmob-runtime.js), and decides
+  "already showing it" over both sides respelled. Pinned from both ends:
+  three tests in wasm/verify/richtext_test.mjs and
+  `TestJSONMatchesTheWebEditorsSpelling` in richtext. `wasm/verify/run.sh` is
+  green. Re-checked in pbstudy_mobile's preview: typing after a template's
+  headings, and between them, stays in order.
+  **In the browser, typing in a rich document with a heading, a list, a quote
+  or a blank line reset the caret on every keystroke.** The echo guard
+  compares strings, but the DOM serializer built blocks as `{r, k}` and blank
+  lines as `{r: []}`, while richtext marshals `{"k":…,"r":…}` and `{}`, and
+  escapes `<`, `>` and `&` (encoding/json's HTML-safe form). So Go's echo never
+  matched what was queued, every echo landed as a rewrite, and text typed after
+  a heading came out reversed at the top of the document. The natives compare
+  parsed documents and were never affected. A plain-paragraph document spells
+  the same either way, which is why the existing echo test passed.
 - **N-127** · raised `2026-1023-1428-bible-study-widget` · value low
   · closed 2026-10-23, `2026-1023-1438-n127-bible-study-gutter` — every verse row
   now leads with a number gutter sized for the passage's widest number

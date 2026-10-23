@@ -74,6 +74,30 @@ func TestJSONWireShape(t *testing.T) {
 	}
 }
 
+// The web runtime's echo guard compares a document as text, so its
+// richWireJSON spells documents exactly as this package marshals them. These
+// are the strings wasm/verify/richtext_test.mjs expects the editor to send;
+// pinning them here as well means a change to the Go spelling fails on both
+// sides together instead of silently breaking the guard (pbstudy_mobile
+// N-015: every keystroke after a heading reset the caret in the browser).
+func TestJSONMatchesTheWebEditorsSpelling(t *testing.T) {
+	cases := []struct {
+		doc  Doc
+		want string
+	}{
+		{Doc{Blocks: []Block{{Kind: Heading2, Runs: []Run{{Text: "hi Head"}}}, {Kind: Paragraph}}},
+			`{"b":[{"k":"h2","r":[{"t":"hi Head"}]},{}]}`},
+		// encoding/json's HTML-safe escaping, which JSON.stringify lacks.
+		{Doc{Blocks: []Block{{Kind: Paragraph, Runs: []Run{{Text: "a<b & c>d x"}}}}},
+			`{"b":[{"r":[{"t":"a\u003cb \u0026 c\u003ed x"}]}]}`},
+	}
+	for _, c := range cases {
+		if got := c.doc.JSON(); got != c.want {
+			t.Errorf("JSON:\n got %s\nwant %s", got, c.want)
+		}
+	}
+}
+
 // A paragraph is the default, so it costs no key. That is the commonest block
 // in any document by a wide margin, and this is the whole reason the kind is
 // omitempty.

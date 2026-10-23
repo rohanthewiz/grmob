@@ -168,6 +168,66 @@ test("Go's echo of our own edit does not rebuild the document", () => {
     assert.equal(shape(editor), "<h1><span>replaced</span></h1>");
 });
 
+// The echo guard compares strings, so the editor must send its document in
+// exactly the bytes Go will echo: encoding/json over richtext's wire structs.
+// That spelling has four rules a JavaScript object does not follow by itself,
+// and each broke the guard in a real app (pbstudy_mobile N-015) before it was
+// pinned here — every keystroke after a heading reset the caret to the start:
+//
+//	k before r                 {"k":"h2","r":[…]}, not {"r":[…],"k":"h2"}
+//	defaults omitted           no "k" for a paragraph, no "r" for a blank
+//	                           line ({}), no "b" for an empty document
+//	empty runs dropped         Go's decoder skips them, so its echo lacks them
+//	HTML-safe escaping         < > & as < > &, as Go writes them
+//
+// The expected strings below are what richtext.Doc.JSON returns for these
+// documents (richtext/json.go); they are spelled out rather than computed so a
+// change on either side shows up here as a diff.
+test("the editor sends its document in Go's spelling, so a heading's echo is an echo", () => {
+    const { rt, editor } = mountEditor(doc(block("h2", run("Head")), { r: [] }));
+    editor.focus();
+    editor.dispatch("paste", {
+        clipboardData: { getData: () => "hi " },
+        preventDefault() { this.defaultPrevented = true; },
+    });
+    const sent = rt.dispatched[0].payload.value;
+    assert.equal(sent, '{"b":[{"k":"h2","r":[{"t":"hi Head"}]},{}]}');
+
+    // Go's echo — the same bytes — must not rebuild.
+    const heading = editor.children[0];
+    rt.GrMob.patch(JSON.stringify([{
+        Type: "update-props", TargetID: "root/0",
+        Changes: { doc: sent, readOnly: false, placeholder: "", onChange: "cb-change" },
+    }]));
+    rt.drainFrames();
+    assert.equal(editor.children[0], heading, "Go's echo of a document with a heading must not rebuild it");
+});
+
+test("the editor escapes its text as Go does", () => {
+    const { rt, editor } = mountEditor(doc(block("p", run("x"))));
+    editor.focus();
+    editor.dispatch("paste", {
+        clipboardData: { getData: () => "a<b & c>d " },
+        preventDefault() { this.defaultPrevented = true; },
+    });
+    assert.equal(rt.dispatched[0].payload.value,
+        '{"b":[{"r":[{"t":"a\\u003cb \\u0026 c\\u003ed x"}]}]}');
+});
+
+test("a document Go sends that the editor already shows is not rebuilt, whatever its spelling", () => {
+    // Mounted from a non-Go spelling (r before k, an explicit paragraph
+    // kind, an empty run): the same document as Go's, so Go's spelling of it
+    // is no rewrite.
+    const { rt, editor } = mountEditor({ b: [{ r: [{ t: "Head" }, { t: "" }], k: "h2" }, { r: [], k: "p" }] });
+    const heading = editor.children[0];
+    rt.GrMob.patch(JSON.stringify([{
+        Type: "update-props", TargetID: "root/0",
+        Changes: { doc: '{"b":[{"k":"h2","r":[{"t":"Head"}]},{}]}', readOnly: false, placeholder: "", onChange: "cb-change" },
+    }]));
+    rt.drainFrames();
+    assert.equal(editor.children[0], heading);
+});
+
 test("a doc prop that is not a document leaves the editor alone", () => {
     const { rt, editor } = mountEditor(doc(block("p", run("keep me"))));
     rt.GrMob.patch(JSON.stringify([{
