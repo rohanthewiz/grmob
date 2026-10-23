@@ -294,3 +294,41 @@ func TestBibleStudyEveryTheme(t *testing.T) {
 	core.SetDebugMode(false)
 	core.ClearConcerns()
 }
+
+// N-127: every number sits in one gutter sized for the widest, right-aligned,
+// so a passage that crosses from 9 to 10 starts every verse's text at one x.
+// A line with no number keeps the gutter empty.
+func TestBibleStudyNumbersShareAGutter(t *testing.T) {
+	w := john3Study()
+	w.Passage.Verses = []BibleVerseLine{
+		{Number: 9, Text: "Nicodemus answered."},
+		{Number: 10, Text: "Jesus answered."},
+		{Text: "A heading line."},
+	}
+	_, n := renderDebug(t, w)
+	var widths []string
+	for _, num := range []string{"9", "10"} {
+		x := findText(n, num)
+		if x == nil {
+			t.Fatalf("no number %s", num)
+		}
+		if x.Style.Align != core.AlignEnd {
+			t.Errorf("number %s should be right-aligned: align %q", num, x.Style.Align)
+		}
+		widths = append(widths, x.Style.Width)
+	}
+	if widths[0] != widths[1] || widths[0] == "" {
+		t.Errorf("gutter widths %v, want one shared width", widths)
+	}
+	// Two digits at the theme's body size, 0.62 em each.
+	want := 2 * 0.62 * core.NewContext().Theme().Typography.Body.FontSize
+	if got := pxOf(t, widths[0]); got < want-0.1 || got > want+0.1 {
+		t.Errorf("gutter %v, want %.1fpx for two digits", widths[0], want)
+	}
+	row := findFirst(n, func(x *core.Node) bool {
+		return x.Type == "Row" && findText(x, "A heading line.") != nil
+	})
+	if row == nil || len(row.Children) != 2 || row.Children[0].Style.Width != widths[0] {
+		t.Error("an unnumbered line should keep an empty gutter of the same width")
+	}
+}

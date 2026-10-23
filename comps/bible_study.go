@@ -137,7 +137,8 @@ func DefaultBibleStudyTools() []BibleStudyTool {
 //	Card         as BibleVerse
 //	Rows         Spacing.XS between them and between number and text
 //	Verse text   Typography.Body, Colors.TextPrimary
-//	Numbers      Typography.Body, Colors.TextSecondary, bold
+//	Numbers      Typography.Body, Colors.TextSecondary, bold, right-aligned
+//	             in a gutter sized from Typography.Body.FontSize
 //	Prompt       Typography.Caption, Colors.TextSecondary
 //	Sheet        as ActionSheet
 type BibleStudy struct {
@@ -234,6 +235,10 @@ func (s BibleStudy) verses(t *core.Theme, open core.State[int]) core.View {
 	v := s.Passage
 	numbered := len(v.Verses) > 1 && !v.HideNumbers
 	hint := orDefault(s.VerseHint, "Opens study tools on Blue Letter Bible")
+	gutter := ""
+	if numbered {
+		gutter = verseGutter(t, v.Verses)
+	}
 
 	items := make([]core.PropsAndChildren, 0, len(v.Verses)+3)
 	// Padding(0): the theme Column's screen inset would double the card's.
@@ -267,12 +272,28 @@ func (s BibleStudy) verses(t *core.Theme, open core.State[int]) core.View {
 		}
 		// A line numbered 0 is not a verse BLB can key, so it is drawn as
 		// text and nothing more: a tap would set the "closed" value.
-		if numbered && line.Number > 0 {
-			row = append(row, core.Text(strconv.Itoa(line.Number),
-				core.UseStyle(t.Typography.Body),
-				core.TextColor(t.Colors.TextSecondary),
-				core.FontWeight(core.Bold),
-			))
+		if numbered {
+			// Every row gets the gutter, so every verse's text starts at one
+			// x: "9" and "10", or "1" and "2" in a proportional face, would
+			// otherwise each push their text to a different place. The
+			// number is right-aligned in it, as BulletList sets "9." over
+			// "10.", so the digits' ends line up against the text.
+			gut := []core.StyleProp{
+				core.Width(gutter),
+				core.FlexShrink(0),
+				core.Align(core.AlignEnd),
+			}
+			if line.Number > 0 {
+				row = append(row, core.Text(strconv.Itoa(line.Number), append(gut,
+					core.UseStyle(t.Typography.Body),
+					core.TextColor(t.Colors.TextSecondary),
+					core.FontWeight(core.Bold),
+				)...))
+			} else {
+				// An unnumbered line keeps the gutter empty rather than
+				// starting its text under the numbers.
+				row = append(row, core.Box(core.Width(gutter), core.FlexShrink(0), core.AccessibilityHidden()))
+			}
 		}
 		row = append(row, text)
 		// Keyed by number so each row's callback ID is scoped to its verse,
@@ -290,6 +311,25 @@ func (s BibleStudy) verses(t *core.Theme, open core.State[int]) core.View {
 		))
 	}
 	return core.Column(items...)
+}
+
+// verseGutter is the width of the number column: the widest verse number's
+// digit count at the body size, 0.62 em a digit. No host reports a rendered
+// width, so this is BulletList's estimate for its ordered markers: digits are
+// tabular in every bundled face, and 0.62 em covers the widest of them in
+// bold with room to spare.
+func verseGutter(t *core.Theme, verses []BibleVerseLine) string {
+	size := t.Typography.Body.FontSize
+	if size == 0 {
+		size = 16
+	}
+	widest := 1
+	for _, l := range verses {
+		if d := len(strconv.Itoa(l.Number)); d > widest {
+			widest = d
+		}
+	}
+	return strconv.FormatFloat(float64(widest)*0.62*size, 'f', 1, 64) + "px"
 }
 
 // line finds the verse numbered n in the passage.

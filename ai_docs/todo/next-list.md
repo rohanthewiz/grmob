@@ -131,16 +131,6 @@ with each item's `raised` traced back through all session docs.
   substitute, because it is one app-wide command and would pull the page
   back to the tape. Related to N-113 (paint transforms).
 
-- **N-127** · raised `2026-1023-1428-bible-study-widget` · value low
-  **BibleStudy's verse text does not line up across one- and two-digit
-  numbers.** Each verse row puts its number and then the text, which starts
-  wherever the number ends. So verse 1's text sits a few pixels to the left
-  of verse 2's, and in a passage that runs from 9 to 10, verse 10's text
-  starts further right again. A printed Bible hangs its numbers in a fixed
-  gutter. A fixed width sized to the passage's widest number, or a
-  core-level min-width on the number Text, would fix it. Seen in the 4.44
-  browser shot; nobody has complained.
-
 ## Validate
 
 Items whose remaining work is purely testing: run, look, hear, measure, or
@@ -841,6 +831,20 @@ defect, which then becomes its own Open item.
 
 ## Closed
 
+- **N-127** · raised `2026-1023-1428-bible-study-widget` · value low
+  · closed 2026-10-23, `2026-1023-1438-n127-bible-study-gutter` — every verse row
+  now leads with a number gutter sized for the passage's widest number
+  (0.62 em a digit at the body size, BulletList's estimate), with the number
+  right-aligned; an unnumbered line keeps an empty gutter. Seen in the 4.44
+  browser shot.
+  **BibleStudy's verse text does not line up across one- and two-digit
+  numbers.** Each verse row puts its number and then the text, which starts
+  wherever the number ends. So verse 1's text sits a few pixels to the left
+  of verse 2's, and in a passage that runs from 9 to 10, verse 10's text
+  starts further right again. A printed Bible hangs its numbers in a fixed
+  gutter. A fixed width sized to the passage's widest number, or a
+  core-level min-width on the number Text, would fix it. Seen in the 4.44
+  browser shot; nobody has complained.
 - **N-109** · raised `2026-1011-2237-v0.6.0-release-on-red-ci` · value high
   · closed 2026-10-21, `2026-1021-1132-work-next-list-n110-n109` — check 24 failed only on CI's wider Linux
   fonts. Reproduced on macOS by swapping the site page's face for Verdana

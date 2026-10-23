@@ -900,11 +900,12 @@ Each verse row is a button named "Verse 16, " and the verse's text, with VerseHi
 	Card         as BibleVerse
 	Rows         Spacing.XS between them and between number and text
 	Verse text   Typography.Body, Colors.TextPrimary
-	Numbers      Typography.Body, Colors.TextSecondary, bold
+	Numbers      Typography.Body, Colors.TextSecondary, bold, right-aligned
+	             in a gutter sized from Typography.Body.FontSize
 	Prompt       Typography.Caption, Colors.TextSecondary
 	Sheet        as ActionSheet
 
-<small>[comps/bible_study.go:143](https://github.com/rohanthewiz/grmob/blob/master/comps/bible_study.go#L143)</small>
+<small>[comps/bible_study.go:144](https://github.com/rohanthewiz/grmob/blob/master/comps/bible_study.go#L144)</small>
 
 #### func (BibleStudy) Render
 
@@ -914,7 +915,7 @@ func (s BibleStudy) Render(ctx *core.Context) *core.Node
 
 Render draws the card and the sheet beside it. It takes one hook slot, on every pass, before anything that could branch.
 
-<small>[comps/bible_study.go:179](https://github.com/rohanthewiz/grmob/blob/master/comps/bible_study.go#L179)</small>
+<small>[comps/bible_study.go:180](https://github.com/rohanthewiz/grmob/blob/master/comps/bible_study.go#L180)</small>
 
 ### type BibleStudyTool
 
