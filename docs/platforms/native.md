@@ -1645,6 +1645,15 @@ and is there for `pinMainAxis`'s reason: a width coerced back inside the
 incoming maximum tells the Row that everything fits, and the next sibling is
 then laid out on top of a child drawn wider than the parent believes.
 
+One correction to that picture, found on a device (N-121): Compose coerces a
+reported width into the child's own constraints before the Row reads it
+(`Placeable.width`), and centres the surplus on the coerced box. So in a
+bounded Row the overflow is real but centred, and the next sibling follows the
+offer rather than the real width. A Row of nothing but pinned children is
+therefore measured with no width limit (`overflowsAtContentWidth`), which is
+what lets a gliding tape place its second copy after the first's real width;
+a lone pinned child among unpinned siblings is still centred, which is N-130.
+
 Two children the hug used to skip are in now.
 
 A **percentage `MaxWidth`** was skipped because `widthModifier` resolves it

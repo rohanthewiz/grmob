@@ -39,9 +39,12 @@ struct AnyDecodable: Decodable {
 }
 
 /// The node types whose views read containerStyle (GrMobRow, GrMobColumn for
-/// Column, Card and Box, GrMobZStack). A labelled leaf is one element
-/// already, and no other container applies the label with a child behaviour.
-private let styledContainers: Set<String> = ["Row", "Column", "Card", "Box", "ZStack"]
+/// Column, Card and Box, GrMobZStack, and GrMobScroll since N-121). A
+/// labelled leaf is one element already, and no other container applies the
+/// label with a child behaviour. Kept equal to
+/// GrMobNode.labelledContainerTypes by hand; a type listed in one and not the
+/// other shows up here as a container that is "not a labelled container".
+private let styledContainers: Set<String> = ["Row", "Column", "Card", "Box", "ZStack", "Scroll"]
 
 func checkChildModes(_ cases: [ChildModeCase]) -> [String] {
     var problems: [String] = []

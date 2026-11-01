@@ -36,7 +36,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-129
+**Next ID:** N-131
 
 ## Open
 
@@ -121,6 +121,44 @@ with each item's `raised` traced back through all session docs.
   needs a scale transform (plus pinch). `comps.Gallery` uses a crossfade or a
   rise for the flip, and a taller stage or a Lightbox for the zoom. Nobody
   has asked for more than that yet.
+- **N-129** · raised `2026-1031-2336-n121-stock-ticker-natives` · value low
+  **The reconciler has no move patch, so a keyed reorder is a replace of
+  every slot whose key changed.** `reconcile/doc.go` says so ("What it does
+  not do yet"); identity-based node IDs are named as the prerequisite.
+  Found by N-121's "a step arrives as moves" check: on the web, after a
+  Step of `comps.StockTicker` with the interval paused, none of the five
+  quote elements was reused (a scratch CDP probe compared element identity
+  before and after). The widget's doc, lesson 4.42 and `docs/components.md`
+  claimed a step reorders the nodes on screen; all three now say a step
+  never patches one quote's figures into another's slot and name the
+  replace. Visually identical on every target. The cost is transient native
+  state: on the web, focus on a quote would go with its element at each
+  step; Compose's `key(child.key)` in RowChildren keeps the keyed
+  composable, so TalkBack re-read a focused quote's new price at a tick
+  without losing it (2026-10-31, emulator). Low until a consumer needs a
+  reorder to keep focus or a scroll offset.
+- **N-130** · raised `2026-1031-2336-n121-stock-ticker-natives` · value low
+  **Compose centres a lone pinned child that overflows a bounded Row of
+  mixed children.** Compose coerces a Placeable's width into the constraints
+  the child was measured with and applies the surplus as a centring offset
+  (ui 1.7.6 `Placeable.kt`, `recalculateWidthAndHeight` /
+  `apparentToRealOffset`), so `pinMainAxis`'s unclamped report never reaches
+  the Row: a pinned child wider than its offer is placed as the offer's width
+  with its content shifted left by half the overflow, and the next sibling
+  follows the offer, not the real width. Seen with `comps.StockTicker`'s two
+  gliding copies on the API 36 emulator (each 2835px in an 834px clip, drawn
+  over each other 417px apart, starting 1000px left of the clip). Fixed for a
+  Row whose every child is pinned and none weighted
+  (`overflowsAtContentWidth` in Renderer.kt measures such a Row unbounded
+  and places the overflow from the leading edge, `placeRelative`), which is
+  the glide's shape; pinned by `TestTheComposePinnedStripIsMeasuredUnboundedAndPlacedFromTheStart`.
+  Left: a pinned child among unpinned siblings in a bounded Row (CSS would
+  start-align it and push the siblings out; Compose centres it and lays the
+  siblings over it). No bundled screen hits it: every pinned child in comps
+  fits its Row. `internal/pinfixture`'s transcription of the Row loop sums
+  real widths and is right only under an unbounded maximum; its header and
+  `docs/platforms/native.md`'s census prose should say so when this is
+  taken up (native.md has a one-paragraph correction already).
 ## Validate
 
 Items whose remaining work is purely testing: run, look, hear, measure, or
@@ -641,32 +679,6 @@ defect, which then becomes its own Open item.
   - a desktop browser without the Web Share API (Firefox) falling back to
     the clipboard toast;
   - the iPad popover anchor.
-- **N-121** · raised `2026-1020-1656-stock-ticker-widget` · value medium
-  **`comps.StockTicker` and lesson 4.42 on the natives.** Checked so far:
-  web only (wasm shot, 2026-10-20) and the Go tests. Still to check:
-  - the sideways `core.Scroll` of HBox quotes on Compose and SwiftUI: each
-    quote keeps its width (`FlexShrink(0)`) and the tape pans;
-  - the ▲/▼ glyphs in each platform's font;
-  - a step (`Start` + 1) arriving as moves of the keyed quotes, not a rebuild;
-  - TalkBack and VoiceOver reading each quote as one sentence ("Apple, AAPL,
-    189.12, up 1.23, 0.65 percent"), the tape as a list, and as a group of
-    buttons with `OnTap`.
-  - Looked at on the iOS 26.5 simulator, 2026-10-21
-    (`2026-1021-1132-work-next-list-n110-n109`, two `simctl io` shots of 4.42
-    three seconds apart): each quote keeps its width, and the next one is
-    cut at the tape's trailing edge rather than squeezed. ▲ and ▼ draw in SF
-    in green and red. The tape steps (MSFT first, then AMZN). Still unseen on
-    iOS: the sideways pan (simctl cannot swipe) and whether a step is a
-    move of keyed quotes. Compose is not looked at.
-  - Added 2026-10-31 (N-120 closed): the gliding tape, "Glide the tape" in
-    4.42, on all four targets — a seamless seam between the two copies (the
-    gap before the first quote equals the gap between quotes), the same
-    speed on both copies, the direction under RTL (toward the leading edge),
-    `OnTap` on the second copy, and a stop under reduce-motion (Chrome's
-    emulation, "Remove animations", the simulator's Reduce Motion). The
-    Compose `GlideNode` reads `MotionDurationScale` off its coroutine
-    context; whether the window recomposer installs it there is reasoned
-    from Compose's source, not seen.
 - **N-122** · raised `2026-1020-1933-core-swipe-gesture` · value medium
   **`core.OnSwipe` / `OnVerticalSwipe` on the natives and under real touch.**
   Checked so far: the Go tests and the DOM shim's tests. In headless Chrome
@@ -829,6 +841,53 @@ defect, which then becomes its own Open item.
   comment. The tutorial page that does set cover is N-088.
 
 ## Closed
+
+- **N-121** · raised `2026-1020-1656-stock-ticker-widget` · value medium
+  · closed 2026-10-31, `2026-1031-2336-n121-stock-ticker-natives` — `comps.StockTicker` and lesson 4.42 seen on all four
+  targets, stepping and gliding, with three defects found and fixed on the
+  way.
+  - **Web** (headless Chrome, a scratch CDP probe on the shots host): the
+    stepping Scroll is `role=group` with five `button` quotes whose labels are
+    the spoken sentences; gliding, two copies with `15s linear infinite
+    grmob-glide`, the second `aria-hidden`, both at 73 px/s (1101px / 15s),
+    seam 0px, gap 24px within a copy and 24px across the seam; a real mouse
+    click on the hidden copy's AAPL read "OnTap got Apple (AAPL)"; under
+    `dir="rtl"` `--grmob-inline` is −1 and the tape moves right at 72 px/s;
+    `prefers-reduced-motion: reduce` holds both copies at rest and they move
+    again when it lifts; Pause gives back the Scroll (overflow-x auto, 1081
+    of 296px).
+  - **Compose** (API 36 emulator): the stepping tape keeps each quote's width
+    (TSLA 499px, AMZN cut at the clip) and pans under a swipe when paused.
+    Gliding, the two copies were drawn over each other (N-130's cause); after
+    the Row fix the band is one layer, gap 63px (24dp) within and across the
+    seam, both copies at 189 px/s (2835px / 15s), a tap past the first copy's
+    end read "OnTap got Apple (AAPL)", a zero animator scale holds the tape
+    at rest with AAPL one gap inside the clip and the same spot every time
+    (so `MotionDurationScale` does reach the node's coroutine context), and
+    it moves again at scale 1; under a per-app Arabic locale it glides right
+    with the quotes mirrored. TalkBack (the logcat harness): every quote
+    heard as "Nvidia, NVDA, 120.43, up 2.86, 2.43 percent, Button" and the
+    tape as "Stock prices"; a Tab walk of the stepping tape visited two of
+    five quotes before leaving the tape, and a Shift+Tab walk heard all five,
+    not diagnosed.
+  - **SwiftUI** (iOS 26.5 simulator, new `TutorialStockTickerUITests`, 4
+    tests passing): the stepping tape steps within 4s and pans on a swipe
+    when paused; gliding, the labelled copy moves left at one quotes-span per
+    15s, a tap 119pt past AMZN's end reads "OnTap got Apple (AAPL)" (the
+    hidden copy), Pause leaves it still; under forced RTL it moves right at
+    the same speed; with the simulator's Reduce Motion on it holds still
+    with AAPL 24pt inside the clip. The stepping tape was one combined
+    Button named "Stock prices" with no quote inside it: a labelled Scroll
+    was not a labelled container type, so it always took `.combine`. Fixed:
+    `Scroll` joined `GrMobNode.labelledContainerTypes` and GrMobScroll reads
+    `containerStyle`; the tape is now a ScrollView holding one Button per
+    quote, and the ios/verify census gained StockTicker (both forms,
+    contain) plus Wizard's body Scroll and StepIndicator's strip, which were
+    merged elements before and now contain their members. VoiceOver itself
+    is still unheard (no VoiceOver on the simulator).
+  - **Keys**: a step is not a move anywhere; the reconciler replaces every
+    slot whose key changed (N-129, docs corrected).
+  - Not done: a real finger on either native; VoiceOver's speech.
 
 - **N-120** · raised `2026-1020-1656-stock-ticker-widget` · value low
   · closed 2026-10-31, `2026-1031-2250-core-glide-looping-translate-n120` — `core.Glide(periodMs)` is the looping translate: a

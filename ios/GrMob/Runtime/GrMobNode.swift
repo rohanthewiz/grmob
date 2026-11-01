@@ -131,9 +131,16 @@ final class GrMobNode {
     }
 
     /// The node types whose views apply a label through containerStyle, and
-    /// so with a child behaviour: GrMobRow, GrMobColumn (Column, Card, Box)
-    /// and GrMobZStack. A labelled leaf is one element whatever holds it.
-    static let labelledContainerTypes: Set<String> = ["Row", "Column", "Card", "Box", "ZStack"]
+    /// so with a child behaviour: GrMobRow, GrMobColumn (Column, Card, Box),
+    /// GrMobZStack and GrMobScroll. A labelled leaf is one element whatever
+    /// holds it.
+    ///
+    /// Scroll joined on 2026-10-31 (N-121): a labelled Scroll used to take
+    /// `.combine` whatever it held, so comps.StockTicker's stepping tape, a
+    /// sideways Scroll of five quote buttons labelled "Stock prices", was one
+    /// element on the iOS 26.5 simulator, carrying the button trait merged
+    /// up from its quotes and reaching none of them.
+    static let labelledContainerTypes: Set<String> = ["Row", "Column", "Card", "Box", "ZStack", "Scroll"]
 
     /// Whether two or more members (isMember) sit below this node.
     ///

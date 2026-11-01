@@ -7238,7 +7238,8 @@ comps.StockTicker{
 					"motion. Start is the index of the quote drawn first, and it wraps in both "+
 					"directions, so a bare counter is enough. This demo ticks one counter with "+
 					"hooks.UseIntervalWhile and feeds it to Start and to the prices. Each quote is "+
-					"keyed by its symbol, so a step reorders the nodes already on screen."),
+					"keyed by its symbol, so a step never patches one quote's figures into "+
+					"another's slot."),
 				prose("Glide makes it the broadcast kind instead: one pass of the quotes every "+
 					"Glide milliseconds, driven by the platform's frame clock through core.Glide, "+
 					"the looping translate to Spin's looping rotation. Nothing crosses the bridge "+

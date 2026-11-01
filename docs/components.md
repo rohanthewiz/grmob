@@ -3944,8 +3944,9 @@ comps.StockTicker{
 By default the tape pans under the reader's finger, and a caller who wants it
 to move steps it with `Start`, the index of the quote drawn first. `Start`
 wraps in both directions, so a bare counter driven by `hooks.UseIntervalWhile`
-is enough. Quotes are keyed by symbol, so each step reorders the existing
-nodes.
+is enough. Quotes are keyed by symbol, so a step never patches one quote's
+figures into another's slot (the reconciler has no move patch yet, so each
+slot whose quote changed is replaced, which draws the same).
 
 **Or it glides.** `Glide` is milliseconds per pass of the whole tape, and with
 it set the tape slides continuously toward the leading edge on the platform's

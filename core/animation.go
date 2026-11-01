@@ -251,10 +251,13 @@ func Spin(periodMs int) StyleProp {
 //	core.HBox(core.Overflow("hidden"), tape(), tape())
 //
 // FlexShrink(0) is what keeps each copy at its natural width inside the
-// clipping box on every target (Compose measures a pinned child unbounded and
-// reports its real width; SwiftUI floors it at its base size), and the
-// leading padding on each copy is the gap between the last quote of one copy
-// and the first of the next.
+// clipping box on every target (SwiftUI floors a pinned child at its base
+// size; Compose measures a Row of nothing but pinned children with no width
+// limit, which is what lets it place the second copy after the first's real
+// width rather than after the clip's), and the leading padding on each copy
+// is the gap between the last quote of one copy and the first of the next.
+// Every child of the clipping box must be pinned for that Compose rule to
+// apply, which the two-copies shape satisfies by construction.
 //
 // # Linear, always
 //

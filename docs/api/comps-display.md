@@ -3082,7 +3082,7 @@ Prices are the caller's, and so is the motion. The widget holds no state and sta
 
 #### Stepping the tape, or gliding it
 
-By default the tape pans under the reader's finger, and a caller who wants it to move steps it with Start: the quote drawn first, wrapping round the end. Each quote is keyed by its symbol, so a step is a reorder of existing nodes rather than a re-patch of every figure.
+By default the tape pans under the reader's finger, and a caller who wants it to move steps it with Start: the quote drawn first, wrapping round the end. Each quote is keyed by its symbol, so a step never patches one quote's figures into another's slot; today it arrives as a replace of each slot whose quote changed, since the reconciler has no move patch yet (reconcile's "What it does not do yet"), which draws the same and costs a quote nothing, as it holds no transient state.
 
 	off := core.NewState(ctx, 0)
 	hooks.UseIntervalWhile(ctx, !paused.Get(), func() { off.Set(off.Get() + 1) }, 3*time.Second)
@@ -3125,7 +3125,7 @@ Each quote is one stop for a screen reader, read as a sentence: "Apple, AAPL, 18
 	             Colors.TextSecondary when unchanged
 	Gaps         Spacing.LG between quotes, Spacing.XS within one
 
-<small>[comps/stock_ticker.go:139](https://github.com/rohanthewiz/grmob/blob/master/comps/stock_ticker.go#L139)</small>
+<small>[comps/stock_ticker.go:142](https://github.com/rohanthewiz/grmob/blob/master/comps/stock_ticker.go#L142)</small>
 
 #### func (StockTicker) Render
 
@@ -3133,7 +3133,7 @@ Each quote is one stop for a screen reader, read as a sentence: "Apple, AAPL, 18
 func (s StockTicker) Render(ctx *core.Context) *core.Node
 ```
 
-<small>[comps/stock_ticker.go:198](https://github.com/rohanthewiz/grmob/blob/master/comps/stock_ticker.go#L198)</small>
+<small>[comps/stock_ticker.go:201](https://github.com/rohanthewiz/grmob/blob/master/comps/stock_ticker.go#L201)</small>
 
 ### type Stopwatch
 

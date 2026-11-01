@@ -617,7 +617,7 @@ A loop restarts, and a restart is invisible only when the end state draws the sa
 	}
 	core.HBox(core.Overflow("hidden"), tape(), tape())
 
-FlexShrink(0) is what keeps each copy at its natural width inside the clipping box on every target (Compose measures a pinned child unbounded and reports its real width; SwiftUI floors it at its base size), and the leading padding on each copy is the gap between the last quote of one copy and the first of the next.
+FlexShrink(0) is what keeps each copy at its natural width inside the clipping box on every target (SwiftUI floors a pinned child at its base size; Compose measures a Row of nothing but pinned children with no width limit, which is what lets it place the second copy after the first's real width rather than after the clip's), and the leading padding on each copy is the gap between the last quote of one copy and the first of the next. Every child of the clipping box must be pinned for that Compose rule to apply, which the two-copies shape satisfies by construction.
 
 #### Linear, always
 
@@ -647,7 +647,7 @@ The opposite of Spin's rule, and for the setting's own reason: content sliding a
 
 A tape at rest shows only as much as fits, so a caller that glides should still give the reader a way to see the rest — the stepping form of comps.StockTicker pans under the finger, which is why it is the default. Content that moves by itself for more than five seconds also needs a way to stop it (WCAG 2.2.2); Glide(0) rests the node, and the caller owns that switch.
 
-<small>[core/animation.go:310](https://github.com/rohanthewiz/grmob/blob/master/core/animation.go#L310)</small>
+<small>[core/animation.go:313](https://github.com/rohanthewiz/grmob/blob/master/core/animation.go#L313)</small>
 
 ### func Height
 

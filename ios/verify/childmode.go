@@ -55,7 +55,7 @@ func childModeCases() []childModeCase {
 			Options: []comps.PollOption{{Label: "Soup", Votes: 3}, {Label: "Salad", Votes: 1}}}, map[string]string{"Lunch?": "contain", "Salad, 25 percent, 1 vote": "combine", "Soup, 75 percent, 3 votes": "combine"}},
 		{"Wizard", comps.Wizard{Label: "Setup", Steps: []comps.WizardStep{
 			{Title: "Name", Body: core.Text("Who are you?")}, {Title: "Done", Body: core.Text("All set")}},
-			OnChange: func(int) {}, OnFinish: noop}, map[string]string{"Setup": "contain", "Step 1: Name": "ignore", "Step 2: Done": "ignore"}},
+			OnChange: func(int) {}, OnFinish: noop}, map[string]string{"Setup": "contain", "Setup, step 1 of 2: Name": "contain", "Step 1: Name": "ignore", "Step 2: Done": "ignore"}},
 		{"TimePicker", comps.TimePicker{Label: "Alarm", Value: time.Date(2026, 9, 28, 7, 30, 0, 0, time.UTC),
 			OnChange: func(time.Time) {}}, map[string]string{"Alarm": "contain"}},
 		{"PINInput", comps.PINInput{Label: "Passcode", Length: 4, OnChange: func(string) {}}, map[string]string{"Passcode": "combine"}},
@@ -64,7 +64,7 @@ func childModeCases() []childModeCase {
 		{"TreeView", comps.TreeView{Label: "Files", Nodes: []comps.TreeNode{{ID: "a", Label: "a.go"}, {ID: "b", Label: "b.go"}},
 			OnSelect: func(string) {}}, map[string]string{"Files": "contain", "a.go": "combine", "b.go": "combine"}},
 		{"StepIndicator", comps.StepIndicator{Steps: []string{"Cart", "Pay", "Done"}, Current: 1, OnTap: func(int) {}},
-			map[string]string{"Step 1: Cart, done": "ignore", "Step 2: Pay": "ignore", "Step 3: Done": "ignore"}},
+			map[string]string{"Step 2 of 3: Pay": "contain", "Step 1: Cart, done": "ignore", "Step 2: Pay": "ignore", "Step 3: Done": "ignore"}},
 		{"MessageBubble", comps.MessageBubble{Text: "Hi", Sender: "Ada", Time: "9:41"}, map[string]string{"Ada, Hi, 9:41": "ignore"}},
 		{"Link", comps.Link{Text: "Docs", URL: "https://example.com"}, map[string]string{"Docs": "ignore"}},
 		{"SwitchRow", comps.SwitchRow{Title: "Wi-Fi", On: true, OnToggle: func(bool) {}}, map[string]string{}},
@@ -75,6 +75,27 @@ func childModeCases() []childModeCase {
 		{"Drawer", comps.Drawer{Open: true, Title: "Notebook", OnDismiss: noop,
 			Items: []comps.DrawerItem{{Label: "Inbox"}, {Label: "Sent"}}, Content: core.Text("page")},
 			map[string]string{"Inbox": "combine", "Notebook": "contain", "Sent": "combine"}},
+		// Wizard's body Scroll ("Setup, step 1 of 2: Name") and StepIndicator's
+		// strip ("Step 2 of 3: Pay") above are labelled Scrolls too, listed since
+		// Scroll became a labelled container type (N-121): each holds two or
+		// more members (a step's controls; the tappable steps), so each
+		// contains them where it used to be one merged element.
+		// A labelled Scroll (N-121): the stepping tape is a sideways Scroll named
+		// "Stock prices" holding one labelled HBox per quote, a listitem or,
+		// with OnTap, a button, whose drawn texts are hidden. Each quote is a
+		// member, so the tape contains them, and each quote is "ignore" (its
+		// label is the whole element). Before Scroll joined
+		// labelledContainerTypes the tape was one combined element.
+		{"StockTicker", comps.StockTicker{Quotes: []comps.StockQuote{
+			{Symbol: "AAPL", Name: "Apple", Price: 189.12, Change: 1.23},
+			{Symbol: "MSFT", Name: "Microsoft", Price: 411.65, Change: -2.10}}},
+			map[string]string{"Stock prices": "contain", "Apple, AAPL, 189.12, up 1.23, 0.65 percent": "ignore",
+				"Microsoft, MSFT, 411.65, down 2.10, 0.51 percent": "ignore"}},
+		{"StockTicker tappable", comps.StockTicker{OnTap: func(comps.StockQuote) {}, Quotes: []comps.StockQuote{
+			{Symbol: "AAPL", Name: "Apple", Price: 189.12, Change: 1.23},
+			{Symbol: "MSFT", Name: "Microsoft", Price: 411.65, Change: -2.10}}},
+			map[string]string{"Stock prices": "contain", "Apple, AAPL, 189.12, up 1.23, 0.65 percent": "ignore",
+				"Microsoft, MSFT, 411.65, down 2.10, 0.51 percent": "ignore"}},
 	}
 	out := make([]childModeCase, 0, len(cases))
 	for _, c := range cases {

@@ -1769,7 +1769,7 @@ private struct GrMobScroll: View {
             viewport = grows ? width : 0
         }
         .grMobKeyboardAware(node.boolProp("keyboardAware"))
-        .grMobBox(node.style, grow: grow)
+        .grMobBox(node.containerStyle, grow: grow)
         .grMobInk(node.style)
     }
 
@@ -1798,7 +1798,7 @@ private struct GrMobScroll: View {
         })
         .onPreferenceChange(GrMobViewportHeight.self) { viewport = $0 }
         .grMobKeyboardAware(node.boolProp("keyboardAware"))
-        .grMobBox(node.style, grow: grow)
+        .grMobBox(node.containerStyle, grow: grow)
         .grMobInk(node.style)
     }
 }

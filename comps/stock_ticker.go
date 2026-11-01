@@ -54,8 +54,11 @@ type StockQuote struct {
 //
 // By default the tape pans under the reader's finger, and a caller who wants
 // it to move steps it with Start: the quote drawn first, wrapping round the
-// end. Each quote is keyed by its symbol, so a step is a reorder of existing
-// nodes rather than a re-patch of every figure.
+// end. Each quote is keyed by its symbol, so a step never patches one quote's
+// figures into another's slot; today it arrives as a replace of each slot
+// whose quote changed, since the reconciler has no move patch yet
+// (reconcile's "What it does not do yet"), which draws the same and costs a
+// quote nothing, as it holds no transient state.
 //
 //	off := core.NewState(ctx, 0)
 //	hooks.UseIntervalWhile(ctx, !paused.Get(), func() { off.Set(off.Get() + 1) }, 3*time.Second)

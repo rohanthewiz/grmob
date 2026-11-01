@@ -428,3 +428,51 @@ func TestIOSFlexHonoursAZeroBasis(t *testing.T) {
 		}
 	}
 }
+
+// A Row whose every child is pinned must be measured with no width limit, and
+// place its overflow from the leading edge (Renderer.kt's
+// overflowsAtContentWidth). pinMainAxis reports a pinned child's real width,
+// but Compose coerces a Placeable's width into the constraints it was measured
+// with and centres the surplus (ui's Placeable.kt, recalculateWidthAndHeight),
+// so in a bounded Row two pinned copies wider than the Row were drawn over
+// each other, 417px apart and starting 1000px to the left: comps.StockTicker's
+// gliding tape on the API 36 emulator (N-121). Only an unbounded maximum keeps
+// the Row placing its children at the widths they measured.
+//
+// Each spelling below is one half of that:
+//
+//	all pinned, none weighted   the gate — an unbounded width would stop an
+//	                            unpinned sibling wrapping and resolve a weight
+//	                            to zero
+//	maxWidth = Constraints.Infinity
+//	                            the Row's children are then never coerced
+//	coerceIn(constraints.minWidth, constraints.maxWidth)
+//	                            this node reports what it was offered, so the
+//	                            coercion (and the centring) never happens above
+//	placeRelative(0, 0)         the overflow runs toward the end: off to the
+//	                            right in LTR and off to the left under RTL
+func TestTheComposePinnedStripIsMeasuredUnboundedAndPlacedFromTheStart(t *testing.T) {
+	row := codeOf(t, kotlinRenderer, "private fun GrMobRow(")
+	for _, want := range []string{
+		"it.style?.shrinkPinned == true",
+		"(it.style?.flexGrow ?: 0f) <= 0f",
+		"rowModifier.overflowsAtContentWidth()",
+	} {
+		if !strings.Contains(row, want) {
+			t.Errorf("%s: GrMobRow does not contain %q: a strip of pinned children is "+
+				"then measured against the Row's own width, and Compose centres each "+
+				"copy's overflow on the slot it was offered instead of placing the "+
+				"next copy after it.", kotlinRenderer, want)
+		}
+	}
+	body := codeOf(t, kotlinRenderer, "private fun Modifier.overflowsAtContentWidth(")
+	for _, want := range []string{
+		"maxWidth = Constraints.Infinity",
+		"placeable.width.coerceIn(constraints.minWidth, constraints.maxWidth)",
+		"placeable.placeRelative(0, 0)",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("%s: overflowsAtContentWidth does not contain %q", kotlinRenderer, want)
+		}
+	}
+}

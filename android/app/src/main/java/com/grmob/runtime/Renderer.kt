@@ -2265,8 +2265,17 @@ private fun GrMobRow(node: GrMobNode, extra: Modifier) {
         ) { RowChildren(node, lineAlign = lineAlign, wrapping = true) }
         return
     }
+    // A strip of pinned children (every child core.FlexShrink(0), none
+    // weighted) is measured with no width limit, so its children are placed
+    // at their real widths from the leading edge. See overflowsAtContentWidth
+    // for what a bounded Row does to them instead.
+    val pinnedStrip = node.children.isNotEmpty() && node.children.all {
+        (it.style?.flexGrow ?: 0f) <= 0f && it.style?.shrinkPinned == true
+    }
+    var rowModifier = s.boxModifier(extra.then(stretchRowHeight(s, node)), gestureModifier(node))
+    if (pinnedStrip) rowModifier = rowModifier.overflowsAtContentWidth()
     Row(
-        modifier = s.boxModifier(extra.then(stretchRowHeight(s, node)), gestureModifier(node)),
+        modifier = rowModifier,
         horizontalArrangement = horizontalArrangement(s),
         // Held to core.AlignItemsValues() by
         // TestKotlinRowAlignmentCoversEveryAlignItems in mobile/verify: one arm
@@ -2289,6 +2298,55 @@ private fun GrMobRow(node: GrMobNode, extra: Modifier) {
             else -> Alignment.Top
         },
     ) { RowChildren(node, intrinsicHeight = rowPinsHeight(s, node)) }
+}
+
+/**
+ * A Row whose every child is pinned (core.FlexShrink(0), none weighted) is
+ * measured with no width limit, reported at the width it was offered, and its
+ * content placed from the leading edge: CSS's layout of a flex line that
+ * cannot shrink, which overflows toward the end and is clipped or not by the
+ * box's own overflow.
+ *
+ * # Why pinMainAxis alone is not enough
+ *
+ * pinMainAxis measures a pinned child unbounded and reports its real width.
+ * But a Row offers each child only the space left (`mainAxisMax -
+ * fixedSpace`), and Compose coerces what a node reports into the constraints
+ * it was measured with before the parent sees it: Placeable.width is
+ * `measuredSize.width.coerceIn(measurementConstraints)`, and the surplus
+ * becomes `apparentToRealOffset`, half of it each side, which CENTRES the real
+ * content on the coerced box (ui's Placeable.kt, recalculateWidthAndHeight).
+ * So in a bounded Row the first pinned child wider than the Row is placed as
+ * the Row's width with its content shifted left by half the overflow, and the
+ * next child, offered 0, is placed right after that coerced width and centred
+ * on nothing. Seen on the API 36 emulator with comps.StockTicker's gliding
+ * tape (N-121): two copies of the quotes, each 2835px in an 834px clip, drew
+ * over each other 417px apart, starting 1000px left of the clip, and held
+ * that overlap at rest under a zero animator scale.
+ *
+ *      bounded Row (834px)  copy 0 reports 2835, coerced to 834, content at -1000
+ *                           copy 1 offered 0, placed at 834, content at -583
+ *      unbounded Row        [ copy 0: 0 … 2835 ][ copy 1: 2835 … 5670 ]
+ *                           └── this node reports 834 and places it at 0 ──┘
+ *
+ * With an unbounded maximum nothing is coerced: the Row places its children
+ * at their measured widths, and this modifier is the only node reporting
+ * less than it holds, so it is the one that decides where the overflow goes.
+ * placeRelative, so that under RTL the content starts at the right edge and
+ * runs off to the left, as a CSS flex line does.
+ *
+ * Only when every child is pinned and none is weighted: an unbounded width
+ * would stop an unpinned Text sibling from wrapping and resolve a weight to
+ * zero. A single pinned child wider than a Row of mixed children is still
+ * centred by the coercion above; that is recorded in the next list rather
+ * than fixed here, since the Row would have to learn a width Compose hides
+ * from it.
+ */
+private fun Modifier.overflowsAtContentWidth(): Modifier = layout { measurable, constraints ->
+    val placeable = measurable.measure(constraints.copy(maxWidth = Constraints.Infinity))
+    layout(placeable.width.coerceIn(constraints.minWidth, constraints.maxWidth), placeable.height) {
+        placeable.placeRelative(0, 0)
+    }
 }
 
 /**
@@ -2800,6 +2858,25 @@ private fun Modifier.rowChildWidth(
  * arrangement can and cannot say is written down in internal/pinfixture's
  * header; the short version is that nothing here runs androidx's code, and the
  * transcription is the one link in the chain no test checks.
+ *
+ * # What the transcription left out, found on a device
+ *
+ * The report below reaches the Row only after Compose has coerced it:
+ * Placeable.width is the measured width clamped into the constraints the
+ * child was measured with, and the surplus is applied as a centring offset
+ * when the child is placed (ui's Placeable.kt, recalculateWidthAndHeight and
+ * apparentToRealOffset). So in a BOUNDED Row a pinned child wider than its
+ * offer is placed as the offer's width with its content centred on that box,
+ * and the next sibling is placed after the offer, not after the real width:
+ * the overflow is real but it is centred, and the "running total passes the
+ * container's maximum" sentence above is true of the content and not of the
+ * positions the Row computes. The transcription in internal/pinfixture sums
+ * the real widths and is right only where nothing coerces them, which is a
+ * Row measured with an unbounded maximum: a horizontal Scroll's strip, or a
+ * Row of nothing but pinned children (overflowsAtContentWidth, which exists
+ * because comps.StockTicker's two gliding copies were seen centred on top of
+ * each other on the emulator, N-121). A pinned child among unpinned siblings
+ * in a bounded Row is still centred by the coercion; that is N-130.
  *
  * @param horizontal true in a Row (the main axis is the width), false in a
  * Column. The cross axis is passed through untouched — flex-shrink is a
