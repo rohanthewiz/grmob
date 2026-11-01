@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.AbsoluteRoundedCornerShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
@@ -56,6 +57,7 @@ import androidx.compose.ui.layout.MeasureScope
 import androidx.compose.ui.node.LayoutModifierNode
 import androidx.compose.ui.node.ModifierNodeElement
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.LayoutDirection
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -105,6 +107,15 @@ data class GrMobStyle(
      * why it is a rotation loop and not a general repeating transition.
      */
     val spinMs: Int,
+    /**
+     * core.Glide: milliseconds per pass of the box's own width toward the
+     * leading edge, negative for the other way, 0 for still. Applied by
+     * [GlideElement] in the translation's place, and while it is non-zero the
+     * two translate fields below are not applied (core.Glide, "It replaces
+     * Translate on its node"). Defaulted so that the renderer's `copy` calls
+     * and any hand-built style stay as they were.
+     */
+    val glideMs: Int = 0,
     /**
      * core.Translate, one axis each: a dp amount plus a fraction of the box's
      * own extent, resolved at placement by [TranslateElement]. Leading-relative
@@ -320,7 +331,9 @@ data class GrMobStyle(
      * fade, animateContentSize and item placement all snap already, live, which
      * is core.Transition's rule. Reading the setting again here would only add
      * a second, non-observing copy of it. SpinNode does not use a scaled
-     * animation and keeps turning, by design; see core.Spin.
+     * animation and keeps turning, by design; see core.Spin. GlideNode reads
+     * the same scale off its coroutine context and rests while it is 0, by
+     * design too; see core.Glide.
      */
     fun <T> transitionTween() = tween<T>(transitionMs, easing = transitionEasing)
 
@@ -406,6 +419,7 @@ data class GrMobStyle(
                 shadow = obj.optDouble("Shadow", 0.0).toFloat(),
                 rotate = obj.optDouble("Rotate", 0.0).toFloat(),
                 spinMs = obj.optInt("Spin", 0),
+                glideMs = obj.optInt("Glide", 0),
                 translateX = GrMobShift.parse(obj.optString("TranslateX")),
                 translateY = GrMobShift.parse(obj.optString("TranslateY")),
                 opacity = alphaOf(obj.optDouble("Opacity", 0.0).toFloat()),
@@ -803,9 +817,15 @@ fun GrMobStyle?.boxModifier(extra: Modifier = Modifier, gestures: Modifier = Mod
     // untouched, so nothing around the node reflows, and Compose hit-tests
     // the box where it is placed. Guarded like rotate: an untranslated node
     // gains no layout node.
-    if (!translateX.isZero || !translateY.isZero) {
+    if (glideMs == 0 && (!translateX.isZero || !translateY.isZero)) {
         m = m.then(TranslateElement(translateX, translateY))
     }
+    // core.Glide, in the translation's place and instead of it: the same
+    // layer position (outside both rotations, so the box slides along the
+    // screen's axes), and a gliding node's fixed translate is not applied, on
+    // every target alike. Guarded like the rest, so a still node gains no
+    // node and no frame loop.
+    if (glideMs != 0) m = m.then(GlideElement(glideMs))
     // core.Opacity, at the rotations' layer position and for their reason:
     // Modifier.alpha is a graphics layer, and a layer fades only what is drawn
     // after it in the chain. Here it fades the whole painted box (shadow,
@@ -1597,6 +1617,89 @@ private class SpinNode(var periodMs: Int) : Modifier.Node(), LayoutModifierNode 
         val placeable = measurable.measure(constraints)
         return layout(placeable.width, placeable.height) {
             placeable.placeWithLayer(0, 0) { rotationZ = angle }
+        }
+    }
+}
+
+/**
+ * core.Glide on Compose: the box slides its own width toward the leading edge
+ * every [periodMs], then starts again from rest, for as long as it is
+ * composed. The same shape as [SpinNode] — a modifier node with its own frame
+ * loop, the offset read only inside the layer block so that each frame
+ * invalidates the graphics layer alone, no recomposition and no relayout —
+ * with three differences that are the prop's own.
+ *
+ * # A shared clock
+ *
+ * The fraction is the frame time modulo the period, with no per-node start.
+ * Glide exists for a strip laid beside a copy of itself (see core.Glide), and
+ * the two copies are compared every frame: had each measured from its own
+ * attach, copies attached a frame apart would show a seam that wide at every
+ * restart. A spin starts at 0° on attach because nobody compares two
+ * spinners; every gliding node on the screen is at the same point of its
+ * period.
+ *
+ * # Leading, not left
+ *
+ * A layer's translationX is physical, so the sign is flipped under RTL here,
+ * where the MeasureScope knows the layout direction. [TranslateNode] gets the
+ * same for free from placeRelative, but a placement cannot be re-read per
+ * frame without a relayout, which is why this is a layer and that is not.
+ *
+ * # Reduced motion: it stops
+ *
+ * The loop reads the [MotionDurationScale] of its coroutine context, which the
+ * window's recomposer installs from the animator duration scale ("Remove
+ * animations" sets it to 0; see transitionTween), and holds the box at rest
+ * while it is 0. SpinNode reads nothing and keeps turning, by design; a glide
+ * is the sliding content the setting exists to remove (core.Glide, "Reduced
+ * motion: it stops"). Read each frame rather than once, so toggling the
+ * setting applies live; absent from the context (a host composed without the
+ * window recomposer) it falls back to 1, which glides.
+ */
+private data class GlideElement(val periodMs: Int) : ModifierNodeElement<GlideNode>() {
+    override fun create() = GlideNode(periodMs)
+
+    override fun update(node: GlideNode) {
+        // Read by the running loop on its next frame, as SpinElement's is.
+        node.periodMs = periodMs
+    }
+}
+
+private class GlideNode(var periodMs: Int) : Modifier.Node(), LayoutModifierNode {
+    /** How far into the pass the box is, 0 ≤ f < 1; 0 is rest. */
+    private var fraction by mutableFloatStateOf(0f)
+
+    override fun onAttach() {
+        coroutineScope.launch {
+            val motionScale = coroutineContext[MotionDurationScale]
+            while (isActive) {
+                withInfiniteAnimationFrameMillis { now ->
+                    val period = kotlin.math.abs(periodMs).coerceAtLeast(1)
+                    val elapsed = (now % period).toFloat() / period
+                    fraction = when {
+                        (motionScale?.scaleFactor ?: 1f) == 0f -> 0f
+                        // A negative period plays the pass backwards, from one
+                        // width away back to rest: CSS's `reverse`, and what
+                        // keeps a copy arriving where the other one left.
+                        periodMs < 0 -> 1f - elapsed
+                        else -> elapsed
+                    }
+                }
+            }
+        }
+    }
+
+    override fun MeasureScope.measure(measurable: Measurable, constraints: Constraints): MeasureResult {
+        // Layout-transparent like SpinNode: measured and sized exactly as
+        // without the glide. The strip's natural width is the Row's business
+        // (core.FlexShrink(0), pinMainAxis), not this node's.
+        val placeable = measurable.measure(constraints)
+        val width = placeable.width
+        // Toward the leading edge: negative x in LTR, positive under RTL.
+        val sign = if (layoutDirection == LayoutDirection.Rtl) 1f else -1f
+        return layout(placeable.width, placeable.height) {
+            placeable.placeWithLayer(0, 0) { translationX = sign * fraction * width }
         }
     }
 }

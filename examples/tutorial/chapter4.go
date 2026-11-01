@@ -7170,17 +7170,31 @@ func tutorialQuotes(tick int) []comps.StockQuote {
 func lessonStockTicker() Lesson {
 	return Lesson{
 		Title:   "A stock ticker",
-		Summary: "comps.StockTicker: a swipeable tape of quotes with ▲/▼ movements, the caller stepping it with Start, a pause switch, and red-rises markets.",
+		Summary: "comps.StockTicker: a swipeable tape of quotes with ▲/▼ movements, the caller stepping it with Start or gliding it with core.Glide, a pause switch, and red-rises markets.",
 		Body: func(ctx *core.Context) core.View {
 			tick := core.NewState(ctx, 0)
 			paused := core.NewState(ctx, false)
 			redRises := core.NewState(ctx, false)
+			glide := core.NewState(ctx, false)
 			tapped := core.NewState(ctx, "")
 
 			// Every hook before any branch: the interval is taken on every
 			// pass, and Pause only switches it off.
 			step := func() { tick.Set(tick.Get() + 1) }
 			hooks.UseIntervalWhile(ctx, !paused.Get(), step, 3*time.Second)
+
+			// Gliding, the tape moves by itself, so the tick feeds only the
+			// prices: a Start that kept stepping would reorder the quotes
+			// under the glide. Three seconds a quote, as the stepping tape
+			// has, is one pass of the five in fifteen. Pause sets Glide to
+			// zero, which is the stepping tape again: still, and swipeable.
+			start, glideMs := tick.Get(), 0
+			if glide.Get() {
+				start = 0
+				if !paused.Get() {
+					glideMs = 3000 * len(tutorialQuotes(0))
+				}
+			}
 
 			readout := "Tap a quote."
 			if s := tapped.Get(); s != "" {
@@ -7201,18 +7215,21 @@ comps.StockTicker{
         {Symbol: "MSFT", Name: "Microsoft", Price: 411.65, Change: -2.10},
     },
     Start:    tick.Get(),        // the quote drawn first; wraps
+    Glide:    0,                 // or 15000: one pass every 15s, no stepping
     RedRises: redRises.Get(),    // China, Taiwan, Japan, Korea
     OnTap:    func(q comps.StockQuote) { open(q.Symbol) },
 }`),
-				demoPanel("The tape steps every 3 seconds. Swipe it, pause it, or tap a quote.",
+				demoPanel("The tape steps every 3 seconds, or glides. Swipe it, pause it, or tap a quote.",
 					comps.StockTicker{
 						Quotes:   tutorialQuotes(tick.Get()),
-						Start:    tick.Get(),
+						Start:    start,
+						Glide:    glideMs,
 						RedRises: redRises.Get(),
 						OnTap:    func(q comps.StockQuote) { tapped.Set(q.Name + " (" + q.Symbol + ")") },
 					},
 					checkRow("Pause the tape", paused),
 					checkRow("Red rises", redRises),
+					checkRow("Glide the tape", glide),
 					comps.Button{Label: "Step", Emphasis: comps.EmphasisOutlined, OnTap: step,
 						Style: []core.StyleProp{core.AlignSelf(core.AlignItemsStart)}},
 					caption(readout),
@@ -7222,10 +7239,16 @@ comps.StockTicker{
 					"directions, so a bare counter is enough. This demo ticks one counter with "+
 					"hooks.UseIntervalWhile and feeds it to Start and to the prices. Each quote is "+
 					"keyed by its symbol, so a step reorders the nodes already on screen."),
-				prose("The tape steps rather than glides. Core's one looping animation is Spin, and "+
-					"a glide driven from Go would be a patch per frame. Content that moves on its "+
-					"own for more than five seconds needs a way to stop it (WCAG 2.2.2), and the "+
-					"caller that moves it owns that switch: here, Pause the tape."),
+				prose("Glide makes it the broadcast kind instead: one pass of the quotes every "+
+					"Glide milliseconds, driven by the platform's frame clock through core.Glide, "+
+					"the looping translate to Spin's looping rotation. Nothing crosses the bridge "+
+					"while it moves; the prices here still tick underneath it. A gliding tape "+
+					"cannot be swiped, and it stands still for a reader who has asked the system "+
+					"for less motion, which is why stepping is the default."),
+				prose("Content that moves on its own for more than five seconds needs a way to "+
+					"stop it (WCAG 2.2.2), and the caller that moves it owns that switch either "+
+					"way: here, Pause the tape stops the interval, and sets Glide to zero, which "+
+					"is the stepping tape again, still and swipeable."),
 				prose("Direction is never colour alone. A rise is ▲ and a fall ▼, and each quote is "+
 					"one stop for a screen reader, read as a sentence: \"Apple, AAPL, 189.12, up "+
 					"1.23, 0.65 percent\". Name is spoken but not drawn, because symbols are read "+
@@ -7234,6 +7257,7 @@ comps.StockTicker{
 				keyPoints(
 					"No hooks: prices and motion are the caller's; render it anywhere, even inside core.If.",
 					"Start is the first quote drawn and wraps; step it with a counter and UseIntervalWhile.",
+					"Glide slides the tape continuously on the platform's frame clock; it rests under reduce-motion.",
 					"A tape that moves on its own needs a pause switch, and the caller owns it.",
 					"▲/▼ and a spoken word carry the direction; colour only reinforces it. RedRises swaps the pair.",
 					"Format gets the magnitude; the percentage is derived from Change and the previous close.",

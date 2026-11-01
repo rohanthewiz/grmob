@@ -121,16 +121,6 @@ with each item's `raised` traced back through all session docs.
   needs a scale transform (plus pinch). `comps.Gallery` uses a crossfade or a
   rise for the flip, and a taller stage or a Lightbox for the zoom. Nobody
   has asked for more than that yet.
-- **N-120** · raised `2026-1020-1656-stock-ticker-widget` · value low
-  **core has no looping translate, so a ticker cannot glide.**
-  `comps.StockTicker` steps instead: the caller advances `Start` on a
-  `hooks.UseIntervalWhile` counter, and keyed quotes are reordered.
-  `core.Spin` is the only looping animation, and its doc names a second
-  consumer as the trigger for a general loop. A ticker is a candidate, but
-  nobody has asked for a gliding one. `core.ScrollIntoView` is not a
-  substitute, because it is one app-wide command and would pull the page
-  back to the tape. Related to N-113 (paint transforms).
-
 ## Validate
 
 Items whose remaining work is purely testing: run, look, hear, measure, or
@@ -668,6 +658,15 @@ defect, which then becomes its own Open item.
     in green and red. The tape steps (MSFT first, then AMZN). Still unseen on
     iOS: the sideways pan (simctl cannot swipe) and whether a step is a
     move of keyed quotes. Compose is not looked at.
+  - Added 2026-10-31 (N-120 closed): the gliding tape, "Glide the tape" in
+    4.42, on all four targets — a seamless seam between the two copies (the
+    gap before the first quote equals the gap between quotes), the same
+    speed on both copies, the direction under RTL (toward the leading edge),
+    `OnTap` on the second copy, and a stop under reduce-motion (Chrome's
+    emulation, "Remove animations", the simulator's Reduce Motion). The
+    Compose `GlideNode` reads `MotionDurationScale` off its coroutine
+    context; whether the window recomposer installs it there is reasoned
+    from Compose's source, not seen.
 - **N-122** · raised `2026-1020-1933-core-swipe-gesture` · value medium
   **`core.OnSwipe` / `OnVerticalSwipe` on the natives and under real touch.**
   Checked so far: the Go tests and the DOM shim's tests. In headless Chrome
@@ -830,6 +829,34 @@ defect, which then becomes its own Open item.
   comment. The tutorial page that does set cover is N-088.
 
 ## Closed
+
+- **N-120** · raised `2026-1020-1656-stock-ticker-widget` · value low
+  · closed 2026-10-31, `2026-1031-2250-core-glide-looping-translate-n120` — `core.Glide(periodMs)` is the looping translate: a
+  node slides its own width toward the leading edge every period and
+  restarts from rest, so two copies side by side read as one endless tape
+  (the one distance at which a translation's loop closes, which is why it is
+  not a parameter). Mapped on all four targets like Spin: an `animation`
+  entry plus `core.GlideKeyframes` on the web (both targets, pinned to each
+  other by wasm/verify), a `GlideNode` graphics layer on Compose, and a
+  `GrMobLoop` TimelineView on SwiftUI that now carries Spin too. It replaces
+  Translate on its node, mirrors under RTL, and — the opposite of Spin —
+  stops under reduce-motion on every target (a second `@keyframes` under the
+  media query; `MotionDurationScale`; `accessibilityReduceMotion`).
+  `comps.StockTicker{Glide: ms}` is the consumer: a clipping box with two
+  gliding copies, the second hidden from readers but tappable; Glide zero
+  is the stepping tape, so a paused glide can be panned. Lesson 4.42 has a
+  "Glide the tape" switch. Pinned by core, htmlout, wasm/verify (.mjs and
+  the constant), mobile/verify and comps tests; Kotlin compiles
+  (`compileDebugKotlin`) and the Swift runtime typechecks. Not yet seen
+  moving on a device or in a browser (that check joins N-121).
+  **core has no looping translate, so a ticker cannot glide.**
+  `comps.StockTicker` steps instead: the caller advances `Start` on a
+  `hooks.UseIntervalWhile` counter, and keyed quotes are reordered.
+  `core.Spin` is the only looping animation, and its doc names a second
+  consumer as the trigger for a general loop. A ticker is a candidate, but
+  nobody has asked for a gliding one. `core.ScrollIntoView` is not a
+  substitute, because it is one app-wide command and would pull the page
+  back to the tape. Related to N-113 (paint transforms).
 
 - **N-128** · raised `pbstudy_mobile 2026-1023-1530-ipad-first-writing-desk` (its N-015) · value high
   · closed 2026-10-23 — the web RichTextEditor now sends its document in Go's

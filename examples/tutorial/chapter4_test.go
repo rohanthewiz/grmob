@@ -3654,6 +3654,29 @@ func TestStockTickerLesson(t *testing.T) {
 	if got := rise(); got != comps.VariantError.AsInk(core.DefaultTheme) {
 		t.Errorf("rise ink = %q, want the error ink under Red rises", got)
 	}
+
+	// Glide. Paused (checkbox 0 is still on), a gliding tape is the stepping
+	// Scroll at Start 0, which can be swiped; unpaused, it is two gliding
+	// copies in a clipping box, the first of them the labelled list, with
+	// one pass at three seconds a quote.
+	toggleCheckbox(t, mgr, 2, true)
+	if tape() == nil {
+		t.Fatal("paused, a gliding tape should be the swipeable Scroll")
+	}
+	if got := firstQuote(); !strings.HasPrefix(got, "Apple, AAPL, ") {
+		t.Errorf("a gliding tape holds Start at 0, so Apple should lead, got %q", got)
+	}
+	toggleCheckbox(t, mgr, 0, false)
+	gliding := findNode(tree(t, mgr), func(n *node) bool {
+		return n.Type == "Row" && n.Style != nil && n.Style.AccessibilityLabel == "Stock prices"
+	})
+	if gliding == nil {
+		t.Fatal("unpaused with Glide on, the tape should be a Row copy carrying the label")
+	}
+	if g := gliding.Style.Glide; g != 15000 {
+		t.Errorf("five quotes at three seconds each should be a 15000ms pass, got %d", g)
+	}
+	toggleCheckbox(t, mgr, 0, true)
 	assertNoConcerns(t)
 }
 

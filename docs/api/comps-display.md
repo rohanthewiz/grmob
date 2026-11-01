@@ -3021,6 +3021,13 @@ type StockTicker struct {
 	// can step it with a bare counter. See the type comment.
 	Start int
 
+	// Glide makes the tape slide continuously instead of stepping: one full
+	// pass of the quotes toward the leading edge every Glide milliseconds,
+	// seamlessly, with no patches while it moves. Zero (the default) is the
+	// stepping tape. A gliding tape cannot be panned, and it stands still
+	// under the platform's reduce-motion setting. See the type comment.
+	Glide int
+
 	// Format writes the price and the magnitude of the change. Nil writes two
 	// decimal places.
 	Format func(float64) string
@@ -3049,7 +3056,8 @@ type StockTicker struct {
 	UnchangedLabel string
 	PercentLabel   string
 
-	// Style is applied to the scrolling strip after the widget's own props.
+	// Style is applied to the tape's outer node — the scrolling strip, or the
+	// clipping box of a gliding tape — after the widget's own props.
 	Style []core.StyleProp
 }
 ```
@@ -3072,17 +3080,28 @@ StockTicker is a one-line tape of stock quotes — symbol, price and movement �
 
 Prices are the caller's, and so is the motion. The widget holds no state and starts no timer, so it may be rendered conditionally (inside core.If).
 
-#### Stepping the tape, not scrolling it
+#### Stepping the tape, or gliding it
 
-A broadcast-style ticker glides continuously, and core has no primitive for that: Spin is the only looping animation, and its doc explains why a general looping translate was left out until a second consumer needed one. A glide driven from Go would be a patch per frame over the bridge. Scrolling with core.ScrollIntoView is no substitute either: it is one app-wide command, so a ticker issuing it every few seconds would take the command away from the app's own "jump to" links, and would pull the page back to the tape whenever the reader had scrolled it off screen.
-
-So the tape pans under the reader's finger, and a caller who wants it to move steps it with Start: the quote drawn first, wrapping round the end. Each quote is keyed by its symbol, so a step is a reorder of existing nodes rather than a re-patch of every figure.
+By default the tape pans under the reader's finger, and a caller who wants it to move steps it with Start: the quote drawn first, wrapping round the end. Each quote is keyed by its symbol, so a step is a reorder of existing nodes rather than a re-patch of every figure.
 
 	off := core.NewState(ctx, 0)
 	hooks.UseIntervalWhile(ctx, !paused.Get(), func() { off.Set(off.Get() + 1) }, 3*time.Second)
 	comps.StockTicker{Quotes: qs, Start: off.Get()}
 
-Content that moves by itself for more than five seconds needs a way to stop it (WCAG 2.2.2, Pause, Stop, Hide). A caller that steps the tape owns that switch too, which is the other reason the stepping lives with the caller.
+With Glide set the tape is the broadcast kind instead: it slides continuously toward the leading edge, one full pass every Glide milliseconds, driven by the platform's frame clock through core.Glide, so nothing crosses the bridge while it moves. The shape changes with it:
+
+	┌ HBox (Overflow hidden) ──────────────────────────────────────────────────┐
+	│ ┌ HBox copy (Glide; RoleList, "Stock prices") ──┐┌ HBox copy (hidden) ─┐ │
+	│ │   AAPL 189.12 ▲ 1.23   MSFT 411.65 ▼ 2.10 ... ││   AAPL 189.12 ...   │ │
+	│ └───────────────────────────────────────────────┘└─────────────────────┘ │
+	└──────────────────────────────────────────────────────────────────────────┘
+	                        ◀── both copies slide their own width per pass
+
+Two copies of the quotes, each gliding its own width, so that as the first leaves the second arrives where it began and the restart is invisible (see core.Glide, "Why the distance is the node's own width"). The second copy is hidden from screen readers — the tape is read once — and its quotes still answer OnTap, since they are what the reader sees half of the time. Each copy keeps its natural width (FlexShrink(0)) inside a box that clips, and carries the gap before its first quote as leading padding, so the seam between copies is the same gap as between quotes. A gliding tape cannot be panned, and Start still picks the quote drawn first.
+
+A pass takes the same time however many quotes there are, so a longer tape moves faster; scale Glide with len(Quotes) for a steady speed.
+
+Core had no looping translate when this widget was written, which is why the stepping form came first and is still the default: it works for a reader who has asked the system for less motion (a gliding tape stands still then, showing only what fits), and a caller who steps the tape owns the pause switch that content moving on its own for more than five seconds needs (WCAG 2.2.2, Pause, Stop, Hide). A caller who glides owns that switch too, and Glide zero is the stepping tape, so a paused glide is a tape the reader can pan. Scrolling with core.ScrollIntoView was never a substitute for either: it is one app-wide command, so a ticker issuing it every few seconds would take the command away from the app's own "jump to" links, and would pull the page back to the tape whenever the reader had scrolled it off screen.
 
 #### Direction is never colour alone
 
@@ -3106,7 +3125,7 @@ Each quote is one stop for a screen reader, read as a sentence: "Apple, AAPL, 18
 	             Colors.TextSecondary when unchanged
 	Gaps         Spacing.LG between quotes, Spacing.XS within one
 
-<small>[comps/stock_ticker.go:114](https://github.com/rohanthewiz/grmob/blob/master/comps/stock_ticker.go#L114)</small>
+<small>[comps/stock_ticker.go:139](https://github.com/rohanthewiz/grmob/blob/master/comps/stock_ticker.go#L139)</small>
 
 #### func (StockTicker) Render
 
@@ -3114,7 +3133,7 @@ Each quote is one stop for a screen reader, read as a sentence: "Apple, AAPL, 18
 func (s StockTicker) Render(ctx *core.Context) *core.Node
 ```
 
-<small>[comps/stock_ticker.go:165](https://github.com/rohanthewiz/grmob/blob/master/comps/stock_ticker.go#L165)</small>
+<small>[comps/stock_ticker.go:198](https://github.com/rohanthewiz/grmob/blob/master/comps/stock_ticker.go#L198)</small>
 
 ### type Stopwatch
 

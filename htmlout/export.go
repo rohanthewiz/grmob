@@ -105,9 +105,10 @@ const exportViewport = "width=device-width, initial-scale=1"
 
 // motionStylesheet writes the <style>s the tree's motion needs into the head
 // documentHead opens: core.SpinKeyframes when any node spins,
-// core.ReducedMotionCSS when any node declares a Transition,
-// core.TranslateDirectionCSS when any node translates along x. A tree with
-// none of them gets no stylesheet at all.
+// core.GlideKeyframes when any node glides, core.ReducedMotionCSS when any
+// node declares a Transition, core.TranslateDirectionCSS when any node
+// translates along x (a glide included, since its keyframes read
+// --grmob-inline). A tree with none of them gets no stylesheet at all.
 //
 // It also carries the one rule that is not about motion, borderBoxCSS, on the
 // same conditional terms (see needsBorderBox): these <style>s are this
@@ -126,12 +127,13 @@ const exportViewport = "width=device-width, initial-scale=1"
 // same reason renderNode does.
 func motionStylesheet(b *element.Builder, node *core.Node) (x any) {
 	m := treeMotion(node)
-	if !m.spins && !m.transitions && !m.translatesX && !m.borderBox {
+	if !m.spins && !m.glides && !m.transitions && !m.translatesX && !m.borderBox {
 		return
 	}
 	// Each rule is written by its own motionRule call, in this order, as an
 	// argument list evaluated left to right inside documentHead's Head().R.
 	motionRule(b, m.spins, core.SpinKeyframes)
+	motionRule(b, m.glides, core.GlideKeyframes)
 	motionRule(b, m.transitions, core.ReducedMotionCSS)
 	motionRule(b, m.translatesX, core.TranslateDirectionCSS)
 	motionRule(b, m.borderBox, borderBoxCSS)
@@ -152,8 +154,8 @@ func motionRule(b *element.Builder, wanted bool, rule string) (x any) {
 // borderBox is the odd one out — a sizing rule, not a motion one — and rides
 // here so that one walk answers "is there a head, and what is in it".
 type motion struct {
-	spins, transitions, translatesX bool
-	borderBox                       bool
+	spins, glides, transitions, translatesX bool
+	borderBox                               bool
 }
 
 // borderBoxCSS makes every element's declared width and height include its
@@ -206,15 +208,17 @@ func needsBorderBox(n *core.Node) bool {
 // treeMotion reports which motion rules any node in the tree needs. A full
 // walk, transparent grouping nodes included: a Fragment's children still
 // render, so motion under one still needs its rule. Only a translate along x
-// needs the direction rule, and only one that translateDecl would write.
+// needs the direction rule, and only one that translateDecl would write — or
+// a glide, whose keyframes multiply by the same --grmob-inline.
 func treeMotion(n *core.Node) (m motion) {
 	if n == nil {
 		return m
 	}
 	if n.Style != nil {
 		m.spins = n.Style.Spin != 0
+		m.glides = n.Style.Glide != 0
 		m.transitions = n.Style.Transition != ""
-		m.translatesX = translateLength(n.Style.TranslateX) != ""
+		m.translatesX = m.glides || translateLength(n.Style.TranslateX) != ""
 		m.borderBox = needsBorderBox(n)
 	}
 	// A core.CanvasMirrorsRTL canvas reads --grmob-inline as well (see
@@ -225,12 +229,13 @@ func treeMotion(n *core.Node) (m motion) {
 		m.translatesX = true
 	}
 	for _, c := range n.Children {
-		if m.spins && m.transitions && m.translatesX && m.borderBox {
+		if m.spins && m.glides && m.transitions && m.translatesX && m.borderBox {
 			break
 		}
 		cm := treeMotion(c)
 		m = motion{
 			spins:       m.spins || cm.spins,
+			glides:      m.glides || cm.glides,
 			transitions: m.transitions || cm.transitions,
 			translatesX: m.translatesX || cm.translatesX,
 			borderBox:   m.borderBox || cm.borderBox,
@@ -244,7 +249,15 @@ func treeMotion(n *core.Node) (m motion) {
 // because any translate declaration makes the element a containing block for
 // its fixed-position descendants, and because a transition to "no
 // declaration" still animates: CSS interpolates a translate to none.
+//
+// A gliding node writes nothing either: core.Glide replaces Translate on its
+// node, on every target (its keyframes animate this same property, and an
+// animation overrides the inline declaration outright, so writing one here
+// would only state a shift the page never shows).
 func translateDecl(s *core.Style) string {
+	if s.Glide != 0 {
+		return ""
+	}
 	x, y := translateLength(s.TranslateX), translateLength(s.TranslateY)
 	if x == "" && y == "" {
 		return ""
@@ -280,23 +293,34 @@ func translateLength(v string) string {
 }
 
 // animationDecl is the value of the CSS `animation` property for a style: the
-// core.Spin entry first, then Style.Animation verbatim, comma-joined, or ""
-// when there is neither. It mirrors styleFromGrMob in the WASM runtime,
-// including the reverse keyword that turns a negative period anticlockwise.
+// core.Spin entry first, then core.Glide, then Style.Animation verbatim,
+// comma-joined, or "" when there is none. It mirrors styleFromGrMob in the
+// WASM runtime, including the reverse keyword that turns a negative period
+// anticlockwise (Spin) or toward the trailing edge (Glide).
 func animationDecl(s *core.Style) string {
 	var parts []string
 	if s.Spin != 0 {
-		period := s.Spin
-		dir := ""
-		if period < 0 {
-			period, dir = -period, " reverse"
-		}
-		parts = append(parts, fmt.Sprintf("grmob-spin %dms linear infinite%s", period, dir))
+		parts = append(parts, loopEntry("grmob-spin", s.Spin))
+	}
+	if s.Glide != 0 {
+		parts = append(parts, loopEntry("grmob-glide", s.Glide))
 	}
 	if s.Animation != "" {
 		parts = append(parts, s.Animation)
 	}
 	return strings.Join(parts, ", ")
+}
+
+// loopEntry is one looping animation's entry in the list: the keyframes name,
+// the period as a positive duration, linear and infinite, and `reverse` for
+// a negative period. Spin and Glide are spelled the same way on purpose,
+// since the sign-is-direction rule is one rule in core.
+func loopEntry(name string, periodMs int) string {
+	dir := ""
+	if periodMs < 0 {
+		periodMs, dir = -periodMs, " reverse"
+	}
+	return fmt.Sprintf("%s %dms linear infinite%s", name, periodMs, dir)
 }
 
 // imposed is what a *parent* puts on the element standing in for one of its
@@ -2131,7 +2155,8 @@ func styleValue(s *core.Style, nodeType string) string {
 	// outermost). x is multiplied by --grmob-inline, which
 	// core.TranslateDirectionCSS in the head flips under dir="rtl", because
 	// Translate is leading-relative and CSS translate is physical. The string
-	// is the WASM runtime's, character for character.
+	// is the WASM runtime's, character for character. A gliding node writes
+	// none (see translateDecl).
 	if decl := translateDecl(s); decl != "" {
 		styles = append(styles, "translate:"+decl)
 	}
@@ -2193,11 +2218,12 @@ func styleValue(s *core.Style, nodeType string) string {
 	// author's, and a target that can honor it now receives it. Neither native
 	// reads the field.
 	//
-	// core.Spin shares the property as the first entry of one list — a second
-	// `animation` declaration would replace the first — and, unlike Animation,
-	// it does come with its keyframes: ExportHTML writes core.SpinKeyframes
-	// into the document head whenever any node in the tree spins. The
-	// arithmetic matches the WASM runtime's styleFromGrMob string for string.
+	// core.Spin and core.Glide share the property as the first entries of one
+	// list — a second `animation` declaration would replace the first — and,
+	// unlike Animation, they come with their keyframes: ExportHTML writes
+	// core.SpinKeyframes and core.GlideKeyframes into the document head
+	// whenever any node in the tree spins or glides. The arithmetic matches
+	// the WASM runtime's styleFromGrMob string for string.
 	if anim := animationDecl(s); anim != "" {
 		styles = append(styles, "animation:"+anim)
 	}

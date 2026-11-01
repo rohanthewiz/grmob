@@ -350,6 +350,32 @@ Bundled: `core.DefaultTheme`, `core.MaterialTheme`, `core.AmberTheme`,
 `core.DarkTheme` (all four from `core.BundledThemes()`).
 Override by copying a base and editing the copy.
 
+### Motion
+
+Declare it in Go once; the platform draws every frame (CSS, Compose, SwiftUI).
+Nothing crosses the bridge while something moves, so never step an animation
+from a timer.
+
+```go
+core.Transition(250, core.EaseOut)   // later style changes slide instead of snap
+core.Rotate(45); core.Translate("-100%", ""); core.Opacity(0.5)   // paint only: the box keeps its layout
+core.Spin(900)                        // one turn every 900ms, forever (comps.Spinner)
+core.Glide(12000)                     // slides its own width toward the leading edge every 12s, forever
+```
+
+`Glide` is the looping translate, and its distance is fixed at the node's own
+width because that is the one distance at which a restart is invisible: lay
+two identical copies side by side, each `FlexShrink(0)` so it keeps its natural
+width, inside an `Overflow("hidden")` box, with any gap carried as leading
+padding inside each copy. `comps.StockTicker{Glide: ms}` is that shape, built.
+A gliding node's `Translate` is not applied; wrap it if you need both. A
+negative period reverses either loop; zero stops it.
+
+Reduced motion: a `Transition` snaps and a `Glide` stands still (sliding
+content is what the setting is for); a `Spin` keeps turning, because its motion
+is the message. Content that moves on its own for more than five seconds needs
+a pause control, and the caller owns it (`Glide(0)` rests the node).
+
 ### Accessibility
 
 Accessibility props are ordinary `StyleProp`s, so they compose like any other:

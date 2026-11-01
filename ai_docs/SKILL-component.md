@@ -357,7 +357,7 @@ larger piece of work:
 | Missing | Touches |
 |---|---|
 | a node type | `core`, `htmlout/tag.go` (`tags`, `TransparentTypes`), the wasm runtime's tag table, `android/.../runtime/Renderer.kt`, `ios/GrMob/Runtime/Renderer.swift`. Guarded by `TestRuntimeTagsMatchGo` and `TestBothNativeRenderersDispatchEveryNodeType`; a missed type renders as an empty Column. |
-| a `core.Style` field | `UseStyle`'s merge (`TestUseStyleMergesEveryField`), htmlout, the wasm runtime, `GrMobStyle.kt` / `Renderer.kt`, `GrMobStyle.swift`, and the verify tests |
+| a `core.Style` field | the field and `UseStyle`'s merge in `core/style.go` (`TestUseStyleMergesEveryField`); the prop in `core/style_props.go` or `core/animation.go`; `htmlout/export.go` (`styleValue`, and `treeMotion` if it needs a head rule); `styleFromGrMob` in `wasm/grmob-runtime.js` plus the key in `wasm/verify/totality_test.mjs`'s `FULL_STYLE` and, for any CSS constant restated there, a pin in `wasm/verify/jstable_test.go`; `GrMobStyle.kt` (parse and `boxModifier`) and `GrMobStyle.swift` (parse and `GrMobBoxModifier`'s chain); source pins in `mobile/verify`; the table and a section in `docs/concepts/styling-and-theming.md`; then `go run ./internal/apidoc/gen`. `core.Glide` (N-120, 2026-10-31) touched every one of these and is the template; compile the natives with `cd android && ANDROID_HOME=$HOME/Library/Android/sdk ./gradlew compileDebugKotlin --offline -q` and `cd ios/verify && swiftc -typecheck -target arm64-apple-macos14.0 ../GrMob/Runtime/*.swift` |
 | a role | core, both web exporters, both natives |
 
 Check whether a primitive already does the job before reaching for one.

@@ -50,29 +50,54 @@ type StockQuote struct {
 // Prices are the caller's, and so is the motion. The widget holds no state
 // and starts no timer, so it may be rendered conditionally (inside core.If).
 //
-// # Stepping the tape, not scrolling it
+// # Stepping the tape, or gliding it
 //
-// A broadcast-style ticker glides continuously, and core has no primitive for
-// that: Spin is the only looping animation, and its doc explains why a general
-// looping translate was left out until a second consumer needed one. A glide
-// driven from Go would be a patch per frame over the bridge. Scrolling with
-// core.ScrollIntoView is no substitute either: it is one app-wide command, so
-// a ticker issuing it every few seconds would take the command away from the
-// app's own "jump to" links, and would pull the page back to the tape whenever
-// the reader had scrolled it off screen.
-//
-// So the tape pans under the reader's finger, and a caller who wants it to
-// move steps it with Start: the quote drawn first, wrapping round the end.
-// Each quote is keyed by its symbol, so a step is a reorder of existing nodes
-// rather than a re-patch of every figure.
+// By default the tape pans under the reader's finger, and a caller who wants
+// it to move steps it with Start: the quote drawn first, wrapping round the
+// end. Each quote is keyed by its symbol, so a step is a reorder of existing
+// nodes rather than a re-patch of every figure.
 //
 //	off := core.NewState(ctx, 0)
 //	hooks.UseIntervalWhile(ctx, !paused.Get(), func() { off.Set(off.Get() + 1) }, 3*time.Second)
 //	comps.StockTicker{Quotes: qs, Start: off.Get()}
 //
-// Content that moves by itself for more than five seconds needs a way to stop
-// it (WCAG 2.2.2, Pause, Stop, Hide). A caller that steps the tape owns that
-// switch too, which is the other reason the stepping lives with the caller.
+// With Glide set the tape is the broadcast kind instead: it slides
+// continuously toward the leading edge, one full pass every Glide
+// milliseconds, driven by the platform's frame clock through core.Glide, so
+// nothing crosses the bridge while it moves. The shape changes with it:
+//
+//	┌ HBox (Overflow hidden) ──────────────────────────────────────────────────┐
+//	│ ┌ HBox copy (Glide; RoleList, "Stock prices") ──┐┌ HBox copy (hidden) ─┐ │
+//	│ │   AAPL 189.12 ▲ 1.23   MSFT 411.65 ▼ 2.10 ... ││   AAPL 189.12 ...   │ │
+//	│ └───────────────────────────────────────────────┘└─────────────────────┘ │
+//	└──────────────────────────────────────────────────────────────────────────┘
+//	                        ◀── both copies slide their own width per pass
+//
+// Two copies of the quotes, each gliding its own width, so that as the first
+// leaves the second arrives where it began and the restart is invisible (see
+// core.Glide, "Why the distance is the node's own width"). The second copy is
+// hidden from screen readers — the tape is read once — and its quotes still
+// answer OnTap, since they are what the reader sees half of the time. Each
+// copy keeps its natural width (FlexShrink(0)) inside a box that clips, and
+// carries the gap before its first quote as leading padding, so the seam
+// between copies is the same gap as between quotes. A gliding tape cannot be
+// panned, and Start still picks the quote drawn first.
+//
+// A pass takes the same time however many quotes there are, so a longer tape
+// moves faster; scale Glide with len(Quotes) for a steady speed.
+//
+// Core had no looping translate when this widget was written, which is why
+// the stepping form came first and is still the default: it works for a
+// reader who has asked the system for less motion (a gliding tape stands
+// still then, showing only what fits), and a caller who steps the tape owns
+// the pause switch that content moving on its own for more than five seconds
+// needs (WCAG 2.2.2, Pause, Stop, Hide). A caller who glides owns that
+// switch too, and Glide zero is the stepping tape, so a paused glide is a
+// tape the reader can pan. Scrolling with core.ScrollIntoView was
+// never a substitute for either: it is one app-wide command, so a ticker
+// issuing it every few seconds would take the command away from the app's
+// own "jump to" links, and would pull the page back to the tape whenever the
+// reader had scrolled it off screen.
 //
 // # Direction is never colour alone
 //
@@ -120,6 +145,13 @@ type StockTicker struct {
 	// can step it with a bare counter. See the type comment.
 	Start int
 
+	// Glide makes the tape slide continuously instead of stepping: one full
+	// pass of the quotes toward the leading edge every Glide milliseconds,
+	// seamlessly, with no patches while it moves. Zero (the default) is the
+	// stepping tape. A gliding tape cannot be panned, and it stands still
+	// under the platform's reduce-motion setting. See the type comment.
+	Glide int
+
 	// Format writes the price and the magnitude of the change. Nil writes two
 	// decimal places.
 	Format func(float64) string
@@ -148,7 +180,8 @@ type StockTicker struct {
 	UnchangedLabel string
 	PercentLabel   string
 
-	// Style is applied to the scrolling strip after the widget's own props.
+	// Style is applied to the tape's outer node — the scrolling strip, or the
+	// clipping box of a gliding tape — after the widget's own props.
 	Style []core.StyleProp
 }
 
@@ -164,6 +197,9 @@ const (
 
 func (s StockTicker) Render(ctx *core.Context) *core.Node {
 	t := ctx.Theme()
+	if s.Glide != 0 {
+		return s.glidingTape(ctx, t)
+	}
 
 	items := make([]core.PropsAndChildren, 0, len(s.Style)+len(s.Quotes)+5)
 	items = append(items,
@@ -173,47 +209,113 @@ func (s StockTicker) Render(ctx *core.Context) *core.Node {
 		core.Horizontal(),
 		core.Gap(float64(t.Spacing.LG)),
 		core.AlignItemsProp(core.AlignItemsCenter),
-		core.AccessibilityLabel(orDefault(s.Label, "Stock prices")),
 	)
-	if s.OnTap == nil {
-		items = append(items, core.AccessibilityRole(core.RoleList))
-	} else {
-		// A group, not a list: the children are buttons, and a list whose
-		// items are not listitems is announced as an empty list.
-		items = append(items, core.AccessibilityRole(core.RoleGroup))
-	}
+	items = append(items, s.tapeRole()...)
 	items = append(items, asProps(s.Style)...)
-
-	n := len(s.Quotes)
-	if n > 0 {
-		// Go's % keeps the dividend's sign, so -1 % 5 is -1; adding n and
-		// taking the remainder again folds every integer into [0, n).
-		first := ((s.Start % n) + n) % n
-
-		// Occurrence counts make duplicate symbols distinct keys. Counted in
-		// the caller's order, not the drawn order, so the same quote keeps the
-		// same key however far the tape has been stepped.
-		keys := make([]string, n)
-		seen := make(map[string]int, n)
-		for i, q := range s.Quotes {
-			k := "quote:" + q.Symbol
-			if c := seen[q.Symbol]; c > 0 {
-				k += "#" + strconv.Itoa(c)
-			}
-			seen[q.Symbol]++
-			keys[i] = k
-		}
-
-		for j := range n {
-			i := (first + j) % n
-			items = append(items, core.Keyed(keys[i], s.quote(t, s.Quotes[i])))
-		}
-	}
+	items = append(items, s.keyedQuotes(t, false)...)
 	return core.Scroll(items...).Render(ctx)
 }
 
-// quote builds one entry on the tape.
-func (s StockTicker) quote(t *core.Theme, q StockQuote) core.View {
+// glidingTape is the Glide form: a clipping box holding two copies of the
+// quotes, each sliding its own width per pass. See the type comment's
+// diagram.
+func (s StockTicker) glidingTape(ctx *core.Context, t *core.Theme) *core.Node {
+	tapeCopy := func(decorative bool) core.View {
+		items := make([]core.PropsAndChildren, 0, len(s.Quotes)+7)
+		items = append(items,
+			core.Glide(s.Glide),
+			// Natural width inside the clipping box, on every target (see
+			// core.Glide for what each native does with it).
+			core.FlexShrink(0),
+			core.Gap(float64(t.Spacing.LG)),
+			// The gap before the first quote, so that the seam between the
+			// copies is the same gap as between quotes. Leading, not left:
+			// PaddingLeft is the leading side on every target.
+			core.PaddingLeft(t.Spacing.LG),
+			core.AlignItemsProp(core.AlignItemsCenter),
+		)
+		if decorative {
+			// Read once: the second copy is pixels only. Its quotes keep
+			// their OnTap, since the reader sees them as much as the first
+			// copy's, and drop their roles and labels along with the copy.
+			items = append(items, core.AccessibilityHidden())
+		} else {
+			items = append(items, s.tapeRole()...)
+		}
+		items = append(items, s.keyedQuotes(t, decorative)...)
+		return core.HBox(items...)
+	}
+
+	items := make([]core.PropsAndChildren, 0, len(s.Style)+4)
+	items = append(items,
+		// The one Overflow value both natives read, and the clip that keeps
+		// the copies' overflow from drawing beside the tape.
+		core.Overflow("hidden"),
+		core.AlignItemsProp(core.AlignItemsCenter),
+	)
+	items = append(items, asProps(s.Style)...)
+	items = append(items,
+		core.Keyed("tape", tapeCopy(false)),
+		core.Keyed("tape:copy", tapeCopy(true)),
+	)
+	return core.HBox(items...).Render(ctx)
+}
+
+// tapeRole is the label and role of the node a screen reader hears as the
+// tape: a labelled list of the quotes, or a labelled group of them when they
+// are buttons, since a list whose items are not listitems is announced as an
+// empty list.
+func (s StockTicker) tapeRole() []core.PropsAndChildren {
+	role := core.RoleList
+	if s.OnTap != nil {
+		role = core.RoleGroup
+	}
+	return []core.PropsAndChildren{
+		core.AccessibilityLabel(orDefault(s.Label, "Stock prices")),
+		core.AccessibilityRole(role),
+	}
+}
+
+// keyedQuotes is the tape's entries in drawn order, from Start round the end,
+// each keyed by its symbol. decorative builds the second copy of a gliding
+// tape (see quote).
+func (s StockTicker) keyedQuotes(t *core.Theme, decorative bool) []core.PropsAndChildren {
+	n := len(s.Quotes)
+	if n == 0 {
+		return nil
+	}
+	// Go's % keeps the dividend's sign, so -1 % 5 is -1; adding n and
+	// taking the remainder again folds every integer into [0, n).
+	first := ((s.Start % n) + n) % n
+
+	// Occurrence counts make duplicate symbols distinct keys. Counted in
+	// the caller's order, not the drawn order, so the same quote keeps the
+	// same key however far the tape has been stepped.
+	keys := make([]string, n)
+	seen := make(map[string]int, n)
+	for i, q := range s.Quotes {
+		k := "quote:" + q.Symbol
+		if c := seen[q.Symbol]; c > 0 {
+			k += "#" + strconv.Itoa(c)
+		}
+		seen[q.Symbol]++
+		keys[i] = k
+	}
+
+	items := make([]core.PropsAndChildren, 0, n)
+	for j := range n {
+		i := (first + j) % n
+		items = append(items, core.Keyed(keys[i], s.quote(t, s.Quotes[i], decorative)))
+	}
+	return items
+}
+
+// quote builds one entry on the tape. A decorative one is the gliding tape's
+// second copy of it: drawn the same and tappable the same, with no role and
+// no spoken sentence, because the copy it sits in is hidden from readers and
+// a listitem or a button inside a hidden node is a contradiction the audit
+// would otherwise name.
+func (s StockTicker) quote(t *core.Theme, q StockQuote, decorative bool) core.View {
 	dir := tickerFlat
 	switch {
 	case q.Change > 0:
@@ -269,16 +371,22 @@ func (s StockTicker) quote(t *core.Theme, q StockQuote) core.View {
 		// A quote never wraps or squeezes: the strip pans, so each entry
 		// keeps its natural width rather than sharing the visible one.
 		core.FlexShrink(0),
-		core.AccessibilityLabel(spoken),
 	}
 	if s.OnTap != nil {
 		onTap := s.OnTap
+		props = append(props, core.OnClick(func() { onTap(q) }))
+	}
+	switch {
+	case decorative:
+		// Nothing spoken: the copy around it is hidden.
+	case s.OnTap != nil:
 		props = append(props,
-			core.OnClick(func() { onTap(q) }),
+			core.AccessibilityLabel(spoken),
 			core.AccessibilityRole(core.RoleButton),
 		)
-	} else {
+	default:
 		props = append(props,
+			core.AccessibilityLabel(spoken),
 			core.AccessibilityRole(core.RoleListItem),
 			core.AccessibilityNestingLevel(1),
 		)

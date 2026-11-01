@@ -201,3 +201,112 @@ func TestStockTickerZeroValueAndStyle(t *testing.T) {
 func formatTwo(v float64) string {
 	return StockTicker{}.format(v)
 }
+
+// The gliding form: a clipping box, two copies each gliding their own width,
+// the first one the tape a reader hears and the second hidden, and the same
+// quotes in both so the seam is invisible.
+func TestStockTickerGlideShape(t *testing.T) {
+	_, n := renderDebug(t, StockTicker{Quotes: tickerQuotes(), Glide: 12000})
+
+	// An HBox renders as a Row node with no theme base.
+	if n.Type != "Row" || n.Style.Overflow != "hidden" {
+		t.Fatalf("root = %s overflow %q, want a clipping HBox (a Row node)", n.Type, n.Style.Overflow)
+	}
+	if n.Style.AccessibilityRole != "" || n.Style.AccessibilityLabel != "" {
+		t.Errorf("the clipping box carries a role %q / label %q; the first copy is the tape",
+			n.Style.AccessibilityRole, n.Style.AccessibilityLabel)
+	}
+	if len(n.Children) != 2 {
+		t.Fatalf("copies = %d, want 2", len(n.Children))
+	}
+	first, second := n.Children[0], n.Children[1]
+	for i, c := range n.Children {
+		if c.Type != "Row" {
+			t.Errorf("copy %d = %s, want an HBox (a Row node)", i, c.Type)
+		}
+		if c.Style.Glide != 12000 {
+			t.Errorf("copy %d glide = %d, want 12000", i, c.Style.Glide)
+		}
+		if c.Style.FlexShrink != core.ShrinkNone {
+			t.Errorf("copy %d shrinks (%v); it must keep its natural width", i, c.Style.FlexShrink)
+		}
+		if c.Style.Padding.Left == 0 {
+			t.Errorf("copy %d has no leading padding, so the seam between copies has no gap", i)
+		}
+		if len(c.Children) != 3 {
+			t.Errorf("copy %d holds %d quotes, want 3", i, len(c.Children))
+		}
+	}
+
+	// The first copy is the list; the second is pixels only.
+	if first.Style.AccessibilityRole != core.RoleList || first.Style.AccessibilityLabel != "Stock prices" {
+		t.Errorf("first copy role %q label %q, want the labelled list",
+			first.Style.AccessibilityRole, first.Style.AccessibilityLabel)
+	}
+	if !second.Style.AccessibilityHidden {
+		t.Error("the second copy is not hidden from readers, so the tape is read twice")
+	}
+	if got := len(quotesOf(first)); got != 3 {
+		t.Errorf("first copy has %d spoken quotes, want 3", got)
+	}
+	for i, q := range second.Children {
+		if q.Style.AccessibilityRole != "" || q.Style.AccessibilityLabel != "" {
+			t.Errorf("second copy's quote %d has role %q label %q inside a hidden node",
+				i, q.Style.AccessibilityRole, q.Style.AccessibilityLabel)
+		}
+	}
+
+	// Same keys in both copies (keys are per parent), so each copy is the
+	// same reorder under a step.
+	for i := range first.Children {
+		if first.Children[i].Key != second.Children[i].Key {
+			t.Errorf("copy keys differ at %d: %q vs %q", i, first.Children[i].Key, second.Children[i].Key)
+		}
+	}
+	if first.Children[0].Key != "quote:AAPL" {
+		t.Errorf("first key = %q, want quote:AAPL", first.Children[0].Key)
+	}
+}
+
+// Both copies answer OnTap — the reader sees the second as much as the first —
+// and the tape becomes a group, as it does when stepping.
+func TestStockTickerGlideTapsBothCopies(t *testing.T) {
+	var got []string
+	_, n := renderDebug(t, StockTicker{Quotes: tickerQuotes(), Glide: 9000,
+		OnTap: func(q StockQuote) { got = append(got, q.Symbol) }})
+
+	first, second := n.Children[0], n.Children[1]
+	if first.Style.AccessibilityRole != core.RoleGroup {
+		t.Errorf("first copy role = %q, want group when the quotes are buttons", first.Style.AccessibilityRole)
+	}
+	for i, copy := range []*core.Node{first, second} {
+		for j, q := range copy.Children {
+			if q.Props["onClick"] == nil {
+				t.Errorf("copy %d quote %d registered no tap", i, j)
+			}
+		}
+	}
+	if role := second.Children[0].Style.AccessibilityRole; role != "" {
+		t.Errorf("a hidden copy's quote has role %q", role)
+	}
+}
+
+// Start still picks the quote drawn first, in both copies; the caller's Style
+// lands on the clipping box; and Glide zero is the stepping tape.
+func TestStockTickerGlideStartStyleAndZero(t *testing.T) {
+	_, n := renderDebug(t, StockTicker{Quotes: tickerQuotes(), Glide: 9000, Start: 1,
+		Style: []core.StyleProp{core.BackgroundColor("#123456")}})
+	for i, c := range n.Children {
+		if c.Children[0].Key != "quote:MSFT" {
+			t.Errorf("copy %d starts on %q, want quote:MSFT", i, c.Children[0].Key)
+		}
+	}
+	if n.Style.Background != "#123456" {
+		t.Errorf("caller's Style did not reach the clipping box: %q", n.Style.Background)
+	}
+
+	_, still := renderDebug(t, StockTicker{Quotes: tickerQuotes()})
+	if still.Type != "Scroll" || still.Style.Glide != 0 {
+		t.Errorf("Glide zero should be the stepping Scroll, got %s glide %d", still.Type, still.Style.Glide)
+	}
+}

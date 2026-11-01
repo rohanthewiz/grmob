@@ -138,3 +138,39 @@ test("stopping a spin clears the animation on the live element", () => {
     rt.drainFrames();
     assert.equal(at(0).style.animation, "", "the node kept spinning after its Spin was removed");
 });
+
+// core.Glide: the second looping entry of the list, its keyframes (with the
+// reduced-motion twin inside them) once, the direction rule those keyframes
+// read, and the fixed translate it replaces on its node.
+test("a gliding node names grmob-glide and gains its keyframes and the direction rule", () => {
+    const { rt, at } = mount([
+        box({ Glide: 12000, Spin: 800 }),
+        box({ Glide: -500, TranslateX: "-100%", TranslateY: "3px" }),
+    ]);
+    assert.equal(at(0).style.animation,
+        "grmob-spin 800ms linear infinite, grmob-glide 12000ms linear infinite");
+    // A negative period is the rule played in reverse: toward the trailing edge.
+    assert.equal(at(1).style.animation, "grmob-glide 500ms linear infinite reverse");
+    assert.equal(at(1).style.translate, "", "Glide replaces the fixed translate on its node");
+
+    const texts = rt.document.head.children.map((s) => s.textContent);
+    assert.equal(texts.length, 3, "spin keyframes, glide keyframes and the direction rule, once each");
+    assert.ok(texts.includes(
+        "@keyframes grmob-glide{from{translate:0px 0px}to{translate:calc(var(--grmob-inline,1)*-100%) 0px}}"
+        + "@media (prefers-reduced-motion:reduce){@keyframes grmob-glide{from,to{translate:0px 0px}}}"));
+    assert.ok(texts.includes("[dir=rtl]{--grmob-inline:-1}[dir=ltr]{--grmob-inline:1}"),
+        "the glide's keyframes read --grmob-inline, so the direction rule must be on the page");
+});
+
+test("stopping a glide clears the animation and lets a fixed translate through again", () => {
+    // A ticker whose caller turns Glide off arrives as an update-style patch
+    // with no Glide key; whatever Translate the node carries applies again.
+    const { rt, at } = mount([box({ Glide: 12000, TranslateX: "10px" })]);
+    assert.equal(at(0).style.translate, "");
+    rt.GrMob.patch(JSON.stringify([
+        { Type: "update-style", TargetID: "root/0", Changes: { TranslateX: "10px" } },
+    ]));
+    rt.drainFrames();
+    assert.equal(at(0).style.animation, "", "the node kept gliding after its Glide was removed");
+    assert.equal(at(0).style.translate, "calc(var(--grmob-inline, 1) * 10px) 0px");
+});

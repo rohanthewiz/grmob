@@ -48,7 +48,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
 | [Views & state](core-views.md) | View, Node, Context and state slots; text and inline runs; conditionals, caching, error boundaries and debug-mode concerns. | 12 types, 60 functions and methods |
 | [Layout](core-layout.md) | Rows, columns, stacks, scrolls and lists, and the alignment vocabulary they are placed with. | 2 types, 28 functions and methods |
 | [Styling: the Style struct](core-style.md) | Style and the value types its fields take: alignment, flex, position, weights and edge insets. | 11 types, 12 functions and methods |
-| [Styling: style props](core-style-props.md) | The StyleProp constructors: spacing and per-side insets, flex, typography, colour, borders, per-corner radii and animation. | 2 types, 73 functions and methods |
+| [Styling: style props](core-style-props.md) | The StyleProp constructors: spacing and per-side insets, flex, typography, colour, borders, per-corner radii and animation. | 2 types, 74 functions and methods |
 | [Theming](core-theme.md) | Themes, palettes, typography and spacing scales, and per-component defaults. | 5 types, 22 functions and methods |
 | [Controls](core-controls.md) | Buttons, text inputs, switches, sliders, selects, images, tab views, text grids and vector canvases. | 23 types, 48 functions and methods |
 | [Editors](core-editors.md) | The code editor and the rich text editor, and the refs and commands that drive them. | 2 types, 15 functions and methods |
@@ -155,7 +155,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
         - [`func UseStyle`](core-style.md#func-usestyle)
     - [`type Weight`](core-style.md#type-weight)
 - [Styling: style props](core-style-props.md)
-    - [Constants](core-style-props.md#constants) — `OpacityClear`, `ReducedMotionCSS`, `SpinKeyframes`, `TranslateDirectionCSS`
+    - [Constants](core-style-props.md#constants) — `GlideKeyframes`, `OpacityClear`, `ReducedMotionCSS`, `SpinKeyframes`, `TranslateDirectionCSS`
     - [`func AccentColor`](core-style-props.md#func-accentcolor)
     - [`func AccessibilityControls`](core-style-props.md#func-accessibilitycontrols)
     - [`func AccessibilityCurrent`](core-style-props.md#func-accessibilitycurrent)
@@ -191,6 +191,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
     - [`func FontSize`](core-style-props.md#func-fontsize)
     - [`func FontWeight`](core-style-props.md#func-fontweight)
     - [`func Gap`](core-style-props.md#func-gap)
+    - [`func Glide`](core-style-props.md#func-glide)
     - [`func Height`](core-style-props.md#func-height)
     - [`func Inert`](core-style-props.md#func-inert)
     - [`func Justify`](core-style-props.md#func-justify)

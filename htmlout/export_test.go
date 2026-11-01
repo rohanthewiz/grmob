@@ -2558,3 +2558,64 @@ func TestExportViewportStaysInsideTheSafeArea(t *testing.T) {
 		t.Errorf("exportViewport = %q; want the device's width at 1:1", exportViewport)
 	}
 }
+
+// --- Glide ------------------------------------------------------------------
+
+// A glide is the second looping entry of the animation list plus two rules:
+// its own keyframes, and the direction rule those keyframes read. The direction
+// rule is the half that is easy to lose, because an export without it still
+// glides — leftward, in an RTL document whose tape should be sliding right.
+func TestGlideExportsAnAnimationItsKeyframesAndTheDirectionRule(t *testing.T) {
+	out := ExportHTML(&core.Node{
+		Type: "Column",
+		Children: []*core.Node{{
+			Type:  "Box",
+			Props: map[string]any{},
+			Style: &core.Style{Glide: 12000, Spin: 800},
+		}},
+	})
+	if !strings.Contains(out, "animation:grmob-spin 800ms linear infinite, grmob-glide 12000ms linear infinite") {
+		t.Errorf("no spin-then-glide animation list on the node:\n%s", out)
+	}
+	if !strings.Contains(out, core.GlideKeyframes) {
+		t.Errorf("the export names grmob-glide without defining it:\n%s", out)
+	}
+	if !strings.Contains(out, core.TranslateDirectionCSS) {
+		t.Errorf("a gliding export has no direction rule, so it cannot mirror under RTL:\n%s", out)
+	}
+}
+
+// A negative period is the same rule played in reverse, toward the trailing
+// edge, and a gliding node's fixed Translate is not written: Glide replaces it
+// on every target, and the natives are held to the same rule by mobile/verify.
+func TestGlideReversesAndReplacesTranslate(t *testing.T) {
+	out := ExportHTML(&core.Node{
+		Type:  "Box",
+		Props: map[string]any{},
+		Style: &core.Style{Glide: -500, TranslateX: "-100%", TranslateY: "3px"},
+	})
+	if !strings.Contains(out, "animation:grmob-glide 500ms linear infinite reverse") {
+		t.Errorf("a negative period should play the glide in reverse:\n%s", out)
+	}
+	// translateDecl's spelling, with the space after the comma that the
+	// keyframes rule in the head does not have.
+	if strings.Contains(out, "translate:calc(var(--grmob-inline, 1)") {
+		t.Errorf("a gliding node wrote its fixed translate, which the animation overrides on the web and the natives would apply:\n%s", out)
+	}
+}
+
+// Nothing glides, so the export carries neither the glide keyframes nor, for
+// a node that only spins, the direction rule.
+func TestSpinAloneExportsNoGlideRules(t *testing.T) {
+	out := ExportHTML(&core.Node{
+		Type:  "Box",
+		Props: map[string]any{},
+		Style: &core.Style{Spin: 800},
+	})
+	if strings.Contains(out, core.GlideKeyframes) {
+		t.Errorf("nothing glides, yet the export carries the glide keyframes:\n%s", out)
+	}
+	if strings.Contains(out, core.TranslateDirectionCSS) {
+		t.Errorf("nothing translates, yet the export carries the direction rule:\n%s", out)
+	}
+}

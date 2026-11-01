@@ -74,6 +74,19 @@ func TestRuntimeSpinKeyframesMatchCore(t *testing.T) {
 	}
 }
 
+// The runtime's GLIDE_KEYFRAMES is core.GlideKeyframes, restated. The same
+// stakes as the spin rule — a name off by a character leaves a tape standing
+// still with valid CSS — plus the reduced-motion twin inside it: a runtime that
+// dropped the second declaration would glide for a reader who asked it not to,
+// while the export stood still.
+func TestRuntimeGlideKeyframesMatchCore(t *testing.T) {
+	want := `const GLIDE_KEYFRAMES = "` + core.GlideKeyframes + `";`
+	if !strings.Contains(runtimeSource(t), want) {
+		t.Errorf("grmob-runtime.js: no %s — the live page's glide rule has drifted "+
+			"from core.GlideKeyframes, which htmlout writes into exports", want)
+	}
+}
+
 // The runtime's REDUCED_MOTION_CSS is core.ReducedMotionCSS, restated. A drift
 // here fails silently in the other direction from a spin: nothing stops moving,
 // the rule just never matches, and a reader who asked for reduced motion gets

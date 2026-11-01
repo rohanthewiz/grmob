@@ -81,8 +81,15 @@ struct GrMobStyle: Equatable {
     /// core.Style.Rotate for why the winding is the caller's to choose.
     var rotate: CGFloat = 0
     /// core.Spin: milliseconds per revolution, negative for anticlockwise, 0
-    /// for still. Applied by GrMobSpin beside `rotate`.
+    /// for still. Applied by GrMobLoop beside `rotate`.
     var spin: Int = 0
+
+    /// core.Glide: milliseconds per pass of the box's own width toward the
+    /// leading edge, negative for the other way, 0 for still. Applied by
+    /// GrMobLoop in the translation's place; while it is non-zero the two
+    /// translate fields below are not applied (core.Glide, "It replaces
+    /// Translate on its node").
+    var glide: Int = 0
     /// core.Opacity, as written on the wire, which is NOT the alpha. Zero means
     /// "unset" (opaque), and an alpha of zero arrives as core.OpacityClear
     /// (-1). `alpha` below is the reading; this stays a decode of the JSON,
@@ -310,6 +317,7 @@ struct GrMobStyle: Equatable {
         s.shadow = num("Shadow")
         s.rotate = num("Rotate")
         s.spin = int("Spin")
+        s.glide = int("Glide")
         s.opacity = num("Opacity")
         s.translateX = GrMobShift.parse(str("TranslateX"))
         s.translateY = GrMobShift.parse(str("TranslateY"))
@@ -765,7 +773,12 @@ struct GrMobGestureAccessibility: ViewModifier {
     }
 }
 
-/// core.Spin: the box turns one revolution every `periodMs`, forever.
+/// core.Spin and core.Glide, the two looping transforms: the box turns one
+/// revolution every `spinMs`, and slides its own width toward the leading
+/// edge every `glideMs`, forever. One TimelineView drives both, because a
+/// second one would be a second container layer on a chain whose height
+/// already crashes the compiler (see GrMobMotion), and because a still
+/// schedule is paused by one flag either way.
 ///
 /// # Why TimelineView and not repeatForever
 ///
@@ -787,13 +800,36 @@ struct GrMobGestureAccessibility: ViewModifier {
 /// and wrapping a node in one only while it spins would change the node's
 /// structural identity the moment Spin flips — resetting @State in every view
 /// beneath it (a focused text field would lose its text). A paused schedule
-/// never ticks, so a still node evaluates the closure once and draws at 0°,
-/// the identity rotation.
+/// never ticks, so a still node evaluates the closure once and draws at 0°
+/// and at rest, the identity transforms.
+///
+/// # The glide
+///
+/// The offset is the same GeometryEffect core.Translate uses, with a fraction
+/// of the view's own width and no points: the distance a glide promises is
+/// exactly one width (core.Glide, "Why the distance is the node's own
+/// width"). SwiftUI mirrors a GeometryEffect's translation under RTL, which
+/// is the leading-relative rule for free, as it is for GrMobTranslate. The
+/// fraction is the time since the reference date modulo the period, as the
+/// angle is, so the two copies a glide is laid out with are at the same point
+/// of their pass whenever each appeared. A negative period plays the pass
+/// backwards, from one width away back to rest: CSS's `reverse`.
+///
+/// # Reduced motion: the glide stops, the spin does not
+///
+/// Under Reduce Motion the fraction is held at 0 and the schedule is paused
+/// if nothing spins, so the box stands at rest; the setting is read from the
+/// environment, so toggling it applies live. The spin keeps turning under the
+/// same setting, which core.Spin's "Reduced motion: it keeps turning" argues
+/// and core.Glide's "Reduced motion: it stops" distinguishes: an in-place
+/// turn of a glyph is not the sliding content the setting is for, and a
+/// tape's movement is.
 ///
 /// # What it costs
 ///
 /// Measured on 2026-09-19 with a scratch macOS harness: a VStack of N Texts,
-/// hosted in an NSHostingView, with and without a paused GrMobSpin on each
+/// hosted in an NSHostingView, with and without a paused GrMobSpin (now
+/// GrMobLoop, the same TimelineView) on each
 /// row, timing the first layout-and-draw and then 20 updates that change
 /// every row's text. Release build (-O), three rounds each, steady rounds
 /// shown:
@@ -808,12 +844,22 @@ struct GrMobGestureAccessibility: ViewModifier {
 /// useful part. A paused schedule never ticks, so a still tree pays nothing
 /// between updates. The alternative, a conditional wrapper, costs
 /// correctness instead.
-struct GrMobSpin: ViewModifier {
-    let periodMs: Int
+struct GrMobLoop: ViewModifier {
+    let spinMs: Int
+    let glideMs: Int
+
+    /// The system's Reduce Motion setting; the glide consults it, the spin
+    /// does not (see above).
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
-        TimelineView(.animation(minimumInterval: nil, paused: periodMs == 0)) { timeline in
+        let glides = glideMs != 0 && !reduceMotion
+        TimelineView(.animation(minimumInterval: nil, paused: spinMs == 0 && !glides)) { timeline in
             content.rotationEffect(.degrees(angle(at: timeline.date)), anchor: .center)
+                // Outside the rotation, as GrMobTranslate is: the box slides
+                // along the screen's axes, not its own.
+                .modifier(GrMobTranslate(x: GrMobShift(points: 0, fraction: glideFraction(at: timeline.date)),
+                                         y: .zero))
         }
     }
 
@@ -822,11 +868,25 @@ struct GrMobSpin: ViewModifier {
     /// Measured from a fixed epoch rather than from appearance, so two
     /// spinners on one screen turn in step.
     private func angle(at date: Date) -> Double {
-        guard periodMs != 0 else { return 0 }
+        guard spinMs != 0 else { return 0 }
+        return elapsedFraction(of: spinMs, at: date) * 360 * (spinMs < 0 ? -1 : 1)
+    }
+
+    /// The glide's offset at `date` as a fraction of the box's own width:
+    /// 0 at rest, approaching -1 (one width toward the leading edge) as the
+    /// pass ends; reversed for a negative period; 0 under Reduce Motion.
+    private func glideFraction(at date: Date) -> CGFloat {
+        guard glideMs != 0, !reduceMotion else { return 0 }
+        let f = elapsedFraction(of: glideMs, at: date)
+        return CGFloat(-(glideMs < 0 ? 1 - f : f))
+    }
+
+    /// How far into the current period of `periodMs` the reference-date clock
+    /// is, 0 ≤ f < 1.
+    private func elapsedFraction(of periodMs: Int, at date: Date) -> Double {
         let period = Double(abs(periodMs)) / 1000
-        let fraction = date.timeIntervalSinceReferenceDate
+        return date.timeIntervalSinceReferenceDate
             .truncatingRemainder(dividingBy: period) / period
-        return fraction * 360 * (periodMs < 0 ? -1 : 1)
     }
 }
 
@@ -877,8 +937,9 @@ struct GrMobBoxModifier: ViewModifier {
     /// than folded into GrMobStyle.swiftUIAnimation, because the style is
     /// parsed from the wire and has no environment; reading it in the view
     /// also means toggling the setting re-evaluates the chain without a patch.
-    /// Only Transition consults it: GrMobSpin keeps turning (see core.Spin,
-    /// "Reduced motion: it keeps turning").
+    /// Transition consults it here, and GrMobLoop reads it again for the
+    /// glide; the spin keeps turning (see core.Spin, "Reduced motion: it
+    /// keeps turning", and core.Glide, "Reduced motion: it stops").
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
@@ -958,9 +1019,10 @@ struct GrMobBoxModifier: ViewModifier {
             // core.Spin, just outside the fixed angle and inside the margin,
             // for the same reasons. Rotations about one centre commute, so
             // the order against grMobRotate does not change the pixels.
-            // core.Spin and then core.Translate, as one modifier (see
-            // GrMobMotion for why one and not two).
+            // core.Spin, core.Glide and then core.Translate, as one modifier
+            // (see GrMobMotion for why one and not three).
             .modifier(GrMobMotion(spinMs: s?.spin ?? 0,
+                                  glideMs: s?.glide ?? 0,
                                   translateX: s?.translateX ?? .zero,
                                   translateY: s?.translateY ?? .zero))
             .padding((s?.margin ?? .zero).insets)
@@ -1591,7 +1653,8 @@ struct GrMobShift: Hashable {
     }
 }
 
-/// core.Spin and core.Translate, applied as a single step of grMobBox's chain.
+/// core.Spin, core.Glide and core.Translate, applied as a single step of
+/// grMobBox's chain.
 ///
 /// # Why one modifier
 ///
@@ -1601,25 +1664,35 @@ struct GrMobShift: Hashable {
 /// non-terminating conformance substitution detected" in
 /// substOpaqueTypesWithUnderlyingTypes), the same limit GrMobBoxModifier and
 /// GrMobMaxWidthModifier exist to stay under. A ViewModifier struct is not
-/// generic over its content, so the two effects compose inside this body over
+/// generic over its content, so the effects compose inside this body over
 /// one fixed type, and the box chain sees the single layer Spin used to be.
+/// Glide rides GrMobLoop's TimelineView rather than a modifier of its own
+/// for the same reason.
 ///
 /// # Order
 ///
-/// Translate outside Spin: CSS applies the individual `translate` before
+/// Translate outside the loops: CSS applies the individual `translate` before
 /// `rotate` and `transform`, so a turned box slides along the screen's axes
-/// rather than its own. Both sit outside grMobRotate and inside the margin.
-/// Always applied, like GrMobSpin: zero is the identity transform, and a
-/// conditional would add a _ConditionalContent layer to the chain.
+/// rather than its own. All of it sits outside grMobRotate and inside the
+/// margin. Always applied, like GrMobLoop: zero is the identity transform,
+/// and a conditional would add a _ConditionalContent layer to the chain.
+///
+/// # Glide replaces Translate
+///
+/// A gliding node's fixed shift is passed as zero, on every target alike
+/// (core.Glide, "It replaces Translate on its node"); the glide's own offset
+/// is the GeometryEffect inside GrMobLoop.
 struct GrMobMotion: ViewModifier {
     let spinMs: Int
+    let glideMs: Int
     let translateX: GrMobShift
     let translateY: GrMobShift
 
     func body(content: Content) -> some View {
         content
-            .modifier(GrMobSpin(periodMs: spinMs))
-            .modifier(GrMobTranslate(x: translateX, y: translateY))
+            .modifier(GrMobLoop(spinMs: spinMs, glideMs: glideMs))
+            .modifier(GrMobTranslate(x: glideMs != 0 ? .zero : translateX,
+                                     y: glideMs != 0 ? .zero : translateY))
     }
 }
 

@@ -3927,8 +3927,8 @@ that is inert on two targets is exactly the one that converges the other two.
 ## StockTicker
 
 A one-line tape of stock quotes (symbol, price and movement) that pans
-sideways. Use it for the strip along the top of a markets screen or a
-watchlist header.
+sideways, or glides. Use it for the strip along the top of a markets screen
+or a watchlist header.
 
 ```go
 comps.StockTicker{
@@ -3941,14 +3941,25 @@ comps.StockTicker{
 ```
 
 **Controlled, no hooks.** Prices belong to the caller, and so does the motion.
-Core has no looping translate, and `core.ScrollIntoView` is a single app-wide
-command, so the tape does not glide on its own. It pans under the reader's
-finger, and a caller who wants it to move steps it with `Start`, the index
-of the quote drawn first. `Start` wraps in both directions, so a bare
-counter driven by `hooks.UseIntervalWhile` is enough. Quotes are keyed by
-symbol, so each step reorders the existing nodes. A tape that moves on its
-own for more than five seconds needs a pause control (WCAG 2.2.2), and the
-caller that steps it owns that control.
+By default the tape pans under the reader's finger, and a caller who wants it
+to move steps it with `Start`, the index of the quote drawn first. `Start`
+wraps in both directions, so a bare counter driven by `hooks.UseIntervalWhile`
+is enough. Quotes are keyed by symbol, so each step reorders the existing
+nodes.
+
+**Or it glides.** `Glide` is milliseconds per pass of the whole tape, and with
+it set the tape slides continuously toward the leading edge on the platform's
+frame clock (`core.Glide`), with nothing crossing the bridge while it moves:
+two copies of the quotes in a clipping box, each gliding its own width, the
+second hidden from screen readers but still answering `OnTap`. A gliding tape
+cannot be panned, and it stands still for a reader who has asked the system
+for less motion, which is why stepping is the default. A pass takes the same
+time however many quotes there are, so scale `Glide` with the count for a
+steady speed.
+
+A tape that moves on its own for more than five seconds needs a pause control
+(WCAG 2.2.2), and the caller that moves it owns that control either way;
+`Glide` zero is the stepping tape, so a paused glide can be panned.
 
 **Direction is never colour alone.** Every movement has a glyph (▲ / ▼) and
 a spoken word ("up", "down", "unchanged"). Rises are green and falls red by

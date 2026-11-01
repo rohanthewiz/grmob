@@ -46,7 +46,7 @@ difference is structural rather than an oversight:
 
 | group | Android | iOS | WASM DOM | `htmlout` |
 |---|---|---|---|---|
-| typography, color, box model, borders, `Shadow`, `Gap`, `RowGap`/`ColumnGap`, `Justify`, `AlignItems`, `AlignSelf`, `FlexWrap`, `StackAlign`, `Transition`, `Rotate`, `Spin`, `Translate`, `Opacity`, accessibility, `Disabled` | yes | yes | yes | yes |
+| typography, color, box model, borders, `Shadow`, `Gap`, `RowGap`/`ColumnGap`, `Justify`, `AlignItems`, `AlignSelf`, `FlexWrap`, `StackAlign`, `Transition`, `Rotate`, `Spin`, `Translate`, `Glide`, `Opacity`, accessibility, `Disabled` | yes | yes | yes | yes |
 | `Position` + `Top`/`Right`/`Bottom`/`Left`/`ZIndex`, `MaxHeight`, `WhiteSpace`, `FlexBasis`, `FlexDirection`, `Inert` | — | — | yes | yes |
 | `MinWidth`, `MinHeight` | px, % | px, % | yes | yes |
 | `Overflow` | `hidden` only | `hidden` only | yes | yes |
@@ -1756,10 +1756,11 @@ is built on it.
 | SwiftUI | `TimelineView(.animation)` around `.rotationEffect`, the angle computed from the timeline's date |
 
 **A rotation, not a general loop.** A transition gets both of its endpoints
-from patches; a loop has no second patch to supply the far end. Rotation is the
-one property whose cycle closes by itself (360 degrees draws what 0 does), so it
+from patches; a loop has no second patch to supply the far end. Rotation is a
+property whose cycle closes by itself (360 degrees draws what 0 does), so it
 needs no endpoints, no repeat count and no direction mode. There is no easing
 parameter either: an eased revolution stutters at the same angle every turn.
+`Glide` (below) is the one other loop, narrow for the same reason.
 
 **It adds to `Rotate`.** Both turn the box about its centre, so a node can carry a
 fixed angle and a spin together.
@@ -1771,4 +1772,62 @@ and runs no CSS animation, so it draws no frames.
 platform's reduce-motion setting. Its motion is the message ("still working"),
 an in-place turn of a small glyph is not the sliding or zooming the setting is
 for, and iOS's own activity indicator keeps spinning too. Use `Spin` for status,
-not for decoration. `Transition` is the opposite: see below.
+not for decoration. `Transition` is the opposite: see below. So is `Glide`.
+
+## Glide
+
+`Glide(periodMs)` slides a node its own width toward the leading edge every
+`periodMs` milliseconds, then starts again from rest, for as long as it is
+displayed. A negative period runs the slide the other way and zero holds it
+still. It is the looping translate to `Spin`'s looping rotation, driven by the
+platform's frame clock with nothing crossing the bridge while it moves.
+`comps.StockTicker` with `Glide` set is built on it.
+
+| target | mapping |
+|---|---|
+| htmlout / WASM | `animation: grmob-glide <ms>ms linear infinite`, with a `@keyframes` rule on the `translate` property (`core.GlideKeyframes`) added to the document, plus `core.TranslateDirectionCSS` |
+| Compose | a layout modifier node that places the box in a graphics layer and advances its `translationX` each frame, negated under RTL |
+| SwiftUI | `TimelineView(.animation)` around the same `GeometryEffect` `Translate` uses, the fraction computed from the timeline's date |
+
+**Why one width, and why a copy.** A loop restarts, and the restart is
+invisible only when the end draws what the start did. For a translation that
+is true at exactly one distance, the node's own width, and only with a copy of
+the node standing beside it: as the first copy leaves by its width the second
+arrives where the first began. So the distance is not a parameter, and the
+caller lays two identical copies side by side, each with `FlexShrink(0)` so it
+keeps its natural width inside a box that clips, and with any gap carried
+inside each copy (leading padding) so the seam is the same gap as the rest:
+
+```go
+tape := func() core.View {
+    return core.HBox(core.Glide(12000), core.FlexShrink(0), core.Gap(16),
+        core.PaddingLeft(16), quotes...)
+}
+core.HBox(core.Overflow("hidden"), tape(), tape())
+```
+
+**It replaces `Translate` on its node.** A gliding node's `TranslateX` and
+`TranslateY` are not applied, on every target. Put a fixed shift on a wrapper.
+
+**Leading, not left.** A positive period moves toward the leading edge, the
+direction a ticker reads, and mirrors under RTL as `Translate` does.
+
+**Linear, always**, for `Spin`'s reason, and **hidden stops it** likewise.
+
+**Reduced motion: it stops.** The opposite of `Spin`, and for the setting's own
+reason: content sliding across the screen is what a reduce-motion setting
+exists to remove, and a tape's motion is a convenience rather than its message.
+Under the setting a gliding node stands at rest, where its first copy is, and
+resumes when the setting is turned off; the setting is read live everywhere.
+
+| target | how |
+|---|---|
+| htmlout / WASM | `core.GlideKeyframes` declares `grmob-glide` a second time under `prefers-reduced-motion: reduce` with both ends at rest; the later declaration wins while the query matches |
+| Compose | the frame loop reads the `MotionDurationScale` of its coroutine context, which "Remove animations" sets to 0, and holds at rest |
+| SwiftUI | `@Environment(\.accessibilityReduceMotion)` holds the fraction at 0 and pauses the timeline |
+
+A tape at rest shows only what fits, so a caller who glides should still give
+the reader a way to see the rest, and content that moves by itself for more
+than five seconds needs a way to stop it (WCAG 2.2.2). `Glide(0)` rests the
+node, and the caller owns that switch; `comps.StockTicker` makes its paused
+glide the stepping tape, which pans under the finger.

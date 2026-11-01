@@ -7338,6 +7338,17 @@ const GrMob = (() => {
     // Go constant, so the export and the live page cannot drift apart.
     const SPIN_KEYFRAMES = "@keyframes grmob-spin{from{rotate:0deg}to{rotate:360deg}}";
 
+    // core.GlideKeyframes, restated: the rule every core.Glide animation
+    // names. It runs the individual `translate` property from rest to one
+    // full width toward the leading edge (x through --grmob-inline, so the
+    // slide mirrors under dir="rtl" as it does on both natives), and then
+    // declares the same name again at rest under prefers-reduced-motion: of
+    // two @keyframes with one name the later wins when its media query
+    // matches, so a gliding tape stands still the moment the reader asks for
+    // less motion, live and with no render. wasm/verify holds this string to
+    // the Go constant, so the export and the live page cannot drift apart.
+    const GLIDE_KEYFRAMES = "@keyframes grmob-glide{from{translate:0px 0px}to{translate:calc(var(--grmob-inline,1)*-100%) 0px}}@media (prefers-reduced-motion:reduce){@keyframes grmob-glide{from,to{translate:0px 0px}}}";
+
     // core.ReducedMotionCSS, restated: under prefers-reduced-motion, every
     // transition a node declares inline is switched off, so a core.Transition
     // snaps. A sheet rule rather than a matchMedia check here, because the
@@ -7475,12 +7486,18 @@ const GrMob = (() => {
         // transition interpolate the panel to `none`. Zero on both axes writes
         // nothing, so an untranslated element is never made a containing block
         // for its fixed-position descendants.
-        const tx = translateLength(style.TranslateX);
-        const ty = translateLength(style.TranslateY);
+        //
+        // A gliding node writes nothing here either: core.Glide replaces
+        // Translate on its node on every target (its keyframes animate this
+        // same property, and an animation overrides the inline declaration
+        // outright). Its keyframes read --grmob-inline, so a glide brings the
+        // direction rule the way a translate along x does.
+        const tx = style.Glide ? "" : translateLength(style.TranslateX);
+        const ty = style.Glide ? "" : translateLength(style.TranslateY);
         out.translate = (tx || ty)
             ? `calc(var(--grmob-inline, 1) * ${tx || "0px"}) ${ty || "0px"}`
             : "";
-        if (tx) ensureRule(TRANSLATE_DIRECTION_CSS);
+        if (tx || style.Glide) ensureRule(TRANSLATE_DIRECTION_CSS);
         // A single elevation number on every target (Compose's
         // Modifier.shadow(elevation), SwiftUI's .shadow(radius:y:)) against a
         // CSS property that wants offsets, a blur and a color. The arithmetic
@@ -7673,16 +7690,21 @@ const GrMob = (() => {
         // which has to come from the hosting page's stylesheet. The
         // declaration is inert until it does. Neither native reads the field.
         //
-        // core.Spin shares the property, as the first entry of the list, and
-        // unlike Animation it brings its own keyframes (ensureRule).
-        // One comma-separated list rather than two declarations, because a
-        // second `animation` assignment would replace the first. A negative
-        // period is the same rule played in reverse, which is anticlockwise.
-        const spin = style.Spin
-            ? `grmob-spin ${Math.abs(style.Spin)}ms linear infinite${style.Spin < 0 ? " reverse" : ""}`
+        // core.Spin and core.Glide share the property, as the first entries
+        // of the list, and unlike Animation they bring their own keyframes
+        // (ensureRule). One comma-separated list rather than two declarations,
+        // because a second `animation` assignment would replace the first. A
+        // negative period is the same rule played in reverse: anticlockwise
+        // for a spin, toward the trailing edge for a glide. htmlout's
+        // loopEntry spells the entry the same way.
+        const loopEntry = (name, periodMs) => periodMs
+            ? `${name} ${Math.abs(periodMs)}ms linear infinite${periodMs < 0 ? " reverse" : ""}`
             : "";
+        const spin = loopEntry("grmob-spin", style.Spin);
+        const glide = loopEntry("grmob-glide", style.Glide);
         if (spin) ensureRule(SPIN_KEYFRAMES);
-        out.animation = [spin, style.Animation || ""].filter(Boolean).join(", ");
+        if (glide) ensureRule(GLIDE_KEYFRAMES);
+        out.animation = [spin, glide, style.Animation || ""].filter(Boolean).join(", ");
         // The remaining CSS-shaped fields of core.Style. Every one of them had
         // a StyleProp constructor in Go and no reader on any of the four
         // targets — declared and dropped. They are one property each here and

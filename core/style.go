@@ -177,6 +177,15 @@ type Style struct {
 	// maps it onto and why it is a rotation rather than a general loop.
 	Spin int `json:",omitzero"`
 
+	// Glide is a continuous slide: the node moves its own width toward the
+	// leading edge every Glide milliseconds and then starts again from rest,
+	// so a strip laid beside a copy of itself reads as one endless tape. A
+	// negative period runs the slide the other way. Zero holds still. A
+	// gliding node's TranslateX and TranslateY are not applied, on any
+	// target. See core.Glide for what each renderer maps it onto and why
+	// the distance is the node's own width rather than a parameter.
+	Glide int `json:",omitzero"`
+
 	// Opacity is how opaque the node and its subtree are drawn, and it is the
 	// second number in this struct whose zero is not its own value: 0 is
 	// "unset", which draws fully opaque, and fully transparent is stored as
@@ -1225,6 +1234,11 @@ func (s Style) applyTo(target *Style) {
 	// style cannot merge a node back to still. The Spin(0) prop can.
 	if s.Spin != 0 {
 		target.Spin = s.Spin
+	}
+	// Glide merges exactly as Spin does, and the Glide(0) prop is the way
+	// back to rest.
+	if s.Glide != 0 {
+		target.Glide = s.Glide
 	}
 	// Translate merges per axis on "non-empty wins", so a role style can
 	// shift one axis and leave the other to the node. A node is put back

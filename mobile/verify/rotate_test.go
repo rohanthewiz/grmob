@@ -139,10 +139,11 @@ func TestBothNativesParseAndApplySpin(t *testing.T) {
 	swift := codeIn(t, swiftStyle)
 	for _, want := range []string{
 		// grMobBox applies Spin through GrMobMotion, which composes it with
-		// Translate as one chain layer (the compiler's opaque-type limit).
+		// Glide and Translate as one chain layer (the compiler's opaque-type
+		// limit); GrMobLoop is the one TimelineView both loops ride.
 		".modifier(GrMobMotion(spinMs: s?.spin ?? 0,",
-		".modifier(GrMobSpin(periodMs: spinMs))",
-		"TimelineView(.animation(minimumInterval: nil, paused: periodMs == 0))",
+		".modifier(GrMobLoop(spinMs: spinMs, glideMs: glideMs))",
+		"TimelineView(.animation(minimumInterval: nil, paused: spinMs == 0 && !glides))",
 		"content.rotationEffect(.degrees(angle(at: timeline.date)), anchor: .center)",
 	} {
 		if !strings.Contains(swift, want) {
@@ -156,6 +157,71 @@ func TestBothNativesParseAndApplySpin(t *testing.T) {
 		t.Errorf("%s: GrMobMotion (Spin) must sit between the painted box and the margin "+
 			"in grMobBox (spin=%d shadow=%d margin=%d)",
 			swiftStyle, spinAt, shadowAt, marginAt)
+	}
+}
+
+// core.Glide on both natives: parsed, applied in the translation's place, the
+// fixed translate it replaces left unapplied, and the reduce-motion rule that
+// is the opposite of Spin's. None of it runs under `go test ./...`, and a
+// glide that is parsed and never applied leaves a ticker standing still with
+// no error anywhere.
+func TestBothNativesParseAndApplyGlide(t *testing.T) {
+	for _, pin := range []struct{ file, key string }{
+		{swiftStyle, `int("Glide")`},
+		{kotlinStyle, `optInt("Glide"`},
+	} {
+		if src := valuesIn(t, pin.file); !strings.Contains(src, pin.key) {
+			t.Errorf("%s: does not parse %s — core.Glide crosses the bridge and "+
+				"the tape never moves on this target", pin.file, pin.key)
+		}
+	}
+
+	kotlin := codeIn(t, kotlinStyle)
+	for _, want := range []string{
+		"if (glideMs != 0) m = m.then(GlideElement(glideMs))",
+		// Glide replaces Translate on its node.
+		"if (glideMs == 0 && (!translateX.isZero || !translateY.isZero))",
+		// The frame loop, the layer read that makes it paint-only, and the
+		// shared clock (no per-node start, so two copies agree).
+		"withInfiniteAnimationFrameMillis",
+		"placeable.placeWithLayer(0, 0) { translationX = sign * fraction * width }",
+		"val elapsed = (now % period).toFloat() / period",
+		// Leading-relative: a layer's translationX is physical.
+		"if (layoutDirection == LayoutDirection.Rtl) 1f else -1f",
+		// Reduced motion: it stops, read live off the coroutine context.
+		"coroutineContext[MotionDurationScale]",
+		"(motionScale?.scaleFactor ?: 1f) == 0f -> 0f",
+	} {
+		if !strings.Contains(kotlin, want) {
+			t.Errorf("%s: missing %q", kotlinStyle, want)
+		}
+	}
+	// Outside both rotations, like the translation it stands in for.
+	glideAt := strings.Index(kotlin, "m = m.then(GlideElement(")
+	rotateAt := strings.Index(kotlin, "if (rotate != 0f) m = m.rotate(rotate)")
+	if glideAt < 0 || rotateAt < 0 || glideAt > rotateAt {
+		t.Errorf("%s: the glide must come before the rotation in boxModifier "+
+			"(glide=%d rotate=%d), or a turned tape slides along its own axes",
+			kotlinStyle, glideAt, rotateAt)
+	}
+
+	swift := codeIn(t, swiftStyle)
+	for _, want := range []string{
+		"glideMs: s?.glide ?? 0,",
+		// The offset is Translate's own GeometryEffect, a fraction of the
+		// box's width, inside GrMobLoop's TimelineView.
+		".modifier(GrMobTranslate(x: GrMobShift(points: 0, fraction: glideFraction(at: timeline.date)),",
+		// Glide replaces Translate on its node.
+		".modifier(GrMobTranslate(x: glideMs != 0 ? .zero : translateX,",
+		// Reduced motion: it stops, and the spin does not.
+		"guard glideMs != 0, !reduceMotion else { return 0 }",
+		"guard spinMs != 0 else { return 0 }",
+		// A negative period is CSS's reverse: one width away back to rest.
+		"return CGFloat(-(glideMs < 0 ? 1 - f : f))",
+	} {
+		if !strings.Contains(swift, want) {
+			t.Errorf("%s: missing %q", swiftStyle, want)
+		}
 	}
 }
 
@@ -203,7 +269,8 @@ func TestBothNativesParseAndApplyTranslate(t *testing.T) {
 
 	swift := codeIn(t, swiftStyle)
 	for _, want := range []string{
-		".modifier(GrMobTranslate(x: translateX, y: translateY))",
+		// The fixed shift, zeroed while the node glides (see the Glide test).
+		".modifier(GrMobTranslate(x: glideMs != 0 ? .zero : translateX,",
 		"struct GrMobTranslate: GeometryEffect",
 		// codeIn blanks string literals, so the "hidden" half is not matchable.
 		`clips: s?.overflow ==`,
@@ -212,10 +279,10 @@ func TestBothNativesParseAndApplyTranslate(t *testing.T) {
 			t.Errorf("%s: missing %q", swiftStyle, want)
 		}
 	}
-	spinAt := strings.Index(swift, ".modifier(GrMobSpin(periodMs: spinMs))")
-	translateAt = strings.Index(swift, ".modifier(GrMobTranslate(x: translateX, y: translateY))")
+	spinAt := strings.Index(swift, ".modifier(GrMobLoop(spinMs: spinMs, glideMs: glideMs))")
+	translateAt = strings.Index(swift, ".modifier(GrMobTranslate(x: glideMs != 0 ? .zero : translateX,")
 	if spinAt < 0 || translateAt < spinAt {
-		t.Errorf("%s: GrMobMotion must apply Translate outside Spin "+
+		t.Errorf("%s: GrMobMotion must apply Translate outside the loops "+
 			"(spin=%d translate=%d)", swiftStyle, spinAt, translateAt)
 	}
 }

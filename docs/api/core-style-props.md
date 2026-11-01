@@ -10,7 +10,7 @@ One of 11 topic pages of [package core](core.md), which has the package overview
 
 ## Index
 
-- [Constants](#constants) — `OpacityClear`, `ReducedMotionCSS`, `SpinKeyframes`, `TranslateDirectionCSS`
+- [Constants](#constants) — `GlideKeyframes`, `OpacityClear`, `ReducedMotionCSS`, `SpinKeyframes`, `TranslateDirectionCSS`
 - [`func AccentColor`](#func-accentcolor)
 - [`func AccessibilityControls`](#func-accessibilitycontrols)
 - [`func AccessibilityCurrent`](#func-accessibilitycurrent)
@@ -46,6 +46,7 @@ One of 11 topic pages of [package core](core.md), which has the package overview
 - [`func FontSize`](#func-fontsize)
 - [`func FontWeight`](#func-fontweight)
 - [`func Gap`](#func-gap)
+- [`func Glide`](#func-glide)
 - [`func Height`](#func-height)
 - [`func Inert`](#func-inert)
 - [`func Justify`](#func-justify)
@@ -89,6 +90,19 @@ One of 11 topic pages of [package core](core.md), which has the package overview
 
 ## Constants
 
+GlideKeyframes is the stylesheet rule both web targets pair with Style.Glide: the individual \`translate\` property run from rest to one full width toward the leading edge, with x multiplied by --grmob-inline so that the slide is leading-relative (see TranslateDirectionCSS, which must be on the page too; without it the multiplier falls back to 1, which is right for every left-to-right document). A percentage in \`translate\` is of the element's own box, which is exactly the distance Glide promises.
+
+The second rule is the same name declared again under the reduce-motion media query, with both ends at rest. Of two @keyframes with one name the later wins, and a conditional group that does not match is not consulted, so the tape glides normally and stands still, at its start, the moment the reader asks the system for less motion — live, with no script and no render, which is the same shape ReducedMotionCSS has. It is one constant rather than a keyframes rule plus a separate reduced-motion rule because the two are only ever wanted together: a page with no glide needs neither.
+
+Both web targets must name and shape it identically for an export and a live page to move the same way; htmlout reads this constant and the WASM runtime restates it, and wasm/verify holds the restatement to it.
+
+```go
+const GlideKeyframes = "@keyframes grmob-glide{from{translate:0px 0px}to{translate:calc(var(--grmob-inline,1)*-100%) 0px}}" +
+	"@media (prefers-reduced-motion:reduce){@keyframes grmob-glide{from,to{translate:0px 0px}}}"
+```
+
+<small>[core/animation.go:97](https://github.com/rohanthewiz/grmob/blob/master/core/animation.go#L97)</small>
+
 OpacityClear is what core.Opacity(0) stores, and what every renderer must read as an opacity of zero: fully transparent.
 
 #### Why a sentinel, and why the same one as ShrinkNone
@@ -127,7 +141,7 @@ The selector matches on the inline style attribute rather than on \`\*\`, so the
 const ReducedMotionCSS = `@media (prefers-reduced-motion:reduce){[style*="transition"]{transition:none!important}}`
 ```
 
-<small>[core/animation.go:94](https://github.com/rohanthewiz/grmob/blob/master/core/animation.go#L94)</small>
+<small>[core/animation.go:117](https://github.com/rohanthewiz/grmob/blob/master/core/animation.go#L117)</small>
 
 SpinKeyframes is the stylesheet rule both web targets pair with Style.Spin. It animates the individual \`rotate\` property rather than \`transform\`, so the spin composes with Style.Rotate's \`transform: rotate()\` instead of replacing it (see Spin). One constant, read by htmlout and restated in the WASM runtime, because the two web targets must name and shape it identically for an export and a live page to turn the same way.
 
@@ -575,6 +589,66 @@ func Gap(px float64) StyleProp
 
 <small>[core/style_props.go:186](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L186)</small>
 
+### func Glide
+
+```go
+func Glide(periodMs int) StyleProp
+```
+
+Glide slides the node its own width toward the leading edge every periodMs milliseconds, then starts again from rest, for as long as it is displayed. A negative period runs the slide the other way (from one width away back to rest); zero (the default) holds it still. It is the looping translate to Spin's looping rotation, and it exists so that a tape that moves on its own — comps.StockTicker with Glide set — is driven by the platform's frame clock rather than by patches stepped from Go.
+
+	CSS       animation: grmob-glide <ms>ms linear infinite [reverse], with
+	          GlideKeyframes on the individual `translate` property
+	Compose   a layout modifier node placing the box in a graphics layer whose
+	          translationX follows withInfiniteAnimationFrameMillis
+	SwiftUI   TimelineView(.animation) moving the box with the same
+	          GeometryEffect Translate uses, the fraction computed from the
+	          timeline's date
+
+All three compute the offset from elapsed time modulo the period rather than accumulating per-frame increments, so a dropped frame costs a skipped distance, never a tape that drifts slower than declared.
+
+#### Why the distance is the node's own width
+
+A loop restarts, and a restart is invisible only when the end state draws the same pixels as the start. For a translation that is true at exactly one distance: the node's own extent, with a copy of the node standing beside it. As the first copy leaves by its own width the second arrives where the first began, and at the restart both are back where they started with nothing on screen having moved. So the distance is not a parameter — any other value would be a visible jump every period — and the caller's half of the contract is to lay two identical copies side by side with no gap between them that is not also inside each copy:
+
+	tape := func() core.View {
+	    return core.HBox(core.Glide(12000), core.FlexShrink(0), core.Gap(16),
+	        core.PaddingLeft(16), quotes...)
+	}
+	core.HBox(core.Overflow("hidden"), tape(), tape())
+
+FlexShrink(0) is what keeps each copy at its natural width inside the clipping box on every target (Compose measures a pinned child unbounded and reports its real width; SwiftUI floors it at its base size), and the leading padding on each copy is the gap between the last quote of one copy and the first of the next.
+
+#### Linear, always
+
+No easing, for Spin's reason: an eased pass would slow to a stop at the same point every period, which reads as a stutter, and the seam that linear motion hides becomes a jolt.
+
+#### It replaces Translate on its node
+
+A gliding node's TranslateX and TranslateY are not applied, on any target. CSS cannot add the two without a custom property per axis in the keyframes (an animation on \`translate\` overrides the inline declaration outright), and a fixed shift beside a loop of one's own width has no use that a wrapper node does not serve. The rule is stated rather than left to CSS's cascade so that the natives, which could add them, do the same thing.
+
+#### Leading, not left
+
+A positive period moves toward the leading edge — the direction a ticker reads, right to left in a left-to-right layout and the reverse under RTL — and a negative one toward the trailing edge. The natives mirror by themselves (a layer's translationX is negated under RTL in the Compose node; SwiftUI mirrors a GeometryEffect), and the web multiplies by --grmob-inline as Translate does, so a gliding node also brings TranslateDirectionCSS onto the page.
+
+#### What it costs
+
+Nothing crosses the bridge after the style that declares it, exactly as with Spin, and a node with Display none draws no frames.
+
+#### Reduced motion: it stops
+
+The opposite of Spin's rule, and for the setting's own reason: content sliding across the screen is the motion a reduce-motion setting exists to remove, and a tape's movement is a convenience rather than its message (the quotes are all there, at rest). Under the setting a gliding node stands at rest, which is where its first copy is, and it resumes when the setting is turned off; the setting is read live on every target.
+
+	CSS       GlideKeyframes declares the name a second time under
+	          prefers-reduced-motion with both ends at rest
+	Compose   the frame loop reads the MotionDurationScale of its coroutine
+	          context, which "Remove animations" sets to 0, and holds at rest
+	SwiftUI   @Environment(\.accessibilityReduceMotion) holds the fraction at 0
+
+A tape at rest shows only as much as fits, so a caller that glides should still give the reader a way to see the rest — the stepping form of comps.StockTicker pans under the finger, which is why it is the default. Content that moves by itself for more than five seconds also needs a way to stop it (WCAG 2.2.2); Glide(0) rests the node, and the caller owns that switch.
+
+<small>[core/animation.go:310](https://github.com/rohanthewiz/grmob/blob/master/core/animation.go#L310)</small>
+
 ### func Height
 
 ```go
@@ -939,7 +1013,9 @@ All three compute the angle from elapsed time modulo the period rather than accu
 
 #### Why a spin and not a general looping transition
 
-Transition animates \*between\* two values, and the patch supplies both ends: the old style and the new one. A loop has no second patch to supply the other end, so a general loop would need vocabulary of its own — a from-style, a to-style, a repeat count, a direction — mapped onto three animation systems that do not agree on what repeating an arbitrary property means (Compose's infiniteRepeatable is per animated value, SwiftUI's repeatForever rides a transaction, CSS keyframes are a named rule). Rotation is the one property whose cycle closes on its own: 360 degrees draws exactly what 0 does, so the restart is invisible and the loop needs no second endpoint and no alternate-direction mode. It is also the only paint transform core has (see Style.Rotate). A pulse or a shimmer would be the second consumer that justifies the general form; until one exists, the narrow prop is the one all three targets implement identically.
+Transition animates \*between\* two values, and the patch supplies both ends: the old style and the new one. A loop has no second patch to supply the other end, so a general loop would need vocabulary of its own — a from-style, a to-style, a repeat count, a direction — mapped onto three animation systems that do not agree on what repeating an arbitrary property means (Compose's infiniteRepeatable is per animated value, SwiftUI's repeatForever rides a transaction, CSS keyframes are a named rule). Rotation is a property whose cycle closes on its own: 360 degrees draws exactly what 0 does, so the restart is invisible and the loop needs no second endpoint and no alternate-direction mode.
+
+Glide is the one other loop core has, and it is narrow for the same reason: a translation closes its cycle at exactly one distance, the node's own width, and only when a copy of the node stands beside it (see Glide). A pulse or a shimmer, whose cycles close only by reversing, would still need the general form, and until one is asked for the two narrow props are what all three targets implement identically.
 
 #### Linear, always
 
@@ -964,7 +1040,7 @@ A spin is not stopped or slowed when the platform's reduce-motion setting is on,
 
 So the frame loops stay as they are: Compose's withInfiniteAnimationFrameMillis does not read the animator duration scale, SwiftUI's TimelineView does not read the environment, and ReducedMotionCSS touches \`transition\` only, never \`animation\`. A caller for whom the motion is decoration rather than a status should not use Spin for it.
 
-<small>[core/animation.go:182](https://github.com/rohanthewiz/grmob/blob/master/core/animation.go#L182)</small>
+<small>[core/animation.go:209](https://github.com/rohanthewiz/grmob/blob/master/core/animation.go#L209)</small>
 
 ### func TextColor
 

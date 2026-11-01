@@ -57,6 +57,11 @@ type nodeStyle struct {
 	BorderRadius float64
 	Transition   string
 
+	// Chapter 4's stock-ticker lesson asserts on Glide: a gliding tape is
+	// two copies of the same quotes, and the period is the only thing in the
+	// tree that says they move.
+	Glide int
+
 	// The three layout fields chapter 4's endless-feed lesson asserts on.
 	// core.Horizontal and core.StickyHeader are StyleProps rather than props,
 	// which is the whole point of how they are built — so the only place a
