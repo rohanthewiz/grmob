@@ -952,7 +952,7 @@ defect, which then becomes its own Open item.
 ## Closed
 
 - **N-133** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
-  · closed 2026-11-11, `2026-1111-1034-n133-unencodable-pass-and-resync` — an unencodable pass is
+  · closed 2026-11-11, `2026-1111-1035-n133-unencodable-pass-and-resync` — an unencodable pass is
   dropped in Go instead of sent as `{"error":...}`, and every host asks Go
   for its whole tree when its own has drifted (plan R3, R4).
   - **R3** (`render/manager.go`): a pass is encoded before it is committed.
