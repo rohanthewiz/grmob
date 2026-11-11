@@ -220,13 +220,21 @@ with each item's `raised` traced back through all session docs.
   experiment (1,024 bytes a node; keep only for a 30% gain). Which of these
   are wanted is the user's call.
 - **N-143** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value low
-  **Housekeeping (plan Part D).** `chat` (a 3.9 MB Mach-O at the repo root,
+  **Housekeeping (plan Part D).** ~~`chat` (a 3.9 MB Mach-O at the repo root,
   21% of every module download) and `cmd/docs/docs` (9.6 MB) are tracked:
-  untrack, ignore, and add a census check. Publish tag notes as GitHub
+  untrack, ignore, and add a census check.~~ Publish tag notes as GitHub
   Releases and run apidiff in CI. Dead fields in `core/context.go`. Docs and
   ROADMAP drift (README's 84 lessons, `hooks/doc.go:22`, deep links and
   Packaging listed as planned). Whether `ai_docs/` (19% of the zip) stays in
   the module is the user's decision.
+  - D1 landed 2026-11-11 (`2026-1111-XXXX-n137-d-e-lazy-keys-and-web-teardown`).
+    Both binaries are untracked with `git rm --cached` (still on disk) and
+    listed in `.gitignore`. Nothing consumed them: the docs image builds its
+    server from source. The new `internal/trackedfiles` test fails on any
+    tracked compiled program, by content (ELF, Mach-O in both byte orders,
+    PE; not the fat header, which a Java class file shares). It named
+    exactly these two before the untrack. History still carries their bytes
+    unless rewritten, which is not proposed.
 
 ## Validate
 

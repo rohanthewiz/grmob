@@ -13,6 +13,15 @@
 *.exe
 coverage.html
 
+# The two binaries a bare `go build` leaves in the tree that were once
+# committed: `go build ./examples/chat` from the root writes ./chat, and the
+# docs server built in its own module directory writes cmd/docs/docs. Both
+# were tracked (a fifth of every module download) until plan Part D item 1.
+# internal/trackedfiles now fails on any tracked compiled program by content,
+# so these lines only stop `git add -A` from offering them again.
+/chat
+/cmd/docs/docs
+
 # WASM target. index.html fetches main.wasm from this directory; it is a build
 # product of `GOOS=js GOARCH=wasm go build -o wasm/main.wasm ./wasm`.
 # wasm_exec.js is NOT ignored — it is copied from the Go toolchain and tracked
