@@ -13,6 +13,7 @@ import (
 	// occupant — and rebuild to switch what the browser shows.
 	. "github.com/rohanthewiz/grmob/examples/tutorial"
 	"github.com/rohanthewiz/grmob/render"
+	"github.com/rohanthewiz/grmob/webhost"
 	"syscall/js"
 )
 
@@ -21,6 +22,12 @@ var (
 )
 
 var manager *render.Manager
+
+// push is raised while a pushed batch is being applied, when a binding that
+// takes the render lock would deadlock. The library's type, borrowed rather
+// than copied: the guard is the fix for a deadlock this host is where it was
+// found (lessons 4.13 and 4.14), and a copy is how the hosts drift.
+var push webhost.PushGuard
 
 // done holds main open for the life of the module. It is package-level, not a
 // local of main, because shutdown (below) is the one thing that closes it.
@@ -57,16 +64,27 @@ func renderInitial(this js.Value, args []js.Value) any {
 // handler. ApplyPatches runs on the pump goroutine, which on js/wasm is
 // scheduled cooperatively on the single JS thread, so calling into JS here is
 // safe without extra marshalling.
+//
+// Delivered under push, because the manager holds its render lock for the
+// whole call and the page applies the batch inside it: a call the batch makes
+// back into Go must not reach RenderAgain until it returns (webhost.PushGuard).
 type jsPatchListener struct{}
 
 func (jsPatchListener) ApplyPatches(patches string) {
-	js.Global().Call("GrMobApplyPatches", patches)
+	push.Deliver(func() { js.Global().Call("GrMobApplyPatches", patches) })
 }
 func isDirty(this js.Value, args []js.Value) any {
 	return js.ValueOf(ctx.IsDirty())
 }
 
 func renderAgain(this js.Value, args []js.Value) any {
+	// Re-entered from inside a pushed batch: taking the lock here is the
+	// deadlock webhost.PushGuard describes. The event before this call was
+	// deferred (receiveEvent), and what its handler writes reaches the page
+	// through the pump, so there is nothing for this pass to render.
+	if push.Delivering() {
+		return js.ValueOf("[]")
+	}
 	out := manager.RenderAgain()
 	return js.ValueOf(out)
 }
@@ -92,14 +110,23 @@ func receiveEvent(this js.Value, args []js.Value) any {
 	// recovery caveat applies as on the native path — the handler's work is
 	// abandoned wherever it stopped, and the next render shows whatever state
 	// actually exists.
-	if rerr := core.Guard(func() {
-		ctx.ReceiveEventPayload(map[string]any{
-			"callback": id,
-			"value":    payload["value"],
-		})
-	}); rerr != nil {
-		log.Printf("grmob: recovered panic in handler %s: %v\n%s", id, rerr.Value, rerr.Stack)
+	deliver := func() {
+		if rerr := core.Guard(func() {
+			ctx.ReceiveEventPayload(map[string]any{
+				"callback": id,
+				"value":    payload["value"],
+			})
+		}); rerr != nil {
+			log.Printf("grmob: recovered panic in handler %s: %v\n%s", id, rerr.Value, rerr.Stack)
+		}
 	}
+	// An event that arrives from inside a pushed batch runs once the batch
+	// is over (webhost.PushGuard). The runtime queues these itself, so this
+	// is the fallback, and it logs.
+	if push.Defer("ReceiveEvent "+id, deliver) {
+		return nil
+	}
+	deliver()
 	return nil
 }
 

@@ -47,6 +47,52 @@ func TestHandWrittenHostsInstallTheLibrarysBindings(t *testing.T) {
 	}
 }
 
+// Every browser host delivers its pushes under a PushGuard, and its two
+// bindings that would take the render lock consult it. A host missing any of
+// the three deadlocks the first time a pushed batch calls back into Go (an
+// editor's toolbar command, N-131), and nothing short of a live browser run
+// would show it: each piece is one line, and a host builds fine without it.
+//
+// Read from the source because host.go and the two hand-written hosts are
+// js/wasm programs, which `go test` on a development machine cannot run.
+func TestEveryBrowserHostDeliversUnderThePushGuard(t *testing.T) {
+	want := map[string]string{
+		"ApplyPatches": "Deliver",    // the listener: guard up for the push
+		"renderAgain":  "Delivering", // the binding that takes the lock
+		"receiveEvent": "Defer",      // the event the batch sent back
+	}
+	for _, path := range append([]string{"host.go"}, hosts...) {
+		f, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.SkipObjectResolution)
+		if err != nil {
+			t.Fatalf("parse %s: %v", path, err)
+		}
+		found := map[string]bool{}
+		for _, decl := range f.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Body == nil {
+				continue
+			}
+			call, ok := want[fn.Name.Name]
+			if !ok {
+				continue
+			}
+			ast.Inspect(fn.Body, func(n ast.Node) bool {
+				if sel, ok := n.(*ast.SelectorExpr); ok && sel.Sel.Name == call {
+					found[fn.Name.Name] = true
+				}
+				return true
+			})
+		}
+		for name, call := range want {
+			if !found[name] {
+				t.Errorf("%s: %s does not call PushGuard.%s. A pushed batch that calls back "+
+					"into Go then re-takes the render lock on the one js/wasm thread, and the "+
+					"program aborts (see pushguard.go)", path, name, call)
+			}
+		}
+	}
+}
+
 // grmobWASMKeys returns the keys of the map literal passed as the value of
 // js.Global().Set("GrMobWASM", ...) in the file at path.
 func grmobWASMKeys(t *testing.T, path string) []string {

@@ -116,6 +116,26 @@ And it looks for one global the page provides:
   `UseInterval` clock freezes the moment the tab loses visibility even
   though the Go ticker keeps running. The push channel does not.
 
+  **A pushed batch is applied while Go holds its render lock.** The manager
+  keeps the lock across the push so a dispatch cannot overtake it, and on
+  js/wasm there is one thread, so the page applies the batch inside that
+  call. Calling `ReceiveEvent` → `RenderAgain` from inside it would take the
+  lock a second time on the same thread, and Go aborts the program ("all
+  goroutines are asleep - deadlock!"). The runtime routes every call it makes
+  through one `dispatchToGo`, which queues a call made during a batch and
+  sends it once Go has returned. A page script of your own that reacts to a
+  patch should do the same (send from a microtask). The Go hosts
+  (`webhost`, `wasm/main.go`, the shots host) carry a second layer,
+  `webhost.PushGuard`: a call that arrives during a push anyway is deferred
+  to the push's end and logged, not deadlocked.
+
+**A program that stops.** The page passes `go.run`'s promise to
+`GrMob.watchExit(exited)`. If the program exits on its own (a deadlock, a
+panic nothing recovered), the runtime draws a "The app stopped. Reload the
+page" banner over the page, instead of leaving a page that looks alive and
+throws on every tap. A `GrMobWASM.Shutdown` the hot-reload client asks for
+draws nothing: `watchExit` wraps `Shutdown` to note that it was asked for.
+
 ```mermaid
 flowchart LR
     subgraph page["Host page (JS)"]

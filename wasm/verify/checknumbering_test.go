@@ -1918,12 +1918,21 @@ func isSequence(t *testing.T, what string, list []numbered) bool {
 
 // The two sentences that count the checks in prose.
 //
-// The fourth and fifth kinds' own phrases are matched loosely (`[^,]+`)
-// because each is a clause rather than a noun — "what a browser does with an
-// accessibility value nobody here resolves", "how it reads a CSS shorthand
-// back" — and the count in front of each is the only part of it this reads.
+// The kinds after the first three are matched loosely (`[^,]+`) because each
+// is a clause rather than a noun — "what a browser does with an accessibility
+// value nobody here resolves", "how it reads a CSS shorthand back" — and the
+// count in front of each is the only part of it this reads.
+//
+// The three named kinds, then any number of those one-off kinds, then the last
+// after "and". The one-offs are a repeated group rather than a fixed count:
+// each new kind of check used to mean rewriting this pattern as well as the
+// sentence, and the sentence is the thing being held, not its length.
 var tallyByKind = regexp.MustCompile(
-	`(\w+) about the keyboard, (\w+) about paint, (\w+) about layout, (\w+) about [^,]+, (\w+) about [^,]+, and (\w+) about`)
+	`(\w+) about the keyboard, (\w+) about paint, (\w+) about layout, ((?:\w+ about [^,]+, )+)and (\w+) about`)
+
+// tallyOneOff picks the count out of each one-off kind tallyByKind's fourth
+// group matched.
+var tallyOneOff = regexp.MustCompile(`(\w+) about [^,]+, `)
 
 // [\w-] rather than \w so a compound number word ("Twenty-one") is read whole
 // instead of as its last half.
@@ -1943,6 +1952,7 @@ func checkTallies(t *testing.T, src string, want int) {
 		"thirteen": 13, "fourteen": 14, "fifteen": 15, "sixteen": 16,
 		"seventeen": 17, "eighteen": 18, "nineteen": 19, "twenty": 20,
 		"twenty-one": 21, "twenty-two": 22, "twenty-three": 23, "twenty-four": 24,
+		"twenty-five": 25,
 	}
 
 	if m := tallyByKind.FindStringSubmatch(src); m == nil {
@@ -1950,8 +1960,14 @@ func checkTallies(t *testing.T, src string, want int) {
 			"this looks for it (%s). It is the first thing a reader is told about the "+
 			"file's size, and it had already gone stale once.", browserChecks, tallyByKind)
 	} else {
+		// The three named counts, each one-off count, and the last.
+		counts := append([]string{}, m[1:4]...)
+		for _, one := range tallyOneOff.FindAllStringSubmatch(m[4], -1) {
+			counts = append(counts, one[1])
+		}
+		counts = append(counts, m[5])
 		sum := 0
-		for _, w := range m[1:] {
+		for _, w := range counts {
 			n, ok := words[strings.ToLower(w)]
 			if !ok {
 				t.Errorf("%s: the opening sentence counts %q of something, which is not a "+
@@ -1963,9 +1979,9 @@ func checkTallies(t *testing.T, src string, want int) {
 		}
 		if sum != want {
 			t.Errorf("%s: the opening sentence counts %d checks by kind (%s) and there "+
-				"are %d. Every check belongs to exactly one of those five kinds, so the "+
+				"are %d. Every check belongs to exactly one of those kinds, so the "+
 				"tally is the sequence's length written a second way.",
-				browserChecks, sum, strings.Join(m[1:], "+"), want)
+				browserChecks, sum, strings.Join(counts, "+"), want)
 		}
 	}
 

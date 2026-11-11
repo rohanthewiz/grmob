@@ -629,6 +629,11 @@
         // Not awaited: the promise settles only when main returns, which for
         // a module that is never hot-reloaded is never.
         const exited = go.run(result.instance);
+        // Unless the program dies on its own (a deadlock, a panic nothing
+        // recovered): then the runtime draws a "stopped, reload" banner over
+        // the page instead of leaving it on screen looking alive. A Shutdown
+        // the hot-reload client asks for is not a death and draws nothing.
+        GrMob.watchExit(exited);
         // Before the first render: the tutorial holds a mode sent now and
         // starts in it (examples/tutorial/split.go, bootLayout), so a wide
         // window's first tree is already the split. It used to be sent after

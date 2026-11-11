@@ -963,7 +963,7 @@ const GrMob = (() => {
                 // the *int* callback map. Sending the index as a string would
                 // land it in the text map, where an int ID does not exist, and
                 // the tap would silently do nothing.
-                window.GoInvokeCallback(latestCbId, { value: i });
+                dispatchToGo(latestCbId, { value: i });
             });
             bar.appendChild(button);
         });
@@ -1503,7 +1503,7 @@ const GrMob = (() => {
         // Space would scroll the page and Enter would submit a surrounding
         // form; a control that is about to act on the key owns it.
         e.preventDefault();
-        window.GoInvokeCallback(cbId, {});
+        dispatchToGo(cbId, {});
     }
 
     // The members of one composite, in document order.
@@ -1806,7 +1806,7 @@ const GrMob = (() => {
     function selectCompositeMember(member) {
         const cbId = member.dataset.listener_onClick;
         if (!cbId) return;
-        window.GoInvokeCallback(cbId, {});
+        dispatchToGo(cbId, {});
     }
 
     // Enter and Space on a member that is not a control the browser activates
@@ -1826,7 +1826,7 @@ const GrMob = (() => {
         // Space would scroll the page and Enter would submit a surrounding
         // form; a member that is about to act on the key owns it.
         e.preventDefault();
-        window.GoInvokeCallback(cbId, {});
+        dispatchToGo(cbId, {});
     }
 
     // A member's name, lowercased, for matching a typed string against.
@@ -2075,7 +2075,7 @@ const GrMob = (() => {
         // Recorded BEFORE the invoke: under WASM the render, the patch and the
         // grid's sync all happen inside GoInvokeCallback.
         pendingGridPage = { container, text: leafText(cell), at: Date.now() };
-        window.GoInvokeCallback(cbId, {});
+        dispatchToGo(cbId, {});
     }
 
     // The nearest element declaring this key in aria-keyshortcuts, searching
@@ -2215,7 +2215,7 @@ const GrMob = (() => {
         if (!control) return;
         e.preventDefault();
         if (control.disabled || control.getAttribute("aria-disabled") === "true") return;
-        window.GoInvokeCallback(control.dataset.listener_onClick, {});
+        dispatchToGo(control.dataset.listener_onClick, {});
     }
 
     // Puts focus on the day a page key started from, in the page it opened.
@@ -2676,7 +2676,7 @@ const GrMob = (() => {
                 comboboxPick.field = field;
                 comboboxPick.at = Date.now();
                 comboboxPick.event = e;
-                window.GoInvokeCallback(cbId, {});
+                dispatchToGo(cbId, {});
                 return;
             }
             case "Escape":
@@ -3369,7 +3369,7 @@ const GrMob = (() => {
                 if (latestCbId) {
                     // Void callback: the envelope must carry no value, like
                     // focus/blur — see extractEventPayload.
-                    window.GoInvokeCallback(latestCbId, {});
+                    dispatchToGo(latestCbId, {});
                 }
             });
         }
@@ -3427,7 +3427,7 @@ const GrMob = (() => {
                 const latestCbId = el.dataset.listener_onLongPress;
                 if (!latestCbId) return;
                 el.dataset.longPressFired = "true";
-                window.GoInvokeCallback(latestCbId, {});
+                dispatchToGo(latestCbId, {});
             }, LONG_PRESS_MS);
         });
         // Every way a press can stop being a press. pointerleave covers the
@@ -3734,7 +3734,7 @@ const GrMob = (() => {
                 // {} rather than a value: Go registered this through the void
                 // callback channel, and an envelope carrying a value would be
                 // routed to the text or int map, where the ID does not exist.
-                if (latestCbId) window.GoInvokeCallback(latestCbId, {});
+                if (latestCbId) dispatchToGo(latestCbId, {});
             }, { rootMargin: END_REACHED_MARGIN });
         }
         el[END_OBSERVER].disconnect();
@@ -3838,7 +3838,7 @@ const GrMob = (() => {
             el[START_OBSERVER] = new IntersectionObserver((entries) => {
                 if (!entries.some((entry) => entry.isIntersecting)) return;
                 const latestCbId = el.dataset.listener_onStartReached;
-                if (latestCbId) window.GoInvokeCallback(latestCbId, {});
+                if (latestCbId) dispatchToGo(latestCbId, {});
             }, { rootMargin: END_REACHED_MARGIN });
         }
         el[START_OBSERVER].disconnect();
@@ -4153,7 +4153,7 @@ const GrMob = (() => {
                 // The same wire form core.FormatRegion writes and
                 // core.ParseRegion reads: "lat,lng,zoom". Go registered this
                 // through the text channel, so the envelope carries a string.
-                window.GoInvokeCallback(cbId, { value: `${next.lat},${next.lng},${next.zoom}` });
+                dispatchToGo(cbId, { value: `${next.lat},${next.lng},${next.zoom}` });
             }, MAP_REGION_QUIET_MS);
         };
         map.on("moveend", report);
@@ -4162,7 +4162,7 @@ const GrMob = (() => {
         map.on("click", (e) => {
             const cbId = el.dataset.listener_onMapTap;
             if (!cbId || !e || !e.latlng) return;
-            window.GoInvokeCallback(cbId, { value: `${e.latlng.lat},${e.latlng.lng}` });
+            dispatchToGo(cbId, { value: `${e.latlng.lat},${e.latlng.lng}` });
         });
 
         return record;
@@ -4230,7 +4230,7 @@ const GrMob = (() => {
                     // when the marker was made: an update-props patch can
                     // rewrite it, and a marker reporting the id it was born with
                     // would open the wrong row.
-                    window.GoInvokeCallback(cbId, { value: child.dataset.markerId || "" });
+                    dispatchToGo(cbId, { value: child.dataset.markerId || "" });
                 });
             } else {
                 const at = marker.getLatLng();
@@ -4991,11 +4991,11 @@ const GrMob = (() => {
                 span.setAttribute("role", "link");
                 span.tabIndex = 0;
                 span.style.cursor = "pointer";
-                span.addEventListener("click", () => window.GoInvokeCallback(id, {}));
+                span.addEventListener("click", () => dispatchToGo(id, {}));
                 span.addEventListener("keydown", (e) => {
                     if (e.key === "Enter") {
                         e.preventDefault();
-                        window.GoInvokeCallback(id, {});
+                        dispatchToGo(id, {});
                     }
                 });
             }
@@ -5310,7 +5310,7 @@ const GrMob = (() => {
         (el.__grmobEchoes || (el.__grmobEchoes = [])).push(value);
         syncCodeEditor(el);
         const cbId = el.dataset.listener_onChange;
-        if (cbId) window.GoInvokeCallback(cbId, { value });
+        if (cbId) dispatchToGo(cbId, { value });
         reportCodeSelection(el, buffer);
     }
 
@@ -5424,7 +5424,7 @@ const GrMob = (() => {
         // An event the runtime's own mount or patch caused, not the reader:
         // see applyingTree. Its ID belongs to the tree before the batch.
         if (applyingTree > 0) return;
-        window.GoInvokeCallback(cbId, payload);
+        dispatchToGo(cbId, payload);
         if (key !== "onChange" || typeof el.__grmobValue !== "string") return;
         if (!CONTROLLED_TEXT_TYPES.has(el.dataset.nodeType)) return;
         if (el.value !== el.__grmobValue) writeFieldValue(el, el.__grmobValue);
@@ -5618,7 +5618,7 @@ const GrMob = (() => {
             utf8Length(value.slice(0, start)) + ":" + utf8Length(value.slice(0, end));
         if (el.dataset.codeSelection === payload) return;
         el.dataset.codeSelection = payload;
-        window.GoInvokeCallback(cbId, { value: payload });
+        dispatchToGo(cbId, { value: payload });
     }
 
     // utf8Length is the byte length of a JavaScript string as UTF-8.
@@ -6759,7 +6759,7 @@ const GrMob = (() => {
         const json = richWireJSON(doc);
         (el.__richEchoes || (el.__richEchoes = [])).push(json);
         const cbId = el.dataset.listener_onChange;
-        if (cbId) window.GoInvokeCallback(cbId, { value: json });
+        if (cbId) dispatchToGo(cbId, { value: json });
     }
 
     // richWireJSON spells a document exactly as Go's richtext.Doc.MarshalJSON
@@ -6914,7 +6914,7 @@ const GrMob = (() => {
         });
         if (el.dataset.richSelection === payload) return;
         el.dataset.richSelection = payload;
-        window.GoInvokeCallback(cbId, { value: payload });
+        dispatchToGo(cbId, { value: payload });
     }
 
     // applyRichTextProps is the editor's whole prop surface, on both the create
@@ -8737,7 +8737,7 @@ const GrMob = (() => {
         const id = innermostEscapeClaim();
         if (!id) return;
         e.preventDefault();
-        window.GoInvokeCallback(id, {});
+        dispatchToGo(id, {});
     }
 
     function innermostBackClaim() {
@@ -8824,7 +8824,7 @@ const GrMob = (() => {
         if (!backEntryIsCurrent()) {
             const id = innermostBackClaim();
             // Void callback: an empty envelope, as the Modal backdrop sends.
-            if (id) window.GoInvokeCallback(id, {});
+            if (id) dispatchToGo(id, {});
         }
         // The host page applies the handler's patches synchronously (its
         // GoInvokeCallback renders and patches), and patch() has synced
@@ -8852,8 +8852,10 @@ const GrMob = (() => {
     // path was only reachable by the return key's commit.
     //
     // A counter and not isConnected: the element is still connected when the
-    // blur fires. A counter and not a flag: mount and patch do not nest today,
-    // but a flag would be cleared by an inner call's finally.
+    // blur fires. A counter and not a flag: a call queued by dispatchToGo and
+    // sent at a batch's end can bring back a batch of its own, which nests
+    // inside the first one's exit, and a flag would be cleared by the inner
+    // call's finally.
     let applyingTree = 0;
     function withTreeApplied(fn) {
         applyingTree++;
@@ -8861,7 +8863,195 @@ const GrMob = (() => {
             return fn();
         } finally {
             applyingTree--;
+            // The outermost exit: the batch is whole and every post-pass has
+            // run, so the calls it caused can go to Go. See dispatchToGo.
+            if (applyingTree === 0) flushGoCalls();
         }
+    }
+
+    // --- Calls into Go --------------------------------------------------------
+    //
+    // dispatchToGo is the one door every call the runtime makes into Go's
+    // event path goes through. The page defines the far side,
+    // window.GoInvokeCallback: Go takes the event, renders, and the patches are
+    // applied before it returns.
+    //
+    // # The deadlock it exists for
+    //
+    // render.Manager holds its render lock while it hands a pushed batch to
+    // the page (renderAndPush in render/manager.go, which explains why), and on
+    // js/wasm the page applies that batch inside the call: there is one thread,
+    // so there is nowhere to hop to. Some patches make the runtime speak to Go.
+    // An editor command (core.RunEditorCommand) rewrites the buffer, and the
+    // rewrite is an edit like any other, so it is sent upstream. Sent from
+    // inside the batch, that call re-entered Go with the lock still held:
+    //
+    //	Go pump: lock ─ ApplyPatches ─ GrMobApplyPatches ─ applyBatch
+    //	          └ runCodeCommand ─ emitCodeChange ─ GoInvokeCallback
+    //	              └ ReceiveEvent ─ RenderAgain ─ lock   ✗ held above,
+    //	                                                      same thread
+    //
+    // Go found every goroutine asleep and aborted the program ("all goroutines
+    // are asleep - deadlock!"). CodeEditor's Indent (lesson 4.13) and
+    // RichTextEditor's Bold (4.14) left the page on screen and dead for the
+    // rest of its life. The guard that already existed, applyingTree in
+    // dispatchFromElement, covered element events only, and 22 other sites
+    // called GoInvokeCallback directly.
+    //
+    // # The rule
+    //
+    // A call made while a batch is applying (applyingTree > 0), or while Go's
+    // push is on the stack (goPushDepth > 0), is queued in order. The queue is
+    // sent when the outermost batch is done:
+    //
+    //   - at once, when nothing of Go's is below on the stack. That batch came
+    //     back from the page's own GoInvokeCallback, whose RenderAgain has
+    //     returned and released the lock.
+    //   - in a microtask, when the batch was pushed (GrMobApplyPatches). The
+    //     lock is held until the push returns into Go, and a microtask runs
+    //     only once the whole stack, Go's frames included, has unwound.
+    //
+    // Sending at once where that is safe keeps the common case synchronous,
+    // which the page landing and this file's own suites rely on: by the time
+    // GrMob.patch returns, a command's edit has reached Go.
+    //
+    // Queued, not dropped as dispatchFromElement drops its events. Those are
+    // the browser's reactions to the surgery (the blur of a removed field), and
+    // their IDs belong to the tree before the batch. These are the batch's own
+    // intended effects (the indented text is the edit, and Go must hear it),
+    // and every site reads its ID off the element when it fires, after the
+    // props carrying that ID have been applied.
+    //
+    // webhost.PushGuard is the second layer, on the Go side: a call that gets
+    // past this one anyway is deferred there and logged, not deadlocked.
+    const goCalls = [];
+    let goPushDepth = 0;
+    let goCallsScheduled = false;
+    let flushingGoCalls = false;
+
+    function dispatchToGo(id, payload) {
+        if (applyingTree > 0 || goPushDepth > 0) {
+            goCalls.push([id, payload]);
+            return;
+        }
+        window.GoInvokeCallback(id, payload);
+    }
+
+    function flushGoCalls() {
+        if (goCalls.length === 0) return;
+        if (goPushDepth > 0) {
+            if (!goCallsScheduled) {
+                goCallsScheduled = true;
+                // Promise.resolve().then rather than queueMicrotask, as the
+                // keystore below does: the same microtask from a language
+                // builtin, so a vm sandbox with no window globals has it too.
+                Promise.resolve().then(() => {
+                    goCallsScheduled = false;
+                    flushGoCalls();
+                });
+            }
+            return;
+        }
+        // A call sent from here can bring a batch back (the page's
+        // GoInvokeCallback patches before it returns), and that batch's exit
+        // lands here again. The outer loop is already draining in order, so
+        // the inner call leaves the rest to it.
+        if (flushingGoCalls) return;
+        flushingGoCalls = true;
+        try {
+            while (goCalls.length > 0) {
+                const [id, payload] = goCalls.shift();
+                // One call that throws (a Go program that has exited throws
+                // on every call) must not strand the ones queued behind it.
+                try {
+                    window.GoInvokeCallback(id, payload);
+                } catch (err) {
+                    console.error("grmob: a queued call into Go threw", err);
+                }
+            }
+        } finally {
+            flushingGoCalls = false;
+        }
+    }
+
+    // applyPushed applies a batch Go pushed through GrMobApplyPatches. The
+    // depth is what tells flushGoCalls that the render lock is still held
+    // below this frame.
+    function applyPushed(patchList) {
+        goPushDepth++;
+        try {
+            return patch(patchList);
+        } finally {
+            goPushDepth--;
+        }
+    }
+
+    // --- A Go program that stopped ------------------------------------------
+    //
+    // watchExit draws a banner when the Go program behind the page exits on
+    // its own. `exited` is the promise go.run returned; it settles when main
+    // returns or the runtime aborts (a deadlock, an unrecovered panic in a
+    // goroutine). Before this the page stayed on screen looking alive, and
+    // every tap threw "Go program has already exited" into a console nobody
+    // had open.
+    //
+    // A deliberate stop is not one. The hot-reload client (serve/devclient.js)
+    // calls GrMobWASM.Shutdown and awaits the same promise before it boots the
+    // next build. Shutdown is wrapped here to note that it was asked for: the
+    // binding is Go's, on an object Go publishes, and the runtime is the one
+    // thing every page loads, so wrapping it here covers every page that calls
+    // watchExit without a flag in each of the Go hosts.
+    function watchExit(exited) {
+        const host = window.GrMobWASM;
+        let deliberate = false;
+        if (host && typeof host.Shutdown === "function") {
+            const shutdown = host.Shutdown;
+            host.Shutdown = function (...args) {
+                deliberate = true;
+                return shutdown.apply(this, args);
+            };
+        }
+        Promise.resolve(exited).then(() => {
+            if (!deliberate) showStopped();
+        });
+    }
+
+    // showStopped is the banner itself. Fixed over the page rather than in
+    // #app, because #app belongs to the dead tree and may be anywhere on a
+    // page that frames it (the tutorial's phone). Its colours are literal: no
+    // theme is running to resolve a role against, and white on #8a1c1c is
+    // 9.3:1 under either scheme.
+    //
+    // Drawn once however many programs died: a hot reload that boots a new
+    // module which then dies too must not stack a second banner. A flag and
+    // not a lookup by id, which keeps this to the DOM members the runtime
+    // already uses (dom.mjs models exactly those).
+    let stoppedShown = false;
+    function showStopped() {
+        if (stoppedShown) return;
+        stoppedShown = true;
+        const bar = document.createElement("div");
+        bar.id = "grmob-stopped";
+        bar.setAttribute("role", "alert");
+        Object.assign(bar.style, {
+            position: "fixed", left: "0", right: "0", top: "0", zIndex: "2147483000",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: "12px",
+            padding: "10px 16px", background: "#8a1c1c", color: "#ffffff",
+            fontSize: "14px", lineHeight: "1.4", fontFamily: "system-ui, sans-serif",
+        });
+        const text = document.createElement("span");
+        text.textContent = "The app stopped. Reload the page to start it again.";
+        const reload = document.createElement("button");
+        reload.type = "button";
+        reload.textContent = "Reload";
+        Object.assign(reload.style, {
+            font: "inherit", padding: "4px 12px", borderRadius: "6px", cursor: "pointer",
+            border: "1px solid #ffffff", background: "transparent", color: "#ffffff",
+        });
+        reload.addEventListener("click", () => location.reload());
+        bar.appendChild(text);
+        bar.appendChild(reload);
+        document.body.appendChild(bar);
     }
 
     function mount(jsonTree, mountPointId = "app") {
@@ -10547,6 +10737,8 @@ const GrMob = (() => {
     return {
         mount,
         patch,
+        applyPushed,
+        watchExit,
         showToast,
         audio,
         heading,
@@ -10644,8 +10836,12 @@ window.GrMobSystemEvent = function (name, payloadJSON) {
 // before the wasm module is instantiated, so the host's check finds it; the
 // poll loop stays as a harmless fallback (with a listener attached the pump
 // consumes the diff, so the poll sees a clean tree).
+//
+// applyPushed rather than patch: Go holds its render lock for the whole of
+// this call, and the runtime has to know that to keep a call the batch causes
+// from re-entering Go before it returns (see dispatchToGo).
 window.GrMobApplyPatches = function (patchJSON) {
-    GrMob.patch(patchJSON);
+    GrMob.applyPushed(patchJSON);
 };
 
 function checkLoop() {

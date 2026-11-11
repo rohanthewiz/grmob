@@ -51,6 +51,7 @@ import (
 	"github.com/rohanthewiz/grmob/examples/todoapp"
 	"github.com/rohanthewiz/grmob/examples/tutorial"
 	"github.com/rohanthewiz/grmob/render"
+	"github.com/rohanthewiz/grmob/webhost"
 )
 
 // apps is every app a screenshot is taken of.
@@ -74,6 +75,11 @@ var (
 	// done parks main until the page calls Shutdown. See shutdown below.
 	done     = make(chan struct{})
 	doneOnce sync.Once
+
+	// push is raised while a pushed batch is being applied, when a binding
+	// that takes the render lock would deadlock (webhost.PushGuard, the
+	// same guard wasm/main.go and webhost use).
+	push webhost.PushGuard
 )
 
 // mounted is the app named by the page's query string.
@@ -153,13 +159,19 @@ func mustJSON(s string) string {
 	return string(b)
 }
 
+// jsPatchListener delivers under push: the manager holds its render lock
+// for the whole call, and the page applies the batch inside it.
 type jsPatchListener struct{}
 
 func (jsPatchListener) ApplyPatches(patches string) {
-	js.Global().Call("GrMobApplyPatches", patches)
+	push.Deliver(func() { js.Global().Call("GrMobApplyPatches", patches) })
 }
 
 func renderAgain(this js.Value, args []js.Value) any {
+	// From inside a pushed batch, the lock is held; see wasm/main.go.
+	if push.Delivering() {
+		return js.ValueOf("[]")
+	}
 	return js.ValueOf(manager.RenderAgain())
 }
 
@@ -178,14 +190,21 @@ func receiveEvent(this js.Value, args []js.Value) any {
 		log.Printf("grmob/shots: dropping malformed payload for %s: %v", id, err)
 		return nil
 	}
-	if rerr := core.Guard(func() {
-		ctx.ReceiveEventPayload(map[string]any{
-			"callback": id, "value": payload["value"],
-		})
-	}); rerr != nil {
-		log.Printf("grmob/shots: recovered panic in handler %s: %v\n%s",
-			id, rerr.Value, rerr.Stack)
+	deliver := func() {
+		if rerr := core.Guard(func() {
+			ctx.ReceiveEventPayload(map[string]any{
+				"callback": id, "value": payload["value"],
+			})
+		}); rerr != nil {
+			log.Printf("grmob/shots: recovered panic in handler %s: %v\n%s",
+				id, rerr.Value, rerr.Stack)
+		}
 	}
+	// From inside a pushed batch: run once the batch is over.
+	if push.Defer("ReceiveEvent "+id, deliver) {
+		return nil
+	}
+	deliver()
 	return nil
 }
 

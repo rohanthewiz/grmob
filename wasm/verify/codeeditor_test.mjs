@@ -12,6 +12,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import { loadRuntime, nodeAt } from "./load.mjs";
 
@@ -452,6 +453,107 @@ test("epoch 0 is never an instruction", () => {
     buffer.selectionStart = buffer.selectionEnd = 0;
     epochCommand(rt, 0, "indent");
     assert.equal(buffer.value, "a");
+});
+
+// --- A command's edit, and the render lock ----------------------------------
+//
+// A command's rewrite is an edit, so the runtime sends it upstream, and it
+// does so from inside the batch that carried the command. When Go pushed that
+// batch, Go is still holding its render lock below it on the stack, and on
+// js/wasm a call into Go from there deadlocked the program (N-131: CodeEditor
+// "Indent" in lesson 4.13). These hold dispatchToGo's two answers: after the
+// push has returned when Go pushed it, and at the batch's end, before
+// GrMob.patch returns, when the page's own GoInvokeCallback brought it back.
+
+// commandPatch is epochCommand's batch, as JSON, without applying it.
+function commandPatch(rt, epoch, command) {
+    return JSON.stringify([{
+        Type: "update-props", TargetID: "root/0",
+        Changes: {
+            value: nodeAt(rt.document, "root/0").children[1].value,
+            onChange: "cb-change", onSelectionChange: "cb-sel",
+            lineNumbers: false, readOnly: false, tabSize: 4, commentPrefix: "//",
+            editorEpoch: epoch, editorCommand: command,
+        },
+    }]);
+}
+
+const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+test("a command Go pushed reaches Go only after the push has returned", async () => {
+    const { rt, buffer } = mountEditor("a\nb", { onSelectionChange: "cb-sel" });
+    buffer.selectionStart = buffer.selectionEnd = 0;
+
+    // The stand-in for Go's frame below GrMobApplyPatches: any call into Go
+    // while it is set would have re-locked the render mutex.
+    let insidePush = false;
+    const calls = [];
+    rt.window.GoInvokeCallback = (id, payload) => calls.push({ id, payload, insidePush });
+
+    insidePush = true;
+    rt.window.GrMobApplyPatches(commandPatch(rt, 1, "indent"));
+    insidePush = false;
+
+    assert.equal(buffer.value, "    a\nb", "the command ran inside the push");
+    assert.deepEqual(calls, [], "nothing reached Go while the push was on the stack");
+
+    await settle();
+    assert.deepEqual(calls.map((c) => [c.id, c.payload.value, c.insidePush]), [
+        ["cb-change", "    a\nb", false],
+        ["cb-sel", "0:5", false],
+    ], "the edit and the selection, in the order the command made them, once Go had returned");
+});
+
+test("a command the page's own render brought back reaches Go at the batch's end", () => {
+    const { rt, buffer } = mountEditor("a\nb", { onSelectionChange: "cb-sel" });
+    buffer.selectionStart = buffer.selectionEnd = 0;
+
+    // A second patch behind the command's: the call must see the whole batch
+    // applied, not the half before its own patch.
+    const batch = JSON.parse(commandPatch(rt, 1, "indent"));
+    batch.push({ Type: "add-child", TargetID: "root", Changes: { Type: "Text", Props: { content: "after" } } });
+    const seen = [];
+    rt.window.GoInvokeCallback = (id) => seen.push([id, nodeAt(rt.document, "root/1") !== null]);
+
+    rt.GrMob.patch(JSON.stringify(batch));
+
+    assert.deepEqual(seen, [["cb-change", true], ["cb-sel", true]],
+        "sent before patch() returned, and after every patch of the batch had landed");
+});
+
+test("a call that throws does not strand the calls queued behind it", async () => {
+    const { rt, buffer } = mountEditor("a", { onSelectionChange: "cb-sel" });
+    buffer.selectionStart = buffer.selectionEnd = 0;
+    const calls = [];
+    rt.window.GoInvokeCallback = (id) => {
+        calls.push(id);
+        if (id === "cb-change") throw new Error("Go program has already exited");
+    };
+    const logged = [];
+    const error = rt.sandbox.console.error;
+    rt.sandbox.console = { ...rt.sandbox.console, error: (...a) => logged.push(a) };
+    try {
+        rt.window.GrMobApplyPatches(commandPatch(rt, 1, "indent"));
+        await settle();
+    } finally {
+        rt.sandbox.console = { ...rt.sandbox.console, error };
+    }
+    assert.deepEqual(calls, ["cb-change", "cb-sel"]);
+    assert.equal(logged.length, 1, "the throw was reported, once");
+});
+
+// Every runtime call into Go's event path goes through dispatchToGo, and the
+// only direct calls left are its own two: the immediate send and the flush. A
+// site added later with a bare window.GoInvokeCallback would skip the queue,
+// which is the hole N-131 closed, so it fails here rather than on a live page.
+test("the runtime calls GoInvokeCallback only from dispatchToGo and its flush", () => {
+    const source = readFileSync(new URL("../grmob-runtime.js", import.meta.url), "utf8");
+    const direct = source.split("\n")
+        .map((line, i) => [i + 1, line])
+        .filter(([, line]) => /window\.GoInvokeCallback\(/.test(line) && !/^\s*\/\//.test(line));
+    assert.equal(direct.length, 2,
+        `want the two inside dispatchToGo and flushGoCalls; found:\n` +
+        direct.map(([n, l]) => `  ${n}: ${l.trim()}`).join("\n"));
 });
 
 // The one way an editor command differs from a focus command: a focus command

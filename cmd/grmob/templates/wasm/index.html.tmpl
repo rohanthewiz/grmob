@@ -124,6 +124,9 @@
           .catch(() => source.then(r => r.arrayBuffer()).then(b => WebAssembly.instantiate(b, go.importObject)))
       : source.then(r => r.arrayBuffer()).then(b => WebAssembly.instantiate(b, go.importObject)));
     const exited = go.run(result.instance); // settles only when main returns
+    // A program that dies on its own (a deadlock, an unrecovered panic) gets a
+    // "stopped, reload" banner; a hot-reload Shutdown does not.
+    GrMob.watchExit(exited);
     GrMob.mount(window.GrMobWASM.RenderInitial());
     return { go, exited };
   }

@@ -1,14 +1,14 @@
 // The facts a shimmed DOM cannot check, checked in a browser: seven about the
 // keyboard, five about paint, nine about layout, one about what a browser
 // does with an accessibility value nobody here resolves, one about how it
-// reads a CSS shorthand back, and one about when it shows a notification the
-// page scheduled.
+// reads a CSS shorthand back, one about when it shows a notification the
+// page scheduled, and one about a pushed batch that calls back into Go.
 //
 // wasm/verify's other suites run the real grmob-runtime.js against dom.mjs — a
 // few hundred lines that model element trees, attributes, listeners and which
 // element holds focus. That is enough for almost everything, and its limits
 // are stated in its own header: there is no layout, no bubbling, and `focus()`
-// is an assignment, and nothing is ever painted. Twenty-four claims sit exactly in
+// is an assignment, and nothing is ever painted. Twenty-five claims sit exactly in
 // that blind spot, and no amount of widening the shim would settle them,
 // because each one is a claim about what a *browser* does:
 //
@@ -265,6 +265,23 @@
 //      Session 2026-0924-1211 found and fixed everything this names with a
 //      scratch copy of it (N-081); this keeps the fixes. It sees each
 //      lesson's first state only, not a demo after a toggle or typed text.
+//  25. an editor's toolbar command comes back through Go, and Go is still
+//      running after it. A toolbar button's handler issues
+//      core.RunEditorCommand; Go pushes the command as a patch while it holds
+//      its render lock, and applying it makes the runtime send the rewritten
+//      text back to Go from inside that push. On js/wasm that call took the
+//      lock a second time on the one thread, and Go aborted the program
+//      ("all goroutines are asleep - deadlock!", N-131): lesson 4.13's
+//      Indent and 4.14's Bold left the page dead. codeeditor_test.mjs holds
+//      dispatchToGo's queue against dom.mjs, with a GoInvokeCallback that is
+//      a function and not a Go program; only the real build has the lock. On
+//      the site page at its default width: Indent on 4.13's editor with the
+//      caret on line 1, which Go must hear (the lesson's selection line, which
+//      Go writes, must report the indented line), then Bold over 4.14's first
+//      heading, which Go must hear too (the lesson's Markdown, which Go
+//      renders from its own copy of the document, must read the heading as
+//      bold). Then one more event, a route to 2.2 that must render, and no
+//      "stopped" banner (GrMob.watchExit) anywhere along the way.
 //
 // The numbering is one sequence, and it is the order the checks run in rather
 // than the order they were written. It is also load-bearing: a dozen comments
@@ -10867,6 +10884,130 @@ async function main() {
             if (held) asked.overflow = swept;
         }
 
+        // ------------------------------------------------------------------
+        // 25. an editor's toolbar command comes back through Go, and Go is
+        //     still running after it
+        // ------------------------------------------------------------------
+        //
+        // The site page, freshly booted at the window's own size (check 24
+        // cleared its override), on 4.13 by its deep link. about:blank first,
+        // because check 24 left a /site/# URL and a navigation that differs
+        // only in its hash fires no load event.
+        //
+        //	4.13  caret at the start of the editable editor, press Indent:
+        //	      the buffer's first line gains an indent, and the lesson's
+        //	      selection line, which Go writes from the report the command
+        //	      sends, reads "bytes 0–N selected … from line 1"
+        //	4.14  select the first heading ("A note"), press Bold, then
+        //	      "Show the Markdown": the Markdown, which Go renders from its
+        //	      own copy of the document, reads "## **A note**"
+        //	after no #grmob-stopped banner (GrMob.watchExit): Go never exited
+        //
+        // The presses are element.click() rather than DevTools mouse events.
+        // A real press would add a mousedown, which the toolbar's buttons
+        // spend on keeping the editor's focus (core.PressKeepsFocus); the
+        // claim here is about the lock, which the click reaches the same way
+        // through the runtime's own listener, and the selection it acts on is
+        // set by script either way. Measured on the code before the fix with
+        // a scratch probe making the same presses: Indent printed "fatal
+        // error: all goroutines are asleep - deadlock!", go.run's promise
+        // settled, and every later call threw "Go program has already
+        // exited". With only PushGuard in place (dispatchToGo's queue taken
+        // out) the presses held, and the deferral was logged.
+        if (liveBuild) {
+            const toolbarProblem = (msg) => problems.push(`check 25: ${msg}`);
+            const blank = session.once("Page.loadEventFired");
+            await session.send("Page.navigate", { url: "about:blank" });
+            await blank;
+            const siteLoaded = session.once("Page.loadEventFired");
+            await session.send("Page.navigate", { url: `${origin}/site/#4.13` });
+            await siteLoaded;
+            // Resolves to "" once `ready` (an expression) holds, or to a
+            // reason after 30s, or as soon as the stopped banner is up.
+            const waitFor = (ready, what) => evaluate(`new Promise((done) => {
+                const started = Date.now();
+                const poll = () => {
+                    if (document.getElementById("grmob-stopped")) return done("the app stopped (" + ${JSON.stringify(what)} + ")");
+                    try { if (${ready}) return done(""); } catch (e) { /* not there yet */ }
+                    if (Date.now() - started > 30000) return done("timed out waiting for " + ${JSON.stringify(what)});
+                    setTimeout(poll, 50);
+                };
+                poll();
+            })`);
+            let held = true;
+            const step = async (ready, what) => {
+                const why = await waitFor(ready, what);
+                if (why) { toolbarProblem(why); held = false; }
+                return !why;
+            };
+
+            // 4.13. The editable editor is the one buffer that is not read
+            // only: every code snippet in the lesson is a read-only editor.
+            const EDITABLE = `[...document.querySelectorAll("#app pre > textarea")].find((t) => !t.readOnly)`;
+            if (await step(`${EDITABLE} && document.querySelector('#app [aria-label="Indent"]')`,
+                "lesson 4.13's editable editor and its Indent button")) {
+                const before = await evaluate(`(() => {
+                    const buffer = ${EDITABLE};
+                    buffer.focus();
+                    buffer.setSelectionRange(0, 0);
+                    const line = buffer.value.split("\\n")[0];
+                    document.querySelector('#app [aria-label="Indent"]').click();
+                    return line;
+                })()`);
+                if (await step(`/bytes 0–\\d+ selected \\(\\d+\\) — from line 1/.test(document.getElementById("app").textContent)`,
+                    "Go's selection line after Indent")) {
+                    const after = await evaluate(`${EDITABLE}.value.split("\\n")[0]`);
+                    if (!(after.length > before.length && after.trimStart() === before.trimStart())) {
+                        toolbarProblem(`Indent turned the first line ${JSON.stringify(before)} into ` +
+                            `${JSON.stringify(after)}; want the same text behind an indent`);
+                        held = false;
+                    }
+                }
+            } else {
+                held = false;
+            }
+
+            // 4.14, on the same running program: a hash change is the page's
+            // own route, so nothing reboots between the two lessons.
+            await evaluate(`location.hash = "#4.14"`);
+            if (await step(`document.querySelector('#app [contenteditable="true"]') && document.querySelector('#app [aria-label="Bold"]')`,
+                "lesson 4.14's editor and its Bold button")) {
+                const selected = await evaluate(`(() => {
+                    const editor = document.querySelector('#app [contenteditable="true"]');
+                    const heading = [...editor.children].find((c) => c.textContent === "A note");
+                    if (!heading) return false;
+                    editor.focus();
+                    const range = document.createRange();
+                    range.selectNodeContents(heading);
+                    const sel = window.getSelection();
+                    sel.removeAllRanges();
+                    sel.addRange(range);
+                    document.querySelector('#app [aria-label="Bold"]').click();
+                    return true;
+                })()`);
+                if (!selected) {
+                    toolbarProblem(`lesson 4.14's editor has no block reading "A note" to make bold; ` +
+                        `the lesson's seed document (richNoteSeed) opens with that heading`);
+                    held = false;
+                } else {
+                    // The toggle is one more event through Go after the
+                    // command, and its answer is Go's reading of the document.
+                    await evaluate(`[...document.querySelectorAll("#app button")]
+                        .find((b) => b.textContent.trim() === "Show the Markdown").click()`);
+                    await step(`[...document.querySelectorAll("#app pre > textarea")].some((t) => t.readOnly && t.value.startsWith("## **A note**"))`,
+                        "Go's Markdown of the document to read the heading as bold");
+                }
+            } else {
+                held = false;
+            }
+
+            if (await evaluate(`!!document.getElementById("grmob-stopped")`)) {
+                toolbarProblem(`the "stopped" banner is up: the Go program exited during the check`);
+                held = false;
+            }
+            if (held) asked.toolbars = true;
+        }
+
     } finally {
         if (session) session.close();
         chrome.kill();
@@ -10878,7 +11019,7 @@ async function main() {
     // that only appears on the happy path is a skip that goes missing exactly
     // when the log is long.
     if (asked.liveSkip) {
-        console.log(`SKIP: checks 15 to 20, 23 and 24, the live calendar, shortcuts, boot frame, mid-text typing, thread, theme switch, fold and overflow sweep (${asked.liveSkip})`);
+        console.log(`SKIP: checks 15 to 20 and 23 to 25, the live calendar, shortcuts, boot frame, mid-text typing, thread, theme switch, fold, overflow sweep and editor toolbars (${asked.liveSkip})`);
     }
     if (asked.inkFaceSkip) {
         console.log(`SKIP: the band grid's ink scan (${asked.inkFaceSkip})`);
@@ -10919,7 +11060,9 @@ async function main() {
         ? "an emulated hinge and posture reach lesson 4.21's readout and TwoPane at an unchanged window size,"
         : "the emulated fold unread,"} ${asked.overflow
         ? `${asked.overflow} lesson views (${LESSONS.length} lessons in the split, at 390px and at 360px) spill, clip and squeeze nothing,`
-        : "the tutorial's overflow unswept,"} ${PALETTES.length} palette swatches paint the
+        : "the tutorial's overflow unswept,"} ${asked.toolbars
+        ? "lesson 4.13's Indent and 4.14's Bold come back through Go with Go still running,"
+        : "the editor toolbars unpressed,"} ${PALETTES.length} palette swatches paint the
     hexes the contrast census measures, ${WIDGETS.length} real widgets draw
     their own boundary tones on both edges, a sticky band pins, ${VALUE_RANGES.length}
     value ranges resolve the way core.Progress says a browser resolves them,

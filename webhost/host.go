@@ -23,7 +23,10 @@
 // shots host resolves its app from the query string; the tutorial host is what
 // ./build.sh ships and what several prose checks quote), and
 // webhost_test.go holds the three to exporting the same GrMobWASM surface, so
-// the copies cannot drift from the library without a failing test.
+// the copies cannot drift from the library without a failing test. They do
+// import one thing from here, PushGuard (pushguard.go), because it is the fix
+// for a deadlock all three had, and a fix copied three times is how the next
+// one gets missed in one of them.
 //
 // # The contract with the page
 //
@@ -51,6 +54,10 @@ type host struct {
 	ctx     *core.Context
 	app     func(*core.Context) core.View
 	manager *render.Manager
+
+	// push is raised while a pushed batch is being applied, when a binding
+	// that takes the render lock would deadlock; see PushGuard.
+	push PushGuard
 
 	done     chan struct{}
 	doneOnce sync.Once
@@ -113,23 +120,32 @@ func (h *host) renderInitial(this js.Value, args []js.Value) any {
 	// it polls IsDirty/RenderAgain instead, and the manager never consumes a
 	// diff unless a listener is attached, so neither path loses one.
 	if js.Global().Get("GrMobApplyPatches").Type() == js.TypeFunction {
-		h.manager.SetListener(jsPatchListener{})
+		h.manager.SetListener(jsPatchListener{guard: &h.push})
 	}
 	return js.ValueOf(h.manager.RenderInitial())
 }
 
 // jsPatchListener forwards pushed patches to the page. ApplyPatches runs on
 // the pump goroutine, which js/wasm schedules cooperatively on the single JS
-// thread, so calling into JS from it needs no marshalling.
-type jsPatchListener struct{}
+// thread, so calling into JS from it needs no marshalling. The call is made
+// under the host's PushGuard, because the manager holds its render lock for
+// the whole of it.
+type jsPatchListener struct{ guard *PushGuard }
 
-func (jsPatchListener) ApplyPatches(patches string) {
-	js.Global().Call("GrMobApplyPatches", patches)
+func (l jsPatchListener) ApplyPatches(patches string) {
+	l.guard.Deliver(func() { js.Global().Call("GrMobApplyPatches", patches) })
 }
 
 func (h *host) renderAgain(this js.Value, args []js.Value) any {
 	if h.manager == nil {
 		return js.ValueOf("[]") // nothing mounted yet: an empty patch list, not a nil deref
+	}
+	// Re-entered from inside a pushed batch, where taking the lock is the
+	// deadlock PushGuard describes. Nothing is waiting for this pass: the
+	// event before it was deferred (receiveEvent), and what its handler
+	// writes reaches the page through the pump once it has run.
+	if h.push.Delivering() {
+		return js.ValueOf("[]")
 	}
 	return js.ValueOf(h.manager.RenderAgain())
 }
@@ -159,11 +175,20 @@ func (h *host) receiveEvent(this js.Value, args []js.Value) any {
 		log.Printf("grmob: dropping malformed payload for %s: %v", id, err)
 		return nil
 	}
-	if rerr := core.Guard(func() {
-		h.ctx.ReceiveEventPayload(map[string]any{"callback": id, "value": payload["value"]})
-	}); rerr != nil {
-		log.Printf("grmob: recovered panic in handler %s: %v\n%s", id, rerr.Value, rerr.Stack)
+	deliver := func() {
+		if rerr := core.Guard(func() {
+			h.ctx.ReceiveEventPayload(map[string]any{"callback": id, "value": payload["value"]})
+		}); rerr != nil {
+			log.Printf("grmob: recovered panic in handler %s: %v\n%s", id, rerr.Value, rerr.Stack)
+		}
 	}
+	// An event that arrives from inside a pushed batch runs once the batch
+	// is over; see PushGuard. The runtime queues these itself, so this is the
+	// fallback, and it logs.
+	if h.push.Defer("ReceiveEvent "+id, deliver) {
+		return nil
+	}
+	deliver()
 	return nil
 }
 

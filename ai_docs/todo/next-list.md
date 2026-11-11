@@ -159,17 +159,6 @@ with each item's `raised` traced back through all session docs.
   real widths and is right only under an unbounded maximum; its header and
   `docs/platforms/native.md`'s census prose should say so when this is
   taken up (native.md has a one-paragraph correction already).
-- **N-131** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
-  **Editor toolbar commands deadlock the Go runtime on the web (plan R1).**
-  The pump holds `Manager.mu` across `ApplyPatches`; on the web that runs
-  `applyBatch` synchronously, and `runCodeCommand` → `emitCodeChange` →
-  `GoInvokeCallback` → `RenderAgain` re-locks it. CodeEditor "Indent"
-  (lesson 4.13) and RichTextEditor "Bold" (4.14) print `all goroutines are
-  asleep - deadlock!` and the page never responds again. Fix in two layers:
-  one JS `dispatchToGo` that queues while a batch is applying (23 direct
-  call sites), and a re-entrancy flag in `webhost` that defers instead of
-  blocking. Pin with a live-build check in `wasm/verify/browser.mjs`. Also
-  R9a: show a "stopped, reload" banner when the Go program exits.
 - **N-132** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
   **A tap's returned patches can be applied after a later pushed pass (plan
   R2).** `Dispatch*` releases `mu` on return and the host enqueues the
@@ -973,6 +962,39 @@ defect, which then becomes its own Open item.
 
 ## Closed
 
+- **N-131** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
+  · closed 2026-11-11, `2026-1111-1010-n131-n132-web-push-deadlock-and-dispatch-order` — editor
+  toolbar commands no longer deadlock the Go runtime on the web (plan R1), and
+  a program that dies shows a banner (R9a). Reproduced first on HEAD with a
+  scratch CDP probe of the live tutorial: Indent on 4.13 printed `fatal
+  error: all goroutines are asleep - deadlock!` and every later call threw
+  "Go program has already exited".
+  - **Layer 1, JS:** every runtime call into Go goes through one
+    `dispatchToGo` (the 23 direct `GoInvokeCallback` sites rerouted). A call
+    made while a batch is applying, or while Go's push is on the stack
+    (`GrMobApplyPatches` now calls `GrMob.applyPushed`, which counts it), is
+    queued and sent at the outermost batch's end: at once when no Go frame is
+    below, in a microtask when the batch was pushed (the lock is held until
+    the push returns). `dispatchFromElement` still drops surgery-caused
+    events.
+  - **Layer 2, Go:** `webhost.PushGuard` (no build tag, unit-tested): the
+    listener delivers under it; `renderAgain` returns `[]` and `receiveEvent`
+    defers and logs while it is up. All three browser hosts use it (webhost,
+    `wasm/main.go`, the shots host); `TestEveryBrowserHostDeliversUnderThePushGuard`
+    holds them to it. Checked alone in the live build (JS queue removed):
+    presses held, deferral logged.
+  - **R9a:** `GrMob.watchExit(exited)` draws a fixed `role=alert` "The app
+    stopped… Reload" banner when go.run's promise settles, unless
+    `GrMobWASM.Shutdown` (wrapped) was asked for. Wired in `wasm/index.html`
+    and the `grmob new` template. Seen in a headless screenshot.
+  - **Pins:** codeeditor_test.mjs (a pushed command reaches Go only after
+    the push, a page-path one at the batch's end, a throw does not strand
+    the queue, a census of direct calls; each fails with the queue
+    disabled), stopped_test.mjs, pushguard_test.go, and browser check 25
+    (4.13 Indent and 4.14 Bold on the site page, Go's selection line and
+    Markdown as witnesses, no banner). Full `wasm/verify/run.sh` green,
+    including the 261-view overflow sweep. The check-tally regex in
+    checknumbering_test.go now takes any number of one-off kinds.
 - **N-121** · raised `2026-1020-1656-stock-ticker-widget` · value medium
   · closed 2026-10-31, `2026-1031-2336-n121-stock-ticker-natives` — `comps.StockTicker` and lesson 4.42 seen on all four
   targets, stepping and gliding, with three defects found and fixed on the
