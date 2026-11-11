@@ -42,6 +42,11 @@ protocol GrMobBridge: Sendable {
     /// Trigger* calls. `name` is the event kind, `payload` its data as a
     /// JSON object.
     func reportHostEvent(_ name: String, _ payload: String) -> String
+
+    /// Asks for the whole tree Go believes this shell holds, as one replace
+    /// of "root" (mobile.Resync). Called when the TreeStore finds its tree
+    /// has drifted from Go's; delivered like a Trigger* call's patches.
+    func resync() -> String
 }
 
 /// Wires the bridge to a TreeStore and owns the threading model.
@@ -88,6 +93,13 @@ final class GrMobRuntime {
 
     init(bridge: GrMobBridge) {
         self.bridge = bridge
+        // A drifted tree asks Go for its own, on the events queue like any
+        // other call: Resync takes Go's render lock, which the main thread
+        // must never wait on, and its replace comes back through the same
+        // FIFO as every pass. The store calls this once per drift.
+        store.onDrift = { [weak self] in
+            self?.dispatch { $0.resync() }
+        }
     }
 
     /// Mounts the initial tree and opens the push channel. Call once, before

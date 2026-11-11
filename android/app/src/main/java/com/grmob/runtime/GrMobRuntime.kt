@@ -51,6 +51,13 @@ interface GrMobBridge {
      * JSON object.
      */
     fun reportHostEvent(name: String, payload: String): String
+
+    /**
+     * Asks for the whole tree Go believes this shell holds, as one replace of
+     * "root" (mobile.Resync). Called when the [TreeStore] finds its tree has
+     * drifted from Go's; delivered like a Trigger* call's patches.
+     */
+    fun resync(): String
 }
 
 /**
@@ -82,6 +89,14 @@ interface GrMobBridge {
  */
 class GrMobRuntime(private val bridge: GrMobBridge) {
     val store = TreeStore()
+
+    init {
+        // A drifted tree asks Go for its own, on the events executor like any
+        // other call: Resync takes Go's render lock, which the main thread
+        // must never wait on, and its replace comes back through the same
+        // FIFO as every pass. The store calls this once per drift.
+        store.onDrift = { dispatch { bridge.resync() } }
+    }
 
     private val main = Handler(Looper.getMainLooper())
     private val events = Executors.newSingleThreadExecutor { r ->

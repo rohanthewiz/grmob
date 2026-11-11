@@ -154,6 +154,23 @@ func hostEvent(this js.Value, args []js.Value) any {
 	return nil
 }
 
+// resync answers a page whose tree has drifted from Go's (a patch whose path
+// resolved to nothing, a payload that was not a list, a patch that threw) with
+// the whole tree Go believes it holds, as one replace of "root"; see
+// render.Manager.Resync. Pushed through GrMobApplyPatches inside this call, so
+// the answer is "[]". Deferred like receiveEvent when it arrives from inside a
+// pushed batch, where taking the lock would deadlock (webhost.PushGuard).
+func resync(this js.Value, args []js.Value) any {
+	if manager == nil {
+		return js.ValueOf("[]")
+	}
+	m := manager
+	if push.Defer("Resync", func() { m.Resync() }) {
+		return js.ValueOf("[]")
+	}
+	return js.ValueOf(m.Resync())
+}
+
 // shutdown is the hot-reload hook: the page calls it just before it
 // instantiates a newer main.wasm in the same document (serve -dev, see
 // docs/platforms/wasm.md "Hot reload"). Two things have to happen, in order.
@@ -194,6 +211,7 @@ func registerCallbacks() {
 		"ReceiveEvent":  js.FuncOf(receiveEvent),
 		"IsDirty":       js.FuncOf(isDirty),
 		"HostEvent":     js.FuncOf(hostEvent),
+		"Resync":        js.FuncOf(resync),
 		"Shutdown":      js.FuncOf(shutdown),
 	})
 }

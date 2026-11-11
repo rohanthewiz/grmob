@@ -47,6 +47,7 @@ PatchListener.ApplyPatches is called from a background goroutine. A native imple
     - [`func (*Manager) RenderAgain`](#func-manager-renderagain)
     - [`func (*Manager) RenderAndGetPatches`](#func-manager-renderandgetpatches)
     - [`func (*Manager) RenderInitial`](#func-manager-renderinitial)
+    - [`func (*Manager) Resync`](#func-manager-resync)
     - [`func (*Manager) SetListener`](#func-manager-setlistener)
 - [`type PatchListener`](#type-patchlistener)
 
@@ -90,7 +91,7 @@ Dispatch runs fn under the render mutex — the same serialization the callback 
 
 Before the initial mount there is no tree to diff against, so fn runs and the state it wrote is simply part of the RenderInitial that follows; the "\[]" tells the host nothing needs applying. That case is rare (a status tick cannot precede the Load that caused it, and Load needs a rendered button) but a host that sent it would otherwise receive a diff against nothing, which no renderer can apply.
 
-<small>[render/manager.go:462](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L462)</small>
+<small>[render/manager.go:495](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L495)</small>
 
 #### func (*Manager) DispatchBoolCallback
 
@@ -100,7 +101,7 @@ func (m *Manager) DispatchBoolCallback(id string, value bool) string
 
 DispatchBoolCallback is DispatchCallback for bool-carrying events.
 
-<small>[render/manager.go:435](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L435)</small>
+<small>[render/manager.go:468](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L468)</small>
 
 #### func (*Manager) DispatchCallback
 
@@ -114,7 +115,7 @@ Handlers may call State.Set freely: the resulting RequestRender nudge is asynchr
 
 With a listener attached the patches are handed to it before the lock is released and the return value is "\[]"; without one they are returned. Every Dispatch\* below does the same. See deliverLocked for the ordering hole the return value left open.
 
-<small>[render/manager.go:408](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L408)</small>
+<small>[render/manager.go:441](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L441)</small>
 
 #### func (*Manager) DispatchIntCallback
 
@@ -124,7 +125,7 @@ func (m *Manager) DispatchIntCallback(id string, value int) string
 
 DispatchIntCallback is DispatchCallback for int-carrying events.
 
-<small>[render/manager.go:443](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L443)</small>
+<small>[render/manager.go:476](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L476)</small>
 
 #### func (*Manager) DispatchTextCallback
 
@@ -134,7 +135,7 @@ func (m *Manager) DispatchTextCallback(id string, value string) string
 
 DispatchTextCallback is DispatchCallback for string-carrying events.
 
-<small>[render/manager.go:416](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L416)</small>
+<small>[render/manager.go:449](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L449)</small>
 
 #### func (*Manager) DispatchTextEdit
 
@@ -144,7 +145,7 @@ func (m *Manager) DispatchTextEdit(id string, value string, seq, epoch int) stri
 
 DispatchTextEdit is DispatchTextCallback for a native text field's keystroke, carrying the host's sequence number and adopted rewrite epoch. An edit typed against text Go has since rewritten is acknowledged without reaching the handler; see core/text\_edit.go for the protocol.
 
-<small>[render/manager.go:427](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L427)</small>
+<small>[render/manager.go:460](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L460)</small>
 
 #### func (*Manager) RenderAgain
 
@@ -154,7 +155,7 @@ func (r *Manager) RenderAgain() string
 
 RenderAgain ReRender Used after an event (input/click/state change) to get diff
 
-<small>[render/manager.go:323](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L323)</small>
+<small>[render/manager.go:335](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L335)</small>
 
 #### func (*Manager) RenderAndGetPatches
 
@@ -166,7 +167,7 @@ RenderAndGetPatches renders one pass and returns whichever payload the host need
 
 It delegates rather than re-implementing the two passes, which is the whole of the fix here. Its own copy had drifted badly: it reset the root cursor with \`r.context.Cursor = 0\` instead of \`Reset()\`, so every child scope kept its cursor from the previous pass and its slots grew by one per render; and it never called PurgeUnusedCallbacks or ClearDirty, so handlers for vanished nodes stayed dispatchable and a polling host re-rendered forever.
 
-<small>[render/manager.go:518](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L518)</small>
+<small>[render/manager.go:622](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L622)</small>
 
 #### func (*Manager) RenderInitial
 
@@ -175,6 +176,26 @@ func (r *Manager) RenderInitial() string
 ```
 
 <small>[render/manager.go:260](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L260)</small>
+
+#### func (*Manager) Resync
+
+```go
+func (m *Manager) Resync() string
+```
+
+Resync sends the host the whole tree Go believes it holds, as one replace of the root, so a host whose tree has drifted from Go's can start again from Go's (N-133, the plan's R4).
+
+##### Why a host needs it
+
+Patches are positional and incremental: each is correct only against the exact tree the previous one produced. A host that misses one, or applies one wrongly, stays wrong, and every later patch compounds it. Every host already noticed the symptom (a patch whose path resolves to nothing) and logged it; the TreeStores said "the next full replace re-synchronizes", but nothing ever asked for one. A host now asks, through mobile.Resync or GrMobWASM.Resync, when a path dangles, a payload is not an array, or a patch throws.
+
+##### What it sends
+
+currentTree, which is the tree the last committed pass left the host with (an unencodable or panicking pass is not committed; see renderAgainLocked). Nothing is re-rendered: the question is what the host should be holding, and a render would answer a different one. The callback IDs in that tree are the ones still registered, for the same reason. It uses no new wire shape: every host already applies a replace of "root", because a navigation emits one.
+
+It goes out like a dispatch (deliverLocked): through the listener inside the lock when one is attached, so it cannot be overtaken by a pass and cannot overtake one, and returned otherwise. Before the mount there is nothing to send, and the answer is "\[]".
+
+<small>[render/manager.go:534](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L534)</small>
 
 #### func (*Manager) SetListener
 

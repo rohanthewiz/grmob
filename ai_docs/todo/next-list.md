@@ -159,15 +159,6 @@ with each item's `raised` traced back through all session docs.
   real widths and is right only under an unbounded maximum; its header and
   `docs/platforms/native.md`'s census prose should say so when this is
   taken up (native.md has a one-paragraph correction already).
-- **N-133** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
-  **An unencodable pass is dropped silently, and no host can resync (plan
-  R3, R4).** A NaN in `FlexGrow`, `FontSize`, `Gap`, `BorderRadius` or a
-  Slider value makes `renderJSON` return an error object after `currentTree`
-  has advanced, with no log; every other patch of that pass is lost. Fix:
-  treat an encode failure like the render-panic path (keep the last good
-  tree, log, name the field under debug mode). Then `Manager.Resync()`, a
-  root `replace` pushed through the listener, which each host requests on a
-  dangling path, a non-array payload or a throw. R4 depends on N-132.
 - **N-134** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
   **Android builds a new runtime, store and bridge in every
   `MainActivity.onCreate` (plan R5, R6, P5, R9m).** Rotation, a dark-mode
@@ -179,6 +170,11 @@ with each item's `raised` traced back through all session docs.
   thread with `JsonReader` (P5), and split the patch applier from the
   Compose state holders so `android/verify` can replay the Go transcript
   (R9m).
+  - When R9m lands, its replay should also cover `TreeStore.kt`'s drift
+    handling from N-133 (`onDrift`, `resyncPending`, the root replace that
+    clears it), which compiles and lints but no test executes: ios/verify's
+    `checkResync` is the model (a faithful replay never asks; a node-sized
+    hole asks once and the answer matches Go's final tree).
 - **N-135** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
   **A panic in a hook's goroutine ends the process (plan R7).** The only
   `recover()` in core, render, hooks and mobile covers render passes and
@@ -955,6 +951,44 @@ defect, which then becomes its own Open item.
 
 ## Closed
 
+- **N-133** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
+  · closed 2026-11-11, `2026-1111-1034-n133-unencodable-pass-and-resync` — an unencodable pass is
+  dropped in Go instead of sent as `{"error":...}`, and every host asks Go
+  for its whole tree when its own has drifted (plan R3, R4).
+  - **R3** (`render/manager.go`): a pass is encoded before it is committed.
+    On failure it is abandoned like a panicking pass (currentTree kept, purge
+    skipped, dirty cleared, `[]` returned) and logged with the first
+    non-finite number's place (`render/nonfinite.go`: "root/1 (Slider)
+    Props.value = NaN"); under debug mode also the new
+    `core.ConcernUnencodablePass` (`unencodable-pass`, in
+    docs/concepts/debug-mode.md). An unencodable mount stands in the panic
+    placeholder, which the first encodable pass replaces. Pinned by
+    `render/encode_test.go` (a NaN in a style float and in a prop beside an
+    unrelated text change, which arrives with the next good pass; the mount;
+    the concern; the push path).
+  - **R4**: `render.Manager.Resync` sends currentTree as one replace of
+    `root`, delivered like a dispatch (through the listener inside the lock,
+    else returned), re-rendering nothing (`render/resync_test.go`). Bridged as
+    `mobile.Resync` (stub, both bridges, native.md) and `GrMobWASM.Resync` on
+    all three browser hosts (deferred under PushGuard; `webhost.Bindings`).
+    Hosts ask once per drift (a path that resolves to nothing, a payload
+    that is not a list, a patch that threw) behind a "resync pending" flag a
+    root replace clears. The web runtime queues the request through
+    dispatchToGo's queue (now of calls), wraps the batch so post-passes run,
+    and can answer a root replace with no root on the page. Swift and Kotlin
+    TreeStores stopped missing updates silently (`?.props =` was a quiet
+    no-op on a miss).
+  - **Checked:** resync_test.mjs (each symptom, once per drift, after the
+    push, a polling page, a Go without the binding, and a replay that lost a
+    batch ends on Go's final tree); the replay suite asserts a faithful
+    replay reports no drift; ios/verify's `checkResync` (no false alarm, and a
+    node-sized hole asks once and matches Go after the answer; a lost batch or
+    patch left nothing dangling on that transcript); a live probe of all 87
+    lessons with their buttons pressed (no drift, no Resync); and a live
+    induced drift on 2.2 (one Resync, the node back with the new event).
+    Android compiles against a rebuilt AAR and `android/verify/run.sh` is
+    green, but its drift handling is executed by no test until R9m (noted on
+    N-134). Full Go, race, wasm/verify (browser pass) and ios/verify green.
 - **N-132** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
   · closed 2026-11-11, `2026-1111-1020-n131-n132-web-push-deadlock-and-dispatch-order` — a
   tap's patches can no longer reach the host after a later pushed pass (plan

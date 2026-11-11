@@ -21,6 +21,27 @@ final class TreeStore {
 
     private let log = Logger(subsystem: "com.grmob", category: "TreeStore")
 
+    /// Called when this tree is found to have drifted from Go's: a patch
+    /// whose path resolves to nothing, or a payload that is not a patch
+    /// list. GrMobRuntime answers it with mobile.Resync, whose replace of
+    /// "root" puts Go's tree back (N-133). Patches are positional and
+    /// incremental, so a tree that is wrong once stays wrong; the log line
+    /// that used to say "the next full replace re-synchronizes" was true,
+    /// but nothing ever asked for one.
+    @ObservationIgnored var onDrift: (@MainActor () -> Void)?
+
+    /// Once per drift, not once per symptom: the stale patches already
+    /// queued behind the one that dangled will dangle too, and each asking
+    /// again would only fetch the same tree again. Cleared by a replace of
+    /// "root", which is the answer (or a navigation, which resets it too).
+    @ObservationIgnored private var resyncPending = false
+
+    private func drifted() {
+        if resyncPending { return }
+        resyncPending = true
+        onDrift?()
+    }
+
     /// Mounts the initial full tree (the RenderInitial payload).
     func mount(_ json: String) {
         guard json.drop(while: \.isWhitespace).hasPrefix("{"),
@@ -41,6 +62,7 @@ final class TreeStore {
               let patches = (try? JSONSerialization.jsonObject(with: data)) as? [Any]
         else {
             log.error("patch payload is not an array: \(json, privacy: .public)")
+            drifted()
             return
         }
         for case let p as [String: Any] in patches {
@@ -53,17 +75,27 @@ final class TreeStore {
     private func apply(type: String, path: String, changes: Any?) {
         switch type {
         case "update-props":
-            resolve(path)?.props = changes as? [String: Any] ?? [:]
+            // A miss used to be silent here (optional chaining), and an
+            // update is the commonest patch, so most drift went unseen.
+            guard let node = resolve(path) else { return warn(type, path) }
+            node.props = changes as? [String: Any] ?? [:]
 
         case "update-style":
-            resolve(path)?.style = GrMobStyle.parse(changes as? [String: Any])
+            guard let node = resolve(path) else { return warn(type, path) }
+            node.style = GrMobStyle.parse(changes as? [String: Any])
 
         case "replace":
             guard let obj = changes as? [String: Any] else { return }
             let node = GrMobNode.parse(obj)
             guard let (parent, index) = parentOf(path) else {
-                // Path is "root" itself: swap the whole tree.
-                if path == Self.rootPath { root = node } else { warn(type, path) }
+                // Path is "root" itself: swap the whole tree. That is a
+                // resync's answer, so whatever had drifted is gone now.
+                if path == Self.rootPath {
+                    root = node
+                    resyncPending = false
+                } else {
+                    warn(type, path)
+                }
                 return
             }
             if parent.children.indices.contains(index) {
@@ -120,8 +152,9 @@ final class TreeStore {
 
     private func warn(_ type: String, _ path: String) {
         // A dangling patch means the Go and Swift trees disagree — log loudly
-        // rather than crash; the next full replace re-synchronizes.
+        // rather than crash, and ask Go for its tree (drifted).
         log.warning("patch \(type, privacy: .public) could not resolve \(path, privacy: .public)")
+        drifted()
     }
 
     private static let rootPath = "root"

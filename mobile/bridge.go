@@ -129,6 +129,21 @@ func TriggerIntCallback(id string, value int) string {
 	return mgr.DispatchIntCallback(id, value)
 }
 
+// Resync asks for the whole tree Go believes the shell holds, as one replace
+// of "root". A shell calls it when its tree has drifted from Go's: a patch
+// whose path resolves to nothing, a payload that is not an array, or a patch
+// that threw. With a listener attached the replace arrives through the
+// listener, in order with every other pass, and the return is "[]"; without
+// one it is returned. See render.Manager.Resync.
+//
+// A shell should ask once per drift, not once per symptom: a stale patch
+// queued before the replace will dangle too, and asking again for each would
+// only send the same tree again. Both runtimes hold a "resync pending" flag
+// that the root replace clears.
+func Resync() string {
+	return mgr.Resync()
+}
+
 // listenerAdapter bridges the locally declared interface onto the render
 // package's without exposing that package to the bind tool.
 type listenerAdapter struct{ l PatchListener }

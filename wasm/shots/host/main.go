@@ -251,6 +251,19 @@ func shutdown(this js.Value, args []js.Value) any {
 	return nil
 }
 
+// resync answers a page whose tree has drifted with the whole tree Go
+// believes it holds; see wasm/main.go's resync, which this matches.
+func resync(this js.Value, args []js.Value) any {
+	if manager == nil {
+		return js.ValueOf("[]")
+	}
+	m := manager
+	if push.Defer("Resync", func() { m.Resync() }) {
+		return js.ValueOf("[]")
+	}
+	return js.ValueOf(m.Resync())
+}
+
 func main() {
 	js.Global().Set("GrMobWASM", map[string]any{
 		"RenderInitial": js.FuncOf(renderInitial),
@@ -258,6 +271,7 @@ func main() {
 		"ReceiveEvent":  js.FuncOf(receiveEvent),
 		"IsDirty":       js.FuncOf(isDirty),
 		"HostEvent":     js.FuncOf(hostEvent),
+		"Resync":        js.FuncOf(resync),
 		"Shutdown":      js.FuncOf(shutdown),
 	})
 	if js.Global().Get("GrMobSystemEvent").Type() == js.TypeFunction {

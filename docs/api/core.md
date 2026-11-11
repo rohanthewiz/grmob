@@ -60,7 +60,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
 ## Index
 
 - [Views & state](core-views.md)
-    - [Constants](core-views.md#constants) — `ConcernCachedCallbacks`, `ConcernCachedHooks`, `ConcernCursorDrift`, `ConcernDuplicateKey`, `ConcernHandlerPanic`, `ConcernRenderPanic`, `ConcernUnknownItem`
+    - [Constants](core-views.md#constants) — `ConcernCachedCallbacks`, `ConcernCachedHooks`, `ConcernCursorDrift`, `ConcernDuplicateKey`, `ConcernHandlerPanic`, `ConcernRenderPanic`, `ConcernUnencodablePass`, `ConcernUnknownItem`
     - [`func ClearConcerns`](core-views.md#func-clearconcerns)
     - [`func DumpConcerns`](core-views.md#func-dumpconcerns)
     - [`func IsDebugMode`](core-views.md#func-isdebugmode)

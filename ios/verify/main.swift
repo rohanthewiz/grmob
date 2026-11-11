@@ -320,12 +320,92 @@ func run() -> Int32 {
 
     var problems: [String] = []
     diff(store.root, want, path: "root", into: &problems)
-    if problems.isEmpty {
-        print("OK: \(transcript.steps.count) patch batches applied; tree matches Go's final render")
+    if !problems.isEmpty {
+        print("FAIL: \(problems.count) difference(s) after replay")
+        for p in problems { print("  " + p) }
+        return 1
+    }
+    print("OK: \(transcript.steps.count) patch batches applied; tree matches Go's final render")
+    return checkResync(transcript, want: want)
+}
+
+// checkResync holds the TreeStore's half of a resync (N-133, the plan's R4).
+//
+// A faithful replay must not ask for one: a drift the store reports on a
+// transcript Go recorded is a false alarm it would act on in every app. Then
+// the claim itself: a shell whose tree has drifted, then the rest of the
+// transcript, and the store must notice (a later patch dangles), ask once
+// however many patches dangle, and come back to Go's final tree when the
+// answer, one replace of "root" carrying that tree, is applied.
+//
+// The drift is one node missing from the mounted tree, as a misapplied patch
+// would leave it, tried node by node in tree order until a later patch reaches
+// into the gap. Losing a whole batch, or a single patch, was tried first and
+// left nothing dangling on this transcript: every later patch still resolved,
+// onto the wrong node. That is the mechanism's stated limit (a drift that
+// leaves every path resolvable is one no shell can see), and why the drift
+// here is a hole and not a skipped step.
+@MainActor
+func checkResync(_ transcript: Transcript, want: GrMobNode) -> Int32 {
+    let faithful = TreeStore()
+    var falseAlarms = 0
+    faithful.onDrift = { falseAlarms += 1 }
+    faithful.mount(transcript.initial)
+    for step in transcript.steps { faithful.applyPatches(step) }
+    if falseAlarms > 0 {
+        print("FAIL: a faithful replay reported drift \(falseAlarms) time(s)")
+        return 1
+    }
+
+    let answer = "[{\"Type\":\"replace\",\"TargetID\":\"root\",\"Changes\":\(transcript.final)}]"
+    // Every node path in the initial tree but the root, in tree order.
+    var paths: [String] = []
+    func collect(_ node: GrMobNode, _ path: String) {
+        for (i, child) in node.children.enumerated() {
+            let p = "\(path)/\(i)"
+            paths.append(p)
+            collect(child, p)
+        }
+    }
+    let initialStore = TreeStore()
+    initialStore.mount(transcript.initial)
+    if let root = initialStore.root { collect(root, "root") }
+
+    for hole in paths {
+        let lost = "the node at \(hole)"
+        let store = TreeStore()
+        var asked = 0
+        store.onDrift = { asked += 1 }
+        store.mount(transcript.initial)
+        store.applyPatches("[{\"Type\":\"remove\",\"TargetID\":\"\(hole)\"}]")
+        if asked != 0 {
+            print("FAIL: removing \(hole), which exists, was reported as drift")
+            return 1
+        }
+        for step in transcript.steps { store.applyPatches(step) }
+        if asked == 0 { continue }
+        if asked != 1 {
+            print("FAIL: without \(lost) the store asked for a resync \(asked) times; once per drift")
+            return 1
+        }
+        store.applyPatches(answer)
+        var problems: [String] = []
+        diff(store.root, want, path: "root", into: &problems)
+        if !problems.isEmpty {
+            print("FAIL: without \(lost), \(problems.count) difference(s) after the resync")
+            for p in problems { print("  " + p) }
+            return 1
+        }
+        // The replace cleared the flag: a later drift asks again.
+        store.applyPatches("[{\"Type\":\"remove\",\"TargetID\":\"root/99\"}]")
+        if asked != 2 {
+            print("FAIL: after the resync's replace a new drift did not ask again")
+            return 1
+        }
+        print("OK: a replay without \(lost) asks for a resync once and matches Go's tree after it; a faithful one never asks")
         return 0
     }
-    print("FAIL: \(problems.count) difference(s) after replay")
-    for p in problems { print("  " + p) }
+    print("FAIL: no node's absence left a later patch dangling, so nothing exercised a resync")
     return 1
 }
 

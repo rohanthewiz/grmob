@@ -66,6 +66,10 @@ class GomobileBridge(dataDir: String) : GrMobBridge {
     override fun reportHostEvent(name: String, payload: String): String =
         Mobile.reportHostEvent(name, payload)
 
+    // Asked for by the TreeStore when its tree has drifted from Go's; see
+    // mobile.Resync.
+    override fun resync(): String = Mobile.resync()
+
     override fun setSystemEventListener(listener: (String, String) -> Unit) {
         Mobile.setSystemEventListener(object : SystemEventListener {
             override fun onSystemEvent(name: String, payload: String) =

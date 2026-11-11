@@ -136,6 +136,12 @@ function fromDOM(el, out = []) {
 for (const scenario of scenarios) {
     test(`replay: ${scenario.name} (${scenario.steps.length} patch batches)`, () => {
         const rt = loadRuntime();
+        // Every drift the runtime finds is warned about and answered with a
+        // resync request (N-133). A faithful replay of a real transcript has
+        // none, so a warning here is a false alarm the mechanism would act on
+        // in every app.
+        const drift = [];
+        rt.sandbox.console = { ...rt.sandbox.console, warn: (...a) => drift.push(a.join(" ")) };
 
         rt.GrMob.mount(scenario.initial);
         // The initial tree is built detached and appended once assembled, so
@@ -155,6 +161,8 @@ for (const scenario of scenarios) {
             );
             assert.ok(applied, `batch ${i} named no element that exists`);
         }
+
+        assert.deepEqual(drift, [], "the runtime reported drift during a faithful replay");
 
         const root = rt.mountPoint.children[0];
         assert.ok(root, "nothing was mounted");

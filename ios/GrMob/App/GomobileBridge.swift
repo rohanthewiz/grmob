@@ -81,6 +81,12 @@ final class GomobileBridge: GrMobBridge, @unchecked Sendable {
         MobileReportHostEvent(name, payload)
     }
 
+    // Asked for by the TreeStore when its tree has drifted from Go's; see
+    // mobile.Resync.
+    func resync() -> String {
+        MobileResync()
+    }
+
     func setSystemEventListener(_ listener: @escaping (String, String) -> Void) {
         let l = SystemListener(listener)
         retainedSystem.set(l)

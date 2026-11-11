@@ -10,7 +10,7 @@ One of 11 topic pages of [package core](core.md), which has the package overview
 
 ## Index
 
-- [Constants](#constants) — `ConcernCachedCallbacks`, `ConcernCachedHooks`, `ConcernCursorDrift`, `ConcernDuplicateKey`, `ConcernHandlerPanic`, `ConcernRenderPanic`, `ConcernUnknownItem`
+- [Constants](#constants) — `ConcernCachedCallbacks`, `ConcernCachedHooks`, `ConcernCursorDrift`, `ConcernDuplicateKey`, `ConcernHandlerPanic`, `ConcernRenderPanic`, `ConcernUnencodablePass`, `ConcernUnknownItem`
 - [`func ClearConcerns`](#func-clearconcerns)
 - [`func DumpConcerns`](#func-dumpconcerns)
 - [`func IsDebugMode`](#func-isdebugmode)
@@ -135,6 +135,14 @@ const (
 	// partway, so the app's state may be half-updated in a way no fallback
 	// can describe.
 	ConcernHandlerPanic = "handler-panic"
+
+	// ConcernUnencodablePass: a render pass produced a payload encoding/json
+	// refuses, nearly always a NaN or an infinity in a style float or a prop
+	// (a done/total with total == 0). render.Manager drops the pass and keeps
+	// the last tree the host has, so the screen stops following the app until
+	// the value is finite again; the detail names the node path, its type and
+	// the field.
+	ConcernUnencodablePass = "unencodable-pass"
 )
 ```
 
@@ -150,7 +158,7 @@ func ClearConcerns()
 
 ClearConcerns drops all recorded concerns. Tests call it between cases; apps can call it after acting on a dump.
 
-<small>[core/debug.go:161](https://github.com/rohanthewiz/grmob/blob/master/core/debug.go#L161)</small>
+<small>[core/debug.go:169](https://github.com/rohanthewiz/grmob/blob/master/core/debug.go#L169)</small>
 
 ### func DumpConcerns
 
@@ -160,7 +168,7 @@ func DumpConcerns() string
 
 DumpConcerns renders the recorded concerns as a human-readable block, one line per finding. Empty string when there is nothing to report.
 
-<small>[core/debug.go:169](https://github.com/rohanthewiz/grmob/blob/master/core/debug.go#L169)</small>
+<small>[core/debug.go:177](https://github.com/rohanthewiz/grmob/blob/master/core/debug.go#L177)</small>
 
 ### func IsDebugMode
 
@@ -225,7 +233,7 @@ The detection sites for most concern kinds live in core, so they call upsertConc
 
 Deduplicated on kind+detail like every other concern, so a failure that repeats every frame occupies one entry with a rising count.
 
-<small>[core/debug.go:137](https://github.com/rohanthewiz/grmob/blob/master/core/debug.go#L137)</small>
+<small>[core/debug.go:145](https://github.com/rohanthewiz/grmob/blob/master/core/debug.go#L145)</small>
 
 ### func SetDebugMode
 
@@ -300,7 +308,7 @@ type Concern struct {
 
 Concern is one detected issue. Kind is one of the Concern\* constants; Detail is human-readable specifics; Count is how many times this exact (Kind, Detail) pair fired — checks run every pass, so a persistent bug increments its count rather than flooding the collector with duplicates.
 
-<small>[core/debug.go:92](https://github.com/rohanthewiz/grmob/blob/master/core/debug.go#L92)</small>
+<small>[core/debug.go:100](https://github.com/rohanthewiz/grmob/blob/master/core/debug.go#L100)</small>
 
 #### func Concerns
 
@@ -310,7 +318,7 @@ func Concerns() []Concern
 
 Concerns returns a snapshot of all recorded concerns, sorted by kind then detail so test assertions and dumps are deterministic.
 
-<small>[core/debug.go:143](https://github.com/rohanthewiz/grmob/blob/master/core/debug.go#L143)</small>
+<small>[core/debug.go:151](https://github.com/rohanthewiz/grmob/blob/master/core/debug.go#L151)</small>
 
 ### type Context
 
@@ -392,7 +400,7 @@ The pairing with the rest of the pass boundary:
 
 A no-op (single atomic load) when debug mode is off.
 
-<small>[core/debug.go:198](https://github.com/rohanthewiz/grmob/blob/master/core/debug.go#L198)</small>
+<small>[core/debug.go:206](https://github.com/rohanthewiz/grmob/blob/master/core/debug.go#L206)</small>
 
 #### func (*Context) IsDirty
 

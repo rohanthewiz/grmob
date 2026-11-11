@@ -28,6 +28,7 @@ Once a listener is attached, every pass takes the listener: a Trigger\* call han
 - [`func RenderAgain`](#func-renderagain)
 - [`func RenderInitial`](#func-renderinitial)
 - [`func ReportHostEvent`](#func-reporthostevent)
+- [`func Resync`](#func-resync)
 - [`func SetDataDir`](#func-setdatadir)
 - [`func SetListener`](#func-setlistener)
 - [`func SetSystemEventListener`](#func-setsystemeventlistener)
@@ -95,6 +96,18 @@ It mirrors the Trigger\* functions exactly. name is the event kind ("audio\_stat
 A malformed payload is dropped here with a log line and "\[]" returned — the shell built the JSON, so the bug is on that side and a Go-side panic would only obscure it. An empty payload is a valid empty object.
 
 <small>[mobile/hostevents.go:24](https://github.com/rohanthewiz/grmob/blob/master/mobile/hostevents.go#L24)</small>
+
+### func Resync
+
+```go
+func Resync() string
+```
+
+Resync asks for the whole tree Go believes the shell holds, as one replace of "root". A shell calls it when its tree has drifted from Go's: a patch whose path resolves to nothing, a payload that is not an array, or a patch that threw. With a listener attached the replace arrives through the listener, in order with every other pass, and the return is "\[]"; without one it is returned. See render.Manager.Resync.
+
+A shell should ask once per drift, not once per symptom: a stale patch queued before the replace will dangle too, and asking again for each would only send the same tree again. Both runtimes hold a "resync pending" flag that the root replace clears.
+
+<small>[mobile/bridge.go:143](https://github.com/rohanthewiz/grmob/blob/master/mobile/bridge.go#L143)</small>
 
 ### func SetDataDir
 

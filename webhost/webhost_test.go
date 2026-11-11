@@ -60,6 +60,7 @@ func TestEveryBrowserHostDeliversUnderThePushGuard(t *testing.T) {
 		"ApplyPatches": "Deliver",    // the listener: guard up for the push
 		"renderAgain":  "Delivering", // the binding that takes the lock
 		"receiveEvent": "Defer",      // the event the batch sent back
+		"resync":       "Defer",      // takes the lock too (N-133)
 	}
 	for _, path := range append([]string{"host.go"}, hosts...) {
 		f, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.SkipObjectResolution)

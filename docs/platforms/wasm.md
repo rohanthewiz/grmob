@@ -96,6 +96,7 @@ The Go side registers a `GrMobWASM` global with these functions:
 | `GrMobWASM.ReceiveEvent(id, payloadJSON)` | Delivers a user event: `payloadJSON` is `{"value": ...}` and the value's type picks the callback kind |
 | `GrMobWASM.RenderAgain()` | Re-renders and returns the diff — the polling path |
 | `GrMobWASM.IsDirty()` | Whether state changed since the last render — poll this to know when `RenderAgain` is worth calling |
+| `GrMobWASM.Resync()` | The whole tree Go believes the page holds, as one replace of `root`, for a page whose tree has drifted (a patch path that resolved to nothing, a payload that was not a list, a patch that threw). Pushed through `GrMobApplyPatches` when the page defines it, and then returns `[]`; returned otherwise. The runtime asks for it itself, once per drift |
 | `GrMobWASM.Shutdown()` | Closes the manager (stopping every hook-owned timer) and lets `main` return, so the module exits and `go.run`'s promise settles. The hot-reload hook — see [Hot reload](#hot-reload) |
 
 And it looks for one global the page provides:

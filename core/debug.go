@@ -83,6 +83,14 @@ const (
 	// partway, so the app's state may be half-updated in a way no fallback
 	// can describe.
 	ConcernHandlerPanic = "handler-panic"
+
+	// ConcernUnencodablePass: a render pass produced a payload encoding/json
+	// refuses, nearly always a NaN or an infinity in a style float or a prop
+	// (a done/total with total == 0). render.Manager drops the pass and keeps
+	// the last tree the host has, so the screen stops following the app until
+	// the value is finite again; the detail names the node path, its type and
+	// the field.
+	ConcernUnencodablePass = "unencodable-pass"
 )
 
 // Concern is one detected issue. Kind is one of the Concern* constants;

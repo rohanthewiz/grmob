@@ -543,16 +543,17 @@ test("a call that throws does not strand the calls queued behind it", async () =
 });
 
 // Every runtime call into Go's event path goes through dispatchToGo, and the
-// only direct calls left are its own two: the immediate send and the flush. A
-// site added later with a bare window.GoInvokeCallback would skip the queue,
-// which is the hole N-131 closed, so it fails here rather than on a live page.
-test("the runtime calls GoInvokeCallback only from dispatchToGo and its flush", () => {
+// only direct call left is its own, the call it hands callGo to make now or
+// queue. A site added later with a bare window.GoInvokeCallback would skip the
+// queue, which is the hole N-131 closed, so it fails here rather than on a
+// live page.
+test("the runtime calls GoInvokeCallback only from dispatchToGo", () => {
     const source = readFileSync(new URL("../grmob-runtime.js", import.meta.url), "utf8");
     const direct = source.split("\n")
         .map((line, i) => [i + 1, line])
         .filter(([, line]) => /window\.GoInvokeCallback\(/.test(line) && !/^\s*\/\//.test(line));
-    assert.equal(direct.length, 2,
-        `want the two inside dispatchToGo and flushGoCalls; found:\n` +
+    assert.deepEqual(direct.map(([, l]) => l.trim()), ["callGo(() => window.GoInvokeCallback(id, payload));"],
+        `want the one inside dispatchToGo; found:\n` +
         direct.map(([n, l]) => `  ${n}: ${l.trim()}`).join("\n"));
 });
 

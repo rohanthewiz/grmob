@@ -61,6 +61,7 @@ for pushes. Patch semantics — positional paths, ordering rules — are in
 | `RenderAgain()` | Escape hatch for shells that drive rendering themselves |
 | `SetSystemEventListener(l)` | Sink for app→host system events (`toast`, `open_url`, `audio`, `clipboard`, `keystore`, `haptic`, `notification`); `OnSystemEvent(name, payloadJSON)` |
 | `ReportHostEvent(name, payloadJSON)` | Host→app events that answer no callback (`audio_status`, `lifecycle`, `clipboard`, `keystore`, `notification_tap`); returns the resulting patches like `Trigger*` |
+| `Resync()` | The whole tree Go believes the shell holds, as one replace of `root`, for a shell whose tree has drifted (a patch path that resolved to nothing, a payload that was not an array, a patch that threw). Delivered like a `Trigger*` call's patches. Both runtimes ask for it themselves, once per drift: a "resync pending" flag holds further requests until a root replace lands |
 
 ## Building — Android
 

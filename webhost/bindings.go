@@ -7,4 +7,4 @@ package webhost
 // only), so that an ordinary `go test ./...` on a development machine can
 // read it and compare it with the hand-written hosts in this repository; see
 // webhost_test.go.
-var Bindings = []string{"RenderInitial", "RenderAgain", "ReceiveEvent", "IsDirty", "HostEvent", "Shutdown"}
+var Bindings = []string{"RenderInitial", "RenderAgain", "ReceiveEvent", "IsDirty", "HostEvent", "Resync", "Shutdown"}

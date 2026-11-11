@@ -10,13 +10,18 @@ import (
 // Both TreeStores must refuse a payload that is not the shape they are about
 // to parse, rather than throwing out of the delivery thread.
 //
-// The hazard is not hypothetical and does not come from the native side at
-// all: render.renderJSON returns the string {"error":"failed to encode JSON"}
-// whenever a payload will not marshal, and a single NaN or +Inf reaching a
-// node's Props is enough to produce one (encoding/json rejects them). That
-// string then travels the ordinary delivery path. Kotlin's JSONArray(json)
-// threw on it, from inside the main-thread Handler, which crashes the app and
-// buries the encode failure that caused it; Swift logged and returned.
+// The hazard was not hypothetical and did not come from the native side at
+// all: render.renderJSON returned the string {"error":"failed to encode JSON"}
+// whenever a payload would not marshal, and a single NaN or +Inf reaching a
+// node's Props was enough to produce one (encoding/json rejects them). That
+// string then travelled the ordinary delivery path. Kotlin's JSONArray(json)
+// threw on it, from inside the main-thread Handler, which crashed the app and
+// buried the encode failure that caused it; Swift logged and returned.
+//
+// Go no longer sends it: since N-133 the manager drops an unencodable pass
+// and keeps the last tree the host has (render/encode_test.go). The guards
+// stay, because a host should refuse a payload it cannot parse whoever sent
+// it, and the message below still names the payload a host would have seen.
 //
 // Read as source text for the same reason as everything else in this package
 // — see doc.go. What is checked is narrow on purpose: that the parse is

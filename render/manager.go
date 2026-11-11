@@ -280,7 +280,6 @@ func (r *Manager) renderInitialLocked() string {
 		logRenderPanic("initial render", rerr)
 		tree = panicPlaceholder()
 	}
-	r.currentTree = tree
 
 	// Close the debug pass boundary (no-op unless core.SetDebugMode is on):
 	// the initial pass records each context's baseline hook count for the
@@ -291,8 +290,21 @@ func (r *Manager) renderInitialLocked() string {
 	// disclosures nothing can open. It runs here rather than in an exporter
 	// because every one of those is a fact about the whole document, which
 	// neither web target can see from the element it is writing.
-	core.AuditTree(r.currentTree)
-	return renderJSON(r.currentTree)
+	core.AuditTree(tree)
+
+	// A tree that will not encode (a NaN in a style or a prop) is a mount
+	// with nothing to mount: the payload used to be {"error": ...}, which
+	// every host refused, and the screen stayed blank. The placeholder stands
+	// in, as for a panic, and is what the next pass diffs against, so the
+	// app comes up the moment its state encodes. See unencodable.
+	out, err := encodePass(tree)
+	if err != nil {
+		r.unencodable("initial render", err, tree)
+		tree = panicPlaceholder()
+		out, _ = encodePass(tree) // a Text with one string prop always encodes
+	}
+	r.currentTree = tree
+	return out
 }
 
 // panicPlaceholder is the tree a failed pass stands in when there is no
@@ -377,15 +389,36 @@ func (r *Manager) renderAgainLocked() string {
 	r.context.EndRenderPass()
 	core.AuditTree(newTree)
 	patches := reconcile.Diff(r.currentTree, newTree, "root")
-	r.currentTree = newTree
-	r.context.ClearDirty()
-	r.context.PurgeUnusedCallbacks()
 	if patches == nil {
 		// A no-change render must serialize as "[]", not "null": the native
 		// runtimes iterate the decoded patch list without a null check.
 		patches = []reconcile.Patch{}
 	}
-	return renderJSON(patches)
+
+	// Encoded BEFORE the pass is committed. currentTree is Go's record of
+	// what the host holds; it used to advance first, and a pass that then
+	// failed to encode went out as {"error": ...}, which every host refused.
+	// Every patch of that pass was lost and never re-sent, because Go
+	// believed the host already had them: one NaN in a progress value froze
+	// every unrelated change made in the same pass, for good.
+	//
+	// Now a pass that will not encode is abandoned exactly as a panicking
+	// one is (above, and for the same three reasons): currentTree stays at
+	// the last tree the host has, the purge is skipped because the host's
+	// callback IDs are still the old pass's, and the dirty flag is cleared.
+	// The next pass is diffed against the tree the host really holds, so
+	// once the value encodes again everything this pass carried arrives with
+	// it.
+	out, err := encodePass(patches)
+	if err != nil {
+		r.unencodable("render pass", err, newTree)
+		r.context.ClearDirty()
+		return "[]"
+	}
+	r.currentTree = newTree
+	r.context.ClearDirty()
+	r.context.PurgeUnusedCallbacks()
+	return out
 }
 
 // DispatchCallback runs the void handler registered under id (a button tap,
@@ -469,6 +502,52 @@ func (m *Manager) Dispatch(label string, fn func()) string {
 	return m.deliverLocked(m.renderAgainLocked())
 }
 
+// Resync sends the host the whole tree Go believes it holds, as one replace of
+// the root, so a host whose tree has drifted from Go's can start again from
+// Go's (N-133, the plan's R4).
+//
+// # Why a host needs it
+//
+// Patches are positional and incremental: each is correct only against the
+// exact tree the previous one produced. A host that misses one, or applies one
+// wrongly, stays wrong, and every later patch compounds it. Every host already
+// noticed the symptom (a patch whose path resolves to nothing) and logged it;
+// the TreeStores said "the next full replace re-synchronizes", but nothing
+// ever asked for one. A host now asks, through mobile.Resync or
+// GrMobWASM.Resync, when a path dangles, a payload is not an array, or a
+// patch throws.
+//
+// # What it sends
+//
+// currentTree, which is the tree the last committed pass left the host with
+// (an unencodable or panicking pass is not committed; see renderAgainLocked).
+// Nothing is re-rendered: the question is what the host should be holding,
+// and a render would answer a different one. The callback IDs in that tree
+// are the ones still registered, for the same reason. It uses no new wire
+// shape: every host already applies a replace of "root", because a
+// navigation emits one.
+//
+// It goes out like a dispatch (deliverLocked): through the listener inside the
+// lock when one is attached, so it cannot be overtaken by a pass and cannot
+// overtake one, and returned otherwise. Before the mount there is nothing to
+// send, and the answer is "[]".
+func (m *Manager) Resync() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.currentTree == nil {
+		return "[]"
+	}
+	out, err := encodePass([]reconcile.Patch{{Type: "replace", TargetID: "root", Changes: m.currentTree}})
+	if err != nil {
+		// currentTree only ever holds a tree that encoded, so this is a
+		// should-not-happen; said rather than sent as a payload no host can
+		// apply.
+		log.Printf("grmob: resync could not encode the current tree: %v", err)
+		return "[]"
+	}
+	return m.deliverLocked(out)
+}
+
 // guardHandler runs one event handler under a panic guard.
 //
 // core.ErrorBoundary covers render; this covers the other half. A handler runs
@@ -494,13 +573,38 @@ func (m *Manager) guardHandler(id string, fn func()) {
 	}
 }
 
-// JSON encoder
-func renderJSON[T any](v T) string {
+// encodePass marshals one pass's payload, the full tree or its patch list.
+//
+// It returns the error rather than a stand-in payload. Its predecessor,
+// renderJSON, answered a failed marshal with {"error":"failed to encode
+// JSON"}, which travelled the ordinary delivery path to hosts that wanted an
+// array, and the TreeStores' shape guards (mobile/verify's
+// payloadguard_test.go) exist because of it. The guards stay: a host should
+// refuse a payload it cannot parse whoever sent it.
+func encodePass[T any](v T) (string, error) {
 	data, err := json.Marshal(v)
 	if err != nil {
-		return `{"error":"failed to encode JSON"}`
+		return "", err
 	}
-	return string(data)
+	return string(data), nil
+}
+
+// unencodable reports a pass that would not encode. Always logged, because the
+// screen has just stopped following the app's state and nothing else will say
+// so; under debug mode also a ConcernUnencodablePass, so a test can assert on
+// it. Both name the first non-finite number in the tree when there is one,
+// which is nearly always the cause, and fall back to the marshal error.
+func (r *Manager) unencodable(where string, err error, tree *core.Node) {
+	what := err.Error()
+	if found, ok := firstNonFinite(tree, "root"); ok {
+		what = found
+	}
+	log.Printf("grmob: dropped the %s because its payload will not encode as JSON (%v): %s. "+
+		"The screen keeps the last tree that did, and the next pass is diffed against it.",
+		where, err, what)
+	if core.IsDebugMode() {
+		core.ReportConcern(core.ConcernUnencodablePass, what)
+	}
 }
 
 // RenderAndGetPatches renders one pass and returns whichever payload the host

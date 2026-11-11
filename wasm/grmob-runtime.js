@@ -8924,17 +8924,28 @@ const GrMob = (() => {
     //
     // webhost.PushGuard is the second layer, on the Go side: a call that gets
     // past this one anyway is deferred there and logged, not deadlocked.
+    //
+    // The queue holds calls rather than (id, payload) pairs because a
+    // callback is not the only call a batch makes: a batch that finds the
+    // page's tree has drifted asks Go for its whole tree (requestResync), and
+    // GrMobWASM.Resync takes the same render lock.
     const goCalls = [];
     let goPushDepth = 0;
     let goCallsScheduled = false;
     let flushingGoCalls = false;
 
     function dispatchToGo(id, payload) {
+        callGo(() => window.GoInvokeCallback(id, payload));
+    }
+
+    // callGo makes one call into Go now, or queues it under dispatchToGo's
+    // rule when a batch or a push is on the stack.
+    function callGo(call) {
         if (applyingTree > 0 || goPushDepth > 0) {
-            goCalls.push([id, payload]);
+            goCalls.push(call);
             return;
         }
-        window.GoInvokeCallback(id, payload);
+        call();
     }
 
     function flushGoCalls() {
@@ -8960,11 +8971,11 @@ const GrMob = (() => {
         flushingGoCalls = true;
         try {
             while (goCalls.length > 0) {
-                const [id, payload] = goCalls.shift();
+                const call = goCalls.shift();
                 // One call that throws (a Go program that has exited throws
                 // on every call) must not strand the ones queued behind it.
                 try {
-                    window.GoInvokeCallback(id, payload);
+                    call();
                 } catch (err) {
                     console.error("grmob: a queued call into Go threw", err);
                 }
@@ -8984,6 +8995,47 @@ const GrMob = (() => {
         } finally {
             goPushDepth--;
         }
+    }
+
+    // --- Asking Go for its whole tree ---------------------------------------
+    //
+    // requestResync is what a batch does when it finds the page's tree is not
+    // the tree Go diffed against (N-133, the plan's R4): a patch whose path
+    // resolves to nothing, a payload that is not an array, or a patch that
+    // threw. Patches are positional and incremental, so a page that is wrong
+    // once stays wrong, and every later patch compounds it; the lookup misses
+    // used to return in silence. GrMobWASM.Resync answers with one replace of
+    // "root" carrying the tree Go believes the page holds (render.Manager's
+    // Resync), pushed through GrMobApplyPatches like any pass, or returned to
+    // a page that polls.
+    //
+    // Once per drift, not once per symptom: resyncPending holds further
+    // requests until a replace of "root" lands, so the dangling tail of a
+    // batch that went wrong at its first patch asks once. The flag is also
+    // dropped when the call returns, so a Go that sent nothing (nothing
+    // mounted, or a module from before Resync existed) cannot leave the page
+    // unable to ask again.
+    //
+    // Queued through callGo like a dispatch, for dispatchToGo's reason: the
+    // request is made from inside a batch, and Resync takes the render lock.
+    let resyncPending = false;
+    function requestResync(why) {
+        console.warn(`grmob: ${why}; the page's tree has drifted from Go's`);
+        if (resyncPending) return;
+        resyncPending = true;
+        callGo(() => {
+            try {
+                const host = window.GrMobWASM;
+                if (!host || typeof host.Resync !== "function") return;
+                const out = host.Resync();
+                // With a listener attached (every page on this runtime) the
+                // replace has already been applied inside that call, and
+                // this is "[]".
+                if (typeof out === "string" && out !== "[]") patch(out);
+            } finally {
+                resyncPending = false;
+            }
+        });
     }
 
     // --- A Go program that stopped ------------------------------------------
@@ -9098,7 +9150,20 @@ const GrMob = (() => {
     }
 
     function applyBatch(patchList) {
-        const patches = typeof patchList === "string" ? JSON.parse(patchList) : patchList;
+        let patches;
+        try {
+            patches = typeof patchList === "string" ? JSON.parse(patchList) : patchList;
+        } catch (err) {
+            patches = null;
+        }
+        // A payload that is not a patch list is a pass the page never got.
+        // Go used to send {"error": ...} for a pass that would not encode, and
+        // forEach on it threw out of the call (N-133 drops such a pass in Go
+        // now); whatever the cause, every patch of that pass is missing here.
+        if (!Array.isArray(patches)) {
+            requestResync(`a patch payload is not a list (${String(patchList).slice(0, 200)})`);
+            return;
+        }
         // Before anything moves: where each thread's reader is. See "Start
         // reached, and a thread's place".
         const anchors = captureListAnchors();
@@ -9109,328 +9174,356 @@ const GrMob = (() => {
         // node has no ancestors left to walk.
         const touched = [];
 
-        patches.forEach(p => {
-            // "add" fills a slot that was nil in the old tree, so its
-            // TargetID does not exist in the DOM yet — resolve the parent
-            // from the path and insert at the slot's index instead of
-            // falling through to the lookup below, which would drop it.
-            if (p.Type === "add") {
-                const slash = p.TargetID.lastIndexOf("/");
-                const parent = document.querySelector(`[data-node-path="${p.TargetID.slice(0, slash)}"]`);
-                if (!parent) return;
-                const index = Number(p.TargetID.slice(slash + 1));
-                const added = renderNode(p.Changes, p.TargetID);
-                // The slot index is a *node* index; the DOM child list may
-                // carry chrome ahead of the node children (a TabView's bar), so
-                // it is shifted past that chrome. Without the shift a page
-                // added to a TabView would land in front of the bar, and every
-                // page after it would be one slot out of step with the path it
-                // answers to.
-                parent.insertBefore(added, parent.children[index + chromeOffset(parent)] || null);
-                touched.push(parent);
-                return;
-            }
-
-            const el = document.querySelector(`[data-node-path="${p.TargetID}"]`);
-            if (!el) {
-                return;
-            }
-            touched.push(el);
-            if (el.parentNode) touched.push(el.parentNode);
-
-            switch (p.Type) {
-                case "update-props":
-                    // A node that lost every prop arrives with Changes null:
-                    // the reconciler sends the whole new props map, and a nil
-                    // Go map marshals as null. Normalised once here because
-                    // every read below (and pruneStaleListeners, which is what
-                    // ends a removed onBack's claim) expects an object. The
-                    // first transition to hit it was browser back from a
-                    // lesson, whose root carries onBack, to a contents root
-                    // that carries nothing.
-                    if (!p.Changes) p.Changes = {};
-                    // Before the per-key loop, for the same reason
-                    // createElement applies it after one: the hint reads two
-                    // props at once, and the patch carries the whole new map.
-                    //
-                    // Unconditional, exactly as createElement does it. Gating
-                    // this on "imeAction" or "onSubmit" being present meant a
-                    // field that *lost* its onSubmit kept the enterkeyhint it
-                    // was given when it had one, so the keyboard went on
-                    // advertising a submit affordance the field no longer had.
-                    applyEnterKeyHint(el, p.Changes);
-                    // core.Keyboard, unconditional for the same reason the
-                    // hint is: the patch carries the whole new map, so a key
-                    // that is absent means the text keyboard, not "leave it".
-                    // Decided per key, a field that dropped core.Keyboard kept
-                    // the digits pad it had been given. Only on text controls,
-                    // so an unrelated node never gains an inputmode it would
-                    // not have been created with.
-                    applyInputMode(el, p.Changes);
-                    // core.PressKeepsFocus, total as on the create path.
-                    applyPressKeepsFocus(el, p.Changes);
-                    // The swipe props, total as on the create path.
-                    applySwipe(el, p.Changes);
-                    // The map nodes' dataset, before the per-key loop and for
-                    // the same reason the hint is: the sync pass reads lat, lng
-                    // and zoom together, and the patch carries the whole new
-                    // map. The Leaflet reconciliation itself runs once per batch
-                    // in syncTouchedMaps, not here — a batch can carry a marker
-                    // move and the map's own region, and doing the work per key
-                    // would re-read the layer several times for one change.
-                    applyMapProps(el, p.Changes, el.dataset.nodeType);
-                    // A canvas's viewBox or a shape's path and paint, written
-                    // whole for the same reason: the patch carries the whole
-                    // new map, and an attribute absent from it is gone.
-                    applyCanvasProps(el, p.Changes, el.dataset.nodeType);
-                    // A chart's data table, rebuilt whole for the same reason.
-                    applyChartData(el, p.Changes);
-                    // The editor's own props, before the per-key loop and for
-                    // the same reason the hint and the map's dataset are: they
-                    // are read together (the command's epoch and its string,
-                    // the gutter's flag and the line count) and the patch
-                    // carries the whole new map, so deciding them per key
-                    // would depend on the order Object.entries happened to
-                    // yield them in. The loop below skips every key this
-                    // consumed.
-                    if (el.dataset.nodeType === "CodeEditor") {
-                        buildCodeEditor(el);
-                        applyCodeEditorProps(el, p.Changes);
+        // Wrapped so that one patch that throws does not skip the post-passes
+        // below: they repair what this batch touched (tab stops, observers,
+        // the back claim), and the patches before the throw did land. The
+        // throw itself means the page's tree may no longer be Go's, so it asks
+        // for Go's (requestResync).
+        try {
+            patches.forEach(p => {
+                // A root replace is the answer to a resync request (and what a
+                // navigation sends): whatever drifted before it is gone after it.
+                if (p.Type === "replace" && p.TargetID === "root") resyncPending = false;
+                // "add" fills a slot that was nil in the old tree, so its
+                // TargetID does not exist in the DOM yet — resolve the parent
+                // from the path and insert at the slot's index instead of
+                // falling through to the lookup below, which would drop it.
+                if (p.Type === "add") {
+                    const slash = p.TargetID.lastIndexOf("/");
+                    const parent = document.querySelector(`[data-node-path="${p.TargetID.slice(0, slash)}"]`);
+                    if (!parent) {
+                        requestResync(`patch add ${p.TargetID} has no parent on the page`);
+                        return;
                     }
-                    if (el.dataset.nodeType === "RichTextEditor") {
-                        buildRichTextEditor(el);
-                        applyRichTextProps(el, p.Changes);
+                    const index = Number(p.TargetID.slice(slash + 1));
+                    const added = renderNode(p.Changes, p.TargetID);
+                    // The slot index is a *node* index; the DOM child list may
+                    // carry chrome ahead of the node children (a TabView's bar), so
+                    // it is shifted past that chrome. Without the shift a page
+                    // added to a TabView would land in front of the bar, and every
+                    // page after it would be one slot out of step with the path it
+                    // answers to.
+                    parent.insertBefore(added, parent.children[index + chromeOffset(parent)] || null);
+                    touched.push(parent);
+                    return;
+                }
+
+                const el = document.querySelector(`[data-node-path="${p.TargetID}"]`);
+                if (!el) {
+                    // A replace of the root with no root on the page (the mount
+                    // point emptied, or a mount that threw) is still answerable:
+                    // it is the mount point's one child. That keeps a resync
+                    // able to bring back a page whose root is gone.
+                    if (p.Type === "replace" && p.TargetID === "root" && rootElement) {
+                        const fresh = renderNode(p.Changes, "root");
+                        rootElement.innerHTML = "";
+                        rootElement.appendChild(fresh);
+                        touched.push(fresh);
+                        return;
                     }
-                    for (const [k, v] of Object.entries(p.Changes)) {
-                        if (el.dataset.nodeType === "CodeEditor" && CODE_EDITOR_PROPS.has(k)) {
-                            continue;
+                    requestResync(`patch ${p.Type} ${p.TargetID} resolves to nothing on the page`);
+                    return;
+                }
+                touched.push(el);
+                if (el.parentNode) touched.push(el.parentNode);
+
+                switch (p.Type) {
+                    case "update-props":
+                        // A node that lost every prop arrives with Changes null:
+                        // the reconciler sends the whole new props map, and a nil
+                        // Go map marshals as null. Normalised once here because
+                        // every read below (and pruneStaleListeners, which is what
+                        // ends a removed onBack's claim) expects an object. The
+                        // first transition to hit it was browser back from a
+                        // lesson, whose root carries onBack, to a contents root
+                        // that carries nothing.
+                        if (!p.Changes) p.Changes = {};
+                        // Before the per-key loop, for the same reason
+                        // createElement applies it after one: the hint reads two
+                        // props at once, and the patch carries the whole new map.
+                        //
+                        // Unconditional, exactly as createElement does it. Gating
+                        // this on "imeAction" or "onSubmit" being present meant a
+                        // field that *lost* its onSubmit kept the enterkeyhint it
+                        // was given when it had one, so the keyboard went on
+                        // advertising a submit affordance the field no longer had.
+                        applyEnterKeyHint(el, p.Changes);
+                        // core.Keyboard, unconditional for the same reason the
+                        // hint is: the patch carries the whole new map, so a key
+                        // that is absent means the text keyboard, not "leave it".
+                        // Decided per key, a field that dropped core.Keyboard kept
+                        // the digits pad it had been given. Only on text controls,
+                        // so an unrelated node never gains an inputmode it would
+                        // not have been created with.
+                        applyInputMode(el, p.Changes);
+                        // core.PressKeepsFocus, total as on the create path.
+                        applyPressKeepsFocus(el, p.Changes);
+                        // The swipe props, total as on the create path.
+                        applySwipe(el, p.Changes);
+                        // The map nodes' dataset, before the per-key loop and for
+                        // the same reason the hint is: the sync pass reads lat, lng
+                        // and zoom together, and the patch carries the whole new
+                        // map. The Leaflet reconciliation itself runs once per batch
+                        // in syncTouchedMaps, not here — a batch can carry a marker
+                        // move and the map's own region, and doing the work per key
+                        // would re-read the layer several times for one change.
+                        applyMapProps(el, p.Changes, el.dataset.nodeType);
+                        // A canvas's viewBox or a shape's path and paint, written
+                        // whole for the same reason: the patch carries the whole
+                        // new map, and an attribute absent from it is gone.
+                        applyCanvasProps(el, p.Changes, el.dataset.nodeType);
+                        // A chart's data table, rebuilt whole for the same reason.
+                        applyChartData(el, p.Changes);
+                        // The editor's own props, before the per-key loop and for
+                        // the same reason the hint and the map's dataset are: they
+                        // are read together (the command's epoch and its string,
+                        // the gutter's flag and the line count) and the patch
+                        // carries the whole new map, so deciding them per key
+                        // would depend on the order Object.entries happened to
+                        // yield them in. The loop below skips every key this
+                        // consumed.
+                        if (el.dataset.nodeType === "CodeEditor") {
+                            buildCodeEditor(el);
+                            applyCodeEditorProps(el, p.Changes);
                         }
-                        if (el.dataset.nodeType === "RichTextEditor" && RICH_EDITOR_PROPS.has(k)) {
-                            continue;
+                        if (el.dataset.nodeType === "RichTextEditor") {
+                            buildRichTextEditor(el);
+                            applyRichTextProps(el, p.Changes);
                         }
-                        if (k === "value") {
-                            // Loose equality on purpose: a range input's
-                            // value reads back as a string ("12.5") while Go
-                            // sends a number, and a strict compare would
-                            // re-assign on every status tick.
-                            // Before the echo guard: an echo is still Go
-                            // saying what the field holds (noteGoValue).
-                            noteGoValue(el, v);
-                            if (el.value == v) continue;
-                            writeFieldValue(el, v);
-                        } else if (k === "min" || k === "max" || k === "step") {
-                            applySliderBound(el, k, v, p.Changes.value);
-                        } else if (k === "content") {
-                            if (el.textContent === v) continue;
-                            el.textContent = v;
-                        } else if (k === "label") {
-                            // Buttons carry their text as `label`, not
-                            // `content`, and createElement maps both onto
-                            // textContent — this branch is the update half of
-                            // that mapping. Without it a reused Button kept
-                            // its old caption whenever a navigation diff
-                            // paired it positionally with a different one.
-                            if (el.textContent === v) continue;
-                            el.textContent = v;
-                        } else if (k === "placeholder") {
-                            if (el.placeholder === v) continue;
-                            el.placeholder = v;
-                        } else if (k === "keyboard") {
-                            // Written whole by applyInputMode above.
-                            continue;
-                        } else if (k === "checked") {
-                            // No echo guard, unlike value above: assigning a
-                            // boolean back onto a checkbox costs nothing,
-                            // where re-assigning a text field's value would
-                            // move the caret to the end mid-typing.
-                            el.checked = !!v;
-                        } else if (k === "rows") {
-                            applyRows(el, v);
-                        } else if (k === "runs" && el.dataset.nodeType === "Paragraph") {
-                            applyParagraphRuns(el, v);
-                        } else if (k === "runs") {
-                            el.__grmobRuns = v;
-                            applyGridRuns(el, v);
-                        } else if (k === "size" && el.dataset.nodeType === "Spacer") {
-                            // The update half of the Spacer sizing in
-                            // renderNode. Without it a Spacer whose size
-                            // changed kept its original gap: the size lives in
-                            // Props, so the change arrives as an update-props
-                            // patch and nothing here read the key. Gated on
-                            // the node type because "size" is a plausible prop
-                            // name for a future node that means something else
-                            // by it.
-                            applySpacerSize(el, v);
-                        } else if (k === "src") {
-                            if (el.src === v) continue;
-                            el.src = v;
-                        } else if (k === "contentMode") {
-                            el.style.objectFit = objectFitFor(v);
-                        } else if (k === "focusEpoch") {
-                            // The epoch is the whole trigger; focusAction is
-                            // only read once it has moved. An update-props
-                            // patch carries the entire new props map, so a
-                            // field re-rendered for its value would otherwise
-                            // re-run whatever focus command was last issued.
-                            if (String(el.dataset.focusEpoch) === String(v)) continue;
-                            el.dataset.focusEpoch = v;
-                            applyFocusCommand(el, v, p.Changes.focusAction);
-                        } else if (k === "onStartReached") {
-                            attachStartReached(el, v);
-                        } else if (k === "startAtEnd") {
-                            setStartAtEnd(el, v);
-                        } else if (k === "focusAction") {
-                            // Handled with focusEpoch above; on its own it
-                            // says when nothing, only what.
-                            continue;
-                        } else if (k === "scrollEpoch") {
-                            // The app-wide high-water mark in
-                            // applyScrollCommand is what keeps a props patch
-                            // carrying the same stamp from scrolling again.
-                            applyScrollCommand(el, v);
-                        } else if (k === "visible" && el.dataset.nodeType === "Modal") {
-                            // This IS the modal open/close path: toggling
-                            // core.Visible reaches the page as a prop patch,
-                            // never as a subtree add/remove — the content
-                            // stays mounted, which is why its state survives
-                            // a close.
-                            el.style.display = v ? "flex" : "none";
-                        } else if (k === "backdrop" && el.dataset.nodeType === "Modal") {
-                            el.style.background = v;
-                        } else if (k === "onDismiss" && el.dataset.nodeType === "Modal") {
-                            // Before the generic on* branch, which would
-                            // attach a listener for a "dismiss" DOM event
-                            // that never fires — and, worse, mark the
-                            // listener slot taken so the real one could
-                            // never be attached.
-                            attachModalDismiss(el, v);
-                        } else if (k === "onTabChange" && el.dataset.nodeType === "TabView") {
-                            // Before the generic on* branch, exactly as on the
-                            // create path: "tabchange" is not a DOM event. The
-                            // bar's buttons read this ID back at click time,
-                            // and pruneStaleListeners drops it — leaving the
-                            // bar inert — when a pass stops carrying it.
-                            el.dataset.listener_onTabChange = v;
-                        } else if (k === "selectedIndex" && el.dataset.nodeType === "TabView") {
-                            // This IS the tab-switch path: core.SelectedIndex
-                            // is controlled state, so a switch reaches the page
-                            // as a prop patch on the TabView and never as a
-                            // subtree replacement — the pages are never rebuilt,
-                            // only re-hidden. syncTouchedTabViews acts on it
-                            // once the batch has landed.
-                            el.dataset.tabSelected = v;
-                        } else if (k === "onLongPress") {
-                            attachLongPress(el, v);
-                        } else if (k === "onEndReached") {
-                            // Before the generic on* branch, as on the create
-                            // path. Only the ID is refreshed here; whether the
-                            // observation still points at the right row is
-                            // syncTouchedEndReached's question, once the whole
-                            // batch has landed and the children have settled.
-                            attachEndReached(el, v);
-                        } else if (k === "onBack") {
-                            // As on the create path: record the latest ID and
-                            // the claimant. A prop that went away is dropped
-                            // by pruneStaleListeners, which is what ends the
-                            // claim.
-                            el.dataset.listener_onBack = v;
-                            backClaimants.add(el);
-                        } else if (k === "onEscape") {
-                            // As on the create path; pruneStaleListeners
-                            // drops a prop that went away, ending the claim.
-                            el.dataset.listener_onEscape = v;
-                            escapeClaimants.add(el);
-                        } else if (k === "onShapeTap") {
-                            // As on the create path; pruneStaleListeners
-                            // drops it when no shape is tappable any more.
-                            attachShapeTap(el, v);
-                        } else if (k === "onSwipe" || k === "onVerticalSwipe") {
-                            // Wired by applySwipe above the loop, as on the
-                            // create path.
-                        } else if (k.startsWith("on")) {
-                            const event = mapEventName(k);
-                            el.dataset[`listener_${k}`] = v;
-                            if (!el.dataset[`has_listener_${k}`]) {
-                                el.dataset[`has_listener_${k}`] = "true";
-                                el.addEventListener(event, (e) => {
-                                    const latestCbId = el.dataset[`listener_${k}`];
-                                    if (latestCbId && eventQualifies(k, e, el)) {
-                                        // The Go node type, not the tag: see
-                                        // extractEventPayload. It was
-                                        // recorded on the element at creation
-                                        // because the tag cannot recover it.
-                                        const payload = extractEventPayload(e, el.dataset.nodeType);
-                                        dispatchFromElement(el, k, latestCbId, payload);
-                                    }
-                                });
+                        for (const [k, v] of Object.entries(p.Changes)) {
+                            if (el.dataset.nodeType === "CodeEditor" && CODE_EDITOR_PROPS.has(k)) {
+                                continue;
+                            }
+                            if (el.dataset.nodeType === "RichTextEditor" && RICH_EDITOR_PROPS.has(k)) {
+                                continue;
+                            }
+                            if (k === "value") {
+                                // Loose equality on purpose: a range input's
+                                // value reads back as a string ("12.5") while Go
+                                // sends a number, and a strict compare would
+                                // re-assign on every status tick.
+                                // Before the echo guard: an echo is still Go
+                                // saying what the field holds (noteGoValue).
+                                noteGoValue(el, v);
+                                if (el.value == v) continue;
+                                writeFieldValue(el, v);
+                            } else if (k === "min" || k === "max" || k === "step") {
+                                applySliderBound(el, k, v, p.Changes.value);
+                            } else if (k === "content") {
+                                if (el.textContent === v) continue;
+                                el.textContent = v;
+                            } else if (k === "label") {
+                                // Buttons carry their text as `label`, not
+                                // `content`, and createElement maps both onto
+                                // textContent — this branch is the update half of
+                                // that mapping. Without it a reused Button kept
+                                // its old caption whenever a navigation diff
+                                // paired it positionally with a different one.
+                                if (el.textContent === v) continue;
+                                el.textContent = v;
+                            } else if (k === "placeholder") {
+                                if (el.placeholder === v) continue;
+                                el.placeholder = v;
+                            } else if (k === "keyboard") {
+                                // Written whole by applyInputMode above.
+                                continue;
+                            } else if (k === "checked") {
+                                // No echo guard, unlike value above: assigning a
+                                // boolean back onto a checkbox costs nothing,
+                                // where re-assigning a text field's value would
+                                // move the caret to the end mid-typing.
+                                el.checked = !!v;
+                            } else if (k === "rows") {
+                                applyRows(el, v);
+                            } else if (k === "runs" && el.dataset.nodeType === "Paragraph") {
+                                applyParagraphRuns(el, v);
+                            } else if (k === "runs") {
+                                el.__grmobRuns = v;
+                                applyGridRuns(el, v);
+                            } else if (k === "size" && el.dataset.nodeType === "Spacer") {
+                                // The update half of the Spacer sizing in
+                                // renderNode. Without it a Spacer whose size
+                                // changed kept its original gap: the size lives in
+                                // Props, so the change arrives as an update-props
+                                // patch and nothing here read the key. Gated on
+                                // the node type because "size" is a plausible prop
+                                // name for a future node that means something else
+                                // by it.
+                                applySpacerSize(el, v);
+                            } else if (k === "src") {
+                                if (el.src === v) continue;
+                                el.src = v;
+                            } else if (k === "contentMode") {
+                                el.style.objectFit = objectFitFor(v);
+                            } else if (k === "focusEpoch") {
+                                // The epoch is the whole trigger; focusAction is
+                                // only read once it has moved. An update-props
+                                // patch carries the entire new props map, so a
+                                // field re-rendered for its value would otherwise
+                                // re-run whatever focus command was last issued.
+                                if (String(el.dataset.focusEpoch) === String(v)) continue;
+                                el.dataset.focusEpoch = v;
+                                applyFocusCommand(el, v, p.Changes.focusAction);
+                            } else if (k === "onStartReached") {
+                                attachStartReached(el, v);
+                            } else if (k === "startAtEnd") {
+                                setStartAtEnd(el, v);
+                            } else if (k === "focusAction") {
+                                // Handled with focusEpoch above; on its own it
+                                // says when nothing, only what.
+                                continue;
+                            } else if (k === "scrollEpoch") {
+                                // The app-wide high-water mark in
+                                // applyScrollCommand is what keeps a props patch
+                                // carrying the same stamp from scrolling again.
+                                applyScrollCommand(el, v);
+                            } else if (k === "visible" && el.dataset.nodeType === "Modal") {
+                                // This IS the modal open/close path: toggling
+                                // core.Visible reaches the page as a prop patch,
+                                // never as a subtree add/remove — the content
+                                // stays mounted, which is why its state survives
+                                // a close.
+                                el.style.display = v ? "flex" : "none";
+                            } else if (k === "backdrop" && el.dataset.nodeType === "Modal") {
+                                el.style.background = v;
+                            } else if (k === "onDismiss" && el.dataset.nodeType === "Modal") {
+                                // Before the generic on* branch, which would
+                                // attach a listener for a "dismiss" DOM event
+                                // that never fires — and, worse, mark the
+                                // listener slot taken so the real one could
+                                // never be attached.
+                                attachModalDismiss(el, v);
+                            } else if (k === "onTabChange" && el.dataset.nodeType === "TabView") {
+                                // Before the generic on* branch, exactly as on the
+                                // create path: "tabchange" is not a DOM event. The
+                                // bar's buttons read this ID back at click time,
+                                // and pruneStaleListeners drops it — leaving the
+                                // bar inert — when a pass stops carrying it.
+                                el.dataset.listener_onTabChange = v;
+                            } else if (k === "selectedIndex" && el.dataset.nodeType === "TabView") {
+                                // This IS the tab-switch path: core.SelectedIndex
+                                // is controlled state, so a switch reaches the page
+                                // as a prop patch on the TabView and never as a
+                                // subtree replacement — the pages are never rebuilt,
+                                // only re-hidden. syncTouchedTabViews acts on it
+                                // once the batch has landed.
+                                el.dataset.tabSelected = v;
+                            } else if (k === "onLongPress") {
+                                attachLongPress(el, v);
+                            } else if (k === "onEndReached") {
+                                // Before the generic on* branch, as on the create
+                                // path. Only the ID is refreshed here; whether the
+                                // observation still points at the right row is
+                                // syncTouchedEndReached's question, once the whole
+                                // batch has landed and the children have settled.
+                                attachEndReached(el, v);
+                            } else if (k === "onBack") {
+                                // As on the create path: record the latest ID and
+                                // the claimant. A prop that went away is dropped
+                                // by pruneStaleListeners, which is what ends the
+                                // claim.
+                                el.dataset.listener_onBack = v;
+                                backClaimants.add(el);
+                            } else if (k === "onEscape") {
+                                // As on the create path; pruneStaleListeners
+                                // drops a prop that went away, ending the claim.
+                                el.dataset.listener_onEscape = v;
+                                escapeClaimants.add(el);
+                            } else if (k === "onShapeTap") {
+                                // As on the create path; pruneStaleListeners
+                                // drops it when no shape is tappable any more.
+                                attachShapeTap(el, v);
+                            } else if (k === "onSwipe" || k === "onVerticalSwipe") {
+                                // Wired by applySwipe above the loop, as on the
+                                // create path.
+                            } else if (k.startsWith("on")) {
+                                const event = mapEventName(k);
+                                el.dataset[`listener_${k}`] = v;
+                                if (!el.dataset[`has_listener_${k}`]) {
+                                    el.dataset[`has_listener_${k}`] = "true";
+                                    el.addEventListener(event, (e) => {
+                                        const latestCbId = el.dataset[`listener_${k}`];
+                                        if (latestCbId && eventQualifies(k, e, el)) {
+                                            // The Go node type, not the tag: see
+                                            // extractEventPayload. It was
+                                            // recorded on the element at creation
+                                            // because the tag cannot recover it.
+                                            const payload = extractEventPayload(e, el.dataset.nodeType);
+                                            dispatchFromElement(el, k, latestCbId, payload);
+                                        }
+                                    });
+                                }
                             }
                         }
-                    }
-                    // After the per-key loop, beside applyEnterKeyHint's
-                    // reason for being before it: the bar is a function of
-                    // tabs, selectedIndex and onTabChange together.
-                    if (el.dataset.nodeType === "TabView") {
-                        buildTabBar(el, p.Changes);
-                    }
-                    // The picker's options and value, likewise together. This
-                    // IS the selection path: core.Select is controlled, so a
-                    // choice reaches the element as a props patch carrying the
-                    // new value and the same list — which the signature check
-                    // in applySelectOptions turns into a value assignment and
-                    // no rebuild.
-                    if (el.dataset.nodeType === "Select") {
-                        applySelectOptions(el, p.Changes.options, p.Changes.value);
-                    }
-                    pruneStaleListeners(el, p.Changes);
-                    break;
+                        // After the per-key loop, beside applyEnterKeyHint's
+                        // reason for being before it: the bar is a function of
+                        // tabs, selectedIndex and onTabChange together.
+                        if (el.dataset.nodeType === "TabView") {
+                            buildTabBar(el, p.Changes);
+                        }
+                        // The picker's options and value, likewise together. This
+                        // IS the selection path: core.Select is controlled, so a
+                        // choice reaches the element as a props patch carrying the
+                        // new value and the same list — which the signature check
+                        // in applySelectOptions turns into a value assignment and
+                        // no rebuild.
+                        if (el.dataset.nodeType === "Select") {
+                            applySelectOptions(el, p.Changes.options, p.Changes.value);
+                        }
+                        pruneStaleListeners(el, p.Changes);
+                        break;
 
 
-                case "update-style":
-                    // The patch carries only the changed Style, not the node
-                    // type — and styleFromGrMob needs the type to pick a
-                    // flex axis. It was recorded on the element at creation.
-                    //
-                    // `|| {}` for the update-props reason: a node that lost its
-                    // whole Style used to arrive as Changes null, and
-                    // styleFromGrMob threw reading a field off it, killing the
-                    // rest of the batch. The reconciler now sends {} (wireStyle
-                    // in reconcile/patch.go); the guard stays for a Go side
-                    // older than that, and matches createElement's own
-                    // `node.Style || {}`.
-                    applyStyle(el, p.Changes || {}, el.dataset.nodeType || "");
-                    break;
+                    case "update-style":
+                        // The patch carries only the changed Style, not the node
+                        // type — and styleFromGrMob needs the type to pick a
+                        // flex axis. It was recorded on the element at creation.
+                        //
+                        // `|| {}` for the update-props reason: a node that lost its
+                        // whole Style used to arrive as Changes null, and
+                        // styleFromGrMob threw reading a field off it, killing the
+                        // rest of the batch. The reconciler now sends {} (wireStyle
+                        // in reconcile/patch.go); the guard stays for a Go side
+                        // older than that, and matches createElement's own
+                        // `node.Style || {}`.
+                        applyStyle(el, p.Changes || {}, el.dataset.nodeType || "");
+                        break;
 
-                case "replace":
-                    const newEl = renderNode(p.Changes, p.TargetID);
-                    el.replaceWith(newEl);
-                    // The element collected above is detached now; the one
-                    // that took its place is what the TabView pass has to be
-                    // able to walk up from.
-                    touched.push(newEl);
-                    break;
+                    case "replace":
+                        const newEl = renderNode(p.Changes, p.TargetID);
+                        el.replaceWith(newEl);
+                        // The element collected above is detached now; the one
+                        // that took its place is what the TabView pass has to be
+                        // able to walk up from.
+                        touched.push(newEl);
+                        break;
 
-                // "remove-child" is the Go diff's shrink patch: the new tree
-                // has fewer children, and each surplus child arrives as its
-                // own path, highest index first (see reconcile.Patch's
-                // ordering contract), so removal is identical to "remove".
-                // Dropping these — the switch's original behavior — left the
-                // old screen's tail siblings alive in the DOM after any
-                // navigation to a screen with fewer children.
-                case "remove-child":
-                case "remove":
-                    el.remove();
-                    break;
+                    // "remove-child" is the Go diff's shrink patch: the new tree
+                    // has fewer children, and each surplus child arrives as its
+                    // own path, highest index first (see reconcile.Patch's
+                    // ordering contract), so removal is identical to "remove".
+                    // Dropping these — the switch's original behavior — left the
+                    // old screen's tail siblings alive in the DOM after any
+                    // navigation to a screen with fewer children.
+                    case "remove-child":
+                    case "remove":
+                        el.remove();
+                        break;
 
-                case "add-child":
-                    // The new child's *node* index — see the "add" case above.
-                    // A TabView with a bar would otherwise name its first page
-                    // "…/1" and leave nothing answering to "…/0".
-                    const index = nodeChildCount(el);
-                    const newChild = renderNode(p.Changes, `${p.TargetID}/${index}`);
-                    el.appendChild(newChild);
-                    break;
-            }
-        });
+                    case "add-child":
+                        // The new child's *node* index — see the "add" case above.
+                        // A TabView with a bar would otherwise name its first page
+                        // "…/1" and leave nothing answering to "…/0".
+                        const index = nodeChildCount(el);
+                        const newChild = renderNode(p.Changes, `${p.TargetID}/${index}`);
+                        el.appendChild(newChild);
+                        break;
+                }
+            });
+        } catch (err) {
+            console.error("grmob: a patch threw", err);
+            requestResync(`a patch threw (${err && err.message ? err.message : err})`);
+        }
 
         syncTouchedTabViews(touched);
         syncTouchedOverlays(touched);

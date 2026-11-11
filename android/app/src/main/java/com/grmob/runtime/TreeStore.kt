@@ -46,6 +46,31 @@ class TreeStore {
         private set
 
     /**
+     * Called when this tree is found to have drifted from Go's: a patch whose
+     * path resolves to nothing, a payload that is not a patch list, or a patch
+     * that threw. GrMobRuntime answers it with mobile.Resync, whose replace of
+     * "root" puts Go's tree back (N-133). Patches are positional and
+     * incremental, so a tree that is wrong once stays wrong; the log line that
+     * used to say "the next full replace re-synchronizes" was true, but
+     * nothing ever asked for one.
+     */
+    var onDrift: (() -> Unit)? = null
+
+    /**
+     * Once per drift, not once per symptom: the stale patches already queued
+     * behind the one that dangled will dangle too, and each asking again
+     * would only fetch the same tree again. Cleared by a replace of "root",
+     * which is the answer (or a navigation, which resets it too).
+     */
+    private var resyncPending = false
+
+    private fun drifted() {
+        if (resyncPending) return
+        resyncPending = true
+        onDrift?.invoke()
+    }
+
+    /**
      * Mounts the initial full tree (the RenderInitial payload).
      *
      * Returns what the mount cost, split at the one seam inside it, or null if
@@ -80,34 +105,55 @@ class TreeStore {
             // marshal (a NaN in Props is enough), and JSONArray() on that throws
             // out of the main-thread handler and takes the app down — burying the
             // encode failure that actually caused it. Swift's TreeStore has always
-            // logged and returned here; this matches it.
+            // logged and returned here; this matches it. (Go stopped sending
+            // that string with N-133, which drops such a pass in Go; the guard
+            // stays for any payload this cannot parse.) Either way the pass
+            // never arrived, so the tree has drifted.
             json.chunked(3000).forEach { Log.e("GrMob", it) }
+            drifted()
             return
         }
-        val patches = JSONArray(json)
-        for (i in 0 until patches.length()) {
-            val p = patches.getJSONObject(i)
-            apply(
-                type = p.getString("Type"),
-                path = p.getString("TargetID"),
-                changes = p.opt("Changes"),
-            )
+        // A patch that throws (a malformed payload, a Changes of the wrong
+        // shape) used to take the main-thread handler, and the app, with it.
+        // The patches before it have landed, so the tree is now part one pass
+        // and part another: logged, and Go is asked for its own.
+        try {
+            val patches = JSONArray(json)
+            for (i in 0 until patches.length()) {
+                val p = patches.getJSONObject(i)
+                apply(
+                    type = p.getString("Type"),
+                    path = p.getString("TargetID"),
+                    changes = p.opt("Changes"),
+                )
+            }
+        } catch (e: Exception) {
+            Log.e("GrMob", "a patch threw; asking Go for its tree", e)
+            drifted()
         }
     }
 
     private fun apply(type: String, path: String, changes: Any?) {
         when (type) {
-            "update-props" -> resolve(path)?.props =
+            // A miss used to be silent here (a safe call), and an update is
+            // the commonest patch, so most drift went unseen.
+            "update-props" -> (resolve(path) ?: return warn(type, path)).props =
                 GrMobNode.parseProps(changes as? JSONObject)
 
-            "update-style" -> resolve(path)?.style =
+            "update-style" -> (resolve(path) ?: return warn(type, path)).style =
                 GrMobStyle.parse(changes as? JSONObject)
 
             "replace" -> {
                 val node = GrMobNode.parse(changes as? JSONObject ?: return)
                 val (parent, index) = parentOf(path) ?: run {
-                    // Path is "root" itself: swap the whole tree.
-                    if (path == ROOT) root = node else warn(type, path)
+                    // Path is "root" itself: swap the whole tree. That is a
+                    // resync's answer, so whatever had drifted is gone now.
+                    if (path == ROOT) {
+                        root = node
+                        resyncPending = false
+                    } else {
+                        warn(type, path)
+                    }
                     return
                 }
                 if (index in parent.children.indices) parent.children[index] = node
@@ -160,8 +206,9 @@ class TreeStore {
 
     private fun warn(type: String, path: String) {
         // A dangling patch means the Go and Kotlin trees disagree — log loudly
-        // rather than crash; the next full replace re-synchronizes.
+        // rather than crash, and ask Go for its tree (drifted).
         Log.w("GrMob", "patch $type could not resolve $path")
+        drifted()
     }
 
     private companion object {

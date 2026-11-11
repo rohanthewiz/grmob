@@ -31,7 +31,7 @@
 // # The contract with the page
 //
 // Unchanged from docs/platforms/wasm.md: Go installs GrMobWASM.{RenderInitial,
-// RenderAgain, ReceiveEvent, IsDirty, HostEvent, Shutdown}; the page may define
+// RenderAgain, ReceiveEvent, IsDirty, HostEvent, Resync, Shutdown}; the page may define
 // GrMobApplyPatches (async push) and GrMobSystemEvent (toasts, audio, routes),
 // and grmob-runtime.js defines both before the module is instantiated.
 package webhost
@@ -85,6 +85,7 @@ func Run(ctx *core.Context, app func(*core.Context) core.View) {
 		"ReceiveEvent":  js.FuncOf(h.receiveEvent),
 		"IsDirty":       js.FuncOf(h.isDirty),
 		"HostEvent":     js.FuncOf(h.hostEvent),
+		"Resync":        js.FuncOf(h.resync),
 		"Shutdown":      js.FuncOf(h.shutdown),
 	}
 	global := map[string]any{}
@@ -190,6 +191,25 @@ func (h *host) receiveEvent(this js.Value, args []js.Value) any {
 	}
 	deliver()
 	return nil
+}
+
+// resync answers a page whose tree has drifted from Go's with the whole tree
+// Go believes it holds, as one replace of "root" (render.Manager.Resync). With
+// the push listener attached, which every page on the shipped runtime has, the
+// replace is applied inside this call and the answer is "[]".
+//
+// It takes the render lock, so from inside a pushed batch it is deferred like
+// receiveEvent rather than deadlocking; the runtime queues its requests until
+// the batch is over, so that is the fallback here too.
+func (h *host) resync(this js.Value, args []js.Value) any {
+	if h.manager == nil {
+		return js.ValueOf("[]")
+	}
+	m := h.manager
+	if h.push.Defer("Resync", func() { m.Resync() }) {
+		return js.ValueOf("[]")
+	}
+	return js.ValueOf(m.Resync())
 }
 
 // hostEvent carries host→app traffic that answers no callback: lifecycle
