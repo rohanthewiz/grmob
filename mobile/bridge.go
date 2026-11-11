@@ -21,6 +21,13 @@
 // Each render pass produces its diff exactly once and delivers it on exactly
 // one of the two paths, so the native renderer applies everything it receives
 // from either path, in arrival order, and stays consistent.
+//
+// Once a listener is attached, every pass takes the listener: a Trigger*
+// call hands its patches to the listener before it returns, and returns "[]".
+// A returned value could be queued by the host after the render lock was
+// released, behind a pass the push pump rendered in that gap, and so be
+// applied out of order (render.Manager's deliverLocked). Before attachment,
+// and for a shell that never attaches, the return value carries the patches.
 package mobile
 
 import (

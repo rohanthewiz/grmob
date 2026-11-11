@@ -56,6 +56,13 @@ protocol GrMobBridge: Sendable {
 /// (Not `Task { @MainActor in ... }`: unstructured tasks carry no ordering
 /// promise between one another, which would break the contract.)
 ///
+/// Once the listener is attached, Go hands a Trigger* call's patches to the
+/// listener inside the call and returns "[]", which applyPatches takes as a
+/// no-op. A returned payload could be enqueued after Go had released its
+/// render lock, behind a pass the pump pushed in that gap (render.Manager's
+/// deliverLocked, N-132). The listener then runs on the events queue under
+/// Go's lock, which is why it must stay an async hop and never wait on main.
+///
 ///   UI event ─▶ events queue ─▶ MobileTrigger*() ─┐  (sync return)
 ///                                                 ├─▶ main.async ─▶ TreeStore ─▶ view update
 ///   Go goroutine (timer/State.Set) ── listener ───┘  (async push)

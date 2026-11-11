@@ -21,10 +21,14 @@ import (
 // interface onto Java/Kotlin and Objective-C/Swift directly, so an Android
 // Activity or iOS view controller can implement it without JNI glue.
 //
-// ApplyPatches is invoked from a background goroutine. Native implementations
+// ApplyPatches is invoked from a background goroutine (the pump), or from the
+// thread that called a Dispatch* method, inside that call: with a listener
+// attached, a dispatch delivers its pass here rather than returning it (see
+// deliverLocked). Either way the render lock is held. Native implementations
 // must hop to their UI thread before touching views (runOnUiThread /
-// DispatchQueue.main); the payload is the same patch-array JSON RenderAgain
-// returns, and an empty patch set is never pushed.
+// DispatchQueue.main) and return, without waiting on the hop; the payload is
+// the same patch-array JSON RenderAgain returns, and an empty patch set is
+// never pushed.
 type PatchListener interface {
 	ApplyPatches(patches string)
 }
@@ -181,6 +185,16 @@ func (m *Manager) renderAndPush() {
 	if l == nil {
 		return
 	}
+	m.applyLocked(l, out)
+}
+
+// applyLocked hands one pass's diff to the listener; callers must hold mu, and
+// that is the whole point (see renderAndPush and deliverLocked). An empty diff
+// is never pushed, per PatchListener's contract.
+func (m *Manager) applyLocked(l PatchListener, out string) {
+	if out == "[]" {
+		return
+	}
 	// Guarded: ApplyPatches crosses into host code (a JS throw over
 	// syscall/js, a Java exception surfacing through gomobile), and an
 	// unrecovered panic here would kill the pump goroutine outright. The
@@ -188,9 +202,53 @@ func (m *Manager) renderAndPush() {
 	// and total — every later State.Set fills the one-slot buffer and is
 	// dropped, while taps keep working because they render on their own
 	// thread. That reads as "async updates stopped" with no crash to chase.
+	// On the dispatch path the same panic would unwind through the bridge
+	// call and take the process with it.
 	if rerr := core.Guard(func() { l.ApplyPatches(out) }); rerr != nil {
 		logRenderPanic("patch listener", rerr)
 	}
+}
+
+// deliverLocked is how a dispatch hands back the pass it rendered; callers
+// must hold mu.
+//
+// With a listener attached the patches go to the listener here, inside the
+// lock hold, and the dispatch returns "[]". Without one (tests, a polling
+// host, a shell that has not attached yet) they are returned as before.
+//
+// # Why not return them
+//
+// renderAndPush closed one direction of the ordering hole: a dispatch can no
+// longer slip its pass in front of a push that is still being handed over. The
+// return value left the other direction open. The lock was released when the
+// dispatch returned, before the host had queued what it returned, and a pump
+// pass started in that gap pushed the NEXT pass first:
+//
+//	event thread                       pump
+//	lock; handler; render N; unlock
+//	  (host still holding pass N)      lock; render N+1; push N+1; unlock
+//	queue N   <-- applied after N+1, against a tree it was not diffed from
+//
+// A probe with the hosts' shape (one FIFO fed by both paths) measured 1 to 4
+// inversions per 20,000 taps, and the JNI string copy widens the gap on a
+// device. Paths are positional, so an inversion writes to the wrong node or
+// leaves a stale prop, silently.
+//
+// Handing the pass over inside the lock makes every pass leave through one
+// ordered door, and no host needs a change: GrMobRuntime.kt and
+// GrMobRuntime.swift apply the "[]" a Trigger* call now returns as the no-op
+// it always was, and their listeners already hop to the main thread and
+// return, so the lock is held no longer than a push holds it.
+//
+// The listener is read once, so a SetListener racing this call cannot leave a
+// pass with neither path: it goes to the listener read, or is returned.
+func (m *Manager) deliverLocked(out string) string {
+	l := m.getListener()
+	if l == nil {
+		return out
+	}
+	m.applyLocked(l, out)
+	return "[]"
 }
 
 func (m *Manager) hasInitialRender() bool {
@@ -342,11 +400,16 @@ func (r *Manager) renderAgainLocked() string {
 // asynchronous (a buffered-channel send plus a goroutine hop), so nothing in
 // the handler path re-enters this mutex. The pump's follow-up pass then finds
 // an empty diff and pushes nothing.
+//
+// With a listener attached the patches are handed to it before the lock is
+// released and the return value is "[]"; without one they are returned. Every
+// Dispatch* below does the same. See deliverLocked for the ordering hole the
+// return value left open.
 func (m *Manager) DispatchCallback(id string) string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.guardHandler(id, func() { m.context.TriggerCallback(id) })
-	return m.renderAgainLocked()
+	return m.deliverLocked(m.renderAgainLocked())
 }
 
 // DispatchTextCallback is DispatchCallback for string-carrying events.
@@ -354,7 +417,7 @@ func (m *Manager) DispatchTextCallback(id string, value string) string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.guardHandler(id, func() { m.context.TriggerTextCallback(id, value) })
-	return m.renderAgainLocked()
+	return m.deliverLocked(m.renderAgainLocked())
 }
 
 // DispatchTextEdit is DispatchTextCallback for a native text field's
@@ -365,7 +428,7 @@ func (m *Manager) DispatchTextEdit(id string, value string, seq, epoch int) stri
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.guardHandler(id, func() { m.context.TriggerTextEdit(id, value, seq, epoch) })
-	return m.renderAgainLocked()
+	return m.deliverLocked(m.renderAgainLocked())
 }
 
 // DispatchBoolCallback is DispatchCallback for bool-carrying events.
@@ -373,7 +436,7 @@ func (m *Manager) DispatchBoolCallback(id string, value bool) string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.guardHandler(id, func() { m.context.TriggerBoolCallback(id, value) })
-	return m.renderAgainLocked()
+	return m.deliverLocked(m.renderAgainLocked())
 }
 
 // DispatchIntCallback is DispatchCallback for int-carrying events.
@@ -381,7 +444,7 @@ func (m *Manager) DispatchIntCallback(id string, value int) string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.guardHandler(id, func() { m.context.TriggerIntCallback(id, value) })
-	return m.renderAgainLocked()
+	return m.deliverLocked(m.renderAgainLocked())
 }
 
 // Dispatch runs fn under the render mutex — the same serialization the
@@ -403,7 +466,7 @@ func (m *Manager) Dispatch(label string, fn func()) string {
 	if m.currentTree == nil {
 		return "[]"
 	}
-	return m.renderAgainLocked()
+	return m.deliverLocked(m.renderAgainLocked())
 }
 
 // guardHandler runs one event handler under a panic guard.

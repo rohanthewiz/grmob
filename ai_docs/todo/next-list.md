@@ -159,13 +159,6 @@ with each item's `raised` traced back through all session docs.
   real widths and is right only under an unbounded maximum; its header and
   `docs/platforms/native.md`'s census prose should say so when this is
   taken up (native.md has a one-paragraph correction already).
-- **N-132** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
-  **A tap's returned patches can be applied after a later pushed pass (plan
-  R2).** `Dispatch*` releases `mu` on return and the host enqueues the
-  returned JSON afterwards, so the pump's next pass can post first. A probe
-  gave 1-4 inversions per 20,000 taps. Fix: with a listener attached,
-  `Dispatch*` delivers through the listener inside the lock hold and returns
-  `"[]"`. Pin: the converse of `render/push_order_test.go:89`.
 - **N-133** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
   **An unencodable pass is dropped silently, and no host can resync (plan
   R3, R4).** A NaN in `FlexGrow`, `FontSize`, `Gap`, `BorderRadius` or a
@@ -962,6 +955,27 @@ defect, which then becomes its own Open item.
 
 ## Closed
 
+- **N-132** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
+  · closed 2026-11-11, `2026-1111-1010-n131-n132-web-push-deadlock-and-dispatch-order` — a
+  tap's patches can no longer reach the host after a later pushed pass (plan
+  R2). With a listener attached, every `Dispatch*` (and `Dispatch`, the
+  host-event path) hands its pass to the listener inside the lock hold
+  (`render.Manager.deliverLocked`, sharing the pump's guarded
+  `applyLocked`) and returns `[]`; without one it returns the patches as
+  before. No host change: both natives apply `[]` as a no-op and their
+  listeners already hop to the main thread; their comments,
+  `mobile/bridge.go`, `docs/platforms/native.md` and the regenerated API
+  pages now say the listener is also called inside a `Trigger*` call.
+  - **Pins** (`render/dispatch_order_test.go`): a forced gap (the "host"
+    holds the dispatch's return until a goroutine write has been pushed)
+    read `[2 1]` before the fix and `[1 2]` after; and 2,000 taps whose
+    handlers also write from a goroutine never deliver a lower counter after
+    a higher one (it failed before, at arrival 443 of 2,039).
+  - `TestConcurrentDispatchAndTimerPushesDoNotRace` now drains its
+    16-slot listener while the dispatchers run: a full buffer blocked inside
+    the lock, which the listener contract forbids a real host to do.
+  - `ios/verify/run.sh` green (9 patch batches, tree matches Go's final
+    render); Android's transcript attaches no listener, so it is unchanged.
 - **N-131** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
   · closed 2026-11-11, `2026-1111-1010-n131-n132-web-push-deadlock-and-dispatch-order` — editor
   toolbar commands no longer deadlock the Go runtime on the web (plan R1), and

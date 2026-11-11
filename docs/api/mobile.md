@@ -19,6 +19,8 @@ The rest of the framework's API is not bind-safe (gomobile cannot bind function 
 
 Event delivery contract: patches reach the native side on two paths — the synchronous return value of the Trigger\* functions (the event path) and PatchListener pushes (the async path: timers, goroutines calling State.Set). Each render pass produces its diff exactly once and delivers it on exactly one of the two paths, so the native renderer applies everything it receives from either path, in arrival order, and stays consistent.
 
+Once a listener is attached, every pass takes the listener: a Trigger\* call hands its patches to the listener before it returns, and returns "\[]". A returned value could be queued by the host after the render lock was released, behind a pass the push pump rendered in that gap, and so be applied out of order (render.Manager's deliverLocked). Before attachment, and for a shell that never attaches, the return value carries the patches.
+
 ## Index
 
 - [`func DataDir`](#func-datadir)
@@ -48,7 +50,7 @@ func DataDir() string
 
 DataDir returns the writable directory the shell registered, or "" if none.
 
-<small>[mobile/bridge.go:59](https://github.com/rohanthewiz/grmob/blob/master/mobile/bridge.go#L59)</small>
+<small>[mobile/bridge.go:66](https://github.com/rohanthewiz/grmob/blob/master/mobile/bridge.go#L66)</small>
 
 ### func Register
 
@@ -58,7 +60,7 @@ func Register(ctx *core.Context, root func(*core.Context) core.View)
 
 Register installs the app's root view and context. It must be called from Go (typically the bound app package's init) before the native shell invokes any other function here. Calling it again replaces the app — the previous manager's push pump is shut down so it cannot keep rendering the old tree.
 
-<small>[mobile/bridge.go:67](https://github.com/rohanthewiz/grmob/blob/master/mobile/bridge.go#L67)</small>
+<small>[mobile/bridge.go:74](https://github.com/rohanthewiz/grmob/blob/master/mobile/bridge.go#L74)</small>
 
 ### func RenderAgain
 
@@ -68,7 +70,7 @@ func RenderAgain() string
 
 RenderAgain re-renders and returns the diff against the last rendered tree. Native shells normally don't call this directly — the Trigger\* functions already fold it into the event path — but it is the escape hatch for shells that drive rendering themselves.
 
-<small>[mobile/bridge.go:83](https://github.com/rohanthewiz/grmob/blob/master/mobile/bridge.go#L83)</small>
+<small>[mobile/bridge.go:90](https://github.com/rohanthewiz/grmob/blob/master/mobile/bridge.go#L90)</small>
 
 ### func RenderInitial
 
@@ -78,7 +80,7 @@ func RenderInitial() string
 
 RenderInitial returns the full initial tree as JSON for the first mount.
 
-<small>[mobile/bridge.go:75](https://github.com/rohanthewiz/grmob/blob/master/mobile/bridge.go#L75)</small>
+<small>[mobile/bridge.go:82](https://github.com/rohanthewiz/grmob/blob/master/mobile/bridge.go#L82)</small>
 
 ### func ReportHostEvent
 
@@ -102,7 +104,7 @@ func SetDataDir(path string)
 
 SetDataDir records the app's writable directory for Go-side persistence (see examples/todoapp's bytdb store). The shell must call it before RenderInitial so the first render can already read persisted state; the bound app package's init runs earlier still, which is why apps open their stores lazily on first render rather than in init. Left unset, DataDir returns "" and persistence-aware apps run in-memory — the right behavior for the web preview targets and for tests that don't care about storage.
 
-<small>[mobile/bridge.go:54](https://github.com/rohanthewiz/grmob/blob/master/mobile/bridge.go#L54)</small>
+<small>[mobile/bridge.go:61](https://github.com/rohanthewiz/grmob/blob/master/mobile/bridge.go#L61)</small>
 
 ### func SetListener
 
@@ -112,7 +114,7 @@ func SetListener(l PatchListener)
 
 SetListener attaches the native push target for async updates.
 
-<small>[mobile/bridge.go:88](https://github.com/rohanthewiz/grmob/blob/master/mobile/bridge.go#L88)</small>
+<small>[mobile/bridge.go:95](https://github.com/rohanthewiz/grmob/blob/master/mobile/bridge.go#L95)</small>
 
 ### func SetSystemEventListener
 
@@ -156,7 +158,7 @@ func TriggerBoolCallback(id string, value bool) string
 
 TriggerBoolCallback dispatches a bool-carrying event (e.g. checkbox toggle).
 
-<small>[mobile/bridge.go:116](https://github.com/rohanthewiz/grmob/blob/master/mobile/bridge.go#L116)</small>
+<small>[mobile/bridge.go:123](https://github.com/rohanthewiz/grmob/blob/master/mobile/bridge.go#L123)</small>
 
 ### func TriggerCallback
 
@@ -166,7 +168,7 @@ func TriggerCallback(id string) string
 
 TriggerCallback dispatches a void event (e.g. a button tap) by callback ID and returns the resulting patches. Dispatch goes through the manager so the handler and its follow-up render run under the render mutex — an event can never interleave with a push-pump render pass.
 
-<small>[mobile/bridge.go:96](https://github.com/rohanthewiz/grmob/blob/master/mobile/bridge.go#L96)</small>
+<small>[mobile/bridge.go:103](https://github.com/rohanthewiz/grmob/blob/master/mobile/bridge.go#L103)</small>
 
 ### func TriggerIntCallback
 
@@ -176,7 +178,7 @@ func TriggerIntCallback(id string, value int) string
 
 TriggerIntCallback dispatches an int-carrying event (e.g. tab selection).
 
-<small>[mobile/bridge.go:121](https://github.com/rohanthewiz/grmob/blob/master/mobile/bridge.go#L121)</small>
+<small>[mobile/bridge.go:128](https://github.com/rohanthewiz/grmob/blob/master/mobile/bridge.go#L128)</small>
 
 ### func TriggerTextCallback
 
@@ -186,7 +188,7 @@ func TriggerTextCallback(id string, value string) string
 
 TriggerTextCallback dispatches a string-carrying event (e.g. input change).
 
-<small>[mobile/bridge.go:101](https://github.com/rohanthewiz/grmob/blob/master/mobile/bridge.go#L101)</small>
+<small>[mobile/bridge.go:108](https://github.com/rohanthewiz/grmob/blob/master/mobile/bridge.go#L108)</small>
 
 ### func TriggerTextEdit
 
@@ -196,7 +198,7 @@ func TriggerTextEdit(id string, value string, seq int, epoch int) string
 
 TriggerTextEdit dispatches a keystroke from a native text field: the field's whole text, the host's rising sequence number for the edit, and the rewrite epoch the host last adopted from the field's editEpoch prop. The native text fields use it in place of TriggerTextCallback so that an echo can be told from a rewrite even when typing outruns the round trip; see core/text\_edit.go.
 
-<small>[mobile/bridge.go:111](https://github.com/rohanthewiz/grmob/blob/master/mobile/bridge.go#L111)</small>
+<small>[mobile/bridge.go:118](https://github.com/rohanthewiz/grmob/blob/master/mobile/bridge.go#L118)</small>
 
 ## Types
 
@@ -210,7 +212,7 @@ type PatchListener interface {
 
 PatchListener is re-declared here (rather than aliased to render.PatchListener) so this package binds standalone; see that type for the threading contract — ApplyPatches arrives on a background goroutine and implementations must hop to their UI thread.
 
-<small>[mobile/bridge.go:35](https://github.com/rohanthewiz/grmob/blob/master/mobile/bridge.go#L35)</small>
+<small>[mobile/bridge.go:42](https://github.com/rohanthewiz/grmob/blob/master/mobile/bridge.go#L42)</small>
 
 ### type SystemEventListener
 

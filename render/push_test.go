@@ -216,15 +216,22 @@ func TestConcurrentDispatchAndTimerPushesDoNotRace(t *testing.T) {
 			}
 		}()
 	}
-	wg.Wait()
 
-	// All clicks were dispatched serially under the render mutex, so the
-	// final total must eventually surface — on the dispatch return path or
-	// via a timer-driven push, either of which renders the settled state.
+	// All clicks are dispatched serially under the render mutex, so the
+	// final total must surface on the listener: with one attached, every
+	// dispatch hands its pass over there rather than returning it (N-132),
+	// and a timer-driven push renders the settled state too.
+	//
+	// Drained while the dispatchers run, not after wg.Wait. Each dispatch
+	// now delivers inside the render lock, and a listener whose buffer was
+	// full would block there, holding the lock against every other
+	// dispatcher, which is the one thing PatchListener's contract forbids a
+	// real host to do (hop to the UI thread and return).
 	want := fmt.Sprintf("clicks: %d", dispatchers*clicksEach)
-	awaitPush(t, l, 2*time.Second, func(p string) bool {
+	awaitPush(t, l, 5*time.Second, func(p string) bool {
 		return strings.Contains(p, want)
 	})
+	wg.Wait()
 }
 
 func TestConcurrentStateWritesDoNotRace(t *testing.T) {

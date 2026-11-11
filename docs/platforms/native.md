@@ -42,7 +42,13 @@ sequenceDiagram
 **Delivery guarantee:** each render pass produces its diff exactly once, on
 exactly one of the two paths (synchronous return or push). Apply everything
 you receive from either path, in arrival order, and the native tree stays
-consistent. Patch semantics — positional paths, ordering rules — are in
+consistent. Once a listener is attached, every pass takes the push path: a
+`Trigger*` call hands its patches to the listener before it returns, and
+returns `[]`. A returned payload could otherwise be queued after the render
+lock was released, behind a pass the pump pushed in that gap, and be applied
+out of order. Your listener is called inside that `Trigger*` call, under the
+render lock, so it must hop to the UI thread and return, as it already must
+for pushes. Patch semantics — positional paths, ordering rules — are in
 [Reconciliation](../concepts/reconciliation.md#patches).
 
 | Bridge function | Purpose |

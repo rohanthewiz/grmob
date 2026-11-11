@@ -64,6 +64,14 @@ interface GrMobBridge {
  * into `main.post { store.applyPatches(...) }` — a Handler executes posts in
  * FIFO order, which *is* the ordering guarantee.
  *
+ * Once the listener is attached (end of [start]), Go hands a Trigger* call's
+ * patches to the listener inside the call and returns "[]", which
+ * applyPatches takes as a no-op. A returned payload could be posted after Go
+ * had released its render lock, behind a pass the pump pushed in that gap
+ * (render.Manager's deliverLocked, N-132). The listener is called on the
+ * events thread then, under Go's lock, which is why it must stay a post and
+ * never wait on the main thread.
+ *
  *   UI event ─▶ events executor ─▶ Mobile.trigger*() ─┐  (sync return)
  *                                                     ├─▶ main.post ─▶ TreeStore ─▶ recompose
  *   Go goroutine (timer/State.Set) ── push listener ──┘  (async push)
