@@ -280,6 +280,44 @@ fun main() {
         kotlin.system.exitProcess(1)
     }
     println("OK: ${dataUriCases.size} data: image srcs decode to the bytes Go's base64 and url give")
+
+    // And for a core.List's lazy keys (N-137 d). Hand-written rather than
+    // generated: the rule has no Go counterpart, since only the host flattens
+    // For groups into one list.
+    val lazyKeyProblems = checkLazyKeys()
+    if (lazyKeyProblems.isNotEmpty()) {
+        System.err.println("FAIL: a core.List's lazy keys are not what LazyColumn needs:")
+        lazyKeyProblems.forEach { System.err.println("  $it") }
+        kotlin.system.exitProcess(1)
+    }
+    println("OK: a core.List's lazy keys are unique across its For groups and unchanged without a repeat")
+}
+
+/**
+ * Holds [grMobLazyKeys] to its contract: every key distinct (LazyColumn throws
+ * on a repeat), a list with no repeat keyed exactly as before, and a repeat
+ * told apart by its occurrence.
+ */
+fun checkLazyKeys(): List<String> {
+    val problems = mutableListOf<String>()
+    val cases = listOf(
+        // Two For groups keyed by the same message IDs, flattened: the shape
+        // that made LazyColumn throw.
+        listOf("m1", "m2", "m1", "m2") to listOf<Any>("m1", "m2", Pair("m1", 1), Pair("m2", 1)),
+        // No repeat: the keys GrMobList always gave.
+        listOf("a", "b", "c") to listOf<Any>("a", "b", "c"),
+        // Unkeyed rows stay positional, and an Int never meets a String.
+        listOf("", "0", "") to listOf<Any>(0, "0", 2),
+        // A third copy, and a real key spelled like a repeat's would be.
+        listOf("k", "k", "k", "k~1") to listOf<Any>("k", Pair("k", 1), Pair("k", 2), "k~1"),
+        listOf<String>() to listOf<Any>(),
+    )
+    for ((keys, want) in cases) {
+        val got = grMobLazyKeys(keys)
+        if (got != want) problems.add("keys $keys gave $got, want $want")
+        if (got.toSet().size != got.size) problems.add("keys $keys gave a repeated key: $got")
+    }
+    return problems
 }
 
 /** One case from datauri.go: a core.Image src and Go's bytes for it, null when it must not decode. */

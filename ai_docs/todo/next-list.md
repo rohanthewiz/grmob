@@ -178,8 +178,8 @@ with each item's `raised` traced back through all session docs.
 - **N-137** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value low
   **Small reliability items (plan R9 b-l).** Each is a few lines; the plan's
   table has where and how. ~~b: `mobile` functions on a nil manager.~~ ~~c: a nil
-  from a `ComponentFunc` shifts sibling paths on the natives.~~ d: duplicate
-  keys across two `For` groups reach `LazyColumn` (plausible). e: no
+  from a `ComponentFunc` shifts sibling paths on the natives.~~ ~~d: duplicate
+  keys across two `For` groups reach `LazyColumn` (plausible).~~ e: no
   teardown when a subtree leaves the DOM (a `ShowUser` map's GPS watch
   outlives its screen). ~~f: `Debouncer.Pending()` stays true after
   firing.~~ ~~g: `vendorShell` is not atomic.~~ ~~h: the instantiate fallback hides the
@@ -251,6 +251,19 @@ with each item's `raised` traced back through all session docs.
     and Responses), which also shows the old shape reporting the body
     instead of the error. `wasm/verify/run.sh`'s browser pass boots the site
     page through it. wasm.md's host contract says it.
+  - d landed 2026-11-11. The premise is confirmed from source: `GrMobList`
+    flattens every For group's Fragment into one row list, and Go's
+    duplicate-key check reads one sibling list at a time. So two groups
+    keyed by the same IDs gave `LazyColumn` a repeated key, and Compose
+    throws on that. `grMobLazyKeys` (new, import-free `GrMobLazyKeys.kt`)
+    keeps a first occurrence's key as it was, keys a repeat as
+    `Pair(key, n)` (Go's `idScope.seen` rule, unable to meet a real key),
+    and leaves unkeyed rows positional. Run by android/verify's JVM harness
+    (hand-written cases, since Go has no counterpart); returning the raw
+    keys fails it. `run.sh` compiles with the Compose plugin and lint is
+    clean. The crash itself was not reproduced on a device. SwiftUI's
+    list identifies rows by `viewID`, not the Go key, so it has no such
+    throw.
 - **N-138** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
   **The engine's per-pass cost (plan P0-P3).** Every event renders the whole
   app twice (20 taps ran the root 40 times), and the diff is 10x slower than

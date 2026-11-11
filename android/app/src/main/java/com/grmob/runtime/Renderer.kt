@@ -3581,7 +3581,8 @@ private fun columnSelfAlignment(alignSelf: String): Alignment.Horizontal? = when
  * flattened here so each row is an individually recycled lazy item rather
  * than one giant Fragment item. Keys come from the row nodes (Keyed in Go);
  * an unkeyed row falls back to positional identity, which behaves like
- * Column but loses row state on reorder — same contract as key() above.
+ * Column but loses row state on reorder — same contract as key() above. A key
+ * repeated across two groups is told apart by its occurrence (grMobLazyKeys).
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -3687,8 +3688,12 @@ private fun GrMobList(node: GrMobNode, extra: Modifier) {
                 // the test cannot see would hide the next drift as well as the first
                 // one hid itself.
                 val stretch = isColumnStretch(s)
+                // Unique across the whole flattened list, not per For group:
+                // a key two groups share would make LazyColumn throw. See
+                // grMobLazyKeys (GrMobLazyKeys.kt).
+                val keys = grMobLazyKeys(rows.map { it.key })
                 rows.forEachIndexed { i, row ->
-                    val key = row.key.ifEmpty { i }
+                    val key = keys[i]
                     val fill = if (stretch && !hugsContent(row.style)) {
                         Modifier.fillMaxWidth()
                     } else {
