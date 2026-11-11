@@ -36,7 +36,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-131
+**Next ID:** N-145
 
 ## Open
 
@@ -159,6 +159,121 @@ with each item's `raised` traced back through all session docs.
   real widths and is right only under an unbounded maximum; its header and
   `docs/platforms/native.md`'s census prose should say so when this is
   taken up (native.md has a one-paragraph correction already).
+- **N-131** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
+  **Editor toolbar commands deadlock the Go runtime on the web (plan R1).**
+  The pump holds `Manager.mu` across `ApplyPatches`; on the web that runs
+  `applyBatch` synchronously, and `runCodeCommand` → `emitCodeChange` →
+  `GoInvokeCallback` → `RenderAgain` re-locks it. CodeEditor "Indent"
+  (lesson 4.13) and RichTextEditor "Bold" (4.14) print `all goroutines are
+  asleep - deadlock!` and the page never responds again. Fix in two layers:
+  one JS `dispatchToGo` that queues while a batch is applying (23 direct
+  call sites), and a re-entrancy flag in `webhost` that defers instead of
+  blocking. Pin with a live-build check in `wasm/verify/browser.mjs`. Also
+  R9a: show a "stopped, reload" banner when the Go program exits.
+- **N-132** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
+  **A tap's returned patches can be applied after a later pushed pass (plan
+  R2).** `Dispatch*` releases `mu` on return and the host enqueues the
+  returned JSON afterwards, so the pump's next pass can post first. A probe
+  gave 1-4 inversions per 20,000 taps. Fix: with a listener attached,
+  `Dispatch*` delivers through the listener inside the lock hold and returns
+  `"[]"`. Pin: the converse of `render/push_order_test.go:89`.
+- **N-133** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
+  **An unencodable pass is dropped silently, and no host can resync (plan
+  R3, R4).** A NaN in `FlexGrow`, `FontSize`, `Gap`, `BorderRadius` or a
+  Slider value makes `renderJSON` return an error object after `currentTree`
+  has advanced, with no log; every other patch of that pass is lost. Fix:
+  treat an encode failure like the render-panic path (keep the last good
+  tree, log, name the field under debug mode). Then `Manager.Resync()`, a
+  root `replace` pushed through the listener, which each host requests on a
+  dangling path, a non-array payload or a throw. R4 depends on N-132.
+- **N-134** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
+  **Android builds a new runtime, store and bridge in every
+  `MainActivity.onCreate` (plan R5, R6, P5, R9m).** Rotation, a dark-mode
+  switch and a fold all recreate. Pushes in the remount window go to the dead
+  store, `lastEditSeq` restarts under Go's ledger, `setTimeZone` is rewritten
+  (N-013 assumes once), and a deep link is replayed
+  (`MainActivity.kt:90` is unguarded). Fix: a process-scoped owner; the
+  Activity only calls `setContent`. Same wave: decode payloads off the main
+  thread with `JsonReader` (P5), and split the patch applier from the
+  Compose state holders so `android/verify` can replay the Go transcript
+  (R9m).
+- **N-135** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
+  **A panic in a hook's goroutine ends the process (plan R7).** The only
+  `recover()` in core, render, hooks and mobile covers render passes and
+  dispatched handlers. `go effect()`, the interval ticker body and the
+  `AfterFunc` bodies in `interval.go`, `debounce.go` and `now.go` are
+  unprotected. Fix: one shared `safely(ctx, label, fn)` on `core.Guard`.
+- **N-136** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value low
+  **Typed text that is valid JSON is rewritten on the web (plan R8).**
+  `ReceiveEventPayload` unmarshals a string value and delivers its inner
+  `value` key: typing `{"value":"x"}` delivers `x`, and `{"value":true}`
+  calls no handler. Fix: route by the callback ID's kind prefix and never
+  parse a text payload.
+- **N-137** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value low
+  **Small reliability items (plan R9 b-l).** Each is a few lines; the plan's
+  table has where and how. b: `mobile` functions on a nil manager. c: a nil
+  from a `ComponentFunc` shifts sibling paths on the natives. d: duplicate
+  keys across two `For` groups reach `LazyColumn` (plausible). e: no
+  teardown when a subtree leaves the DOM (a `ShowUser` map's GPS watch
+  outlives its screen). f: `Debouncer.Pending()` stays true after firing.
+  g: `vendorShell` is not atomic. h: the instantiate fallback hides the real
+  error. i: `serve -dev` cannot start inside a Go workspace. j: the watcher
+  ignores locally replaced modules. k: `grmob new` cannot be resumed. l: the
+  app name is injected unescaped into the host page. Strike letters here as
+  they land.
+- **N-138** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
+  **The engine's per-pass cost (plan P0-P3).** Every event renders the whole
+  app twice (20 taps ran the root 40 times), and the diff is 10x slower than
+  a generated `Style.Equal` with lazy child paths (975 µs against 97 µs at
+  1,001 nodes). First commit the benchmarks and debug-mode pass statistics
+  (P0; ROADMAP's "Benchmark diff/patch engine"). Then a generation counter
+  so the pump skips a pass the dispatch already rendered, the web host
+  dropping its redundant `RenderAgain` and `IsDirty` poll (P1), the
+  generated equality (P2), and the registry purging in place (P3).
+- **N-139** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value low
+  **Host and library hot spots (plan P6-P9).** The one felt daily is P7:
+  the dev watcher runs `go list -deps` on every 250 ms poll, about half a
+  core idle and 0.6 s on every save. The rest: `applyStyle` writing all 48
+  properties on create, six post-batch ancestor walks, `applySwipe` on every
+  node (P6); `CodeEditor` re-tokenising, `DataTable` re-sorting, O(fields²)
+  form error reads (P8); iOS min-content re-measurement and uncached,
+  full-resolution images (P9).
+- **N-140** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value high
+  **`grmobtest` and `hooks.UseAsync` (plan C1, C2).** The test driver
+  (`tree`, `find`, `tap`, `assertNoConcerns`) is hand-written 16 times across
+  six example test files and in the `grmob new` scaffold; `grmobtest` would
+  also export one `Reset()` over the eleven unexported `…ForTest` resets.
+  `UseAsync[T](ctx, fn, deps...)` returning `{Data, Loading, Err, Reload}`
+  with cancellation and stale-result dropping replaces the pattern the
+  tutorial and four `comps` widgets ask callers to write by hand, and gives
+  `UseEffect` its missing cleanup story.
+- **N-141** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
+  **CLI: `go tool grmob`, a one-ABI bind, and shell upgrades that keep the
+  app's edits (plan C3-C5).** Register `cmd/grmob` as a `go.mod` tool in the
+  scaffold; add `version`, `dev` and the missing doctor checks. A `-fast`
+  flag that binds arm64 only and skips an unchanged bind. Sync the
+  framework-owned runtime sources on every build, copy app-owned files once,
+  keep a pristine copy for `grmob upgrade --diff`, stamp a content hash, and
+  delete files the new shell dropped.
+- **N-142** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value low (user's decision)
+  **Release builds, a web `dist`, dev conveniences and the larger bets (plan
+  C6-C10, P4).** Signed AAB and iOS archive, with `targetSdk` raised from 34;
+  `grmob web -dist` with hashed, precompressed assets; LAN URL and QR, panic
+  overlay, state across a hot swap; concerns and a patch log visible on the
+  device. Bets needing a design note first: a `RemoteBridge` for live reload
+  on a real device, a hidden-scope signal so tickers in undrawn scopes
+  pause, pull-to-refresh, `UsePersisted`, and the `core.Style` size
+  experiment (1,024 bytes a node; keep only for a 30% gain). Which of these
+  are wanted is the user's call.
+- **N-143** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value low
+  **Housekeeping (plan Part D).** `chat` (a 3.9 MB Mach-O at the repo root,
+  21% of every module download) and `cmd/docs/docs` (9.6 MB) are tracked:
+  untrack, ignore, and add a census check. Publish tag notes as GitHub
+  Releases and run apidiff in CI. Dead fields in `core/context.go`. Docs and
+  ROADMAP drift (README's 84 lessons, `hooks/doc.go:22`, deep links and
+  Packaging listed as planned). Whether `ai_docs/` (19% of the zip) stays in
+  the module is the user's decision.
+
 ## Validate
 
 Items whose remaining work is purely testing: run, look, hear, measure, or
@@ -726,6 +841,18 @@ defect, which then becomes its own Open item.
     "Psalms 23:2 (KJV)";
   - BLB's study page on a phone browser landing on the named tab
     (Cross-Refs, not the default Interlinear).
+- **N-144** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
+  **Test order, a CI flake, and CI time (plan R9n, R9o, P10).** Repairs to
+  tests and CI scripts only. `go test -shuffle` fails on seeds 2 and 3
+  (`hooks/location_test.go:48`, `examples/todoapp/app_test.go:128`) through
+  process-wide singletons; fix both and add `-shuffle=on` to CI (the reset
+  helper comes with N-140). The Android remedy drill failed run 40020908087
+  in its cleanup trap after printing its own `OK:`
+  (`android/verify/remedy.sh:67`; `ios/verify/remedy.sh:42` has the same
+  shape). CI runs the race detector over source-census packages
+  (`wasm/verify` 5.7 s plain, 54.9 s under `-race`); timer tests sleep real
+  time where `testing/synctest` ran 10 fake seconds in 0.57 ms; the site
+  workflow repeats CI's verify.
 
 ## Non-goals
 
@@ -761,6 +888,10 @@ defect, which then becomes its own Open item.
   host event) would leave app code calling `time.Now()` on the launch zone,
   so there would be two clocks that can disagree. A zone change mid-run is
   rare, and a relaunch picks it up. (was #16; lapsed@0917-1659)
+  Premise corrected 2026-11-11: on Android it runs on every Activity
+  recreation, not once (`GomobileBridge.kt:28-35`), which
+  `mobile/timezone.go` calls a data race. N-134 makes it once again; the
+  decision stands.
 - **N-017** · declined
   `2026-0916-1331-next-list-sweep-maxlines-chart-types-evenodd` — `MaxLines`
   on the natives applies to Text only; a stacked chart counts NaN as 0. (was
