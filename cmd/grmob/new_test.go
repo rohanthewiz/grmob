@@ -1,6 +1,8 @@
 package main
 
 import (
+	"go/parser"
+	"go/token"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -278,4 +280,105 @@ func TestWebHostPageSync(t *testing.T) {
 		t.Fatal(err)
 	}
 	step("no page at all", false, hostPageWritten, fresh)
+}
+
+// Plan R9k: a scaffold that failed part-way left a half-made app, and the
+// same command then refused the directory as not empty. A failure now removes
+// what the run wrote. It is forced here after the templates and grmob.json
+// are written, by a module path `go mod init` refuses, so no network is
+// involved.
+func TestNewThatFailsLeavesTheDirectoryAsItFoundIt(t *testing.T) {
+	abs, err := filepath.Abs(repoRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const badModule = "not a module path!"
+
+	// A directory new creates goes entirely.
+	fresh := filepath.Join(t.TempDir(), "fresh-app")
+	err = cmdNew([]string{fresh, "-replace", abs, "-module", badModule, "-no-build"})
+	if err == nil {
+		t.Fatal("new with an invalid module path reported success")
+	}
+	if !strings.Contains(err.Error(), "can be run again") {
+		t.Errorf("the error does not say the run was undone: %v", err)
+	}
+	if fileExists(fresh) {
+		t.Error("a failed new left the directory it created")
+	}
+
+	// A directory that existed with only .git keeps its .git and nothing else,
+	// so the next run's emptiness check passes.
+	repo := filepath.Join(t.TempDir(), "cloned")
+	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmdNew([]string{repo, "-replace", abs, "-module", badModule, "-no-build"}); err == nil {
+		t.Fatal("new with an invalid module path reported success")
+	}
+	entries, _ := os.ReadDir(repo)
+	if len(entries) != 1 || entries[0].Name() != ".git" {
+		var names []string
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		t.Errorf("after a failed new the directory holds %v, want only .git", names)
+	}
+	if _, err := requireEmptyDir(repo); err != nil {
+		t.Errorf("the same command could not run again: %v", err)
+	}
+}
+
+// Plan R9l: the display name went into the host page's <title>, a JS string
+// and two Go string literals unescaped, so a name with a quote or an angle
+// bracket broke the page or the app's Go code, and could inject markup. Each
+// site now escapes for its context, and an ordinary name renders exactly as
+// before.
+func TestTheDisplayNameIsEscapedWhereItLands(t *testing.T) {
+	render := func(name, tmpl string) string {
+		t.Helper()
+		src, err := templates.ReadFile(tmpl)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, err := renderTemplate(tmpl, src, scaffoldData{Module: "example.com/x", Name: name, ID: "com.example.x"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(out)
+	}
+	const page, app = "templates/wasm/index.html.tmpl", "templates/app/app.go.tmpl"
+
+	// An ordinary name is untouched, which keeps `grmob web`'s comparison
+	// quiet for every page an older grmob wrote.
+	plain := render("My Notes", page)
+	for _, want := range []string{"<title>My Notes</title>", `"My Notes failed to start.`} {
+		if !strings.Contains(plain, want) {
+			t.Errorf("an ordinary name changed in the page: no %q", want)
+		}
+	}
+	if got := render("My Notes", app); !strings.Contains(got, `return "My Notes" }`) {
+		t.Errorf("an ordinary name changed in app.go:\n%s", got)
+	}
+
+	hostile := `Tom "Tiny" </title><script>x()</script> \ App`
+	got := render(hostile, page)
+	if strings.Contains(got, "<script>x()") || strings.Contains(got, `"Tom "Tiny"`) {
+		t.Errorf("the name reached the page unescaped:\n%s", got)
+	}
+	if !strings.Contains(got, "<title>Tom &#34;Tiny&#34; &lt;/title&gt;") {
+		t.Errorf("the <title> is not HTML-escaped")
+	}
+
+	// app.go must still be Go: parse it.
+	if _, err := parser.ParseFile(token.NewFileSet(), "app.go", render(hostile, app), 0); err != nil {
+		t.Errorf("app.go does not parse with the name %q: %v", hostile, err)
+	}
+
+	if err := validateName("Two\nLines"); err == nil {
+		t.Error("a name with a line break was accepted")
+	}
+	if err := validateName(hostile); err != nil {
+		t.Errorf("a name with quotes and brackets was refused: %v", err)
+	}
 }

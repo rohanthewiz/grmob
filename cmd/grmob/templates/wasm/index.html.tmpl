@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>[[.Name]]</title>
+<title>[[html .Name]]</title>
 <style>
   /* The page is a frame around the app. On a phone-width screen the app takes
      the whole viewport; on a wide one it sits in a phone-sized column, so a
@@ -138,7 +138,7 @@
   window.GrMobHost.running.catch(err => {
     console.error(err);
     bootEl.className = "boot err";
-    bootEl.textContent = "[[.Name]] failed to start.\n\n" + (err && err.message ? err.message : String(err));
+    bootEl.textContent = "[[js .Name]] failed to start.\n\n" + (err && err.message ? err.message : String(err));
   });
 
   // DOM events → Go → patches back to the DOM.

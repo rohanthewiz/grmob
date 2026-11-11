@@ -531,11 +531,52 @@ func vendorShell(root string, spec shellSpec, patches []patch, refresh bool) err
 	}
 
 	fmt.Printf("Copying grmob's %s shell into %s/ (from %s)…\n", spec.dir, spec.dir, version)
-	if err := copyTree(filepath.Join(src, spec.dir), dst, spec); err != nil {
+	return installShell(filepath.Join(src, spec.dir), dst, version, spec, patches)
+}
+
+// installShell copies the shell at src to dst, applies the app's identity
+// patches, and writes the version record. Every step happens in a staging
+// directory beside dst, so dst only ever holds a patched shell.
+//
+// # Why stage
+//
+// It used to copy straight into dst and patch afterwards (plan R9g). An
+// interrupted copy (a Ctrl-C, a full disk, a patch that did not match) left
+// dst existing with no record. The next run reads that as "present, no record,
+// the app made or adopted it by hand", leaves it alone, and builds grmob's
+// demo identity: an app installed as com.grmob.app. Now:
+//
+//	staging = <root>/.android-partial-XXXX   copy, patch, record, all here
+//	dst absent  → rename(staging, dst)       one step: no half-made android/
+//	dst present → copy staging over dst      -refresh: every file arrives patched
+//
+// A refresh merges rather than renames, because the app's own files in its
+// shell (signing config, local.properties, build output) must survive it, as
+// they did before. An interrupted merge leaves a mix of old and new files,
+// all patched, under the old record, so the next build's version check still
+// warns when they differ.
+//
+// A staging directory left by a run that was killed outright is removed at
+// the start of the next one.
+func installShell(src, dst, version string, spec shellSpec, patches []patch) error {
+	parent, base := filepath.Dir(dst), filepath.Base(dst)
+	stale, _ := filepath.Glob(filepath.Join(parent, "."+base+"-partial-*"))
+	for _, dir := range stale {
+		_ = os.RemoveAll(dir)
+	}
+	staging, err := os.MkdirTemp(parent, "."+base+"-partial-")
+	if err != nil {
+		return err
+	}
+	// After the rename staging no longer exists, and RemoveAll of a missing
+	// path is nil, so this is only ever cleanup of a failed run.
+	defer os.RemoveAll(staging)
+
+	if err := copyTree(src, staging, spec); err != nil {
 		return err
 	}
 	for _, p := range patches {
-		path := filepath.Join(dst, filepath.FromSlash(p.file))
+		path := filepath.Join(staging, filepath.FromSlash(p.file))
 		b, err := os.ReadFile(path)
 		if err != nil {
 			return err
@@ -548,7 +589,28 @@ func vendorShell(root string, spec shellSpec, patches []patch, refresh bool) err
 			return err
 		}
 	}
-	return os.WriteFile(filepath.Join(dst, shellRecord), []byte(version+"\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(staging, shellRecord), []byte(version+"\n"), 0o644); err != nil {
+		return err
+	}
+
+	if !fileExists(dst) {
+		return os.Rename(staging, dst)
+	}
+	// The record is merged last of all: copyTree walks in lexical order, so
+	// copying it separately is what guarantees an interrupted merge keeps
+	// the old record rather than claiming the new version early.
+	record := filepath.Join(staging, shellRecord)
+	held, err := os.ReadFile(record)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(record); err != nil {
+		return err
+	}
+	if err := copyTree(staging, dst, spec); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dst, shellRecord), held, 0o644)
 }
 
 // copyTree copies src to dst, skipping spec.skip and restating file modes.

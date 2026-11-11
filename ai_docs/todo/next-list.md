@@ -182,10 +182,10 @@ with each item's `raised` traced back through all session docs.
   keys across two `For` groups reach `LazyColumn` (plausible). e: no
   teardown when a subtree leaves the DOM (a `ShowUser` map's GPS watch
   outlives its screen). ~~f: `Debouncer.Pending()` stays true after
-  firing.~~ g: `vendorShell` is not atomic. h: the instantiate fallback hides the real
+  firing.~~ ~~g: `vendorShell` is not atomic.~~ h: the instantiate fallback hides the real
   error. ~~i: `serve -dev` cannot start inside a Go workspace.~~ ~~j: the
-  watcher ignores locally replaced modules.~~ k: `grmob new` cannot be resumed. l: the
-  app name is injected unescaped into the host page. Strike letters here as
+  watcher ignores locally replaced modules.~~ ~~k: `grmob new` cannot be
+  resumed.~~ ~~l: the app name is injected unescaped into the host page.~~ Strike letters here as
   they land.
   - f landed 2026-11-11: the fire clears `d.timer` when it is still the
     current timer, so `Pending` is false while the call runs and after. A
@@ -218,6 +218,29 @@ with each item's `raised` traced back through all session docs.
     watched. Pinned in `serve/dev_test.go` by a real scratch workspace, a
     directory outside any module, and the watch rule's cases. Not run live
     with a browser attached.
+  - g, k and l landed 2026-11-11 (`cmd/grmob`).
+    - g: `installShell` copies, patches and records in a
+      `.<dir>-partial-*` staging directory beside the shell, then renames
+      it into place. A refresh merges the staged, already-patched tree over
+      the old one (keeping the app's own files) and writes the record last.
+      A killed run's staging is cleared by the next one.
+    - k: the scaffold's steps moved into `scaffoldApp`. On any failure, or
+      a Ctrl-C (caught for the scaffold's length), `removeScaffold` removes
+      what the run wrote: the whole directory if the run created it, else
+      everything but `.git`. Chosen over the plan's `-force` alternative,
+      which would have to decide what to overwrite. A failed first build is
+      kept, since the app is complete by then.
+    - l: the templates escape the name for each place it lands:
+      `[[html .Name]]` in `<title>`, `[[js .Name]]` in the boot error's JS
+      string, `[[printf "%q" .Name]]` for app.go's two Go strings. An
+      ordinary name renders byte-identically, so `grmob web`'s "differs"
+      check stays quiet on existing pages. `validateName` refuses control
+      characters (a line break would split app.go's comment and the
+      README's heading).
+    Pinned by `cmd/grmob/shell_install_test.go` (4) and two tests in
+    `new_test.go`. The k and l tests fail with their fix removed. g's tests
+    encode the failure the plan names; there was no `installShell` before
+    to run them against.
 - **N-138** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
   **The engine's per-pass cost (plan P0-P3).** Every event renders the whole
   app twice (20 taps ran the root 40 times), and the diff is 10x slower than

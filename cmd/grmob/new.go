@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
@@ -78,7 +79,8 @@ func cmdNew(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := requireEmptyDir(abs); err != nil {
+	created, err := requireEmptyDir(abs)
+	if err != nil {
 		return err
 	}
 
@@ -96,6 +98,9 @@ func cmdNew(args []string) error {
 	if err := validateID(data.ID); err != nil {
 		return err
 	}
+	if err := validateName(data.Name); err != nil {
+		return err
+	}
 
 	require, replaceDir, err := resolveGrmob(*version, *replace)
 	if err != nil {
@@ -103,42 +108,9 @@ func cmdNew(args []string) error {
 	}
 
 	fmt.Printf("Creating %s in %s\n", data.Name, abs)
-	if err := renderTemplates(abs, data); err != nil {
-		return err
-	}
-	cfg, _ := json.MarshalIndent(appConfig{Name: data.Name, ID: data.ID}, "", "  ")
-	if err := os.WriteFile(filepath.Join(abs, configFile), append(cfg, '\n'), 0o644); err != nil {
-		return err
-	}
-
-	// The module is made with the go command rather than a go.mod template so
-	// that the go directive is the toolchain actually installed, and so the
-	// requirement graph and go.sum come from resolution rather than from a
-	// guess written into this binary.
-	if err := run(abs, nil, "go", "mod", "init", data.Module); err != nil {
-		return err
-	}
-	if replaceDir != "" {
-		fmt.Printf("Using the grmob checkout at %s (replace directive)\n", replaceDir)
-		if err := run(abs, nil, "go", "mod", "edit", "-replace", grmobModule+"="+replaceDir); err != nil {
-			return err
-		}
-	} else {
-		if err := run(abs, nil, "go", "get", grmobModule+"@"+require); err != nil {
-			return fmt.Errorf("%w\n\nIf that version predates `grmob new` (it needs the webhost package), pass -grmob master", err)
-		}
-	}
-	// dev.sh is `go run github.com/rohanthewiz/grmob/serve`, a package the
-	// app never imports, so tidy on its own would drop the go.sum lines for
-	// serve's dependencies (RWeb, which grmob's library packages do not use)
-	// and the first ./dev.sh would stop at "missing go.sum entry". A tool
-	// directive is the go command's own way to say "this module runs that
-	// package": tidy then keeps its dependencies, and dev.sh needs no change.
-	if err := run(abs, nil, "go", "mod", "edit", "-tool="+grmobModule+"/serve"); err != nil {
-		return err
-	}
-	if err := run(abs, nil, "go", "mod", "tidy"); err != nil {
-		return err
+	if err := scaffoldApp(abs, data, require, replaceDir); err != nil {
+		removeScaffold(abs, created)
+		return fmt.Errorf("%w\n\nnew: removed what this run wrote to %s, so the same command can be run again", err, abs)
 	}
 
 	if !*noBuild {
@@ -175,23 +147,109 @@ Native targets, once their SDKs are installed:
 	return nil
 }
 
-// requireEmptyDir refuses to scaffold over existing work. A directory that
-// exists and is empty is fine (a freshly cloned empty repository is exactly
-// that, minus .git, which is allowed too).
-func requireEmptyDir(dir string) error {
-	entries, err := os.ReadDir(dir)
-	if errors.Is(err, fs.ErrNotExist) {
-		return os.MkdirAll(dir, 0o755)
+// scaffoldApp writes the app and resolves its module: the templates, the
+// config, go.mod and go.sum. It stops at the first failure and reports it;
+// cmdNew then removes what it wrote (see removeScaffold).
+//
+// # Resuming after a failure
+//
+// The steps were inline in cmdNew, which refuses a directory that is not
+// empty. So a failure part-way (offline at `go get`, a -grmob version that
+// does not exist, a Ctrl-C) left a half-made app that the same command then
+// refused to touch (plan R9k). The fix is that a failed scaffold leaves
+// nothing behind, which is simpler to reason about than a -force flag that
+// would have to decide what to overwrite.
+//
+// Ctrl-C is caught for the length of the scaffold, so it takes the same path
+// as any other failure. The go command running at the time gets the
+// terminal's interrupt too, exits with an error, and that error is what
+// returns here. An interrupt between two steps is noticed before the next.
+// The first build is not part of the scaffold: by then the app is complete,
+// and a build that fails leaves something worth fixing rather than removing.
+func scaffoldApp(abs string, data scaffoldData, require, replaceDir string) error {
+	interrupted := make(chan os.Signal, 1)
+	signal.Notify(interrupted, os.Interrupt)
+	defer signal.Stop(interrupted)
+
+	steps := []func() error{
+		func() error { return renderTemplates(abs, data) },
+		func() error {
+			cfg, _ := json.MarshalIndent(appConfig{Name: data.Name, ID: data.ID}, "", "  ")
+			return os.WriteFile(filepath.Join(abs, configFile), append(cfg, '\n'), 0o644)
+		},
+		// The module is made with the go command rather than a go.mod
+		// template so that the go directive is the toolchain actually
+		// installed, and so the requirement graph and go.sum come from
+		// resolution rather than from a guess written into this binary.
+		func() error { return run(abs, nil, "go", "mod", "init", data.Module) },
+		func() error {
+			if replaceDir != "" {
+				fmt.Printf("Using the grmob checkout at %s (replace directive)\n", replaceDir)
+				return run(abs, nil, "go", "mod", "edit", "-replace", grmobModule+"="+replaceDir)
+			}
+			if err := run(abs, nil, "go", "get", grmobModule+"@"+require); err != nil {
+				return fmt.Errorf("%w\n\nIf that version predates `grmob new` (it needs the webhost package), pass -grmob master", err)
+			}
+			return nil
+		},
+		// dev.sh is `go run github.com/rohanthewiz/grmob/serve`, a package
+		// the app never imports, so tidy on its own would drop the go.sum
+		// lines for serve's dependencies (RWeb, which grmob's library
+		// packages do not use) and the first ./dev.sh would stop at "missing
+		// go.sum entry". A tool directive is the go command's own way to say
+		// "this module runs that package": tidy then keeps its dependencies,
+		// and dev.sh needs no change.
+		func() error { return run(abs, nil, "go", "mod", "edit", "-tool="+grmobModule+"/serve") },
+		func() error { return run(abs, nil, "go", "mod", "tidy") },
 	}
-	if err != nil {
-		return err
-	}
-	for _, e := range entries {
-		if e.Name() != ".git" {
-			return fmt.Errorf("new: %s is not empty", dir)
+	for _, step := range steps {
+		if err := step(); err != nil {
+			return err
+		}
+		select {
+		case <-interrupted:
+			return errors.New("new: interrupted")
+		default:
 		}
 	}
 	return nil
+}
+
+// removeScaffold undoes a failed scaffold. A directory this run created goes
+// entirely. One that already existed was empty apart from .git (that is all
+// requireEmptyDir lets through), so everything but .git is what this run
+// wrote, and that is what goes.
+func removeScaffold(dir string, created bool) {
+	if created {
+		_ = os.RemoveAll(dir)
+		return
+	}
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		if e.Name() != ".git" {
+			_ = os.RemoveAll(filepath.Join(dir, e.Name()))
+		}
+	}
+}
+
+// requireEmptyDir refuses to scaffold over existing work. A directory that
+// exists and is empty is fine (a freshly cloned empty repository is exactly
+// that, minus .git, which is allowed too). It reports whether it created the
+// directory, which decides how much removeScaffold may remove.
+func requireEmptyDir(dir string) (created bool, err error) {
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return true, os.MkdirAll(dir, 0o755)
+	}
+	if err != nil {
+		return false, err
+	}
+	for _, e := range entries {
+		if e.Name() != ".git" {
+			return false, fmt.Errorf("new: %s is not empty", dir)
+		}
+	}
+	return false, nil
 }
 
 // resolveGrmob decides which grmob the new app requires. In order:
@@ -251,6 +309,23 @@ func isGrmobCheckout(dir string) bool {
 // The delimiters are [[ ]] rather than {{ }} because two of the outputs speak
 // Go template syntax themselves: build.sh passes `-f '{{.Dir}}'` to go list,
 // and a {{ }} scaffold would have to escape every one of those.
+//
+// # The display name is escaped for where it lands
+//
+// The package is text/template, which escapes nothing, and the name is the
+// one value a person types freely (-name). Each template escapes it for its
+// context (plan R9l):
+//
+//	wasm/index.html  <title>             [[html .Name]]
+//	                 a "…" JS string     [[js .Name]]
+//	app/app.go       a Go string         [[printf "%q" .Name]]
+//
+// Each is the identity on an ordinary name ("My Notes"), so a page an older
+// grmob wrote still matches what new writes today, which `grmob web`'s
+// "differs" check relies on. What is left unescaped (Go comments, the
+// README's heading) can only be broken by a line break, which validateName
+// refuses. The native shells escape in their own patches (xmlEscape,
+// strconv.Quote).
 func renderTemplates(dir string, data scaffoldData) error {
 	return fs.WalkDir(templates, "templates", func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
@@ -481,6 +556,20 @@ func idSegment(base string) string {
 // validateID holds an explicit -id to the same intersection idSegment
 // produces, and to Android's rule of at least two segments. Caught here
 // rather than by Gradle or Xcode minutes into a native build.
+// validateName refuses a display name with a control character in it. A line
+// break would end the Go comment the name is written into in app/app.go and
+// split the README's heading, and no launcher shows one. Everything else a
+// person might type (quotes, angle brackets, an ampersand, accents) is
+// escaped where it lands; see renderTemplates.
+func validateName(name string) error {
+	for _, r := range name {
+		if unicode.IsControl(r) {
+			return fmt.Errorf("new: display name %q has a control character in it", name)
+		}
+	}
+	return nil
+}
+
 func validateID(id string) error {
 	segs := strings.Split(id, ".")
 	if len(segs) < 2 {
