@@ -51,9 +51,16 @@ const EXPORT_SHIM = "\n;globalThis.__grmobExport = GrMob;\n";
  *            document: object, window: object,
  *            mountPoint: object,
  *            drainFrames: () => number, pendingFrames: () => number,
- *            dispatched: Array<{id: string, payload: any}>}}
+ *            dispatched: Array<{id: string, payload: any}>,
+ *            resizeObservers: Array<object>}}
+ *
+ * resizeObserver: true gives the sandbox a recording ResizeObserver, which
+ * the runtime only reads at load (canvasTextObserver) or by typeof, so it has
+ * to be decided before the runtime is evaluated. Off by default because its
+ * presence changes code paths (windowMetrics watches the window element with
+ * one) that the other tests were written without.
  */
-export function loadRuntime({ mountId = "app" } = {}) {
+export function loadRuntime({ mountId = "app", resizeObserver = false } = {}) {
     const dom = newDOM();
 
     // The mount point the page would have in its markup (index.html's
@@ -134,6 +141,21 @@ export function loadRuntime({ mountId = "app" } = {}) {
             disconnect() { this.targets.clear(); }
         },
     };
+    // The opt-in ResizeObserver: what it is observing, and nothing else,
+    // since there is no layout here to resize.
+    const resizeObservers = [];
+    if (resizeObserver) {
+        sandbox.ResizeObserver = class {
+            constructor(callback) {
+                this.callback = callback;
+                this.targets = new Set();
+                resizeObservers.push(this);
+            }
+            observe(target) { this.targets.add(target); }
+            unobserve(target) { this.targets.delete(target); }
+            disconnect() { this.targets.clear(); }
+        };
+    }
     // The page's own `window.window === window` identity, which the runtime
     // does not rely on but any future code reading window.document would.
     sandbox.globalThis = sandbox;
@@ -183,6 +205,8 @@ export function loadRuntime({ mountId = "app" } = {}) {
         drainFrames: dom.drainFrames,
         pendingFrames: dom.pendingFrames,
         dispatched,
+        observers,
+        resizeObservers,
 
         // drainTimers fires every timer queued *at the moment it is called*
         // whose delay is at least minDelay, oldest first, and returns how

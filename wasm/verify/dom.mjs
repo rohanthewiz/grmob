@@ -5,7 +5,8 @@
 // textContent, value, placeholder, src, disabled, checked, rows, children,
 // parentNode, setAttribute, removeAttribute, appendChild, insertBefore,
 // replaceWith, remove, addEventListener, focus, blur, tagName, innerHTML,
-// getElementById), plus document.head for core.Spin's one stylesheet. That is
+// getElementById), plus document.head for core.Spin's one stylesheet and
+// isConnected for the runtime's teardown. That is
 // small enough to
 // implement rather than approximate, which is why this file exists instead of
 // a jsdom dependency — the same trade ios/verify makes with its hand-written
@@ -97,6 +98,20 @@ function makeDataset(el) {
 }
 
 class Element {
+    // Whether the element is in its document: its parent chain ends at the
+    // document's body or head, as a browser's ends at the document. The
+    // runtime asks it of a list it is about to scroll, a map it is about to
+    // build, and every element holding something outside the DOM after a
+    // batch (disposeDetached). It used to be undefined here, which the map's
+    // `=== false` test read as "connected" and which every plain truthiness
+    // test would read as "removed".
+    get isConnected() {
+        let n = this;
+        while (n.parentNode) n = n.parentNode;
+        const doc = this.ownerDocument;
+        return !!doc && (n === doc.body || n === doc.head);
+    }
+
     constructor(doc, tag) {
         this.ownerDocument = doc;
         this.tagName = tag.toUpperCase();

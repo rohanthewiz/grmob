@@ -125,6 +125,10 @@ export function newLeaflet() {
                 },
                 locate(options) { this.locates.push(options); return this; },
                 stopLocate() { this.stops++; return this; },
+                // Leaflet's teardown of a whole map; counted so a test can
+                // tell a map released from one merely hidden.
+                removed: 0,
+                remove() { this.removed++; return this; },
                 on: h.on,
                 fire: h.fire,
                 listenerCount: h.count,

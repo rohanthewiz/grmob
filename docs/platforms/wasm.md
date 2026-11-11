@@ -138,6 +138,15 @@ the streaming. It never retries: a module that will not compile or link
 rejects with that `CompileError` or `LinkError`, where the old
 try-then-retry reported only that the response body had already been read.
 
+**Elements that leave.** A few elements hold something outside the DOM: a
+`MapView` its Leaflet map and, with `ShowUser`, a geolocation watch; a
+`List` with `OnEndReached` or `OnStartReached` its IntersectionObserver; a
+`Canvas` drawing text its place in a page-long ResizeObserver. At the end of
+every batch and mount, the runtime releases those whose element is no longer
+in the document, however it left (a remove, a replace of an ancestor, a new
+mount). So a map screen you navigate away from stops asking for the
+location.
+
 **A program that stops.** The page passes `go.run`'s promise to
 `GrMob.watchExit(exited)`. If the program exits on its own (a deadlock, a
 panic nothing recovered), the runtime draws a "The app stopped. Reload the

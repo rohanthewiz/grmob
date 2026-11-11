@@ -175,95 +175,6 @@ with each item's `raised` traced back through all session docs.
     clears it), which compiles and lints but no test executes: ios/verify's
     `checkResync` is the model (a faithful replay never asks; a node-sized
     hole asks once and the answer matches Go's final tree).
-- **N-137** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value low
-  **Small reliability items (plan R9 b-l).** Each is a few lines; the plan's
-  table has where and how. ~~b: `mobile` functions on a nil manager.~~ ~~c: a nil
-  from a `ComponentFunc` shifts sibling paths on the natives.~~ ~~d: duplicate
-  keys across two `For` groups reach `LazyColumn` (plausible).~~ e: no
-  teardown when a subtree leaves the DOM (a `ShowUser` map's GPS watch
-  outlives its screen). ~~f: `Debouncer.Pending()` stays true after
-  firing.~~ ~~g: `vendorShell` is not atomic.~~ ~~h: the instantiate fallback hides the
-  real error.~~ ~~i: `serve -dev` cannot start inside a Go workspace.~~ ~~j: the
-  watcher ignores locally replaced modules.~~ ~~k: `grmob new` cannot be
-  resumed.~~ ~~l: the app name is injected unescaped into the host page.~~ Strike letters here as
-  they land.
-  - f landed 2026-11-11: the fire clears `d.timer` when it is still the
-    current timer, so `Pending` is false while the call runs and after. A
-    fire that lost its race with a newer `Call` leaves that one pending.
-    Pinned by two tests in `hooks/debounce_test.go`. The stale-fire test
-    holds the debouncer's lock to force the race, and fails on an
-    unconditional clear.
-  - b landed 2026-11-11: every `mobile` entry point (and `ReportHostEvent`)
-    goes through `manager()`. Before `Register`, `RenderInitial` returns a
-    one-Text tree saying `mobile.Register was never called`, every other call
-    returns `[]`, `SetListener` is a no-op, and the log says it once. The
-    plan's `{"error": …}` was not used: hosts refuse that payload (N-133's
-    finding), and a tree draws with no host change. Pinned by
-    `mobile/unregistered_test.go`, which panics with one entry point
-    unguarded. native.md's bridge table says it.
-  - c landed 2026-11-11: `renderAll` (every container, Fragment, For,
-    Modal, TabView, camera overlays) and `WithTheme`'s loop drop a nil
-    child instead of keeping a slot, so Go diffs by the indices every host
-    holds. Both natives skipped JSON null while parsing, and the web's
-    `renderNode` would have thrown on it. `core.Keyed` over a nil returns nil
-    instead of panicking on `n.Key`. The natives' null-skip stays as a
-    defence. Pinned by `core/nil_child_test.go`; the old code fails all three
-    tests. `go test ./...`, wasm/verify and ios/verify are green.
-  - i and j landed 2026-11-11 (`serve/dev.go`). The module root comes from
-    `go env GOMOD` (`locateModule`), which names the module containing the
-    working directory even under a go.work. `go list -m` printed every
-    workspace module, and their joined lines failed the build.sh check.
-    `goSources` now skips only `GOMODCACHE` (`watchesPackageDir`, with a
-    `filepath.Rel` containment test), so a `replace => ../grmob` checkout is
-    watched. Pinned in `serve/dev_test.go` by a real scratch workspace, a
-    directory outside any module, and the watch rule's cases. Not run live
-    with a browser attached.
-  - g, k and l landed 2026-11-11 (`cmd/grmob`).
-    - g: `installShell` copies, patches and records in a
-      `.<dir>-partial-*` staging directory beside the shell, then renames
-      it into place. A refresh merges the staged, already-patched tree over
-      the old one (keeping the app's own files) and writes the record last.
-      A killed run's staging is cleared by the next one.
-    - k: the scaffold's steps moved into `scaffoldApp`. On any failure, or
-      a Ctrl-C (caught for the scaffold's length), `removeScaffold` removes
-      what the run wrote: the whole directory if the run created it, else
-      everything but `.git`. Chosen over the plan's `-force` alternative,
-      which would have to decide what to overwrite. A failed first build is
-      kept, since the app is complete by then.
-    - l: the templates escape the name for each place it lands:
-      `[[html .Name]]` in `<title>`, `[[js .Name]]` in the boot error's JS
-      string, `[[printf "%q" .Name]]` for app.go's two Go strings. An
-      ordinary name renders byte-identically, so `grmob web`'s "differs"
-      check stays quiet on existing pages. `validateName` refuses control
-      characters (a line break would split app.go's comment and the
-      README's heading).
-    Pinned by `cmd/grmob/shell_install_test.go` (4) and two tests in
-    `new_test.go`. The k and l tests fail with their fix removed. g's tests
-    encode the failure the plan names; there was no `installShell` before
-    to run them against.
-  - h landed 2026-11-11: `GrMob.instantiateWasm(response, importObject)` in
-    the runtime, called by all three host pages (the site, the `grmob new`
-    template, the shots page). It streams only on exactly `application/wasm`
-    and buffers anything else, with no catch-and-retry, so a CompileError or
-    LinkError arrives as itself. The test found that engines differ past the
-    exact value: the spec ignores case, Node is case-sensitive, and both refuse
-    parameters. Pinned by `wasm/verify/instantiate_test.mjs` (real modules
-    and Responses), which also shows the old shape reporting the body
-    instead of the error. `wasm/verify/run.sh`'s browser pass boots the site
-    page through it. wasm.md's host contract says it.
-  - d landed 2026-11-11. The premise is confirmed from source: `GrMobList`
-    flattens every For group's Fragment into one row list, and Go's
-    duplicate-key check reads one sibling list at a time. So two groups
-    keyed by the same IDs gave `LazyColumn` a repeated key, and Compose
-    throws on that. `grMobLazyKeys` (new, import-free `GrMobLazyKeys.kt`)
-    keeps a first occurrence's key as it was, keys a repeat as
-    `Pair(key, n)` (Go's `idScope.seen` rule, unable to meet a real key),
-    and leaves unkeyed rows positional. Run by android/verify's JVM harness
-    (hand-written cases, since Go has no counterpart); returning the raw
-    keys fails it. `run.sh` compiles with the Compose plugin and lint is
-    clean. The crash itself was not reproduced on a device. SwiftUI's
-    list identifies rows by `viewID`, not the Go key, so it has no such
-    throw.
 - **N-138** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
   **The engine's per-pass cost (plan P0-P3).** Every event renders the whole
   app twice (20 taps ran the root 40 times), and the diff is 10x slower than
@@ -1016,6 +927,101 @@ defect, which then becomes its own Open item.
 
 ## Closed
 
+- **N-137** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value low
+  · closed 2026-11-11, `2026-1111-XXXX-n137-d-e-lazy-keys-and-web-teardown` — the plan's eleven small
+  reliability items (R9 b–l), each landed and pinned on its own; one line
+  each below. Sessions: `2026-1111-1116-n137-reliability-letters-b-c-f-through-l`
+  (b, c, f–l) and this one (d, e).
+  - f landed 2026-11-11: the fire clears `d.timer` when it is still the
+    current timer, so `Pending` is false while the call runs and after. A
+    fire that lost its race with a newer `Call` leaves that one pending.
+    Pinned by two tests in `hooks/debounce_test.go`. The stale-fire test
+    holds the debouncer's lock to force the race, and fails on an
+    unconditional clear.
+  - b landed 2026-11-11: every `mobile` entry point (and `ReportHostEvent`)
+    goes through `manager()`. Before `Register`, `RenderInitial` returns a
+    one-Text tree saying `mobile.Register was never called`, every other call
+    returns `[]`, `SetListener` is a no-op, and the log says it once. The
+    plan's `{"error": …}` was not used: hosts refuse that payload (N-133's
+    finding), and a tree draws with no host change. Pinned by
+    `mobile/unregistered_test.go`, which panics with one entry point
+    unguarded. native.md's bridge table says it.
+  - c landed 2026-11-11: `renderAll` (every container, Fragment, For,
+    Modal, TabView, camera overlays) and `WithTheme`'s loop drop a nil
+    child instead of keeping a slot, so Go diffs by the indices every host
+    holds. Both natives skipped JSON null while parsing, and the web's
+    `renderNode` would have thrown on it. `core.Keyed` over a nil returns nil
+    instead of panicking on `n.Key`. The natives' null-skip stays as a
+    defence. Pinned by `core/nil_child_test.go`; the old code fails all three
+    tests. `go test ./...`, wasm/verify and ios/verify are green.
+  - i and j landed 2026-11-11 (`serve/dev.go`). The module root comes from
+    `go env GOMOD` (`locateModule`), which names the module containing the
+    working directory even under a go.work. `go list -m` printed every
+    workspace module, and their joined lines failed the build.sh check.
+    `goSources` now skips only `GOMODCACHE` (`watchesPackageDir`, with a
+    `filepath.Rel` containment test), so a `replace => ../grmob` checkout is
+    watched. Pinned in `serve/dev_test.go` by a real scratch workspace, a
+    directory outside any module, and the watch rule's cases. Not run live
+    with a browser attached.
+  - g, k and l landed 2026-11-11 (`cmd/grmob`).
+    - g: `installShell` copies, patches and records in a
+      `.<dir>-partial-*` staging directory beside the shell, then renames
+      it into place. A refresh merges the staged, already-patched tree over
+      the old one (keeping the app's own files) and writes the record last.
+      A killed run's staging is cleared by the next one.
+    - k: the scaffold's steps moved into `scaffoldApp`. On any failure, or
+      a Ctrl-C (caught for the scaffold's length), `removeScaffold` removes
+      what the run wrote: the whole directory if the run created it, else
+      everything but `.git`. Chosen over the plan's `-force` alternative,
+      which would have to decide what to overwrite. A failed first build is
+      kept, since the app is complete by then.
+    - l: the templates escape the name for each place it lands:
+      `[[html .Name]]` in `<title>`, `[[js .Name]]` in the boot error's JS
+      string, `[[printf "%q" .Name]]` for app.go's two Go strings. An
+      ordinary name renders byte-identically, so `grmob web`'s "differs"
+      check stays quiet on existing pages. `validateName` refuses control
+      characters (a line break would split app.go's comment and the
+      README's heading).
+    Pinned by `cmd/grmob/shell_install_test.go` (4) and two tests in
+    `new_test.go`. The k and l tests fail with their fix removed. g's tests
+    encode the failure the plan names; there was no `installShell` before
+    to run them against.
+  - h landed 2026-11-11: `GrMob.instantiateWasm(response, importObject)` in
+    the runtime, called by all three host pages (the site, the `grmob new`
+    template, the shots page). It streams only on exactly `application/wasm`
+    and buffers anything else, with no catch-and-retry, so a CompileError or
+    LinkError arrives as itself. The test found that engines differ past the
+    exact value: the spec ignores case, Node is case-sensitive, and both refuse
+    parameters. Pinned by `wasm/verify/instantiate_test.mjs` (real modules
+    and Responses), which also shows the old shape reporting the body
+    instead of the error. `wasm/verify/run.sh`'s browser pass boots the site
+    page through it. wasm.md's host contract says it.
+  - d landed 2026-11-11. The premise is confirmed from source: `GrMobList`
+    flattens every For group's Fragment into one row list, and Go's
+    duplicate-key check reads one sibling list at a time. So two groups
+    keyed by the same IDs gave `LazyColumn` a repeated key, and Compose
+    throws on that. `grMobLazyKeys` (new, import-free `GrMobLazyKeys.kt`)
+    keeps a first occurrence's key as it was, keys a repeat as
+    `Pair(key, n)` (Go's `idScope.seen` rule, unable to meet a real key),
+    and leaves unkeyed rows positional. Run by android/verify's JVM harness
+    (hand-written cases, since Go has no counterpart); returning the raw
+    keys fails it. `run.sh` compiles with the Compose plugin and lint is
+    clean. The crash itself was not reproduced on a device. SwiftUI's
+    list identifies rows by `viewID`, not the Go key, so it has no such
+    throw.
+  - e landed 2026-11-11: the web runtime keeps a teardown registry
+    (`onDetach(el, name, release)`, `disposeDetached` at the outermost exit
+    of every mount and batch, releasing each registered element that is no
+    longer connected). A map stops its location watch and is removed from
+    Leaflet. A list's end/start observer disconnects. A canvas leaves the
+    page-long `canvasTextObserver`, which had held every text-drawing canvas
+    for good. A map element removed before its creation frame no longer
+    retries every frame forever (one frame, then it gives up). `dom.mjs` now
+    models `isConnected`, `load.mjs` has an opt-in recording ResizeObserver,
+    and the fake Leaflet counts `remove()`. Pinned by
+    `wasm/verify/teardown_test.mjs` (7). Six fail with the prune removed;
+    with the old retry, the seventh never returns. `wasm/verify/run.sh`
+    (browser pass) is green. wasm.md says it.
 - **N-136** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value low
   · closed 2026-11-11, `2026-1111-1057-n135-n136-hook-goroutine-panics-and-typed-json` — typed text that is
   valid JSON reaches its handler as typed on the web (plan R8).

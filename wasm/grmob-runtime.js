@@ -3726,6 +3726,12 @@ const GrMob = (() => {
         // end-reached report.
         if (el[END_TARGET] === last) return;
         if (!el[END_OBSERVER]) {
+            // Disconnected when the list leaves the document; see onDetach.
+            onDetach(el, "endReached", () => {
+                if (el[END_OBSERVER]) el[END_OBSERVER].disconnect();
+                el[END_OBSERVER] = null;
+                el[END_TARGET] = null;
+            });
             el[END_OBSERVER] = new IntersectionObserver((entries) => {
                 if (!entries.some((entry) => entry.isIntersecting)) return;
                 // Re-read at fire time, as every listener here does: the ID is
@@ -3836,6 +3842,11 @@ const GrMob = (() => {
         }
         if (el[START_TARGET] === first) return;
         if (!el[START_OBSERVER]) {
+            onDetach(el, "startReached", () => {
+                if (el[START_OBSERVER]) el[START_OBSERVER].disconnect();
+                el[START_OBSERVER] = null;
+                el[START_TARGET] = null;
+            });
             el[START_OBSERVER] = new IntersectionObserver((entries) => {
                 if (!entries.some((entry) => entry.isIntersecting)) return;
                 const latestCbId = el.dataset.listener_onStartReached;
@@ -4123,6 +4134,19 @@ const GrMob = (() => {
             quiet: null,
         };
         el[MAP_RECORD] = record;
+        // A map that leaves the document takes its Leaflet state with it: the
+        // location watch a ShowUser map started (a live GPS fix, and the
+        // browser's location indicator), the pending report, and the window
+        // listeners Leaflet keeps. Nothing else ever asks it to stop. See
+        // onDetach.
+        onDetach(el, "map", () => {
+            if (record.quiet) clearTimeout(record.quiet);
+            record.quiet = null;
+            if (record.locating) record.map.stopLocate();
+            record.locating = false;
+            if (typeof record.map.remove === "function") record.map.remove();
+            el[MAP_RECORD] = null;
+        });
 
         const report = () => {
             if (record.quiet) clearTimeout(record.quiet);
@@ -4326,8 +4350,16 @@ const GrMob = (() => {
             // while the tree is still detached comes out 0x0 and stays that
             // way. Wait a frame and try again — by then mount has appended the
             // tree, exactly as the focus command's deferral relies on.
+            //
+            // One frame, not until it is: every path that builds an element
+            // attaches it before the batch ends, so an element still detached a
+            // frame later was removed before it was ever attached (a map shown
+            // and dismissed in quick succession), and retrying every frame
+            // would never stop.
             if (el.isConnected === false) {
-                requestAnimationFrame(() => syncMap(el));
+                requestAnimationFrame(() => {
+                    if (el.isConnected !== false) syncMap(el);
+                });
                 return;
             }
             record = createLeafletMap(L, el);
@@ -4545,6 +4577,13 @@ const GrMob = (() => {
             if (canvasTextObserver && !svg.__grmobTextObserved) {
                 canvasTextObserver.observe(svg);
                 svg.__grmobTextObserved = true;
+                // canvasTextObserver lives as long as the page and holds what
+                // it observes, so a canvas that left without this would be
+                // kept, with its whole drawing, for good. See onDetach.
+                onDetach(svg, "canvasText", () => {
+                    if (svg.__grmobTextObserved) canvasTextObserver.unobserve(svg);
+                    svg.__grmobTextObserved = false;
+                });
             }
             return;
         }
@@ -8866,9 +8905,70 @@ const GrMob = (() => {
             return fn();
         } finally {
             applyingTree--;
-            // The outermost exit: the batch is whole and every post-pass has
-            // run, so the calls it caused can go to Go. See dispatchToGo.
-            if (applyingTree === 0) flushGoCalls();
+            if (applyingTree === 0) {
+                // The outermost exit: the batch is whole and every post-pass
+                // has run. What it removed is known now, so it is released
+                // (disposeDetached), and the calls it caused can go to Go (see
+                // dispatchToGo).
+                disposeDetached();
+                flushGoCalls();
+            }
+        }
+    }
+
+    // --- Teardown --------------------------------------------------------------
+    //
+    // A few elements hold something outside the DOM: a map its Leaflet
+    // instance and, for core.ShowUser, a geolocation watch; a list with
+    // OnEndReached or OnStartReached its IntersectionObserver; a canvas
+    // drawing text its place in canvasTextObserver, which lives as long as the
+    // page. Removing the element from the document released none of it (plan
+    // R9e). A ShowUser map's GPS watch outlived its screen, and every canvas
+    // that ever drew text stayed referenced.
+    //
+    // Each such element registers its release with onDetach when it acquires
+    // the thing, under a name, so registering again (a list whose prop comes
+    // and goes) replaces rather than piles up. disposeDetached runs at the
+    // outermost exit of every mount and batch, and releases every registered
+    // element that is no longer in the document.
+    //
+    //	acquire     onDetach(el, "map", release)       disposers: el → {map}
+    //	batch       el removed, or an ancestor replaced
+    //	batch end   disposeDetached: !el.isConnected → release(), forget el
+    //
+    // The registry and a connectivity test, rather than a walk of each removed
+    // subtree at each removal site, because removal has many doors: a
+    // "remove", a "replace" of the element or of any ancestor, a mount over
+    // the whole tree. Checking only the registered elements at one place sees
+    // all of them, and costs one isConnected per holder per batch (a page has
+    // a handful).
+    //
+    // At the batch's end and not at the removal: an element can be taken out
+    // and put back inside one batch, and only the end knows which happened.
+    const disposers = new Map(); // element → Map(name → release)
+
+    function onDetach(el, name, release) {
+        let mine = disposers.get(el);
+        if (!mine) {
+            mine = new Map();
+            disposers.set(el, mine);
+        }
+        mine.set(name, release);
+    }
+
+    function disposeDetached() {
+        for (const [el, mine] of disposers) {
+            if (el.isConnected !== false) continue;
+            disposers.delete(el);
+            for (const release of mine.values()) {
+                // One release that throws must not keep the rest, or the next
+                // element's, from running.
+                try {
+                    release();
+                } catch (err) {
+                    console.error("grmob: releasing a removed element threw", err);
+                }
+            }
         }
     }
 
