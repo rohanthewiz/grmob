@@ -227,7 +227,7 @@ with each item's `raised` traced back through all session docs.
   ROADMAP drift (README's 84 lessons, `hooks/doc.go:22`, deep links and
   Packaging listed as planned). Whether `ai_docs/` (19% of the zip) stays in
   the module is the user's decision.
-  - D1 landed 2026-11-11 (`2026-1111-XXXX-n137-d-e-lazy-keys-and-web-teardown`).
+  - D1 landed 2026-11-11 (`2026-1111-1142-n137-d-e-lazy-keys-and-web-teardown`).
     Both binaries are untracked with `git rm --cached` (still on disk) and
     listed in `.gitignore`. Nothing consumed them: the docs image builds its
     server from source. The new `internal/trackedfiles` test fails on any
@@ -815,7 +815,7 @@ defect, which then becomes its own Open item.
   (`wasm/verify` 5.7 s plain, 54.9 s under `-race`); timer tests sleep real
   time where `testing/synctest` ran 10 fake seconds in 0.57 ms; the site
   workflow repeats CI's verify.
-  - R9o landed 2026-11-11 (`2026-1111-XXXX-n137-d-e-lazy-keys-and-web-teardown`).
+  - R9o landed 2026-11-11 (`2026-1111-1142-n137-d-e-lazy-keys-and-web-teardown`).
     Under `set -e`, a command that fails in an EXIT trap becomes the
     script's status (shown in sh, bash and dash), and the Android drill's
     `rm -rf` raced the gradle daemon that `sources.sh` leaves writing into
@@ -947,7 +947,7 @@ defect, which then becomes its own Open item.
 ## Closed
 
 - **N-137** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value low
-  · closed 2026-11-11, `2026-1111-XXXX-n137-d-e-lazy-keys-and-web-teardown` — the plan's eleven small
+  · closed 2026-11-11, `2026-1111-1142-n137-d-e-lazy-keys-and-web-teardown` — the plan's eleven small
   reliability items (R9 b–l), each landed and pinned on its own; one line
   each below. Sessions: `2026-1111-1116-n137-reliability-letters-b-c-f-through-l`
   (b, c, f–l) and this one (d, e).
