@@ -183,8 +183,8 @@ with each item's `raised` traced back through all session docs.
   teardown when a subtree leaves the DOM (a `ShowUser` map's GPS watch
   outlives its screen). ~~f: `Debouncer.Pending()` stays true after
   firing.~~ g: `vendorShell` is not atomic. h: the instantiate fallback hides the real
-  error. i: `serve -dev` cannot start inside a Go workspace. j: the watcher
-  ignores locally replaced modules. k: `grmob new` cannot be resumed. l: the
+  error. ~~i: `serve -dev` cannot start inside a Go workspace.~~ ~~j: the
+  watcher ignores locally replaced modules.~~ k: `grmob new` cannot be resumed. l: the
   app name is injected unescaped into the host page. Strike letters here as
   they land.
   - f landed 2026-11-11: the fire clears `d.timer` when it is still the
@@ -209,6 +209,15 @@ with each item's `raised` traced back through all session docs.
     instead of panicking on `n.Key`. The natives' null-skip stays as a
     defence. Pinned by `core/nil_child_test.go`; the old code fails all three
     tests. `go test ./...`, wasm/verify and ios/verify are green.
+  - i and j landed 2026-11-11 (`serve/dev.go`). The module root comes from
+    `go env GOMOD` (`locateModule`), which names the module containing the
+    working directory even under a go.work. `go list -m` printed every
+    workspace module, and their joined lines failed the build.sh check.
+    `goSources` now skips only `GOMODCACHE` (`watchesPackageDir`, with a
+    `filepath.Rel` containment test), so a `replace => ../grmob` checkout is
+    watched. Pinned in `serve/dev_test.go` by a real scratch workspace, a
+    directory outside any module, and the watch rule's cases. Not run live
+    with a browser attached.
 - **N-138** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
   **The engine's per-pass cost (plan P0-P3).** Every event renders the whole
   app twice (20 taps ran the root 40 times), and the diff is 10x slower than

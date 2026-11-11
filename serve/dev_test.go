@@ -167,3 +167,86 @@ func TestDiffStamps(t *testing.T) {
 		t.Fatalf("identical snapshots differ: %v", got)
 	}
 }
+
+// writeModule makes a minimal module at dir: a go.mod and, when withBuild is
+// set, the build.sh serve -dev looks for.
+func writeModule(t *testing.T, dir, path string, withBuild bool) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(dir, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module "+path+"\n\ngo 1.22\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if withBuild {
+		if err := os.WriteFile(filepath.Join(dir, "build.sh"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// Plan R9i: inside a Go workspace `go list -m` prints every module of the
+// workspace, and the joined lines were taken for one root, so serve -dev
+// could not start. locateModule names the module containing the directory
+// it runs in, workspace or not.
+func TestLocateModuleFindsTheContainingModuleInsideAWorkspace(t *testing.T) {
+	ws := t.TempDir()
+	writeModule(t, filepath.Join(ws, "app"), "example.com/app", true)
+	writeModule(t, filepath.Join(ws, "grmob"), "example.com/grmob", false)
+	if err := os.WriteFile(filepath.Join(ws, "go.work"), []byte("go 1.22\n\nuse (\n\t./app\n\t./grmob\n)\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	root, modCache, err := locateModule(filepath.Join(ws, "app", "sub"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// EvalSymlinks on both sides: macOS's temp dir is behind /var → /private/var.
+	want, _ := filepath.EvalSymlinks(filepath.Join(ws, "app"))
+	got, _ := filepath.EvalSymlinks(root)
+	if got != want {
+		t.Fatalf("root = %q, want %q", root, want)
+	}
+	if _, err := os.Stat(filepath.Join(root, "build.sh")); err != nil {
+		t.Fatalf("the located root has no build.sh: %v", err)
+	}
+	if modCache == "" {
+		t.Error("GOMODCACHE came back empty")
+	}
+}
+
+// Outside any module there is no root, and locateModule says so rather than
+// returning os.DevNull's directory.
+func TestLocateModuleRefusesADirectoryOutsideAnyModule(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("GOWORK", "off")
+	t.Setenv("GOFLAGS", "")
+	if _, _, err := locateModule(dir); err == nil {
+		t.Fatal("locateModule found a module root in a directory outside any module")
+	}
+}
+
+// Plan R9j: the watcher skipped every package outside the module root, so a
+// module replaced by a local checkout, the layout of every `grmob new
+// -replace` app, was never watched. Only the module cache is skipped now.
+func TestTheWatcherSkipsOnlyTheModuleCache(t *testing.T) {
+	const cache = "/home/u/go/pkg/mod"
+	for _, tc := range []struct {
+		dir  string
+		want bool
+	}{
+		{"/home/u/app/wasm", true},                             // the app itself
+		{"/home/u/grmob/core", true},                           // a replace => ../grmob checkout
+		{cache + "/github.com/rohanthewiz/rweb@v0.1.0", false}, // immutable
+		{"/home/u/go/pkg/mod2/x", true},                        // a sibling, not inside the cache
+		{"", false},                                            // go list's blank line
+	} {
+		if got := watchesPackageDir(tc.dir, cache); got != tc.want {
+			t.Errorf("watchesPackageDir(%q) = %v, want %v", tc.dir, got, tc.want)
+		}
+	}
+	// An unknown cache excludes nothing on that ground.
+	if !watchesPackageDir(cache+"/x", "") {
+		t.Error("with no GOMODCACHE known, a directory was still excluded")
+	}
+}

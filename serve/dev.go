@@ -77,6 +77,11 @@ type devServer struct {
 	root string // the module root, where build.sh lives
 	hub  *rweb.SSEHub
 
+	// modCache is GOMODCACHE, the one place goSources does not watch: a
+	// module there is immutable. Empty when unknown (a hand-built devServer
+	// in a test), and then nothing is excluded on that ground.
+	modCache string
+
 	// mu makes "read the build state, then tell the pages" one step. It is
 	// held across every broadcast and across a subscribe, which is what keeps
 	// a page from getting a hello that is older than a reload it already
@@ -97,17 +102,48 @@ type sseEvent struct {
 const sseChannelSize = 8
 
 func newDevServer(dir string) (*devServer, error) {
-	out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}").Output()
+	root, modCache, err := locateModule("")
 	if err != nil {
-		return nil, fmt.Errorf("serve -dev: locating the module root: %w", err)
+		return nil, fmt.Errorf("serve -dev: %w", err)
 	}
-	root := strings.TrimSpace(string(out))
 	if _, err := os.Stat(filepath.Join(root, "build.sh")); err != nil {
 		return nil, fmt.Errorf("serve -dev: %s has no build.sh to run", root)
 	}
-	d := &devServer{dir: dir, root: root, hub: newDevHub()}
+	d := &devServer{dir: dir, root: root, modCache: modCache, hub: newDevHub()}
 	d.buildID = d.stampMainWasm()
 	return d, nil
+}
+
+// locateModule finds the module that contains wd ("" for the process's
+// working directory) and the module cache, from one `go env GOMOD
+// GOMODCACHE`.
+//
+// # Why not `go list -m`
+//
+// The root used to come from `go list -m -f {{.Dir}}`, which prints one line
+// per main module. Inside a Go workspace (a go.work above the app) every
+// module of the workspace is a main module, so the "root" was several paths
+// joined by newlines, the build.sh check failed on it, and serve -dev could
+// not start (plan R9i). GOMOD is the go.mod of the one module that contains
+// the working directory, with or without a workspace.
+func locateModule(wd string) (root, modCache string, err error) {
+	cmd := exec.Command("go", "env", "GOMOD", "GOMODCACHE")
+	cmd.Dir = wd
+	out, err := cmd.Output()
+	if err != nil {
+		return "", "", fmt.Errorf("locating the module root: %w", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	gomod := strings.TrimSpace(lines[0])
+	// os.DevNull means module mode with no go.mod around; "" means module
+	// mode is off. Neither has a root to build from.
+	if gomod == "" || gomod == os.DevNull {
+		return "", "", fmt.Errorf("the working directory is not inside a Go module")
+	}
+	if len(lines) > 1 {
+		modCache = strings.TrimSpace(lines[1])
+	}
+	return filepath.Dir(gomod), modCache, nil
 }
 
 // newDevHub builds the hub the pages subscribe to. Every channel comes from
@@ -363,8 +399,8 @@ func (d *devServer) stamps() (goFiles, hostFiles map[string]string) {
 }
 
 // goSources lists the files whose change means "rebuild": the non-test .go
-// files of every in-module package in ./wasm's js/wasm build graph, plus the
-// module files and the build script. `go list -e` tolerates a package that
+// files of every package in ./wasm's js/wasm build graph that can change
+// (see watchesPackageDir), plus the module files and the build script. `go list -e` tolerates a package that
 // currently fails to parse, so a half-typed edit keeps the set intact rather
 // than emptying it.
 func (d *devServer) goSources() []string {
@@ -381,8 +417,8 @@ func (d *devServer) goSources() []string {
 		filepath.Join(d.root, "build.sh"),
 	}
 	for _, dir := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		if dir == "" || !strings.HasPrefix(dir, d.root) {
-			continue // the module cache is immutable; nothing to watch there
+		if !watchesPackageDir(dir, d.modCache) {
+			continue
 		}
 		entries, err := os.ReadDir(dir)
 		if err != nil {
@@ -398,6 +434,36 @@ func (d *devServer) goSources() []string {
 	}
 	sort.Strings(files)
 	return files
+}
+
+// watchesPackageDir reports whether goSources watches a package directory
+// from the build graph: every one except those in the module cache, which is
+// immutable. (The standard library is already left out by the go list
+// template.)
+//
+// # Why not "inside the module root"
+//
+// The rule used to be "dir starts with the module root", meant as "not in the
+// module cache". But a module replaced by a local path is outside the root
+// and outside the cache: every `grmob new -replace` app has the framework
+// checkout beside it (replace github.com/rohanthewiz/grmob => ../grmob), and
+// an edit there never rebuilt the app (plan R9j). Excluding only the cache
+// says what was meant.
+func watchesPackageDir(dir, modCache string) bool {
+	if dir == "" {
+		return false
+	}
+	return modCache == "" || !within(dir, modCache)
+}
+
+// within reports whether path is dir or below it. filepath.Rel rather than a
+// string prefix, so /cache2 is not taken to be inside /cache.
+func within(path, dir string) bool {
+	rel, err := filepath.Rel(dir, path)
+	if err != nil {
+		return false
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
 }
 
 // diffStamps names the files whose stamp differs between two snapshots —
