@@ -113,16 +113,11 @@
   // before starting the next build.
   async function boot() {
     const go = new Go();
-    const source = fetch("main.wasm").then(r => {
-      if (!r.ok) throw new Error(`main.wasm: HTTP ${r.status} (run ./build.sh first?)`);
-      return r;
-    });
-    // instantiateStreaming needs an application/wasm response; fall back to a
-    // buffered instantiate for servers that send another type.
-    const result = await (("instantiateStreaming" in WebAssembly)
-      ? WebAssembly.instantiateStreaming(source, go.importObject)
-          .catch(() => source.then(r => r.arrayBuffer()).then(b => WebAssembly.instantiate(b, go.importObject)))
-      : source.then(r => r.arrayBuffer()).then(b => WebAssembly.instantiate(b, go.importObject)));
+    const response = await fetch("main.wasm");
+    if (!response.ok) throw new Error(`main.wasm: HTTP ${response.status} (run ./build.sh first?)`);
+    // Streams an application/wasm response and buffers any other, and lets a
+    // real compile or link error through as itself (GrMob.instantiateWasm).
+    const result = await GrMob.instantiateWasm(response, go.importObject);
     const exited = go.run(result.instance); // settles only when main returns
     // A program that dies on its own (a deadlock, an unrecovered panic) gets a
     // "stopped, reload" banner; a hot-reload Shutdown does not.

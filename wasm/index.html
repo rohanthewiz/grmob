@@ -615,17 +615,12 @@
     // actually stopped before it starts the next.
     async function boot() {
         const go = new Go();
-        // instantiateStreaming needs the server to send application/wasm; fall
-        // back to a buffered instantiate where it does not (a bare file:// open,
-        // some ad-hoc servers) rather than showing an error for a MIME type.
-        const source = fetch("main.wasm").then(r => {
-            if (!r.ok) throw new Error(`main.wasm: HTTP ${r.status} (run ./build.sh first?)`);
-            return r;
-        });
-        const result = await (("instantiateStreaming" in WebAssembly)
-            ? WebAssembly.instantiateStreaming(source, go.importObject)
-                .catch(() => source.then(r => r.arrayBuffer()).then(b => WebAssembly.instantiate(b, go.importObject)))
-            : source.then(r => r.arrayBuffer()).then(b => WebAssembly.instantiate(b, go.importObject)));
+        const response = await fetch("main.wasm");
+        if (!response.ok) throw new Error(`main.wasm: HTTP ${response.status} (run ./build.sh first?)`);
+        // Streams when the server sends application/wasm, buffers when it
+        // does not (some ad-hoc servers), and lets a real compile or link
+        // error through as itself: see instantiateWasm in grmob-runtime.js.
+        const result = await GrMob.instantiateWasm(response, go.importObject);
         // Not awaited: the promise settles only when main returns, which for
         // a module that is never hot-reloaded is never.
         const exited = go.run(result.instance);

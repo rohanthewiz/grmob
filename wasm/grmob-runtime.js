@@ -9041,6 +9041,46 @@ const GrMob = (() => {
         });
     }
 
+    // --- Loading the module ---------------------------------------------------
+    //
+    // instantiateWasm compiles and instantiates the app's main.wasm from the
+    // page's fetch Response, and resolves to what WebAssembly.instantiate
+    // does ({module, instance}). Every host page calls it; the HTTP status is
+    // the page's to check, since each words its own hint.
+    //
+    // instantiateStreaming compiles while the bytes arrive, but only from a
+    // response served as application/wasm: a bare file server, or an ad-hoc
+    // one, often sends another type. So the streaming path is taken when the
+    // header says exactly application/wasm (trimmed), and the buffered one
+    // otherwise. Exactly, because the engines differ past that: the
+    // WebAssembly Web API matches the whole value without regard to case,
+    // and Node matches it case-sensitively. Both refuse parameters
+    // ("application/wasm; charset=binary"). Streaming only on the one value
+    // every engine accepts means an unusual header costs the streaming
+    // speed-up, never a failed load.
+    //
+    // # Why decide up front rather than catch
+    //
+    // The pages used to try streaming and, on *any* rejection, retry
+    // buffered from the same response (plan R9h). A wrong MIME type was meant;
+    // what also landed there was every real failure: a CompileError from a
+    // truncated build, a LinkError from a wasm_exec.js that does not match the
+    // Go toolchain. By then streaming had consumed the body, so the retry
+    // failed with "body already used", and that was the message the page
+    // showed. Deciding by the header leaves no retry, so a real error arrives
+    // as itself.
+    //
+    // `wasm` is the WebAssembly namespace, a parameter only so the Node
+    // harness can hand in the host realm's (instantiateStreaming is Node's,
+    // not V8's, and is missing from a vm context's own).
+    async function instantiateWasm(response, importObject, wasm = WebAssembly) {
+        const type = (response.headers.get("Content-Type") || "").trim();
+        if (type === "application/wasm" && typeof wasm.instantiateStreaming === "function") {
+            return wasm.instantiateStreaming(response, importObject);
+        }
+        return wasm.instantiate(await response.arrayBuffer(), importObject);
+    }
+
     // --- A Go program that stopped ------------------------------------------
     //
     // watchExit draws a banner when the Go program behind the page exits on
@@ -10834,6 +10874,7 @@ const GrMob = (() => {
         mount,
         patch,
         applyPushed,
+        instantiateWasm,
         watchExit,
         showToast,
         audio,

@@ -141,16 +141,11 @@
     (async () => {
         try {
             const go = new Go();
-            const source = fetch("main.wasm").then(r => {
-                if (!r.ok) throw new Error(`main.wasm: HTTP ${r.status}`);
-                return r;
-            });
-            const result = await (("instantiateStreaming" in WebAssembly)
-                ? WebAssembly.instantiateStreaming(source, go.importObject)
-                    .catch(() => source.then(r => r.arrayBuffer())
-                        .then(b => WebAssembly.instantiate(b, go.importObject)))
-                : source.then(r => r.arrayBuffer())
-                    .then(b => WebAssembly.instantiate(b, go.importObject)));
+            const response = await fetch("main.wasm");
+            if (!response.ok) throw new Error(`main.wasm: HTTP ${response.status}`);
+            // A real compile or link error arrives as itself, which is what
+            // __grmobFailed reports; see instantiateWasm in grmob-runtime.js.
+            const result = await GrMob.instantiateWasm(response, go.importObject);
             go.run(result.instance);
             GrMob.mount(window.GrMobWASM.RenderInitial());
             window.__grmobReady = true;

@@ -182,8 +182,8 @@ with each item's `raised` traced back through all session docs.
   keys across two `For` groups reach `LazyColumn` (plausible). e: no
   teardown when a subtree leaves the DOM (a `ShowUser` map's GPS watch
   outlives its screen). ~~f: `Debouncer.Pending()` stays true after
-  firing.~~ ~~g: `vendorShell` is not atomic.~~ h: the instantiate fallback hides the real
-  error. ~~i: `serve -dev` cannot start inside a Go workspace.~~ ~~j: the
+  firing.~~ ~~g: `vendorShell` is not atomic.~~ ~~h: the instantiate fallback hides the
+  real error.~~ ~~i: `serve -dev` cannot start inside a Go workspace.~~ ~~j: the
   watcher ignores locally replaced modules.~~ ~~k: `grmob new` cannot be
   resumed.~~ ~~l: the app name is injected unescaped into the host page.~~ Strike letters here as
   they land.
@@ -241,6 +241,16 @@ with each item's `raised` traced back through all session docs.
     `new_test.go`. The k and l tests fail with their fix removed. g's tests
     encode the failure the plan names; there was no `installShell` before
     to run them against.
+  - h landed 2026-11-11: `GrMob.instantiateWasm(response, importObject)` in
+    the runtime, called by all three host pages (the site, the `grmob new`
+    template, the shots page). It streams only on exactly `application/wasm`
+    and buffers anything else, with no catch-and-retry, so a CompileError or
+    LinkError arrives as itself. The test found that engines differ past the
+    exact value: the spec ignores case, Node is case-sensitive, and both refuse
+    parameters. Pinned by `wasm/verify/instantiate_test.mjs` (real modules
+    and Responses), which also shows the old shape reporting the body
+    instead of the error. `wasm/verify/run.sh`'s browser pass boots the site
+    page through it. wasm.md's host contract says it.
 - **N-138** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
   **The engine's per-pass cost (plan P0-P3).** Every event renders the whole
   app twice (20 taps ran the root 40 times), and the diff is 10x slower than

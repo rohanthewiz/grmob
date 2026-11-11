@@ -130,6 +130,14 @@ And it looks for one global the page provides:
   `webhost.PushGuard`: a call that arrives during a push anyway is deferred
   to the push's end and logged, not deadlocked.
 
+**Loading the module.** The page fetches `main.wasm`, checks the status,
+and hands the response to `GrMob.instantiateWasm(response,
+go.importObject)`. It streams when the server sends exactly
+`application/wasm` and buffers otherwise, so an unusual server costs only
+the streaming. It never retries: a module that will not compile or link
+rejects with that `CompileError` or `LinkError`, where the old
+try-then-retry reported only that the response body had already been read.
+
 **A program that stops.** The page passes `go.run`'s promise to
 `GrMob.watchExit(exited)`. If the program exits on its own (a deadlock, a
 panic nothing recovered), the runtime draws a "The app stopped. Reload the
