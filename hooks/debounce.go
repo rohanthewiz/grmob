@@ -133,7 +133,19 @@ func (d *Debouncer) Call(fn func()) {
 		fn()
 		return
 	}
-	d.timer = time.AfterFunc(delay, func() {
+	// The fire clears d.timer, so Pending goes false once the call has fired
+	// (plan R9f: it used to stay true for good after the first fire). It
+	// clears it only if d.timer is still this timer: a Call that replaced it
+	// while this fire waited on mu has armed a newer one, which is still
+	// pending. Reading t inside the lock is safe even for a timer that fires
+	// at once, since the assignment below happens before Call unlocks.
+	var t *time.Timer
+	t = time.AfterFunc(delay, func() {
+		d.mu.Lock()
+		if d.timer == t {
+			d.timer = nil
+		}
+		d.mu.Unlock()
 		// The timer's goroutine has no catcher; see core.Safely. The inline
 		// path above needs no guard: it runs on the caller's goroutine,
 		// inside whatever dispatched handler led here.
@@ -142,6 +154,7 @@ func (d *Debouncer) Call(fn func()) {
 			ctx.RequestRender()
 		}
 	})
+	d.timer = t
 	d.mu.Unlock()
 }
 
@@ -165,6 +178,9 @@ func (d *Debouncer) Cancel() {
 // Pending reports whether a call is scheduled and has not fired yet. It is
 // for the UI that wants to say so — a "searching…" hint that appears the
 // moment typing stops rather than when the request goes out.
+//
+// It goes false as the call starts to run, so the render the call's own state
+// change requests already sees it false.
 //
 // It is a snapshot, not a lock: the timer can fire in the instant after it
 // returns true.

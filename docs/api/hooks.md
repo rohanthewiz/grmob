@@ -772,7 +772,7 @@ Cancel drops a pending call. Use it when something has superseded the debounced 
 
 It makes no promise about a call already in flight: time.Timer.Stop reports false once the timer has fired, and by then fn may already be running on the timer goroutine. Cancel is therefore "no \*further\* call", not "undo". Work that must not run twice needs its own guard, as it would with any timer.
 
-<small>[hooks/debounce.go:156](https://github.com/rohanthewiz/grmob/blob/master/hooks/debounce.go#L156)</small>
+<small>[hooks/debounce.go:169](https://github.com/rohanthewiz/grmob/blob/master/hooks/debounce.go#L169)</small>
 
 #### func (*Debouncer) Pending
 
@@ -782,7 +782,9 @@ func (d *Debouncer) Pending() bool
 
 Pending reports whether a call is scheduled and has not fired yet. It is for the UI that wants to say so — a "searching…" hint that appears the moment typing stops rather than when the request goes out.
 
+It goes false as the call starts to run, so the render the call's own state change requests already sees it false.
+
 It is a snapshot, not a lock: the timer can fire in the instant after it returns true.
 
-<small>[hooks/debounce.go:171](https://github.com/rohanthewiz/grmob/blob/master/hooks/debounce.go#L171)</small>
+<small>[hooks/debounce.go:187](https://github.com/rohanthewiz/grmob/blob/master/hooks/debounce.go#L187)</small>
 

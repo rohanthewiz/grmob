@@ -81,6 +81,64 @@ func TestDebounceCancelDropsThePendingCall(t *testing.T) {
 	}
 }
 
+// Pending goes false once the call has fired (plan R9f). It used to stay true
+// for good after the first fire, so a "searching…" hint built on it never
+// went away. fn reads Pending from inside the fire, which pins the order: it
+// is already false while fn runs, so the render fn's state change requests
+// shows the hint gone.
+func TestDebouncePendingIsFalseOnceTheCallHasFired(t *testing.T) {
+	ctx := core.NewContext()
+	d := UseDebounce(ctx, debounceDelay)
+
+	pendingDuringFire := make(chan bool, 1)
+	d.Call(func() { pendingDuringFire <- d.Pending() })
+	if !d.Pending() {
+		t.Fatal("Pending should be true between Call and the fire")
+	}
+	select {
+	case p := <-pendingDuringFire:
+		if p {
+			t.Error("Pending was still true while the call ran")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the debounced call never fired")
+	}
+	if d.Pending() {
+		t.Error("Pending stayed true after the call fired")
+	}
+
+	// And it still re-arms: the next Call is pending again.
+	d.Call(func() {})
+	if !d.Pending() {
+		t.Error("Pending should be true for a Call made after a fire")
+	}
+	d.Cancel()
+}
+
+// A fire that lost its race with a newer Call leaves the newer one pending.
+// The race is made deterministic by holding the Debouncer's own lock: the
+// first timer fires and blocks on mu, a newer timer is installed under the
+// lock as a Call that replaced it would be, and only then is the fire let
+// through. An unconditional d.timer = nil in the fire reads Pending false
+// here with the newer call still to come.
+func TestDebounceAStaleFireDoesNotClearANewerCall(t *testing.T) {
+	ctx := core.NewContext()
+	d := UseDebounce(ctx, 5*time.Millisecond)
+
+	d.Call(func() {})
+	d.mu.Lock()
+	time.Sleep(50 * time.Millisecond) // the 5ms fire is now waiting on mu
+	newer := time.AfterFunc(time.Hour, func() {})
+	d.timer = newer
+	d.mu.Unlock()
+	time.Sleep(50 * time.Millisecond) // the stale fire runs to its end
+
+	if !d.Pending() {
+		t.Fatal("a stale fire cleared the newer call's timer")
+	}
+	newer.Stop()
+}
+
 // A zero delay runs synchronously, which is what lets a caller turn the
 // debounce off from state without growing a second code path.
 func TestDebounceZeroDelayRunsInline(t *testing.T) {
