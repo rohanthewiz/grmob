@@ -956,7 +956,7 @@ defect, which then becomes its own Open item.
 ## Closed
 
 - **N-132** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
-  · closed 2026-11-11, `2026-1111-1010-n131-n132-web-push-deadlock-and-dispatch-order` — a
+  · closed 2026-11-11, `2026-1111-1020-n131-n132-web-push-deadlock-and-dispatch-order` — a
   tap's patches can no longer reach the host after a later pushed pass (plan
   R2). With a listener attached, every `Dispatch*` (and `Dispatch`, the
   host-event path) hands its pass to the listener inside the lock hold
@@ -977,7 +977,7 @@ defect, which then becomes its own Open item.
   - `ios/verify/run.sh` green (9 patch batches, tree matches Go's final
     render); Android's transcript attaches no listener, so it is unchanged.
 - **N-131** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
-  · closed 2026-11-11, `2026-1111-1010-n131-n132-web-push-deadlock-and-dispatch-order` — editor
+  · closed 2026-11-11, `2026-1111-1020-n131-n132-web-push-deadlock-and-dispatch-order` — editor
   toolbar commands no longer deadlock the Go runtime on the web (plan R1), and
   a program that dies shows a banner (R9a). Reproduced first on HEAD with a
   scratch CDP probe of the live tutorial: Indent on 4.13 printed `fatal
