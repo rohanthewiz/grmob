@@ -940,7 +940,7 @@ defect, which then becomes its own Open item.
 ## Closed
 
 - **N-136** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value low
-  · closed 2026-11-11, `2026-1111-XXXX-n135-n136-hook-goroutine-panics-and-typed-json` — typed text that is
+  · closed 2026-11-11, `2026-1111-1057-n135-n136-hook-goroutine-panics-and-typed-json` — typed text that is
   valid JSON reaches its handler as typed on the web (plan R8).
   `core.Context.ReceiveEventPayload` now picks the handler by the callback
   ID's kind prefix (`txt_cb_`, `bool_cb_`, `int_cb_`, else void; named once
@@ -960,7 +960,7 @@ defect, which then becomes its own Open item.
     `go test ./...` and `wasm/verify/run.sh` (browser pass) are green. Not
     typed into a live page.
 - **N-135** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
-  · closed 2026-11-11, `2026-1111-XXXX-n135-n136-hook-goroutine-panics-and-typed-json` — a panic in a callback a
+  · closed 2026-11-11, `2026-1111-1057-n135-n136-hook-goroutine-panics-and-typed-json` — a panic in a callback a
   hook runs on its own goroutine no longer ends the process (plan R7).
   `core.Safely(where, fn)` (`core/safely.go`, on `core.Guard`) recovers, logs
   as `logRenderPanic` does ("grmob: recovered panic during UseInterval tick:
