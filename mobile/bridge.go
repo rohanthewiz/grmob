@@ -31,6 +31,10 @@
 package mobile
 
 import (
+	"encoding/json"
+	"log"
+	"sync"
+
 	"github.com/rohanthewiz/grmob/core"
 	"github.com/rohanthewiz/grmob/render"
 )
@@ -44,6 +48,57 @@ type PatchListener interface {
 }
 
 var mgr *render.Manager
+
+// notRegistered is what a shell is told when it calls in before Register.
+// Register normally runs in the bound app package's init, so reaching this
+// means the app package was not linked into the binding, or its init does
+// not call Register: a build mistake, not a runtime one.
+const notRegistered = "grmob: mobile.Register was never called, so there is no app to render. " +
+	"Call it from the bound app package's init."
+
+// warnUnregistered keeps the log to one line however many calls arrive before
+// Register (every frame's events would otherwise each say it).
+var warnUnregistered sync.Once
+
+// manager returns the registered manager, or nil after logging once.
+//
+// # Why every entry point checks
+//
+// Each function below used to call through mgr directly, so a shell calling
+// in before Register (plan R9b) panicked on a nil pointer. That panic unwinds
+// through gomobile's JNI or cgo frame and ends the process with a Go stack
+// that says nothing about Register. With the check, the shell gets an answer
+// it already knows how to apply: RenderInitial returns a one-Text tree
+// naming the mistake, which every host draws, and every other call returns
+// "[]", which every host applies as nothing.
+//
+// The read is not synchronised with Register's write, as it never was: the
+// contract is that Register runs in init, before the shell can call anything.
+func manager() *render.Manager {
+	m := mgr
+	if m == nil {
+		warnUnregistered.Do(func() { log.Print(notRegistered) })
+	}
+	return m
+}
+
+// unregisteredTree is RenderInitial's answer before Register: a tree in the
+// same encoding a real mount uses, holding one Text with notRegistered, so the
+// screen says what is wrong instead of staying blank. It is a mount like any
+// other to the host, and a later Register plus RenderInitial replaces it.
+func unregisteredTree() string {
+	out, err := json.Marshal(&core.Node{
+		Type:  "Text",
+		Props: map[string]any{"content": notRegistered},
+		Style: &core.Style{},
+	})
+	if err != nil {
+		// A fixed ASCII string cannot fail to encode; "[]" would at least
+		// not crash a host if it somehow did.
+		return "[]"
+	}
+	return string(out)
+}
 
 // dataDir is the app's writable directory, provided by the native shell.
 // Go code cannot discover this itself: on iOS and Android the writable
@@ -80,7 +135,11 @@ func Register(ctx *core.Context, root func(*core.Context) core.View) {
 
 // RenderInitial returns the full initial tree as JSON for the first mount.
 func RenderInitial() string {
-	return mgr.RenderInitial()
+	m := manager()
+	if m == nil {
+		return unregisteredTree()
+	}
+	return m.RenderInitial()
 }
 
 // RenderAgain re-renders and returns the diff against the last rendered tree.
@@ -88,12 +147,23 @@ func RenderInitial() string {
 // already fold it into the event path — but it is the escape hatch for shells
 // that drive rendering themselves.
 func RenderAgain() string {
-	return mgr.RenderAgain()
+	m := manager()
+	if m == nil {
+		return "[]"
+	}
+	return m.RenderAgain()
 }
 
 // SetListener attaches the native push target for async updates.
+//
+// Before Register it does nothing: there is no pump to push from, and Register
+// creates a fresh manager that the shell attaches to afterwards.
 func SetListener(l PatchListener) {
-	mgr.SetListener(listenerAdapter{l})
+	m := manager()
+	if m == nil {
+		return
+	}
+	m.SetListener(listenerAdapter{l})
 }
 
 // TriggerCallback dispatches a void event (e.g. a button tap) by callback ID
@@ -101,12 +171,20 @@ func SetListener(l PatchListener) {
 // handler and its follow-up render run under the render mutex — an event can
 // never interleave with a push-pump render pass.
 func TriggerCallback(id string) string {
-	return mgr.DispatchCallback(id)
+	m := manager()
+	if m == nil {
+		return "[]"
+	}
+	return m.DispatchCallback(id)
 }
 
 // TriggerTextCallback dispatches a string-carrying event (e.g. input change).
 func TriggerTextCallback(id string, value string) string {
-	return mgr.DispatchTextCallback(id, value)
+	m := manager()
+	if m == nil {
+		return "[]"
+	}
+	return m.DispatchTextCallback(id, value)
 }
 
 // TriggerTextEdit dispatches a keystroke from a native text field: the
@@ -116,17 +194,29 @@ func TriggerTextCallback(id string, value string) string {
 // can be told from a rewrite even when typing outruns the round trip; see
 // core/text_edit.go.
 func TriggerTextEdit(id string, value string, seq int, epoch int) string {
-	return mgr.DispatchTextEdit(id, value, seq, epoch)
+	m := manager()
+	if m == nil {
+		return "[]"
+	}
+	return m.DispatchTextEdit(id, value, seq, epoch)
 }
 
 // TriggerBoolCallback dispatches a bool-carrying event (e.g. checkbox toggle).
 func TriggerBoolCallback(id string, value bool) string {
-	return mgr.DispatchBoolCallback(id, value)
+	m := manager()
+	if m == nil {
+		return "[]"
+	}
+	return m.DispatchBoolCallback(id, value)
 }
 
 // TriggerIntCallback dispatches an int-carrying event (e.g. tab selection).
 func TriggerIntCallback(id string, value int) string {
-	return mgr.DispatchIntCallback(id, value)
+	m := manager()
+	if m == nil {
+		return "[]"
+	}
+	return m.DispatchIntCallback(id, value)
 }
 
 // Resync asks for the whole tree Go believes the shell holds, as one replace
@@ -141,7 +231,11 @@ func TriggerIntCallback(id string, value int) string {
 // only send the same tree again. Both runtimes hold a "resync pending" flag
 // that the root replace clears.
 func Resync() string {
-	return mgr.Resync()
+	m := manager()
+	if m == nil {
+		return "[]"
+	}
+	return m.Resync()
 }
 
 // listenerAdapter bridges the locally declared interface onto the render

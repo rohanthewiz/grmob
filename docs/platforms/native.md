@@ -53,7 +53,7 @@ for pushes. Patch semantics — positional paths, ordering rules — are in
 
 | Bridge function | Purpose |
 |---|---|
-| `Register(ctx, root)` | Install the app (from Go `init`). Re-registering closes the previous manager |
+| `Register(ctx, root)` | Install the app (from Go `init`). Re-registering closes the previous manager. If the bound app package never calls it, `RenderInitial` returns a one-Text tree saying so, every other call returns `[]`, and the log says it once, instead of a nil-pointer crash |
 | `SetDataDir(path)` | Writable sandbox dir for Go-side persistence (Application Support on iOS, `filesDir` on Android). Call before `RenderInitial` |
 | `SetListener(l)` | Attach the async push target (`ApplyPatches(string)`) |
 | `RenderInitial()` | Full tree JSON for the first mount |

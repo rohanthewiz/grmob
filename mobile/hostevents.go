@@ -29,7 +29,11 @@ func ReportHostEvent(name string, payload string) string {
 			return "[]"
 		}
 	}
-	return mgr.Dispatch("host event "+name, func() {
+	m := manager()
+	if m == nil {
+		return "[]"
+	}
+	return m.Dispatch("host event "+name, func() {
 		coreReceiveHostEvent(name, data)
 	})
 }

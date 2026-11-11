@@ -177,7 +177,7 @@ with each item's `raised` traced back through all session docs.
     hole asks once and the answer matches Go's final tree).
 - **N-137** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value low
   **Small reliability items (plan R9 b-l).** Each is a few lines; the plan's
-  table has where and how. b: `mobile` functions on a nil manager. c: a nil
+  table has where and how. ~~b: `mobile` functions on a nil manager.~~ c: a nil
   from a `ComponentFunc` shifts sibling paths on the natives. d: duplicate
   keys across two `For` groups reach `LazyColumn` (plausible). e: no
   teardown when a subtree leaves the DOM (a `ShowUser` map's GPS watch
@@ -193,6 +193,14 @@ with each item's `raised` traced back through all session docs.
     Pinned by two tests in `hooks/debounce_test.go`. The stale-fire test
     holds the debouncer's lock to force the race, and fails on an
     unconditional clear.
+  - b landed 2026-11-11: every `mobile` entry point (and `ReportHostEvent`)
+    goes through `manager()`. Before `Register`, `RenderInitial` returns a
+    one-Text tree saying `mobile.Register was never called`, every other call
+    returns `[]`, `SetListener` is a no-op, and the log says it once. The
+    plan's `{"error": …}` was not used: hosts refuse that payload (N-133's
+    finding), and a tree draws with no host change. Pinned by
+    `mobile/unregistered_test.go`, which panics with one entry point
+    unguarded. native.md's bridge table says it.
 - **N-138** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
   **The engine's per-pass cost (plan P0-P3).** Every event renders the whole
   app twice (20 taps ran the root 40 times), and the diff is 10x slower than
