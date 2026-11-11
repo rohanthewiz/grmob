@@ -84,6 +84,12 @@ func (f ComponentFunc) Render(ctx *Context) *Node {
 func Keyed(key string, child View) View {
 	return ComponentFunc(func(ctx *Context) *Node {
 		n := ctx.keyScope(key, func() *Node { return child.Render(ctx) })
+		// A child that drew nothing has nothing to carry the key, and setting
+		// it on nil panicked (plan R9c). The nil goes up, and renderAll drops
+		// it from its parent's children.
+		if n == nil {
+			return nil
+		}
 		n.Key = key
 		return n
 	})

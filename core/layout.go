@@ -418,10 +418,24 @@ func BorderWidth(px float64) StyleProp {
 // TabView, camera overlays), which makes it the natural home for the debug
 // duplicate-key check: parentType names the container in the concern so a
 // finding points at the right sibling list.
+//
+// # A nil child takes no slot
+//
+// A ComponentFunc may return nil to draw nothing, and ErrorBoundary's and
+// Cached's paths can pass a nil through. Kept as a slot, it reached the hosts
+// as JSON null, and the hosts disagree about null (plan R9c): both natives
+// skip it while parsing, so every later sibling sat one index lower than the
+// path Go's diff addressed it by, and a patch for child 2 landed on child 3.
+// The web runtime's renderNode would throw on it. Dropping it here keeps the
+// sibling indices Go diffs by equal to the ones every host holds. The cost is
+// the ordinary one for a child that comes and goes: its later siblings shift,
+// exactly as they do for core.If (which renders an empty Fragment, not nil).
 func renderAll(ctx *Context, parentType string, views []View) []*Node {
 	var out []*Node
 	for _, v := range views {
-		out = append(out, v.Render(ctx))
+		if n := v.Render(ctx); n != nil {
+			out = append(out, n)
+		}
 	}
 	if IsDebugMode() {
 		checkDuplicateKeys(parentType, out)

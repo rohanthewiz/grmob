@@ -761,7 +761,12 @@ func WithTheme(theme *Theme, children ...View) View {
 		newCtx := ctx.WithTheme(theme)
 		var rendered []*Node
 		for _, child := range children {
-			rendered = append(rendered, child.Render(newCtx))
+			// A nil takes no slot, as in renderAll (which this loop cannot
+			// use: it renders under newCtx, and a Theme is not a container
+			// the duplicate-key check reports on).
+			if n := child.Render(newCtx); n != nil {
+				rendered = append(rendered, n)
+			}
 		}
 		return &Node{
 			Type:     "Theme",

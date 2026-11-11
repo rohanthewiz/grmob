@@ -200,7 +200,7 @@ var AmberTheme = &Theme{
 }
 ```
 
-<small>[core/theme.go:1142](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L1142)</small>
+<small>[core/theme.go:1147](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L1147)</small>
 
 DarkTheme is DefaultTheme's dark counterpart: the same type scale, spacing and component geometry, repainted in Apple's dark-mode system colours.
 
@@ -222,7 +222,7 @@ A blue light enough to be read as ink on #1C1C1E (#409CFF) cannot also carry whi
 var DarkTheme = newDarkTheme()
 ```
 
-<small>[core/theme.go:1315](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L1315)</small>
+<small>[core/theme.go:1320](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L1320)</small>
 
 ```go
 var DefaultTheme = &Theme{
@@ -350,7 +350,7 @@ var DefaultTheme = &Theme{
 }
 ```
 
-<small>[core/theme.go:774](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L774)</small>
+<small>[core/theme.go:779](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L779)</small>
 
 ```go
 var MaterialTheme = &Theme{
@@ -440,7 +440,7 @@ var MaterialTheme = &Theme{
 }
 ```
 
-<small>[core/theme.go:978](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L978)</small>
+<small>[core/theme.go:983](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L983)</small>
 
 ## Functions
 
@@ -460,7 +460,7 @@ So the list is one list, and TestBundledThemesListIsExhaustive derives it from t
 
 A fresh map each call, for the reason ColorPalette's resolvers exist: a package-level map is reachable and writable by any importer, and a test that deleted an entry would silently narrow every census at once.
 
-<small>[core/theme.go:1404](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L1404)</small>
+<small>[core/theme.go:1409](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L1409)</small>
 
 ### func DefaultChartColors
 

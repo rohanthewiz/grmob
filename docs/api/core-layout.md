@@ -236,7 +236,7 @@ A vertical Scroll emits no overflow on the web at all: the page scrolls, and the
 
 It is not a horizontal List. core.List's laziness, its cross-axis stretch and its FlexGrow contract are all written for a vertical main axis on both natives, and nothing yet asks for a lazily-materialized carousel. A strip of chips or a handful of cards is short by construction, which is what Scroll is for.
 
-<small>[core/layout.go:487](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L487)</small>
+<small>[core/layout.go:501](https://github.com/rohanthewiz/grmob/blob/master/core/layout.go#L501)</small>
 
 ### func JustifyContents
 

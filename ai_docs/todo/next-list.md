@@ -177,8 +177,8 @@ with each item's `raised` traced back through all session docs.
     hole asks once and the answer matches Go's final tree).
 - **N-137** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value low
   **Small reliability items (plan R9 b-l).** Each is a few lines; the plan's
-  table has where and how. ~~b: `mobile` functions on a nil manager.~~ c: a nil
-  from a `ComponentFunc` shifts sibling paths on the natives. d: duplicate
+  table has where and how. ~~b: `mobile` functions on a nil manager.~~ ~~c: a nil
+  from a `ComponentFunc` shifts sibling paths on the natives.~~ d: duplicate
   keys across two `For` groups reach `LazyColumn` (plausible). e: no
   teardown when a subtree leaves the DOM (a `ShowUser` map's GPS watch
   outlives its screen). ~~f: `Debouncer.Pending()` stays true after
@@ -201,6 +201,14 @@ with each item's `raised` traced back through all session docs.
     finding), and a tree draws with no host change. Pinned by
     `mobile/unregistered_test.go`, which panics with one entry point
     unguarded. native.md's bridge table says it.
+  - c landed 2026-11-11: `renderAll` (every container, Fragment, For,
+    Modal, TabView, camera overlays) and `WithTheme`'s loop drop a nil
+    child instead of keeping a slot, so Go diffs by the indices every host
+    holds. Both natives skipped JSON null while parsing, and the web's
+    `renderNode` would have thrown on it. `core.Keyed` over a nil returns nil
+    instead of panicking on `n.Key`. The natives' null-skip stays as a
+    defence. Pinned by `core/nil_child_test.go`; the old code fails all three
+    tests. `go test ./...`, wasm/verify and ios/verify are green.
 - **N-138** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
   **The engine's per-pass cost (plan P0-P3).** Every event renders the whole
   app twice (20 taps ran the root 40 times), and the diff is 10x slower than
