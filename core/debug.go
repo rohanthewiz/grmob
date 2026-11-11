@@ -81,7 +81,10 @@ const (
 	// in a different phase with a different blast radius: a render panic
 	// costs a subtree's frame, while a handler panic abandons the handler
 	// partway, so the app's state may be half-updated in a way no fallback
-	// can describe.
+	// can describe. Safely reports the same kind for a callback a hook runs
+	// on a goroutine of its own (a UseEffect body, a timer tick or fire, a
+	// Debouncer call, an alarm's OnRing): the blast radius is the same, a
+	// callback abandoned partway. The detail names which one.
 	ConcernHandlerPanic = "handler-panic"
 
 	// ConcernUnencodablePass: a render pass produced a payload encoding/json

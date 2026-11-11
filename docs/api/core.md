@@ -45,7 +45,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
 
 | Topic | What it covers | Declares |
 | --- | --- | --- |
-| [Views & state](core-views.md) | View, Node, Context and state slots; text and inline runs; conditionals, caching, error boundaries and debug-mode concerns. | 12 types, 60 functions and methods |
+| [Views & state](core-views.md) | View, Node, Context and state slots; text and inline runs; conditionals, caching, error boundaries and debug-mode concerns. | 12 types, 61 functions and methods |
 | [Layout](core-layout.md) | Rows, columns, stacks, scrolls and lists, and the alignment vocabulary they are placed with. | 2 types, 28 functions and methods |
 | [Styling: the Style struct](core-style.md) | Style and the value types its fields take: alignment, flex, position, weights and edge insets. | 11 types, 12 functions and methods |
 | [Styling: style props](core-style-props.md) | The StyleProp constructors: spacing and per-side insets, flex, typography, colour, borders, per-corner radii and animation. | 2 types, 74 functions and methods |
@@ -66,6 +66,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
     - [`func IsDebugMode`](core-views.md#func-isdebugmode)
     - [`func MaybeProp`](core-views.md#func-maybeprop)
     - [`func ReportConcern`](core-views.md#func-reportconcern)
+    - [`func Safely`](core-views.md#func-safely)
     - [`func SetDebugMode`](core-views.md#func-setdebugmode)
     - [`func WithConfigOpt`](core-views.md#func-withconfigopt)
     - [`func WithThemeOpt`](core-views.md#func-withthemeopt)

@@ -154,7 +154,7 @@ var Packages = []Pkg{
 			Title: "Views & state",
 			Blurb: "View, Node, Context and state slots; text and inline runs; conditionals, caching, error boundaries and debug-mode concerns.",
 			Files: []string{"view.go", "node.go", "text.go", "paragraph.go", "context.go", "cleanup.go", "cached.go",
-				"conditionals.go", "error_boundary.go", "render_manager.go", "debug.go"},
+				"conditionals.go", "error_boundary.go", "safely.go", "render_manager.go", "debug.go"},
 		}, {
 			Slug:  "layout",
 			Title: "Layout",

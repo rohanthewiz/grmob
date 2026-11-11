@@ -142,7 +142,11 @@ func useInterval(ctx *core.Context, fn func(), interval time.Duration, active bo
 				if paused {
 					continue
 				}
-				f()
+				// Guarded so one panicking tick costs that tick only. Before,
+				// it ended the process; now the loop carries on and the next
+				// tick fires. The render is still requested, because the
+				// tick may have written state before it panicked.
+				core.Safely("UseInterval tick", f)
 				// RequestRender (not just MarkDirty) so a timer tick reaches
 				// the screen through the push channel even when no native
 				// event is in flight to piggyback a re-render on.
@@ -189,7 +193,8 @@ func UseTimeout(ctx *core.Context, fn func(), delay time.Duration) {
 		rec.mu.Lock()
 		f := rec.fn
 		rec.mu.Unlock()
-		f()
+		// The timer's goroutine has no catcher; see core.Safely.
+		core.Safely("UseTimeout", f)
 		// RequestRender rather than the bare MarkDirty this used to do: a
 		// timeout firing with no native event in flight needs the push
 		// channel to reach the screen, exactly like an interval tick.
@@ -303,7 +308,8 @@ func UseTimeoutWhile(ctx *core.Context, active bool, fn func(), delay time.Durat
 			rec.timer = nil
 			f := rec.fn
 			rec.mu.Unlock()
-			f()
+			// The timer's goroutine has no catcher; see core.Safely.
+			core.Safely("UseTimeoutWhile", f)
 			ctx.RequestRender()
 		})
 	}

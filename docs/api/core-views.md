@@ -6,7 +6,7 @@ import "github.com/rohanthewiz/grmob/core"
 
 View, Node, Context and state slots; text and inline runs; conditionals, caching, error boundaries and debug-mode concerns.
 
-One of 11 topic pages of [package core](core.md), which has the package overview and an index of every topic. This page documents the declarations in `core/view.go`, `core/node.go`, `core/text.go`, `core/paragraph.go`, `core/context.go`, `core/cleanup.go`, `core/cached.go`, `core/conditionals.go`, `core/error_boundary.go`, `core/render_manager.go`, `core/debug.go`.
+One of 11 topic pages of [package core](core.md), which has the package overview and an index of every topic. This page documents the declarations in `core/view.go`, `core/node.go`, `core/text.go`, `core/paragraph.go`, `core/context.go`, `core/cleanup.go`, `core/cached.go`, `core/conditionals.go`, `core/error_boundary.go`, `core/safely.go`, `core/render_manager.go`, `core/debug.go`.
 
 ## Index
 
@@ -16,6 +16,7 @@ One of 11 topic pages of [package core](core.md), which has the package overview
 - [`func IsDebugMode`](#func-isdebugmode)
 - [`func MaybeProp`](#func-maybeprop)
 - [`func ReportConcern`](#func-reportconcern)
+- [`func Safely`](#func-safely)
 - [`func SetDebugMode`](#func-setdebugmode)
 - [`func WithConfigOpt`](#func-withconfigopt)
 - [`func WithThemeOpt`](#func-withthemeopt)
@@ -133,7 +134,10 @@ const (
 	// in a different phase with a different blast radius: a render panic
 	// costs a subtree's frame, while a handler panic abandons the handler
 	// partway, so the app's state may be half-updated in a way no fallback
-	// can describe.
+	// can describe. Safely reports the same kind for a callback a hook runs
+	// on a goroutine of its own (a UseEffect body, a timer tick or fire, a
+	// Debouncer call, an alarm's OnRing): the blast radius is the same, a
+	// callback abandoned partway. The detail names which one.
 	ConcernHandlerPanic = "handler-panic"
 
 	// ConcernUnencodablePass: a render pass produced a payload encoding/json
@@ -158,7 +162,7 @@ func ClearConcerns()
 
 ClearConcerns drops all recorded concerns. Tests call it between cases; apps can call it after acting on a dump.
 
-<small>[core/debug.go:169](https://github.com/rohanthewiz/grmob/blob/master/core/debug.go#L169)</small>
+<small>[core/debug.go:172](https://github.com/rohanthewiz/grmob/blob/master/core/debug.go#L172)</small>
 
 ### func DumpConcerns
 
@@ -168,7 +172,7 @@ func DumpConcerns() string
 
 DumpConcerns renders the recorded concerns as a human-readable block, one line per finding. Empty string when there is nothing to report.
 
-<small>[core/debug.go:177](https://github.com/rohanthewiz/grmob/blob/master/core/debug.go#L177)</small>
+<small>[core/debug.go:180](https://github.com/rohanthewiz/grmob/blob/master/core/debug.go#L180)</small>
 
 ### func IsDebugMode
 
@@ -233,7 +237,44 @@ The detection sites for most concern kinds live in core, so they call upsertConc
 
 Deduplicated on kind+detail like every other concern, so a failure that repeats every frame occupies one entry with a rising count.
 
-<small>[core/debug.go:145](https://github.com/rohanthewiz/grmob/blob/master/core/debug.go#L145)</small>
+<small>[core/debug.go:148](https://github.com/rohanthewiz/grmob/blob/master/core/debug.go#L148)</small>
+
+### func Safely
+
+```go
+func Safely(where string, fn func()) (ok bool)
+```
+
+Safely runs fn on the calling goroutine and recovers a panic escaping it. It logs the panic with its stack and, under debug mode, also reports it as a ConcernHandlerPanic naming where. It reports whether fn returned normally.
+
+#### Why the hooks need it
+
+Some of the framework's work runs on goroutines of its own, off the render path: a UseEffect body, a UseInterval tick, a UseTimeout or UseTimeoutWhile fire, a Debouncer call, an alarm's OnRing. Go gives a panic on such a goroutine no catcher. An unrecovered panic on \*any\* goroutine ends the whole process, so on a phone the app vanishes, and in the browser the wasm program exits and the page stops answering. The render driver's guards cannot help. Guard wraps a pass and guardHandler wraps a dispatched handler, and neither is on these goroutines' stacks.
+
+	goroutine             what runs there          guarded by
+	────────────────────  ───────────────────────  ──────────────────────
+	host's event call     Dispatch* → handler      render's guardHandler
+	render pass           Render, ErrorBoundary    Guard / ErrorBoundary
+	hook's own goroutine  effect, tick, fire       Safely (here)
+
+#### What recovery means
+
+The same partial thing it means for a recovered event handler: fn's work is abandoned wherever it stopped, and whatever state it had already written stays written. The caller carries on. An interval's next tick still fires, and a Debouncer accepts the next Call. Each hook still requests the render it would have requested after a normal return, so the screen shows the state that actually exists.
+
+It logs, where ErrorBoundary deliberately does not, for render's logRenderPanic reason: nothing in the app owns this panic, and recovering it silently would turn a loud crash into a timer that quietly does nothing.
+
+#### For app code
+
+It is exported so an app can give its own goroutines the same treatment:
+
+	go core.Safely("load profile", func() {
+	    p, err := api.Profile(id)
+	    ...
+	})
+
+A nil fn is reported as a panic like any other, since calling it is one.
+
+<small>[core/safely.go:53](https://github.com/rohanthewiz/grmob/blob/master/core/safely.go#L53)</small>
 
 ### func SetDebugMode
 
@@ -308,7 +349,7 @@ type Concern struct {
 
 Concern is one detected issue. Kind is one of the Concern\* constants; Detail is human-readable specifics; Count is how many times this exact (Kind, Detail) pair fired — checks run every pass, so a persistent bug increments its count rather than flooding the collector with duplicates.
 
-<small>[core/debug.go:100](https://github.com/rohanthewiz/grmob/blob/master/core/debug.go#L100)</small>
+<small>[core/debug.go:103](https://github.com/rohanthewiz/grmob/blob/master/core/debug.go#L103)</small>
 
 #### func Concerns
 
@@ -318,7 +359,7 @@ func Concerns() []Concern
 
 Concerns returns a snapshot of all recorded concerns, sorted by kind then detail so test assertions and dumps are deterministic.
 
-<small>[core/debug.go:151](https://github.com/rohanthewiz/grmob/blob/master/core/debug.go#L151)</small>
+<small>[core/debug.go:154](https://github.com/rohanthewiz/grmob/blob/master/core/debug.go#L154)</small>
 
 ### type Context
 
@@ -400,7 +441,7 @@ The pairing with the rest of the pass boundary:
 
 A no-op (single atomic load) when debug mode is off.
 
-<small>[core/debug.go:206](https://github.com/rohanthewiz/grmob/blob/master/core/debug.go#L206)</small>
+<small>[core/debug.go:209](https://github.com/rohanthewiz/grmob/blob/master/core/debug.go#L209)</small>
 
 #### func (*Context) IsDirty
 

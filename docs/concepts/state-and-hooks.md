@@ -120,7 +120,9 @@ Runs `effect` on mount and again whenever `deps` change between renders
 (compared with `reflect.DeepEqual`); with no deps it runs exactly once for
 the lifetime of the slot. The effect runs on its own goroutine so a slow
 effect cannot stall the render pass; anything it changes via `State.Set`
-reaches the screen through the normal render path.
+reaches the screen through the normal render path. A panic in the effect is
+recovered and logged rather than ending the app (see
+[the hook goroutines](error-boundaries.md#the-drivers-safety-nets)).
 
 ```go
 hooks.UseEffect(ctx, func() {

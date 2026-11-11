@@ -134,7 +134,10 @@ func (d *Debouncer) Call(fn func()) {
 		return
 	}
 	d.timer = time.AfterFunc(delay, func() {
-		fn()
+		// The timer's goroutine has no catcher; see core.Safely. The inline
+		// path above needs no guard: it runs on the caller's goroutine,
+		// inside whatever dispatched handler led here.
+		core.Safely("Debouncer call", fn)
 		if ctx != nil {
 			ctx.RequestRender()
 		}

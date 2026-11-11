@@ -483,7 +483,7 @@ UseTimeout invokes fn once, delay after the hook's first render. Renders while t
 
 A pending timer is cancelled when the context tree is closed, so a Manager shutdown cannot leak a late fn call into a dead app.
 
-<small>[hooks/interval.go:173](https://github.com/rohanthewiz/grmob/blob/master/hooks/interval.go#L173)</small>
+<small>[hooks/interval.go:177](https://github.com/rohanthewiz/grmob/blob/master/hooks/interval.go#L177)</small>
 
 ### func UseTimeoutWhile
 
@@ -507,7 +507,7 @@ UseTimeout arms on the first render and never again, which suits a splash screen
 
 It takes one slot and must be called unconditionally in a stable position. fn is refreshed every render and the fire runs the latest closure, then requests a render so the change reaches the screen with no native event in flight. A pending timer is cancelled when the context tree is closed.
 
-<small>[hooks/interval.go:277](https://github.com/rohanthewiz/grmob/blob/master/hooks/interval.go#L277)</small>
+<small>[hooks/interval.go:282](https://github.com/rohanthewiz/grmob/blob/master/hooks/interval.go#L282)</small>
 
 ### func UseWindow
 
@@ -772,7 +772,7 @@ Cancel drops a pending call. Use it when something has superseded the debounced 
 
 It makes no promise about a call already in flight: time.Timer.Stop reports false once the timer has fired, and by then fn may already be running on the timer goroutine. Cancel is therefore "no \*further\* call", not "undo". Work that must not run twice needs its own guard, as it would with any timer.
 
-<small>[hooks/debounce.go:153](https://github.com/rohanthewiz/grmob/blob/master/hooks/debounce.go#L153)</small>
+<small>[hooks/debounce.go:156](https://github.com/rohanthewiz/grmob/blob/master/hooks/debounce.go#L156)</small>
 
 #### func (*Debouncer) Pending
 
@@ -784,5 +784,5 @@ Pending reports whether a call is scheduled and has not fired yet. It is for the
 
 It is a snapshot, not a lock: the timer can fire in the instant after it returns true.
 
-<small>[hooks/debounce.go:168](https://github.com/rohanthewiz/grmob/blob/master/hooks/debounce.go#L168)</small>
+<small>[hooks/debounce.go:171](https://github.com/rohanthewiz/grmob/blob/master/hooks/debounce.go#L171)</small>
 

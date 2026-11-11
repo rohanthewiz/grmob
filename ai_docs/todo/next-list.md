@@ -175,12 +175,6 @@ with each item's `raised` traced back through all session docs.
     clears it), which compiles and lints but no test executes: ios/verify's
     `checkResync` is the model (a faithful replay never asks; a node-sized
     hole asks once and the answer matches Go's final tree).
-- **N-135** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
-  **A panic in a hook's goroutine ends the process (plan R7).** The only
-  `recover()` in core, render, hooks and mobile covers render passes and
-  dispatched handlers. `go effect()`, the interval ticker body and the
-  `AfterFunc` bodies in `interval.go`, `debounce.go` and `now.go` are
-  unprotected. Fix: one shared `safely(ctx, label, fn)` on `core.Guard`.
 - **N-136** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value low
   **Typed text that is valid JSON is rewritten on the web (plan R8).**
   `ReceiveEventPayload` unmarshals a string value and delivers its inner
@@ -951,6 +945,27 @@ defect, which then becomes its own Open item.
 
 ## Closed
 
+- **N-135** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
+  · closed 2026-11-11, `2026-1111-XXXX-n135-n136-hook-goroutine-panics-and-typed-json` — a panic in a callback a
+  hook runs on its own goroutine no longer ends the process (plan R7).
+  `core.Safely(where, fn)` (`core/safely.go`, on `core.Guard`) recovers, logs
+  as `logRenderPanic` does ("grmob: recovered panic during UseInterval tick:
+  …" plus the stack) and, under debug mode, reports `handler-panic` with the
+  place in the detail. It wraps `go effect()`, the interval ticker's call,
+  the `UseTimeout` and `UseTimeoutWhile` fires, the `Debouncer`'s
+  `AfterFunc`, and `UseAlarms`' `OnRing` from its ticker (not in the plan;
+  the same shape). `now.go`, which the item named, runs no app code on its
+  goroutine, so it has nothing to guard. Each hook still requests the render
+  it would have after a normal return. Exported, so app goroutines can use
+  it; documented in error-boundaries.md, debug-mode.md's table and
+  state-and-hooks.md.
+  - **Pins:** `hooks/panic_test.go` (a panicking interval's next tick fires
+    and its render is still requested; a panicking effect, timeout,
+    timeout-while and debounced call are each recovered and the hook works
+    after); `core/safely_test.go`. Mutation-checked: the bare `f()` back in
+    the ticker crashes the test binary with "panic: first tick fails".
+    Full `go test ./...`, `-race` on core, hooks and render, and the wasm
+    build are green.
 - **N-133** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
   · closed 2026-11-11, `2026-1111-1035-n133-unencodable-pass-and-resync` — an unencodable pass is
   dropped in Go instead of sent as `{"error":...}`, and every host asks Go

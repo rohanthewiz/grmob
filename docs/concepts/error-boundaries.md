@@ -151,6 +151,22 @@ reaches it has no fallback to own it, and recovering silently would turn a
 crash — loud, reported by every crash reporter on the platform — into a screen
 that quietly stops updating.
 
+**Hook goroutines.** Some callbacks run on a goroutine of the hook's own: a
+`UseEffect` body, a `UseInterval` tick, a `UseTimeout` or `UseTimeoutWhile`
+fire, a `Debouncer` call, an alarm's `OnRing`. In Go a panic on any goroutine
+ends the process, and neither guard above is on that goroutine's stack. Each
+of these runs under `core.Safely`, which recovers, logs with the stack, and
+lets the hook carry on: the next tick fires, the debouncer takes the next
+call, and the render the callback would have requested is still requested.
+Your own goroutines can use it too:
+
+```go
+go core.Safely("load profile", func() {
+    p, err := api.Profile(id)
+    if err == nil { profile.Set(p) }
+})
+```
+
 ## Debug mode
 
 With [debug mode](debug-mode.md) on, both guards record concerns:
@@ -159,7 +175,9 @@ With [debug mode](debug-mode.md) on, both guards record concerns:
   fallback. The app kept running, which is exactly why it needs reporting: a
   boundary placed high in the tree can hide a component that has been dead for
   weeks behind a plausible "unavailable" panel.
-- `handler-panic` — a handler panicked and the driver recovered it.
+- `handler-panic` — a handler panicked and the driver recovered it, or a
+  hook's callback panicked on its own goroutine and `core.Safely` recovered
+  it. The detail names which (`UseInterval tick panicked: …`).
 
 ## Where to put boundaries
 

@@ -50,5 +50,9 @@ func UseEffect(ctx *core.Context, effect func(), deps ...any) {
 	// stored deps in lockstep with the new ones, DeepEqual would report
 	// "unchanged", and the effect would never run again. Mirrors UseMemo.
 	rec.deps = append([]any(nil), deps...)
-	go effect()
+	// Under core.Safely: the effect runs on its own goroutine, where a panic
+	// has no catcher and would end the process. Recovered, it is logged and
+	// the app goes on; the effect is not retried, since its deps did not
+	// change.
+	go core.Safely("UseEffect", effect)
 }

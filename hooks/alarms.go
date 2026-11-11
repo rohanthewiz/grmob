@@ -384,7 +384,12 @@ func UseAlarms(ctx *core.Context, alarms []alarm.Alarm, opts AlarmOptions) Alarm
 						onRing := rec.opts.OnRing
 						rec.mu.Unlock()
 						if onRing != nil {
-							onRing(*rang)
+							// This ticker is the hook's own goroutine, so a
+							// panicking OnRing would end the process; see
+							// core.Safely. The ring itself has already
+							// started, so the screen still shows it.
+							a := *rang
+							core.Safely("UseAlarms OnRing", func() { onRing(a) })
 						}
 					}
 					ctx.RequestRender()
