@@ -807,6 +807,17 @@ defect, which then becomes its own Open item.
   (`wasm/verify` 5.7 s plain, 54.9 s under `-race`); timer tests sleep real
   time where `testing/synctest` ran 10 fake seconds in 0.57 ms; the site
   workflow repeats CI's verify.
+  - R9o landed 2026-11-11 (`2026-1111-XXXX-n137-d-e-lazy-keys-and-web-teardown`).
+    Under `set -e`, a command that fails in an EXIT trap becomes the
+    script's status (shown in sh, bash and dash), and the Android drill's
+    `rm -rf` raced the gradle daemon that `sources.sh` leaves writing into
+    the drill's `GRADLE_USER_HOME`. Both drills' cleanup now cannot fail:
+    Android stops that daemon first (only if one ran) and then removes
+    `"${cold:?}"`, with `|| true` on each step. INT and TERM `exit`, so the
+    cleanup runs once from EXIT instead of deleting the directory and
+    carrying on. `ios/verify/remedy.sh` passed end to end. The Android
+    drill was not run here (it fills a cold gradle cache from the network),
+    so whether CI stays green is this item's check. R9n and P10 remain.
 
 ## Non-goals
 

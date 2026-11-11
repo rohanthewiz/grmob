@@ -64,8 +64,32 @@ if [ -z "$sdk" ] || [ ! -d "$sdk/platforms" ]; then
 fi
 
 cold="$(mktemp -d)"
-trap 'rm -rf "$cold"' EXIT INT TERM
 export GRADLE_USER_HOME="$cold"
+
+# cleanup runs once, on the way out, and must never fail a drill that passed
+# (plan R9o). Under set -e a command that fails inside an EXIT trap becomes the
+# script's exit status, in sh, bash and dash alike, so a drill that had
+# printed its last OK still failed the job: CI run 40020908087, in this trap.
+# What failed was the rm. sources.sh runs gradle *with* its daemon, under this
+# GRADLE_USER_HOME, and that daemon goes on writing its log and registry into
+# $cold while rm -rf empties it, which ends in "Directory not empty". So the
+# daemon is stopped first, and only if one ran: `gradlew --stop` against a
+# cache with no distribution in it would download one. Then the directory
+# goes, and neither step may fail the run. ${cold:?} rather than $cold: an
+# empty value aborts the rm instead of widening it.
+#
+# INT and TERM exit, which runs this through the EXIT trap. Trapping them to
+# the removal directly, as before, deleted $cold and then carried on running
+# the drill without it.
+cleanup() {
+    if [ -d "${cold:?}/daemon" ]; then
+        ../gradlew --stop > /dev/null 2>&1 || true
+    fi
+    rm -rf "${cold:?}" 2> /dev/null || true
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 classpath_skip="gradle did not resolve a compile classpath"
 compiler_skip="the gradle cache has no Kotlin compiler"

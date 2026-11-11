@@ -39,7 +39,15 @@ cd "$(dirname "$0")"
 . ../../internal/gateharness/remedy.sh
 
 shim="$(mktemp -d)"
-trap 'rm -rf "$shim"' EXIT INT TERM
+# Never allowed to fail a drill that passed: under set -e a failing command in
+# an EXIT trap becomes the script's exit status, which is how the Android
+# drill's twin of this line failed a CI run after its last OK (plan R9o; see
+# android/verify/remedy.sh). INT and TERM exit, so the removal runs once,
+# from the EXIT trap, instead of deleting the shim and carrying on.
+# ${shim:?}: an empty value aborts the rm instead of widening it.
+trap 'rm -rf "${shim:?}" 2> /dev/null || true' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 real_xcrun="$(command -v xcrun || true)"
 if [ -z "$real_xcrun" ]; then
