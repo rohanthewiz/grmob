@@ -399,7 +399,9 @@ inserts a newline, which is the right call on every platform.
   with a push-pump render pass.
 - **The WASM runtime** delivers a loosely typed envelope
   (`{"callback": id, "value": ...}`) through `ctx.ReceiveEventPayload`, which
-  sniffs the value's type and dispatches accordingly.
+  picks the handler by the callback ID's kind (`txt_cb_`, `bool_cb_`,
+  `int_cb_`, else void) and delivers a text value exactly as typed, never
+  parsed. A value of the wrong type for its kind is logged and dropped.
 - **Tests** can use either: `render.Manager.Dispatch*` for the full
   event-to-patches loop, or `ctx.TriggerCallback` for handler-only checks.
 

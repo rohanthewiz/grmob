@@ -132,8 +132,8 @@ test("a click on a tab dispatches its index to onTabChange", () => {
 
     bar().children[1].dispatch("click");
 
-    // A number, not a string: ReceiveEventPayload sniffs the value's type, and
-    // only a number reaches the int callback map core.OnTabChange registered in.
+    // A number, not a string: core.OnTabChange registers an int callback, and
+    // ReceiveEventPayload hands an int_cb_ ID a JSON number only.
     assert.deepEqual(rt.dispatched, [{ id: "cb_tab", payload: { value: 1 } }]);
 });
 

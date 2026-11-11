@@ -1,6 +1,9 @@
 package core
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // Each test builds its own context: the callback registry is per-context-tree
 // state, so tests are isolated by construction (which is itself one of the
@@ -270,6 +273,114 @@ func TestReceiveEventPayloadRoutesEveryValueKind(t *testing.T) {
 	}
 	if gotInt != 2 {
 		t.Errorf("int callback got %d, want 2 — a numeric envelope was not routed", gotInt)
+	}
+}
+
+// Typed text that happens to be JSON reaches the text handler exactly as
+// typed (plan R8, N-136). The old dispatcher parsed every string as a
+// possible envelope: {"value":"x"} delivered x, and {"value":true} or
+// {"value":7} went to the bool or int map, which a text ID is not in, so the
+// handler never ran and a controlled field snapped back.
+func TestReceiveEventPayloadDeliversTypedJSONVerbatim(t *testing.T) {
+	ctx := NewContext()
+	ctx.BeginRenderPass()
+
+	var got []string
+	id := ctx.registerTextCallback(func(s string) { got = append(got, s) })
+
+	typed := []string{
+		`{"value":"x"}`,
+		`{"value":true}`,
+		`{"value":7}`,
+		`{"value":null}`,
+		`{"b":[{"k":"h1","r":[]}]}`, // a rich document, which never had "value"
+		`"quoted"`,
+		`42`,
+	}
+	for _, s := range typed {
+		ctx.ReceiveEventPayload(map[string]any{"callback": id, "value": s})
+	}
+	if len(got) != len(typed) {
+		t.Fatalf("the text handler ran %d times for %d typed values: %q", len(got), len(typed), got)
+	}
+	for i := range typed {
+		if got[i] != typed[i] {
+			t.Errorf("typed %q, handler got %q", typed[i], got[i])
+		}
+	}
+}
+
+// The ID's prefix picks the kind, including under a keyed scope, where the
+// key path sits between the prefix and the counter.
+func TestReceiveEventPayloadRoutesAKeyedIDByItsPrefix(t *testing.T) {
+	ctx := NewContext()
+	ctx.BeginRenderPass()
+
+	var gotText string
+	gotInt := -1
+	var textID, intID string
+	ctx.keyScope("row 2", func() *Node {
+		textID = ctx.registerTextCallback(func(s string) { gotText = s })
+		intID = ctx.registerIntCallback(func(i int) { gotInt = i })
+		return nil
+	})
+	if !strings.HasPrefix(textID, "txt_cb_") || !strings.Contains(textID, "/") {
+		t.Fatalf("keyed text ID = %q, want txt_cb_ then a key path", textID)
+	}
+
+	ctx.ReceiveEventPayload(map[string]any{"callback": textID, "value": "kept"})
+	ctx.ReceiveEventPayload(map[string]any{"callback": intID, "value": float64(4)})
+	if gotText != "kept" || gotInt != 4 {
+		t.Fatalf("keyed handlers got (%q, %d), want (\"kept\", 4)", gotText, gotInt)
+	}
+}
+
+// A void ID ignores its value: a stray value from a host no longer sends it
+// looking in the text map. core.OnBack's back_cb_ sequence is void too.
+func TestReceiveEventPayloadIgnoresAValueOnAVoidID(t *testing.T) {
+	ctx := NewContext()
+	ctx.BeginRenderPass()
+
+	ran := 0
+	voidID := ctx.registerCallback(func() { ran++ })
+	backID := ctx.registry.registerBack(func() { ran++ })
+
+	ctx.ReceiveEventPayload(map[string]any{"callback": voidID, "value": "stray"})
+	ctx.ReceiveEventPayload(map[string]any{"callback": backID, "value": true})
+	if ran != 2 {
+		t.Fatalf("void handlers ran %d times, want 2", ran)
+	}
+}
+
+// A value of the wrong type for its ID's kind is dropped and logged, not
+// coerced: it means a host and Go disagree about the control.
+func TestReceiveEventPayloadDropsAndLogsAMismatchedValue(t *testing.T) {
+	logged := captureLog(t)
+	ctx := NewContext()
+	ctx.BeginRenderPass()
+
+	ran := 0
+	textID := ctx.registerTextCallback(func(string) { ran++ })
+	boolID := ctx.registerBoolCallback(func(bool) { ran++ })
+	intID := ctx.registerIntCallback(func(int) { ran++ })
+
+	ctx.ReceiveEventPayload(map[string]any{"callback": textID, "value": float64(1)})
+	ctx.ReceiveEventPayload(map[string]any{"callback": boolID, "value": "true"})
+	ctx.ReceiveEventPayload(map[string]any{"callback": intID, "value": "1"})
+	ctx.ReceiveEventPayload(map[string]any{"callback": intID})
+	if ran != 0 {
+		t.Fatalf("a mismatched value reached a handler %d times", ran)
+	}
+	out := logged.String()
+	for _, want := range []string{
+		"dropping event for " + textID + ": want a string, got float64",
+		"dropping event for " + boolID + ": want a bool, got string",
+		"dropping event for " + intID + ": want a number, got string",
+		"dropping event for " + intID + ": want a number, got <nil>",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("log lacks %q:\n%s", want, out)
+		}
 	}
 }
 

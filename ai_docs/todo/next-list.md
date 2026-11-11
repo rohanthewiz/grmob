@@ -175,12 +175,6 @@ with each item's `raised` traced back through all session docs.
     clears it), which compiles and lints but no test executes: ios/verify's
     `checkResync` is the model (a faithful replay never asks; a node-sized
     hole asks once and the answer matches Go's final tree).
-- **N-136** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value low
-  **Typed text that is valid JSON is rewritten on the web (plan R8).**
-  `ReceiveEventPayload` unmarshals a string value and delivers its inner
-  `value` key: typing `{"value":"x"}` delivers `x`, and `{"value":true}`
-  calls no handler. Fix: route by the callback ID's kind prefix and never
-  parse a text payload.
 - **N-137** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value low
   **Small reliability items (plan R9 b-l).** Each is a few lines; the plan's
   table has where and how. b: `mobile` functions on a nil manager. c: a nil
@@ -945,6 +939,26 @@ defect, which then becomes its own Open item.
 
 ## Closed
 
+- **N-136** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value low
+  · closed 2026-11-11, `2026-1111-XXXX-n135-n136-hook-goroutine-panics-and-typed-json` — typed text that is
+  valid JSON reaches its handler as typed on the web (plan R8).
+  `core.Context.ReceiveEventPayload` now picks the handler by the callback
+  ID's kind prefix (`txt_cb_`, `bool_cb_`, `int_cb_`, else void; named once
+  as constants that registration also uses) and checks the value against
+  it. A text value is never parsed. A value of the wrong type is logged
+  ("dropping event for … want a string, got float64") and dropped; before, it
+  missed its map silently. A void ID ignores a stray value. No host sent a
+  nested envelope, so nothing depended on the unwrap: the web runtime's
+  senders (`extractEventPayload`, the code and rich editors, tabs, maps,
+  swipes, shape taps) send one plain `{value}` each, and their comments now
+  describe routing by the ID.
+  - **Pins** (`core/event_test.go`): seven typed values (`{"value":"x"}`,
+    `{"value":true}`, `{"value":7}`, `{"value":null}`, a rich document,
+    `"quoted"`, `42`) each arrive verbatim. The old `event.go` delivered
+    `x` and lost two of the seven. Also: a keyed ID routes by its prefix, a
+    void or back ID ignores its value, and mismatches are logged.
+    `go test ./...` and `wasm/verify/run.sh` (browser pass) are green. Not
+    typed into a live page.
 - **N-135** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
   · closed 2026-11-11, `2026-1111-XXXX-n135-n136-hook-goroutine-panics-and-typed-json` — a panic in a callback a
   hook runs on its own goroutine no longer ends the process (plan R7).

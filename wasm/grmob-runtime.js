@@ -959,10 +959,11 @@ const GrMob = (() => {
                 // core.OnTabChange has.
                 const latestCbId = el.dataset.listener_onTabChange;
                 if (!latestCbId) return;
-                // A number, so ReceiveEventPayload's float64 case routes it to
-                // the *int* callback map. Sending the index as a string would
-                // land it in the text map, where an int ID does not exist, and
-                // the tap would silently do nothing.
+                // A number, because core.OnTabChange's handler is an int
+                // callback and ReceiveEventPayload hands an int_cb_ ID a JSON
+                // number only. Sending the index as a string would be dropped
+                // (with a "want a number" log line) and the tap would do
+                // nothing.
                 dispatchToGo(latestCbId, { value: i });
             });
             bar.appendChild(button);
@@ -8476,18 +8477,20 @@ const GrMob = (() => {
     // again: they did once, silently, and the cost was total — a text field
     // present at the initial render sent {} for every keystroke, Go routed
     // the void envelope to the void callback map where a txt_ ID does not
-    // exist, and typing did nothing at all.
+    // exist, and typing did nothing at all. (Go now routes by the ID's kind,
+    // core.ReceiveEventPayload, so the same mistake would be dropped with a
+    // "want a string" log line rather than silently. It would still be dead.)
     function extractEventPayload(e, type) {
         // Focus and blur are void events: Go registered them through the
-        // plain callback channel, so the envelope must carry no value at all.
+        // plain callback channel, so the envelope carries no value at all.
         // Checked before the type test below on purpose — a focus event on an
-        // <input> would otherwise be sent as {value: "..."}, and Go, seeing a
-        // string, would dispatch it to the *text* callback map, where a void
-        // ID does not exist. The handler would silently never run.
-        // keydown is here for the same reason: it carries onSubmit, which Go
-        // registered as a void callback. Sending {value} would route it into
-        // the *text* callback map, where a void ID does not exist, and the
-        // submit handler would silently never run.
+        // <input> would otherwise be sent as {value: "..."}. When Go picked
+        // the handler map by the value's type, that string went to the
+        // *text* map, where a void ID does not exist, and the handler
+        // silently never ran. keydown is here for the same reason: it carries
+        // onSubmit, which Go registered as a void callback. Go now routes by
+        // the ID's kind and ignores a value on a void ID, so this is no longer
+        // load-bearing, but the empty envelope still says what the event is.
         if (e.type === "focus" || e.type === "blur" || e.type === "keydown") {
             return {};
         }

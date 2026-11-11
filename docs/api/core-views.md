@@ -396,7 +396,7 @@ func (ctx *Context) BeginRenderPass()
 
 BeginRenderPass starts a callback ID pass for this context tree; see callbackRegistry.beginPass for the stability contract.
 
-<small>[core/event.go:468](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L468)</small>
+<small>[core/event.go:484](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L484)</small>
 
 #### func (*Context) ClearDirty
 
@@ -505,7 +505,7 @@ PurgeUnusedCallbacks drops handlers not re-registered in the current pass; see c
 
 OnEndReached's debounce ledger is trimmed in the same breath and against the registry's own survivors, so the two can never disagree about which lists are still on screen — a guard outliving its handler would silently suppress the first page fetch of whatever list next inherits the ID.
 
-<small>[core/event.go:479](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L479)</small>
+<small>[core/event.go:495](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L495)</small>
 
 #### func (*Context) ReceiveEventPayload
 
@@ -513,9 +513,26 @@ OnEndReached's debounce ledger is trimmed in the same breath and against the reg
 func (ctx *Context) ReceiveEventPayload(payload map[string]any)
 ```
 
-ReceiveEventPayload dispatches a loosely typed event envelope ({"callback": id, "value": ...}) by sniffing the value's type — the shape the WASM host sends. Typed hosts should call the Trigger\* methods directly.
+ReceiveEventPayload dispatches a loosely typed event envelope ({"callback": id, "value": ...}), the shape the browser hosts send. Typed hosts should call the Trigger\* methods directly.
 
-<small>[core/event.go:517](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L517)</small>
+##### The ID picks the kind, not the value
+
+Every callback ID begins with its kind's prefix (see the \*IDPrefix constants), and a keyed scope's path comes after it ("txt\_cb\_r2/e0/1"), so the ID alone says which handler map holds it. The value is then only checked against that kind:
+
+	ID prefix            kind   value accepted
+	───────────────────  ─────  ──────────────────────────────────────
+	txt_cb_              text   a string, delivered verbatim
+	bool_cb_             bool   a bool
+	int_cb_              int    a JSON number (float64) or a Go int
+	cb_, back_cb_, else  void   anything; the value is ignored
+
+A value of the wrong type for its kind is logged and dropped. Before, its handler map simply missed and nothing was said.
+
+##### Why a text value is never parsed
+
+This used to sniff the value's type instead, and a string was first tried as a JSON envelope of its own, with its inner "value" delivered in its place. No host ever sent one, and the strings that do arrive are what the user typed. So typing {"value":"x"} into a field delivered x, and typing {"value":true} or {"value":7} called no handler at all, because the unwrapped bool or number went looking in a map the text ID is not in. The controlled field then snapped back. A CodeEditor holding JSON, or any field a user pastes JSON into, was exposed. Routing by the ID needs no guess, so the text arrives as typed.
+
+<small>[core/event.go:562](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L562)</small>
 
 #### func (*Context) RequestRender
 
@@ -569,7 +586,7 @@ func (ctx *Context) TriggerBoolCallback(id string, val bool)
 
 TriggerBoolCallback dispatches a bool-carrying event (e.g. a toggle).
 
-<small>[core/event.go:501](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L501)</small>
+<small>[core/event.go:517](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L517)</small>
 
 #### func (*Context) TriggerCallback
 
@@ -579,7 +596,7 @@ func (ctx *Context) TriggerCallback(id string)
 
 TriggerCallback dispatches a void event (e.g. a button tap) by callback ID. Unknown IDs are silent no-ops: a late native event racing a purge is expected traffic, not an error.
 
-<small>[core/event.go:487](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L487)</small>
+<small>[core/event.go:503](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L503)</small>
 
 #### func (*Context) TriggerIntCallback
 
@@ -589,7 +606,7 @@ func (ctx *Context) TriggerIntCallback(id string, val int)
 
 TriggerIntCallback dispatches an int-carrying event (e.g. tab selection).
 
-<small>[core/event.go:508](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L508)</small>
+<small>[core/event.go:524](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L524)</small>
 
 #### func (*Context) TriggerTextCallback
 
@@ -599,7 +616,7 @@ func (ctx *Context) TriggerTextCallback(id string, val string)
 
 TriggerTextCallback dispatches a string-carrying event (e.g. input change).
 
-<small>[core/event.go:494](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L494)</small>
+<small>[core/event.go:510](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L510)</small>
 
 #### func (*Context) TriggerTextEdit
 

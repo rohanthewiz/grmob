@@ -1,7 +1,6 @@
 package core
 
 import (
-	"encoding/json"
 	"log"
 	"strconv"
 	"strings"
@@ -96,6 +95,23 @@ type trailEntry struct {
 	scope *idScope
 	key   string
 }
+
+// The callback ID prefixes, one per kind. An ID is the prefix, the keyed
+// scope's path, then the scope's counter ("txt_cb_r2/e0/1"; see
+// nextIDLocked), so the prefix always starts it. That is what lets
+// ReceiveEventPayload route an envelope by its ID alone. Named once here so
+// the spelling registration writes and the spelling dispatch reads cannot
+// drift apart.
+//
+// The spellings are wire format: they are in every patch a host has applied,
+// and hosts and tests address handlers by them, so they do not change.
+const (
+	voidIDPrefix = "cb_"
+	backIDPrefix = "back_cb_" // void too: core.OnBack's own sequence (registerBack)
+	textIDPrefix = "txt_cb_"
+	boolIDPrefix = "bool_cb_"
+	intIDPrefix  = "int_cb_"
+)
 
 func newCallbackRegistry() *callbackRegistry {
 	return &callbackRegistry{
@@ -236,7 +252,7 @@ func (r *callbackRegistry) registerVoid(fn func()) string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	id := r.nextIDLocked("cb_", func(s *idScope) *int { return &s.voidCounter })
+	id := r.nextIDLocked(voidIDPrefix, func(s *idScope) *int { return &s.voidCounter })
 	r.voidCBs[id] = fn // overwrites last pass's closure at this position, keeping the freshest captures
 	return id
 }
@@ -273,7 +289,7 @@ func (r *callbackRegistry) registerBack(fn func()) string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	id := r.nextIDLocked("back_cb_", func(s *idScope) *int { return &s.backCounter })
+	id := r.nextIDLocked(backIDPrefix, func(s *idScope) *int { return &s.backCounter })
 	r.voidCBs[id] = fn
 	return id
 }
@@ -282,7 +298,7 @@ func (r *callbackRegistry) registerText(fn func(string)) string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	id := r.nextIDLocked("txt_cb_", func(s *idScope) *int { return &s.textCounter })
+	id := r.nextIDLocked(textIDPrefix, func(s *idScope) *int { return &s.textCounter })
 	r.textCBs[id] = fn
 	return id
 }
@@ -291,7 +307,7 @@ func (r *callbackRegistry) registerBool(fn func(bool)) string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	id := r.nextIDLocked("bool_cb_", func(s *idScope) *int { return &s.boolCounter })
+	id := r.nextIDLocked(boolIDPrefix, func(s *idScope) *int { return &s.boolCounter })
 	r.boolCBs[id] = fn
 	return id
 }
@@ -300,7 +316,7 @@ func (r *callbackRegistry) registerInt(fn func(int)) string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	id := r.nextIDLocked("int_cb_", func(s *idScope) *int { return &s.intCounter })
+	id := r.nextIDLocked(intIDPrefix, func(s *idScope) *int { return &s.intCounter })
 	r.intCBs[id] = fn
 	return id
 }
@@ -512,61 +528,95 @@ func (ctx *Context) TriggerIntCallback(id string, val int) {
 }
 
 // ReceiveEventPayload dispatches a loosely typed event envelope
-// ({"callback": id, "value": ...}) by sniffing the value's type — the shape
-// the WASM host sends. Typed hosts should call the Trigger* methods directly.
+// ({"callback": id, "value": ...}), the shape the browser hosts send. Typed
+// hosts should call the Trigger* methods directly.
+//
+// # The ID picks the kind, not the value
+//
+// Every callback ID begins with its kind's prefix (see the *IDPrefix
+// constants), and a keyed scope's path comes after it ("txt_cb_r2/e0/1"), so
+// the ID alone says which handler map holds it. The value is then only
+// checked against that kind:
+//
+//	ID prefix            kind   value accepted
+//	───────────────────  ─────  ──────────────────────────────────────
+//	txt_cb_              text   a string, delivered verbatim
+//	bool_cb_             bool   a bool
+//	int_cb_              int    a JSON number (float64) or a Go int
+//	cb_, back_cb_, else  void   anything; the value is ignored
+//
+// A value of the wrong type for its kind is logged and dropped. Before, its
+// handler map simply missed and nothing was said.
+//
+// # Why a text value is never parsed
+//
+// This used to sniff the value's type instead, and a string was first tried
+// as a JSON envelope of its own, with its inner "value" delivered in its
+// place. No host ever sent one, and the strings that do arrive are what the
+// user typed. So typing {"value":"x"} into a field delivered x, and typing
+// {"value":true} or {"value":7} called no handler at all, because the
+// unwrapped bool or number went looking in a map the text ID is not in. The
+// controlled field then snapped back. A CodeEditor holding JSON, or any field
+// a user pastes JSON into, was exposed. Routing by the ID needs no guess, so
+// the text arrives as typed.
 func (ctx *Context) ReceiveEventPayload(payload map[string]any) {
 	id, ok := payload["callback"].(string)
 	if !ok {
 		log.Println("event payload has no callback ID")
 		return
 	}
+	val := payload["value"]
 
-	switch val := payload["value"].(type) {
-	case string:
-		// The value may itself be a JSON envelope ({"value": ...}) carrying
-		// the real payload; unwrap it if so.
-		var parsed map[string]any
-		if err := json.Unmarshal([]byte(val), &parsed); err == nil {
-			if v, ok := parsed["value"].(string); ok {
-				ctx.TriggerTextCallback(id, v)
-				return
-			}
-			if b, ok := parsed["value"].(bool); ok {
-				ctx.TriggerBoolCallback(id, b)
-				return
-			}
-			if f, ok := parsed["value"].(float64); ok {
-				ctx.TriggerIntCallback(id, int(f))
-				return
-			}
+	// No prefix begins another ("cb_" ends each of the others but begins
+	// none), so the cases' order does not matter. Void is the default arm so
+	// that back_cb_ and an ID no kind claims both land there.
+	switch {
+	case strings.HasPrefix(id, textIDPrefix):
+		s, ok := val.(string)
+		if !ok {
+			logMismatchedEvent(id, "a string", val)
+			return
+		}
+		ctx.TriggerTextCallback(id, s)
+
+	case strings.HasPrefix(id, boolIDPrefix):
+		b, ok := val.(bool)
+		if !ok {
+			logMismatchedEvent(id, "a bool", val)
+			return
+		}
+		ctx.TriggerBoolCallback(id, b)
+
+	case strings.HasPrefix(id, intIDPrefix):
+		switch n := val.(type) {
+		case float64:
+			// JSON has one number type, so every numeric event (tab
+			// selection, a stepper) arrives as a float64 whatever Go
+			// declared the handler as.
+			ctx.TriggerIntCallback(id, int(n))
+		case int:
+			// Not reachable from a JSON host, but this is exported and a
+			// Go-side caller (a test, an embedder) naturally writes an int.
+			ctx.TriggerIntCallback(id, n)
+		default:
+			logMismatchedEvent(id, "a number", val)
 		}
 
-		// Fallback: treat as a plain string value.
-		ctx.TriggerTextCallback(id, val)
-
-	case bool:
-		ctx.TriggerBoolCallback(id, val)
-
-	case float64:
-		// JSON has one number type, so every numeric event — tab selection
-		// (onTabChange), a slider index, a stepper — arrives here as a
-		// float64 no matter how Go declared the handler. Without this case a
-		// numeric envelope fell through to the void branch below, missed the
-		// int callback map entirely, and did nothing at all: the control was
-		// simply dead, with no error on either side of the bridge.
-		ctx.TriggerIntCallback(id, int(val))
-
-	case int:
-		// Not reachable from a JSON host, but ReceiveEventPayload is exported
-		// and a Go-side caller (a test, an embedder driving events directly)
-		// naturally writes an int.
-		ctx.TriggerIntCallback(id, val)
-
-	case nil:
-		ctx.TriggerCallback(id)
 	default:
+		// cb_ and back_cb_ are both void, so the value is ignored. An ID of
+		// no known kind is looked up as void too, which misses and is the
+		// same silent no-op an unknown or purged ID of any kind gets.
 		ctx.TriggerCallback(id)
 	}
+}
+
+// logMismatchedEvent reports an envelope whose value cannot be delivered to
+// its ID's kind. Logged rather than silent: it means a host and Go disagree
+// about a control, which is a bug in one of them, and a dead control with no
+// trace is what this package has paid for before (see the float64 case's
+// history in event_test.go).
+func logMismatchedEvent(id, want string, got any) {
+	log.Printf("grmob: dropping event for %s: want %s, got %T", id, want, got)
 }
 
 // ---- Counter snapshot / rollback (ErrorBoundary) ----

@@ -156,8 +156,9 @@ func (h *host) isDirty(this js.Value, args []js.Value) any {
 }
 
 // receiveEvent delivers a user event: args are the callback ID and a JSON
-// payload of the form {"value": ...}, whose value type selects the callback
-// kind (void, text, bool, int) inside core.
+// payload of the form {"value": ...}. core.Context.ReceiveEventPayload picks
+// the callback kind (void, text, bool, int) from the ID and checks the value
+// against it.
 //
 // The dispatch is guarded because this host calls the context directly rather
 // than through render.Manager's Dispatch* (which carry the same guard). A
