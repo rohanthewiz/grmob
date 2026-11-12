@@ -641,6 +641,12 @@ before the first read: `New` renders nothing. A test driving the `mobile`
 bridge instead calls `grmobtest.Reset()` itself, between closing one app and
 rendering the next. Do not use `t.Parallel` in these tests.
 
+A test of a timer, a debounce or a fetch delay goes inside
+`grmobtest.WithFakeClock(t, func(t *testing.T) { ... })`, with the Driver made
+inside it: `testing/synctest`'s fake clock, so a two-second timeout costs no
+real time and cannot flake, plus a watchdog that fails a bubble which never
+settles (a ticker nothing stopped) in 30 s instead of at go test's timeout.
+
 `render.Manager` is the app-lifetime owner: `New`, `SetListener`,
 `RenderInitial`, `Dispatch(label, fn)`, `DispatchCallback` /
 `DispatchTextCallback` / `DispatchBoolCallback` / `DispatchIntCallback`,

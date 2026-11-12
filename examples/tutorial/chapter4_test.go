@@ -683,86 +683,88 @@ func skeletonBars(n *node) int {
 }
 
 func TestScreenFurnitureDemoSearchesFiltersAndSwitchesStates(t *testing.T) {
-	app := newApp(t)
-	openLesson(t, app, "Screen furniture: bars, banners & placeholders")
+	grmobtest.WithFakeClock(t, func(t *testing.T) {
+		app := newApp(t)
+		openLesson(t, app, "Screen furniture: bars, banners & placeholders")
 
-	cur := app.Tree()
-	if !hasTextContaining(cur, "9 of 9 sermons") {
-		t.Fatal("the bar's subtitle should open with the whole archive")
-	}
-	// The lesson is a pushed screen, so CanPop is true and the automatic back
-	// control is real — that is the demo's point, and it is also why the demo
-	// sets OnBack.
-	back := grmobtest.Find(cur, func(n *node) bool { return n.Type == "Button" && n.Props["label"] == "‹" })
-	if back == nil {
-		t.Fatal("a pushed lesson should give the demo AppBar its automatic back control")
-	}
-	app.Manager().DispatchCallback(back.Props["onClick"].(string))
-	cur = app.Tree()
-	if !hasTextContaining(cur, "OnBack ran instead of core.Pop") {
-		t.Fatal("OnBack should have run")
-	}
-	// And it must have *replaced* Pop, not preceded it: the lesson is still on
-	// screen.
-	if !hasTextContaining(cur, "9 of 9 sermons") {
-		t.Fatal("tapping back popped the lesson — OnBack should replace core.Pop")
-	}
+		cur := app.Tree()
+		if !hasTextContaining(cur, "9 of 9 sermons") {
+			t.Fatal("the bar's subtitle should open with the whole archive")
+		}
+		// The lesson is a pushed screen, so CanPop is true and the automatic back
+		// control is real — that is the demo's point, and it is also why the demo
+		// sets OnBack.
+		back := grmobtest.Find(cur, func(n *node) bool { return n.Type == "Button" && n.Props["label"] == "‹" })
+		if back == nil {
+			t.Fatal("a pushed lesson should give the demo AppBar its automatic back control")
+		}
+		app.Manager().DispatchCallback(back.Props["onClick"].(string))
+		cur = app.Tree()
+		if !hasTextContaining(cur, "OnBack ran instead of core.Pop") {
+			t.Fatal("OnBack should have run")
+		}
+		// And it must have *replaced* Pop, not preceded it: the lesson is still on
+		// screen.
+		if !hasTextContaining(cur, "9 of 9 sermons") {
+			t.Fatal("tapping back popped the lesson — OnBack should replace core.Pop")
+		}
 
-	// The field is controlled, so the keystroke lands immediately whatever the
-	// debounce is doing. (Whether the *list* has moved yet is a race by
-	// construction, so the assertions below go through the paths that are
-	// synchronous: OnSubmit, which cancels and applies, and awaitText.)
-	typeInto(t, app, "salt")
-	if grmobtest.Find(app.Tree(), func(n *node) bool {
-		return n.Type == "Input" && n.Props["value"] == "salt"
-	}) == nil {
-		t.Fatal("the field should show the keystroke immediately")
-	}
-	awaitText(t, app, "1 of 9 sermons")
-	cur = app.Tree()
-	if !grmobtest.HasText(cur, "Salt and Light") || grmobtest.HasText(cur, "The Narrow Gate") {
-		t.Fatal("the debounced query should have narrowed the list")
-	}
+		// The field is controlled, so the keystroke lands immediately whatever the
+		// debounce is doing. (Whether the *list* has moved yet is a race by
+		// construction, so the assertions below go through the paths that are
+		// synchronous: OnSubmit, which cancels and applies, and awaitText.)
+		typeInto(t, app, "salt")
+		if grmobtest.Find(app.Tree(), func(n *node) bool {
+			return n.Type == "Input" && n.Props["value"] == "salt"
+		}) == nil {
+			t.Fatal("the field should show the keystroke immediately")
+		}
+		awaitText(t, app, "1 of 9 sermons")
+		cur = app.Tree()
+		if !grmobtest.HasText(cur, "Salt and Light") || grmobtest.HasText(cur, "The Narrow Gate") {
+			t.Fatal("the debounced query should have narrowed the list")
+		}
 
-	// Enter means now: Cancel drops the pending call, then the caller acts.
-	typeInto(t, app, "meek")
-	submit := grmobtest.Find(app.Tree(), func(n *node) bool { return n.Type == "Input" })
-	app.Manager().DispatchCallback(submit.Props["onSubmit"].(string))
-	cur = app.Tree()
-	if !grmobtest.HasText(cur, "Blessed Are the Meek") || grmobtest.HasText(cur, "Salt and Light") {
-		t.Fatal("OnSubmit should apply the query synchronously")
-	}
+		// Enter means now: Cancel drops the pending call, then the caller acts.
+		typeInto(t, app, "meek")
+		submit := grmobtest.Find(app.Tree(), func(n *node) bool { return n.Type == "Input" })
+		app.Manager().DispatchCallback(submit.Props["onSubmit"].(string))
+		cur = app.Tree()
+		if !grmobtest.HasText(cur, "Blessed Are the Meek") || grmobtest.HasText(cur, "Salt and Light") {
+			t.Fatal("OnSubmit should apply the query synchronously")
+		}
 
-	// Nothing matches: the empty state, and its action as the way out of the
-	// state that produced it.
-	typeInto(t, app, "zzz")
-	app.Manager().DispatchCallback(grmobtest.Find(app.Tree(), func(n *node) bool { return n.Type == "Input" }).Props["onSubmit"].(string))
-	cur = app.Tree()
-	if !grmobtest.HasText(cur, "Nothing matches that") {
-		t.Fatal("a query with no matches should show the EmptyState")
-	}
-	app.Tap("Clear filters")
-	cur = app.Tree()
-	if !hasTextContaining(cur, "9 of 9 sermons") || !grmobtest.HasText(cur, "The Narrow Gate") {
-		t.Fatal("Clear filters should restore the whole archive")
-	}
+		// Nothing matches: the empty state, and its action as the way out of the
+		// state that produced it.
+		typeInto(t, app, "zzz")
+		app.Manager().DispatchCallback(grmobtest.Find(app.Tree(), func(n *node) bool { return n.Type == "Input" }).Props["onSubmit"].(string))
+		cur = app.Tree()
+		if !grmobtest.HasText(cur, "Nothing matches that") {
+			t.Fatal("a query with no matches should show the EmptyState")
+		}
+		app.Tap("Clear filters")
+		cur = app.Tree()
+		if !hasTextContaining(cur, "9 of 9 sermons") || !grmobtest.HasText(cur, "The Narrow Gate") {
+			t.Fatal("Clear filters should restore the whole archive")
+		}
 
-	// The chip strip is a second, independent filter, and the StatTile reads
-	// the same sentinel the "All" chip does.
-	app.Tap("R. Okafor")
-	cur = app.Tree()
-	if !hasTextContaining(cur, "3 of 9 sermons") {
-		t.Fatal("the speaker chip should narrow the list")
-	}
-	if !grmobtest.HasText(cur, "R. Okafor") || grmobtest.HasText(cur, "The Narrow Gate") {
-		t.Fatal("only that speaker's sermons should remain")
-	}
-	app.Tap("All")
-	if !hasTextContaining(app.Tree(), "9 of 9 sermons") {
-		t.Fatal("the All chip should clear the speaker filter")
-	}
+		// The chip strip is a second, independent filter, and the StatTile reads
+		// the same sentinel the "All" chip does.
+		app.Tap("R. Okafor")
+		cur = app.Tree()
+		if !hasTextContaining(cur, "3 of 9 sermons") {
+			t.Fatal("the speaker chip should narrow the list")
+		}
+		if !grmobtest.HasText(cur, "R. Okafor") || grmobtest.HasText(cur, "The Narrow Gate") {
+			t.Fatal("only that speaker's sermons should remain")
+		}
+		app.Tap("All")
+		if !hasTextContaining(app.Tree(), "9 of 9 sermons") {
+			t.Fatal("the All chip should clear the speaker filter")
+		}
 
-	grmobtest.NoConcerns(t)
+		grmobtest.NoConcerns(t)
+	})
 }
 
 // The demo's OnBack is also what Android's system back runs while the bar is
@@ -2933,48 +2935,50 @@ func TestReadMoreAndHalfStarsLesson(t *testing.T) {
 // before once, shows the loading caption while it is in flight, and prepends
 // it; the start caption appears once the history is exhausted.
 func TestMessageThreadLessonLoadsOlderPages(t *testing.T) {
-	app := newApp(t)
-	openLesson(t, app, "Message threads")
+	grmobtest.WithFakeClock(t, func(t *testing.T) {
+		app := newApp(t)
+		openLesson(t, app, "Message threads")
 
-	list := func() *node {
-		return grmobtest.Find(app.Tree(), func(n *node) bool { return n.Type == "List" && n.Props["startAtEnd"] == true })
-	}
-	if list() == nil {
-		t.Fatal("the lesson has no StartAtEnd list")
-	}
-	if !hasTextContaining(app.Tree(), "12 of 48 messages loaded") {
-		t.Fatal("the thread should open on its newest page of 12")
-	}
-	// waitFor polls the tree, because the pretend fetch lands on a timer.
-	waitFor := func(text string) bool {
-		for range 60 {
-			if hasTextContaining(app.Tree(), text) {
-				return true
+		list := func() *node {
+			return grmobtest.Find(app.Tree(), func(n *node) bool { return n.Type == "List" && n.Props["startAtEnd"] == true })
+		}
+		if list() == nil {
+			t.Fatal("the lesson has no StartAtEnd list")
+		}
+		if !hasTextContaining(app.Tree(), "12 of 48 messages loaded") {
+			t.Fatal("the thread should open on its newest page of 12")
+		}
+		// waitFor polls the tree, because the pretend fetch lands on a timer.
+		waitFor := func(text string) bool {
+			for range 60 {
+				if hasTextContaining(app.Tree(), text) {
+					return true
+				}
+				time.Sleep(50 * time.Millisecond)
 			}
-			time.Sleep(50 * time.Millisecond)
+			return false
 		}
-		return false
-	}
-	for page := 1; page <= 3; page++ {
-		id := list().Props["onStartReached"].(string)
-		app.Manager().DispatchCallback(id)
-		// A second report of the same top, mid-fetch, loads nothing more.
-		app.Manager().DispatchCallback(id)
-		if !grmobtest.HasText(app.Tree(), "Loading older messages…") {
-			t.Fatalf("page %d: reaching the top did not show the loading caption", page)
+		for page := 1; page <= 3; page++ {
+			id := list().Props["onStartReached"].(string)
+			app.Manager().DispatchCallback(id)
+			// A second report of the same top, mid-fetch, loads nothing more.
+			app.Manager().DispatchCallback(id)
+			if !grmobtest.HasText(app.Tree(), "Loading older messages…") {
+				t.Fatalf("page %d: reaching the top did not show the loading caption", page)
+			}
+			want := fmt.Sprintf("%d of 48 messages loaded · %d older page", 12*(page+1), page)
+			if !waitFor(want) {
+				t.Fatalf("page %d: want %q", page, want)
+			}
 		}
-		want := fmt.Sprintf("%d of 48 messages loaded · %d older page", 12*(page+1), page)
-		if !waitFor(want) {
-			t.Fatalf("page %d: want %q", page, want)
+		if !grmobtest.HasText(app.Tree(), "This is the start of the conversation.") {
+			t.Error("with all 48 loaded the caption should say the conversation starts here")
 		}
-	}
-	if !grmobtest.HasText(app.Tree(), "This is the start of the conversation.") {
-		t.Error("with all 48 loaded the caption should say the conversation starts here")
-	}
-	if _, ok := list().Props["onStartReached"]; ok {
-		t.Error("with nothing older the top edge is still wired")
-	}
-	grmobtest.NoConcerns(t)
+		if _, ok := list().Props["onStartReached"]; ok {
+			t.Error("with nothing older the top edge is still wired")
+		}
+		grmobtest.NoConcerns(t)
+	})
 }
 
 // 4.34. The indicator stays in the tree when switched off; a reaction tap

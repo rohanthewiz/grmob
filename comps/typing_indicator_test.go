@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/rohanthewiz/grmob/core"
+	"github.com/rohanthewiz/grmob/grmobtest"
 )
 
 // typingDotsOf returns the three dot boxes: the children of the inner bubble
@@ -122,33 +123,35 @@ func TestTypingIndicatorHiddenKeepsItsShape(t *testing.T) {
 // than slept for: the ticker's first beat is typingBeat after the first pass,
 // and the claim is that it arrives, not exactly when.
 func TestTypingIndicatorStepsOnlyWhileVisible(t *testing.T) {
-	visible := true
-	h := newRowHarness(t, func() core.View { return TypingIndicator{Visible: visible} })
-	defer h.ctx.Close()
+	grmobtest.WithFakeClock(t, func(t *testing.T) {
+		visible := true
+		h := newRowHarness(t, func() core.View { return TypingIndicator{Visible: visible} })
+		defer h.ctx.Close()
 
-	moved := false
-	for deadline := time.Now().Add(5 * typingBeat); time.Now().Before(deadline); {
-		time.Sleep(typingBeat / 8)
-		h.render()
-		if darkDot(t, h.node) != 0 {
-			moved = true
-			break
+		moved := false
+		for deadline := time.Now().Add(5 * typingBeat); time.Now().Before(deadline); {
+			time.Sleep(typingBeat / 8)
+			h.render()
+			if darkDot(t, h.node) != 0 {
+				moved = true
+				break
+			}
 		}
-	}
-	if !moved {
-		t.Fatal("the dark dot never left the first place while Visible")
-	}
+		if !moved {
+			t.Fatal("the dark dot never left the first place while Visible")
+		}
 
-	// Hidden: the pause is read from the most recent pass, so render once
-	// with the new value, note where the dot is, and expect it to stay.
-	visible = false
-	h.render()
-	at := darkDot(t, h.node)
-	time.Sleep(3 * typingBeat)
-	h.render()
-	if got := darkDot(t, h.node); got != at {
-		t.Errorf("dark dot moved %d → %d while hidden; the interval should be paused", at, got)
-	}
+		// Hidden: the pause is read from the most recent pass, so render once
+		// with the new value, note where the dot is, and expect it to stay.
+		visible = false
+		h.render()
+		at := darkDot(t, h.node)
+		time.Sleep(3 * typingBeat)
+		h.render()
+		if got := darkDot(t, h.node); got != at {
+			t.Errorf("dark dot moved %d → %d while hidden; the interval should be paused", at, got)
+		}
+	})
 }
 
 // Style lands on the outer row, the placement, as with MessageBubble.

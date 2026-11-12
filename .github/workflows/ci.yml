@@ -57,6 +57,11 @@ jobs:
     name: Go, WASM and the JS runtime
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      # The source-census packages: tests that read the repository's files
+      # (Go, JS, Swift, Kotlin, Markdown) and hold them to each other, with
+      # no concurrency of their own. The two go test steps split on it.
+      CENSUS_PKGS: '/grmob/(wasm/verify|mobile/verify|ios/verify|android/verify|aria/[a-z]+|internal/[a-z/]+)$'
     steps:
       - uses: actions/checkout@v4
 
@@ -88,11 +93,19 @@ jobs:
       - name: go vet
         run: go vet ./...
 
-      - name: go test -race
-        # The race build runs the same tests as a plain `go test ./...` and
+      - name: go test -race (the product packages)
+        # The race build runs the same tests as a plain `go test` and
         # additionally instruments them, so it is run alone rather than after
         # a duplicate non-race pass. The engine dispatches callbacks and timer
         # pushes from different goroutines, which is exactly what -race is for.
+        #
+        # Only over the packages whose code ships or drives an app: the
+        # source censuses (CENSUS_PKGS, below) read files and compare text,
+        # and the race detector found nothing to instrument there but cost.
+        # Measured on an M3, plain against -race: wasm/verify 6.7 s and
+        # 57.0 s, internal/themehistory 6.4 s and 17.2 s, internal/apidoc
+        # 2.1 s and 10.5 s, aria/verify 0.6 s and 9.0 s, mobile/verify 1.1 s
+        # and 6.0 s; about 32 s against 127 s over the whole set.
         #
         # -shuffle=on runs each package's tests in a new random order every
         # time. grmob keeps device records and pending host requests per
@@ -102,7 +115,22 @@ jobs:
         # reordered. The seed is printed with the output (-test.shuffle N),
         # so a failing order reruns with `go test -shuffle=N ./<pkg>`.
         # grmobtest.Reset is the tool for a test that needs a fresh process.
-        run: go test -race -shuffle=on ./...
+        #
+        # The list is computed, not written out, so a new product package is
+        # raced by default; the grep fails the step if it selects nothing,
+        # rather than letting `go test` with no packages test the current
+        # directory.
+        run: |
+          pkgs=$(go list ./... | grep -Ev "$CENSUS_PKGS")
+          go test -race -shuffle=on $pkgs
+
+      - name: go test (the source censuses, without -race)
+        # The other half of the split above: every package CENSUS_PKGS
+        # matches, shuffled the same way. The two steps together cover
+        # exactly `go list ./...`.
+        run: |
+          pkgs=$(go list ./... | grep -E "$CENSUS_PKGS")
+          go test -shuffle=on $pkgs
 
       - name: Build the docs server
         # cmd/docs is a module of its own — deliberately, so that gkdocs and

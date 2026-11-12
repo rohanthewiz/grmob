@@ -60,348 +60,376 @@ func renderPass(ctx *core.Context, body func(ctx *core.Context)) {
 }
 
 func TestUseEffectRunsOnMountAndOnDepsChangeOnly(t *testing.T) {
-	// The old implementation indexed effects with a global counter that never
-	// reset, so every render minted a fresh index and re-ran every effect —
-	// deps were dead code. The slot-backed version must run on mount, skip
-	// when deps are unchanged, and re-run when they change.
-	ctx := core.NewContext()
-	runs := make(chan int, 8)
+	grmobtest.WithFakeClock(t, func(t *testing.T) {
+		// The old implementation indexed effects with a global counter that never
+		// reset, so every render minted a fresh index and re-ran every effect —
+		// deps were dead code. The slot-backed version must run on mount, skip
+		// when deps are unchanged, and re-run when they change.
+		ctx := core.NewContext()
+		runs := make(chan int, 8)
 
-	render := func(dep int) {
-		renderPass(ctx, func(ctx *core.Context) {
-			hooks.UseEffect(ctx, func() { runs <- dep }, dep)
-		})
-	}
+		render := func(dep int) {
+			renderPass(ctx, func(ctx *core.Context) {
+				hooks.UseEffect(ctx, func() { runs <- dep }, dep)
+			})
+		}
 
-	render(1)
-	if got := awaitSignal(t, runs, "mount effect"); got != 1 {
-		t.Fatalf("mount effect saw dep %d, want 1", got)
-	}
+		render(1)
+		if got := awaitSignal(t, runs, "mount effect"); got != 1 {
+			t.Fatalf("mount effect saw dep %d, want 1", got)
+		}
 
-	render(1)
-	assertQuiet(t, runs, 100*time.Millisecond, "effect re-run with unchanged deps")
+		render(1)
+		assertQuiet(t, runs, 100*time.Millisecond, "effect re-run with unchanged deps")
 
-	render(2)
-	if got := awaitSignal(t, runs, "effect after deps change"); got != 2 {
-		t.Fatalf("changed-deps effect saw dep %d, want 2", got)
-	}
+		render(2)
+		if got := awaitSignal(t, runs, "effect after deps change"); got != 2 {
+			t.Fatalf("changed-deps effect saw dep %d, want 2", got)
+		}
+	})
 }
 
 func TestUseEffectWithNoDepsRunsOnce(t *testing.T) {
-	ctx := core.NewContext()
-	runs := make(chan struct{}, 8)
+	grmobtest.WithFakeClock(t, func(t *testing.T) {
+		ctx := core.NewContext()
+		runs := make(chan struct{}, 8)
 
-	body := func(ctx *core.Context) {
-		hooks.UseEffect(ctx, func() { runs <- struct{}{} })
-	}
+		body := func(ctx *core.Context) {
+			hooks.UseEffect(ctx, func() { runs <- struct{}{} })
+		}
 
-	renderPass(ctx, body)
-	awaitSignal(t, runs, "mount effect")
-	renderPass(ctx, body)
-	renderPass(ctx, body)
-	assertQuiet(t, runs, 100*time.Millisecond, "re-run of a no-deps effect")
+		renderPass(ctx, body)
+		awaitSignal(t, runs, "mount effect")
+		renderPass(ctx, body)
+		renderPass(ctx, body)
+		assertQuiet(t, runs, 100*time.Millisecond, "re-run of a no-deps effect")
+	})
 }
 
 func TestUseEffectDoesNotAliasCallerDeps(t *testing.T) {
-	// A caller spreading a slice it owns: the record must hold a copy, or the
-	// caller's mutation would rewrite the stored deps too, DeepEqual would
-	// report "unchanged", and the effect would never run again.
-	ctx := core.NewContext()
-	deps := []any{1}
-	runs := make(chan int, 8)
+	grmobtest.WithFakeClock(t, func(t *testing.T) {
+		// A caller spreading a slice it owns: the record must hold a copy, or the
+		// caller's mutation would rewrite the stored deps too, DeepEqual would
+		// report "unchanged", and the effect would never run again.
+		ctx := core.NewContext()
+		deps := []any{1}
+		runs := make(chan int, 8)
 
-	render := func() {
-		renderPass(ctx, func(ctx *core.Context) {
-			hooks.UseEffect(ctx, func() { runs <- deps[0].(int) }, deps...)
-		})
-	}
+		render := func() {
+			renderPass(ctx, func(ctx *core.Context) {
+				hooks.UseEffect(ctx, func() { runs <- deps[0].(int) }, deps...)
+			})
+		}
 
-	render()
-	awaitSignal(t, runs, "mount effect")
+		render()
+		awaitSignal(t, runs, "mount effect")
 
-	deps[0] = 2
-	render()
-	if got := awaitSignal(t, runs, "effect after the caller mutated its deps slice"); got != 2 {
-		t.Fatalf("re-run effect saw dep %d, want 2", got)
-	}
+		deps[0] = 2
+		render()
+		if got := awaitSignal(t, runs, "effect after the caller mutated its deps slice"); got != 2 {
+			t.Fatalf("re-run effect saw dep %d, want 2", got)
+		}
+	})
 }
 
 func TestUseEffectSlotsAreIndependent(t *testing.T) {
-	// Two effects in one component and the same component shape in a second
-	// app: four distinct slots, each with its own deps memory. Under the old
-	// global index none of them could be told apart.
-	type appHarness struct {
-		ctx  *core.Context
-		runs chan string
-	}
-	newApp := func() *appHarness {
-		return &appHarness{ctx: core.NewContext(), runs: make(chan string, 8)}
-	}
-	render := func(a *appHarness, name string, depA, depB int) {
-		renderPass(a.ctx, func(ctx *core.Context) {
-			hooks.UseEffect(ctx, func() { a.runs <- name + "-first" }, depA)
-			hooks.UseEffect(ctx, func() { a.runs <- name + "-second" }, depB)
-		})
-	}
-
-	one, two := newApp(), newApp()
-	render(one, "one", 1, 1)
-	render(two, "two", 1, 1)
-	// Both apps mount both effects (order within an app is not guaranteed —
-	// effects run on their own goroutines — so collect and count).
-	seen := map[string]int{}
-	for range 2 {
-		seen[awaitSignal(t, one.runs, "mount effects (app one)")]++
-		seen[awaitSignal(t, two.runs, "mount effects (app two)")]++
-	}
-	for _, name := range []string{"one-first", "one-second", "two-first", "two-second"} {
-		if seen[name] != 1 {
-			t.Fatalf("mount runs = %v, want each effect exactly once", seen)
+	grmobtest.WithFakeClock(t, func(t *testing.T) {
+		// Two effects in one component and the same component shape in a second
+		// app: four distinct slots, each with its own deps memory. Under the old
+		// global index none of them could be told apart.
+		type appHarness struct {
+			ctx  *core.Context
+			runs chan string
 		}
-	}
+		newApp := func() *appHarness {
+			return &appHarness{ctx: core.NewContext(), runs: make(chan string, 8)}
+		}
+		render := func(a *appHarness, name string, depA, depB int) {
+			renderPass(a.ctx, func(ctx *core.Context) {
+				hooks.UseEffect(ctx, func() { a.runs <- name + "-first" }, depA)
+				hooks.UseEffect(ctx, func() { a.runs <- name + "-second" }, depB)
+			})
+		}
 
-	// Change only app one's second dep: exactly one effect re-runs, in the
-	// right app.
-	render(one, "one", 1, 2)
-	render(two, "two", 1, 1)
-	if got := awaitSignal(t, one.runs, "app one's changed effect"); got != "one-second" {
-		t.Fatalf("re-run effect = %q, want one-second", got)
-	}
-	assertQuiet(t, one.runs, 100*time.Millisecond, "extra effect run in app one")
-	assertQuiet(t, two.runs, 100*time.Millisecond, "effect run in untouched app two")
+		one, two := newApp(), newApp()
+		render(one, "one", 1, 1)
+		render(two, "two", 1, 1)
+		// Both apps mount both effects (order within an app is not guaranteed —
+		// effects run on their own goroutines — so collect and count).
+		seen := map[string]int{}
+		for range 2 {
+			seen[awaitSignal(t, one.runs, "mount effects (app one)")]++
+			seen[awaitSignal(t, two.runs, "mount effects (app two)")]++
+		}
+		for _, name := range []string{"one-first", "one-second", "two-first", "two-second"} {
+			if seen[name] != 1 {
+				t.Fatalf("mount runs = %v, want each effect exactly once", seen)
+			}
+		}
+
+		// Change only app one's second dep: exactly one effect re-runs, in the
+		// right app.
+		render(one, "one", 1, 2)
+		render(two, "two", 1, 1)
+		if got := awaitSignal(t, one.runs, "app one's changed effect"); got != "one-second" {
+			t.Fatalf("re-run effect = %q, want one-second", got)
+		}
+		assertQuiet(t, one.runs, 100*time.Millisecond, "extra effect run in app one")
+		assertQuiet(t, two.runs, 100*time.Millisecond, "effect run in untouched app two")
+	})
 }
 
 func TestUseIntervalTicksAndStopsOnContextClose(t *testing.T) {
-	ctx := core.NewContext()
-	ticks := make(chan struct{}, 64)
-
-	renderPass(ctx, func(ctx *core.Context) {
-		hooks.UseInterval(ctx, func() { ticks <- struct{}{} }, 10*time.Millisecond)
-	})
-
-	awaitSignal(t, ticks, "first interval tick")
-	ctx.Close()
-
-	// A tick already in flight when Close lands may still arrive; drain until
-	// the channel goes quiet, then require it to stay quiet.
-	for {
-		select {
-		case <-ticks:
-			continue
-		case <-time.After(50 * time.Millisecond):
-		}
-		break
-	}
-	assertQuiet(t, ticks, 100*time.Millisecond, "tick after Close")
-}
-
-func TestUseIntervalSameCursorInTwoAppsBothTick(t *testing.T) {
-	// Regression for the global store keyed by cursor alone: two apps whose
-	// intervals landed on the same cursor shared the key "interval-0", so the
-	// second app's ticker was never created.
-	tickApp := func(t *testing.T) (*core.Context, chan struct{}) {
-		t.Helper()
+	grmobtest.WithFakeClock(t, func(t *testing.T) {
 		ctx := core.NewContext()
 		ticks := make(chan struct{}, 64)
+
 		renderPass(ctx, func(ctx *core.Context) {
 			hooks.UseInterval(ctx, func() { ticks <- struct{}{} }, 10*time.Millisecond)
 		})
-		return ctx, ticks
-	}
 
-	ctxA, ticksA := tickApp(t)
-	defer ctxA.Close()
-	ctxB, ticksB := tickApp(t)
-	defer ctxB.Close()
+		awaitSignal(t, ticks, "first interval tick")
+		ctx.Close()
 
-	awaitSignal(t, ticksA, "tick from app A")
-	awaitSignal(t, ticksB, "tick from app B")
+		// A tick already in flight when Close lands may still arrive; drain until
+		// the channel goes quiet, then require it to stay quiet.
+		for {
+			select {
+			case <-ticks:
+				continue
+			case <-time.After(50 * time.Millisecond):
+			}
+			break
+		}
+		assertQuiet(t, ticks, 100*time.Millisecond, "tick after Close")
+	})
+}
+
+func TestUseIntervalSameCursorInTwoAppsBothTick(t *testing.T) {
+	grmobtest.WithFakeClock(t, func(t *testing.T) {
+		// Regression for the global store keyed by cursor alone: two apps whose
+		// intervals landed on the same cursor shared the key "interval-0", so the
+		// second app's ticker was never created.
+		tickApp := func(t *testing.T) (*core.Context, chan struct{}) {
+			t.Helper()
+			ctx := core.NewContext()
+			ticks := make(chan struct{}, 64)
+			renderPass(ctx, func(ctx *core.Context) {
+				hooks.UseInterval(ctx, func() { ticks <- struct{}{} }, 10*time.Millisecond)
+			})
+			return ctx, ticks
+		}
+
+		ctxA, ticksA := tickApp(t)
+		defer ctxA.Close()
+		ctxB, ticksB := tickApp(t)
+		defer ctxB.Close()
+
+		awaitSignal(t, ticksA, "tick from app A")
+		awaitSignal(t, ticksB, "tick from app B")
+	})
 }
 
 func TestUseIntervalSameCursorInTwoComponentsBothTick(t *testing.T) {
-	// The same collision existed within one app: two components each calling
-	// UseInterval at their own cursor 0 mapped to one global key. Scoped child
-	// contexts give each component its own slot array.
-	ctx := core.NewContext()
-	defer ctx.Close()
-	ticksA := make(chan struct{}, 64)
-	ticksB := make(chan struct{}, 64)
+	grmobtest.WithFakeClock(t, func(t *testing.T) {
+		// The same collision existed within one app: two components each calling
+		// UseInterval at their own cursor 0 mapped to one global key. Scoped child
+		// contexts give each component its own slot array.
+		ctx := core.NewContext()
+		defer ctx.Close()
+		ticksA := make(chan struct{}, 64)
+		ticksB := make(chan struct{}, 64)
 
-	renderPass(ctx, func(ctx *core.Context) {
-		hooks.UseInterval(ctx.Scope("a"), func() { ticksA <- struct{}{} }, 10*time.Millisecond)
-		hooks.UseInterval(ctx.Scope("b"), func() { ticksB <- struct{}{} }, 10*time.Millisecond)
+		renderPass(ctx, func(ctx *core.Context) {
+			hooks.UseInterval(ctx.Scope("a"), func() { ticksA <- struct{}{} }, 10*time.Millisecond)
+			hooks.UseInterval(ctx.Scope("b"), func() { ticksB <- struct{}{} }, 10*time.Millisecond)
+		})
+
+		awaitSignal(t, ticksA, "tick from component A")
+		awaitSignal(t, ticksB, "tick from component B")
 	})
-
-	awaitSignal(t, ticksA, "tick from component A")
-	awaitSignal(t, ticksB, "tick from component B")
 }
 
 func TestUseIntervalTicksRunTheLatestClosure(t *testing.T) {
-	// Re-renders refresh the callback, so ticks observe current state
-	// captures instead of the mount render's stale closure.
-	ctx := core.NewContext()
-	defer ctx.Close()
-	ticks := make(chan int, 64)
+	grmobtest.WithFakeClock(t, func(t *testing.T) {
+		// Re-renders refresh the callback, so ticks observe current state
+		// captures instead of the mount render's stale closure.
+		ctx := core.NewContext()
+		defer ctx.Close()
+		ticks := make(chan int, 64)
 
-	render := func(generation int) {
-		renderPass(ctx, func(ctx *core.Context) {
-			hooks.UseInterval(ctx, func() { ticks <- generation }, 10*time.Millisecond)
-		})
-	}
-
-	render(1)
-	awaitSignal(t, ticks, "tick from mount closure")
-	render(2)
-
-	// Ticks from generation 1 may still drain through; generation 2 must
-	// appear once they do.
-	deadline := time.After(2 * time.Second)
-	for {
-		select {
-		case g := <-ticks:
-			if g == 2 {
-				return
-			}
-		case <-deadline:
-			t.Fatal("interval never ran the refreshed closure")
+		render := func(generation int) {
+			renderPass(ctx, func(ctx *core.Context) {
+				hooks.UseInterval(ctx, func() { ticks <- generation }, 10*time.Millisecond)
+			})
 		}
-	}
+
+		render(1)
+		awaitSignal(t, ticks, "tick from mount closure")
+		render(2)
+
+		// Ticks from generation 1 may still drain through; generation 2 must
+		// appear once they do.
+		deadline := time.After(2 * time.Second)
+		for {
+			select {
+			case g := <-ticks:
+				if g == 2 {
+					return
+				}
+			case <-deadline:
+				t.Fatal("interval never ran the refreshed closure")
+			}
+		}
+	})
 }
 
 func TestUseTimeoutFiresOnceAndDoesNotRearm(t *testing.T) {
-	ctx := core.NewContext()
-	defer ctx.Close()
-	fires := make(chan struct{}, 8)
+	grmobtest.WithFakeClock(t, func(t *testing.T) {
+		ctx := core.NewContext()
+		defer ctx.Close()
+		fires := make(chan struct{}, 8)
 
-	body := func(ctx *core.Context) {
-		hooks.UseTimeout(ctx, func() { fires <- struct{}{} }, 20*time.Millisecond)
-	}
+		body := func(ctx *core.Context) {
+			hooks.UseTimeout(ctx, func() { fires <- struct{}{} }, 20*time.Millisecond)
+		}
 
-	renderPass(ctx, body)
-	awaitSignal(t, fires, "timeout fire")
+		renderPass(ctx, body)
+		awaitSignal(t, fires, "timeout fire")
 
-	// The old store deleted a fired timeout's key, so the next render armed
-	// it again — firing repeatedly on render cadence. A fired slot must stay
-	// fired.
-	renderPass(ctx, body)
-	renderPass(ctx, body)
-	assertQuiet(t, fires, 100*time.Millisecond, "re-fire after later renders")
+		// The old store deleted a fired timeout's key, so the next render armed
+		// it again — firing repeatedly on render cadence. A fired slot must stay
+		// fired.
+		renderPass(ctx, body)
+		renderPass(ctx, body)
+		assertQuiet(t, fires, 100*time.Millisecond, "re-fire after later renders")
+	})
 }
 
 func TestUseTimeoutCancelledByClose(t *testing.T) {
-	ctx := core.NewContext()
-	fires := make(chan struct{}, 8)
+	grmobtest.WithFakeClock(t, func(t *testing.T) {
+		ctx := core.NewContext()
+		fires := make(chan struct{}, 8)
 
-	renderPass(ctx, func(ctx *core.Context) {
-		hooks.UseTimeout(ctx, func() { fires <- struct{}{} }, 50*time.Millisecond)
+		renderPass(ctx, func(ctx *core.Context) {
+			hooks.UseTimeout(ctx, func() { fires <- struct{}{} }, 50*time.Millisecond)
+		})
+		ctx.Close()
+
+		assertQuiet(t, fires, 200*time.Millisecond, "fire from a cancelled timeout")
 	})
-	ctx.Close()
-
-	assertQuiet(t, fires, 200*time.Millisecond, "fire from a cancelled timeout")
 }
 
 func TestUseIntervalResumesAfterCloseAndRemount(t *testing.T) {
-	// Both hosts re-mount over the *same* context: wasm/main.go's
-	// renderInitial closes the previous manager and calls render.New(ctx, App)
-	// again, and mobile.Register does the same. The hook record lives in a
-	// slot on that surviving context, so a Close that stopped the ticker
-	// without clearing `started` left the re-mounted hook taking its
-	// "already running" early return forever — timers dead for the rest of
-	// the process, with no error anywhere.
-	ctx := core.NewContext()
-	defer ctx.Close()
-	ticks := make(chan struct{}, 64)
+	grmobtest.WithFakeClock(t, func(t *testing.T) {
+		// Both hosts re-mount over the *same* context: wasm/main.go's
+		// renderInitial closes the previous manager and calls render.New(ctx, App)
+		// again, and mobile.Register does the same. The hook record lives in a
+		// slot on that surviving context, so a Close that stopped the ticker
+		// without clearing `started` left the re-mounted hook taking its
+		// "already running" early return forever — timers dead for the rest of
+		// the process, with no error anywhere.
+		ctx := core.NewContext()
+		defer ctx.Close()
+		ticks := make(chan struct{}, 64)
 
-	body := func(ctx *core.Context) {
-		hooks.UseInterval(ctx, func() { ticks <- struct{}{} }, 10*time.Millisecond)
-	}
-
-	renderPass(ctx, body)
-	awaitSignal(t, ticks, "first interval tick before Close")
-
-	ctx.Close()
-	// Drain whatever was already in flight so the post-remount tick below
-	// cannot be satisfied by a pre-Close leftover.
-	for {
-		select {
-		case <-ticks:
-			continue
-		case <-time.After(50 * time.Millisecond):
+		body := func(ctx *core.Context) {
+			hooks.UseInterval(ctx, func() { ticks <- struct{}{} }, 10*time.Millisecond)
 		}
-		break
-	}
 
-	// Re-mount: same context, fresh render pass.
-	renderPass(ctx, body)
-	awaitSignal(t, ticks, "interval tick after close and re-mount")
+		renderPass(ctx, body)
+		awaitSignal(t, ticks, "first interval tick before Close")
+
+		ctx.Close()
+		// Drain whatever was already in flight so the post-remount tick below
+		// cannot be satisfied by a pre-Close leftover.
+		for {
+			select {
+			case <-ticks:
+				continue
+			case <-time.After(50 * time.Millisecond):
+			}
+			break
+		}
+
+		// Re-mount: same context, fresh render pass.
+		renderPass(ctx, body)
+		awaitSignal(t, ticks, "interval tick after close and re-mount")
+	})
 }
 
 func TestUseTimeoutRearmsAfterCloseAndRemount(t *testing.T) {
-	// The UseTimeout half of the same bug. A re-mount is a new mount as far
-	// as the app is concerned — the new tree has never seen the timeout fire
-	// — so the timer must arm again, exactly as it does on a first mount.
-	ctx := core.NewContext()
-	defer ctx.Close()
-	fires := make(chan struct{}, 8)
+	grmobtest.WithFakeClock(t, func(t *testing.T) {
+		// The UseTimeout half of the same bug. A re-mount is a new mount as far
+		// as the app is concerned — the new tree has never seen the timeout fire
+		// — so the timer must arm again, exactly as it does on a first mount.
+		ctx := core.NewContext()
+		defer ctx.Close()
+		fires := make(chan struct{}, 8)
 
-	body := func(ctx *core.Context) {
-		hooks.UseTimeout(ctx, func() { fires <- struct{}{} }, 20*time.Millisecond)
-	}
+		body := func(ctx *core.Context) {
+			hooks.UseTimeout(ctx, func() { fires <- struct{}{} }, 20*time.Millisecond)
+		}
 
-	renderPass(ctx, body)
-	awaitSignal(t, fires, "timeout fire before Close")
+		renderPass(ctx, body)
+		awaitSignal(t, fires, "timeout fire before Close")
 
-	ctx.Close()
-	renderPass(ctx, body)
-	awaitSignal(t, fires, "timeout fire after close and re-mount")
+		ctx.Close()
+		renderPass(ctx, body)
+		awaitSignal(t, fires, "timeout fire after close and re-mount")
+	})
 }
 
 // UseIntervalWhile: an inactive render pauses the ticks entirely, an active
 // one resumes them, and Close still stops the ticker.
 func TestUseIntervalWhilePausesAndResumes(t *testing.T) {
-	ctx := core.NewContext()
-	ticks := make(chan struct{}, 64)
-	pass := func(active bool) {
-		renderPass(ctx, func(ctx *core.Context) {
-			hooks.UseIntervalWhile(ctx, active, func() { ticks <- struct{}{} }, 10*time.Millisecond)
-		})
-	}
-
-	pass(false)
-	assertQuiet(t, ticks, 80*time.Millisecond, "tick while the first render was inactive")
-
-	pass(true)
-	awaitSignal(t, ticks, "tick after an active render")
-
-	pass(false)
-	// Drain a tick that was already past the pause check when the render landed.
-	for {
-		select {
-		case <-ticks:
-			continue
-		case <-time.After(40 * time.Millisecond):
+	grmobtest.WithFakeClock(t, func(t *testing.T) {
+		ctx := core.NewContext()
+		ticks := make(chan struct{}, 64)
+		pass := func(active bool) {
+			renderPass(ctx, func(ctx *core.Context) {
+				hooks.UseIntervalWhile(ctx, active, func() { ticks <- struct{}{} }, 10*time.Millisecond)
+			})
 		}
-		break
-	}
-	assertQuiet(t, ticks, 80*time.Millisecond, "tick after pausing")
 
-	pass(true)
-	awaitSignal(t, ticks, "tick after resuming")
-	ctx.Close()
+		pass(false)
+		assertQuiet(t, ticks, 80*time.Millisecond, "tick while the first render was inactive")
+
+		pass(true)
+		awaitSignal(t, ticks, "tick after an active render")
+
+		pass(false)
+		// Drain a tick that was already past the pause check when the render landed.
+		for {
+			select {
+			case <-ticks:
+				continue
+			case <-time.After(40 * time.Millisecond):
+			}
+			break
+		}
+		assertQuiet(t, ticks, 80*time.Millisecond, "tick after pausing")
+
+		pass(true)
+		awaitSignal(t, ticks, "tick after resuming")
+		ctx.Close()
+	})
 }
 
 // A paused tick must not request a render: the whole point of the hook is that
 // an idle widget costs no render passes.
 func TestUseIntervalWhilePausedRequestsNoRender(t *testing.T) {
-	ctx := core.NewContext()
-	renders := make(chan struct{}, 64)
-	ctx.OnStateChange(func() { renders <- struct{}{} })
+	grmobtest.WithFakeClock(t, func(t *testing.T) {
+		ctx := core.NewContext()
+		renders := make(chan struct{}, 64)
+		ctx.OnStateChange(func() { renders <- struct{}{} })
 
-	renderPass(ctx, func(ctx *core.Context) {
-		hooks.UseIntervalWhile(ctx, false, func() {}, 10*time.Millisecond)
+		renderPass(ctx, func(ctx *core.Context) {
+			hooks.UseIntervalWhile(ctx, false, func() {}, 10*time.Millisecond)
+		})
+		assertQuiet(t, renders, 80*time.Millisecond, "render requested by a paused interval")
+		ctx.Close()
 	})
-	assertQuiet(t, renders, 80*time.Millisecond, "render requested by a paused interval")
-	ctx.Close()
 }
 
 // timeoutWhilePass renders one UseTimeoutWhile with the given activation and
@@ -415,68 +443,78 @@ func timeoutWhilePass(ctx *core.Context, fired chan struct{}, active bool, delay
 // Fires once per activation: not while inactive, once after the rising edge,
 // and not again on later active renders with the same deps.
 func TestUseTimeoutWhileFiresOncePerActivation(t *testing.T) {
-	ctx := core.NewContext()
-	defer ctx.Close()
-	fired := make(chan struct{}, 8)
+	grmobtest.WithFakeClock(t, func(t *testing.T) {
+		ctx := core.NewContext()
+		defer ctx.Close()
+		fired := make(chan struct{}, 8)
 
-	timeoutWhilePass(ctx, fired, false, 10*time.Millisecond)
-	assertQuiet(t, fired, 60*time.Millisecond, "fire while inactive")
+		timeoutWhilePass(ctx, fired, false, 10*time.Millisecond)
+		assertQuiet(t, fired, 60*time.Millisecond, "fire while inactive")
 
-	timeoutWhilePass(ctx, fired, true, 10*time.Millisecond)
-	awaitSignal(t, fired, "fire after activation")
+		timeoutWhilePass(ctx, fired, true, 10*time.Millisecond)
+		awaitSignal(t, fired, "fire after activation")
 
-	timeoutWhilePass(ctx, fired, true, 10*time.Millisecond)
-	assertQuiet(t, fired, 60*time.Millisecond, "second fire in one activation")
+		timeoutWhilePass(ctx, fired, true, 10*time.Millisecond)
+		assertQuiet(t, fired, 60*time.Millisecond, "second fire in one activation")
+	})
 }
 
 func TestUseTimeoutWhileDeactivationCancels(t *testing.T) {
-	ctx := core.NewContext()
-	defer ctx.Close()
-	fired := make(chan struct{}, 8)
+	grmobtest.WithFakeClock(t, func(t *testing.T) {
+		ctx := core.NewContext()
+		defer ctx.Close()
+		fired := make(chan struct{}, 8)
 
-	timeoutWhilePass(ctx, fired, true, 40*time.Millisecond)
-	timeoutWhilePass(ctx, fired, false, 40*time.Millisecond)
-	assertQuiet(t, fired, 120*time.Millisecond, "fire after the activation was withdrawn")
+		timeoutWhilePass(ctx, fired, true, 40*time.Millisecond)
+		timeoutWhilePass(ctx, fired, false, 40*time.Millisecond)
+		assertQuiet(t, fired, 120*time.Millisecond, "fire after the activation was withdrawn")
+	})
 }
 
 func TestUseTimeoutWhileRearmsOnTheNextActivation(t *testing.T) {
-	ctx := core.NewContext()
-	defer ctx.Close()
-	fired := make(chan struct{}, 8)
+	grmobtest.WithFakeClock(t, func(t *testing.T) {
+		ctx := core.NewContext()
+		defer ctx.Close()
+		fired := make(chan struct{}, 8)
 
-	timeoutWhilePass(ctx, fired, true, 10*time.Millisecond)
-	awaitSignal(t, fired, "first activation")
-	timeoutWhilePass(ctx, fired, false, 10*time.Millisecond)
-	timeoutWhilePass(ctx, fired, true, 10*time.Millisecond)
-	awaitSignal(t, fired, "second activation")
+		timeoutWhilePass(ctx, fired, true, 10*time.Millisecond)
+		awaitSignal(t, fired, "first activation")
+		timeoutWhilePass(ctx, fired, false, 10*time.Millisecond)
+		timeoutWhilePass(ctx, fired, true, 10*time.Millisecond)
+		awaitSignal(t, fired, "second activation")
+	})
 }
 
 // A deps change while active restarts the delay: the pending fire for the old
 // deps is dropped and exactly one fire follows for the new ones.
 func TestUseTimeoutWhileDepsChangeRestarts(t *testing.T) {
-	ctx := core.NewContext()
-	defer ctx.Close()
-	fired := make(chan struct{}, 8)
+	grmobtest.WithFakeClock(t, func(t *testing.T) {
+		ctx := core.NewContext()
+		defer ctx.Close()
+		fired := make(chan struct{}, 8)
 
-	timeoutWhilePass(ctx, fired, true, 60*time.Millisecond, "first")
-	time.Sleep(30 * time.Millisecond)
-	timeoutWhilePass(ctx, fired, true, 60*time.Millisecond, "second")
-	// The original deadline passes 30ms from here; the restarted one at 60ms.
-	assertQuiet(t, fired, 45*time.Millisecond, "fire on the superseded deadline")
-	awaitSignal(t, fired, "fire for the new deps")
-	assertQuiet(t, fired, 90*time.Millisecond, "a second fire for one deps value")
+		timeoutWhilePass(ctx, fired, true, 60*time.Millisecond, "first")
+		time.Sleep(30 * time.Millisecond)
+		timeoutWhilePass(ctx, fired, true, 60*time.Millisecond, "second")
+		// The original deadline passes 30ms from here; the restarted one at 60ms.
+		assertQuiet(t, fired, 45*time.Millisecond, "fire on the superseded deadline")
+		awaitSignal(t, fired, "fire for the new deps")
+		assertQuiet(t, fired, 90*time.Millisecond, "a second fire for one deps value")
+	})
 }
 
 func TestUseTimeoutWhileCancelledByClose(t *testing.T) {
-	ctx := core.NewContext()
-	fired := make(chan struct{}, 8)
+	grmobtest.WithFakeClock(t, func(t *testing.T) {
+		ctx := core.NewContext()
+		fired := make(chan struct{}, 8)
 
-	timeoutWhilePass(ctx, fired, true, 40*time.Millisecond)
-	ctx.Close()
-	assertQuiet(t, fired, 120*time.Millisecond, "fire after Close")
+		timeoutWhilePass(ctx, fired, true, 40*time.Millisecond)
+		ctx.Close()
+		assertQuiet(t, fired, 120*time.Millisecond, "fire after Close")
 
-	// Drain, not terminal: a re-mount over the same context arms again.
-	timeoutWhilePass(ctx, fired, true, 10*time.Millisecond)
-	awaitSignal(t, fired, "fire after re-mount")
-	ctx.Close()
+		// Drain, not terminal: a re-mount over the same context arms again.
+		timeoutWhilePass(ctx, fired, true, 10*time.Millisecond)
+		awaitSignal(t, fired, "fire after re-mount")
+		ctx.Close()
+	})
 }

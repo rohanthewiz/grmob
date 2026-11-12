@@ -19,6 +19,12 @@ import (
 // it. Polling the tree rather than sleeping a fixed interval keeps the pass
 // count honest with debug mode — every poll is an audited render — and keeps
 // the test as fast as the demo, not as slow as a worst-case sleep.
+//
+// The timer tests below run inside grmobtest.WithFakeClock, so the deadline,
+// the polls and the lesson's own ticker all read the bubble's fake clock: a
+// one-second tick costs no real second, and a loaded machine cannot make the
+// tick late. They took about 4.9 s of real time between them before; now
+// they take milliseconds.
 func awaitText(t *testing.T, app *grmobtest.Driver, sub string) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
@@ -33,86 +39,92 @@ func awaitText(t *testing.T, app *grmobtest.Driver, sub string) {
 // --- 3.1 The clock --------------------------------------------------------
 
 func TestClockDemoTicksAndPauses(t *testing.T) {
-	app := newApp(t)
-	openLesson(t, app, "The clock: UseInterval")
+	grmobtest.WithFakeClock(t, func(t *testing.T) {
+		app := newApp(t)
+		openLesson(t, app, "The clock: UseInterval")
 
-	if !grmobtest.HasText(app.Tree(), "0 s") {
-		t.Fatal("the clock should mount at 0 s")
-	}
-	awaitText(t, app, "1 s") // one real tick proves the interval → Set → render loop
+		if !grmobtest.HasText(app.Tree(), "0 s") {
+			t.Fatal("the clock should mount at 0 s")
+		}
+		awaitText(t, app, "1 s") // one tick, on the bubble's fake clock, proves the interval → Set → render loop
 
-	// Pausing flips state the next tick's closure will read — the structural
-	// evidence (the paused caption) is immediate, no second tick needed.
-	toggleCheckbox(t, app, 0, true)
-	if !hasTextContaining(app.Tree(), "Paused") {
-		t.Fatal("pausing should reveal the paused caption")
-	}
-	grmobtest.NoConcerns(t)
+		// Pausing flips state the next tick's closure will read — the structural
+		// evidence (the paused caption) is immediate, no second tick needed.
+		toggleCheckbox(t, app, 0, true)
+		if !hasTextContaining(app.Tree(), "Paused") {
+			t.Fatal("pausing should reveal the paused caption")
+		}
+		grmobtest.NoConcerns(t)
+	})
 }
 
 // --- 3.2 The timeout ------------------------------------------------------
 
 func TestTimeoutDemoFiresOnceAndStaysFired(t *testing.T) {
-	app := newApp(t)
-	openLesson(t, app, "Once, later: UseTimeout")
+	grmobtest.WithFakeClock(t, func(t *testing.T) {
+		app := newApp(t)
+		openLesson(t, app, "Once, later: UseTimeout")
 
-	if !hasTextContaining(app.Tree(), "Nothing yet") {
-		t.Fatal("the timeout demo should open on its pending caption")
-	}
-	awaitText(t, app, "Right on time")
+		if !hasTextContaining(app.Tree(), "Nothing yet") {
+			t.Fatal("the timeout demo should open on its pending caption")
+		}
+		awaitText(t, app, "Right on time")
 
-	// Renders after the fire must not re-arm the slot: poke twice and the
-	// fired card must still be there (a re-armed timer would flip the demo
-	// back to "Nothing yet" until it fired again).
-	app.Tap("Poke a render")
-	app.Tap("Poke a render")
-	cur := app.Tree()
-	if !hasTextContaining(cur, "renders poked: 2") {
-		t.Fatal("both pokes should be counted")
-	}
-	if !hasTextContaining(cur, "Right on time") || hasTextContaining(cur, "Nothing yet") {
-		t.Fatal("poking renders must not re-arm the fired timeout")
-	}
-	grmobtest.NoConcerns(t)
+		// Renders after the fire must not re-arm the slot: poke twice and the
+		// fired card must still be there (a re-armed timer would flip the demo
+		// back to "Nothing yet" until it fired again).
+		app.Tap("Poke a render")
+		app.Tap("Poke a render")
+		cur := app.Tree()
+		if !hasTextContaining(cur, "renders poked: 2") {
+			t.Fatal("both pokes should be counted")
+		}
+		if !hasTextContaining(cur, "Right on time") || hasTextContaining(cur, "Nothing yet") {
+			t.Fatal("poking renders must not re-arm the fired timeout")
+		}
+		grmobtest.NoConcerns(t)
+	})
 }
 
 // --- 3.3 Effects ----------------------------------------------------------
 
 func TestEffectDemoFetchesOnMountAndOnDepsChange(t *testing.T) {
-	app := newApp(t)
-	openLesson(t, app, "Effects: UseEffect")
+	grmobtest.WithFakeClock(t, func(t *testing.T) {
+		app := newApp(t)
+		openLesson(t, app, "Effects: UseEffect")
 
-	// Mount: both effects run — the no-deps one flips the mounted line, the
-	// dep'd one delivers Ziggy's profile after the simulated latency.
-	awaitText(t, app, "digs tunnels")
-	cur := app.Tree()
-	if !hasTextContaining(cur, "fetch effect runs: 1") {
-		t.Fatal("the mount fetch should be counted exactly once")
-	}
-	if !hasTextContaining(cur, "ran once, at mount") {
-		t.Fatal("the no-deps effect should have marked the mount")
-	}
+		// Mount: both effects run — the no-deps one flips the mounted line, the
+		// dep'd one delivers Ziggy's profile after the simulated latency.
+		awaitText(t, app, "digs tunnels")
+		cur := app.Tree()
+		if !hasTextContaining(cur, "fetch effect runs: 1") {
+			t.Fatal("the mount fetch should be counted exactly once")
+		}
+		if !hasTextContaining(cur, "ran once, at mount") {
+			t.Fatal("the no-deps effect should have marked the mount")
+		}
 
-	// Changing the dep re-runs the effect: the loading caption derives from
-	// got.id != sel, so it shows immediately, then the fetch lands.
-	app.Tap("Pip")
-	if !hasTextContaining(app.Tree(), "fetching Pip's profile") {
-		t.Fatal("switching gophers should derive a loading caption")
-	}
-	awaitText(t, app, "ships the largest diffs")
-	if !hasTextContaining(app.Tree(), "fetch effect runs: 2") {
-		t.Fatal("the dep change should have re-run the fetch once")
-	}
+		// Changing the dep re-runs the effect: the loading caption derives from
+		// got.id != sel, so it shows immediately, then the fetch lands.
+		app.Tap("Pip")
+		if !hasTextContaining(app.Tree(), "fetching Pip's profile") {
+			t.Fatal("switching gophers should derive a loading caption")
+		}
+		awaitText(t, app, "ships the largest diffs")
+		if !hasTextContaining(app.Tree(), "fetch effect runs: 2") {
+			t.Fatal("the dep change should have re-run the fetch once")
+		}
 
-	// Re-selecting the same gopher re-renders with an unchanged dep — the
-	// effect must not run again. Give a wrongly re-run effect enough time to
-	// have landed (its own delay plus margin) before reading the count.
-	app.Tap("Pip")
-	time.Sleep(effectFetchDelay + 250*time.Millisecond)
-	if !hasTextContaining(app.Tree(), "fetch effect runs: 2") {
-		t.Fatal("an unchanged dep must not re-run the effect")
-	}
-	grmobtest.NoConcerns(t)
+		// Re-selecting the same gopher re-renders with an unchanged dep — the
+		// effect must not run again. Give a wrongly re-run effect enough time to
+		// have landed (its own delay plus margin) before reading the count.
+		app.Tap("Pip")
+		time.Sleep(effectFetchDelay + 250*time.Millisecond)
+		if !hasTextContaining(app.Tree(), "fetch effect runs: 2") {
+			t.Fatal("an unchanged dep must not re-run the effect")
+		}
+		grmobtest.NoConcerns(t)
+	})
 }
 
 // --- 3.4 Memoization ------------------------------------------------------

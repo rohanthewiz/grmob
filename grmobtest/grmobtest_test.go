@@ -2,9 +2,10 @@ package grmobtest
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
-	"testing/synctest"
 	"time"
 
 	"github.com/rohanthewiz/grmob/core"
@@ -14,6 +15,53 @@ import (
 func TestMain(m *testing.M) {
 	core.SetDebugMode(true)
 	m.Run()
+}
+
+// runawayEnv makes the test binary, run again as a child, host a bubble that
+// never settles (see TestARunawayBubbleFailsFastAndNamesTheTest).
+const runawayEnv = "GRMOBTEST_RUNAWAY_CHILD"
+
+// The child half: the shape a broken Close gives a hook's test, a drain that
+// waits for quiet while a ticker nothing stopped keeps it from coming. It
+// must not return; the watchdog's panic is what ends it.
+func TestRunawayBubbleChild(t *testing.T) {
+	if os.Getenv(runawayEnv) != "1" {
+		t.Skip("run only as the child of TestARunawayBubbleFailsFastAndNamesTheTest")
+	}
+	SettleLimit = 300 * time.Millisecond
+	WithFakeClock(t, func(t *testing.T) {
+		tick := time.NewTicker(10 * time.Millisecond)
+		for {
+			select {
+			case <-tick.C:
+				continue
+			case <-time.After(50 * time.Millisecond):
+			}
+			break
+		}
+		tick.Stop()
+	})
+	t.Fatal("the drain went quiet with the ticker still running")
+}
+
+// A bubble that never settles is a fast failure that names its test, not a
+// hang until go test's timeout. Run in a child process because the failure
+// is a panic that ends the binary.
+func TestARunawayBubbleFailsFastAndNamesTheTest(t *testing.T) {
+	cmd := exec.Command(os.Args[0], "-test.run=^TestRunawayBubbleChild$", "-test.count=1")
+	cmd.Env = append(os.Environ(), runawayEnv+"=1")
+	start := time.Now()
+	out, err := cmd.CombinedOutput()
+	took := time.Since(start)
+	if err == nil {
+		t.Fatalf("the child passed; a runaway bubble must fail:\n%s", out)
+	}
+	if !strings.Contains(string(out), "TestRunawayBubbleChild's bubble did not settle") {
+		t.Fatalf("the child failed without the watchdog's message:\n%s", out)
+	}
+	if took > 20*time.Second {
+		t.Fatalf("the child took %v to fail; the watchdog is set to 300ms", took)
+	}
 }
 
 // demo is one screen with every control the Driver has a verb for, plus a
@@ -69,10 +117,10 @@ func TestTheDriverTapsTypesTogglesAndReads(t *testing.T) {
 	app.NoConcerns()
 }
 
-// AwaitText waits on the clock the app's timers run on, so inside a synctest
-// bubble a 300 ms timeout costs no real time.
+// AwaitText waits on the clock the app's timers run on, so inside a
+// WithFakeClock bubble a 300 ms timeout costs no real time.
 func TestAwaitTextWaitsForATimerOnTheBubblesClock(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
+	WithFakeClock(t, func(t *testing.T) {
 		app := New(t, demo)
 		if !app.HasText("Timer waiting") {
 			t.Fatal("the timer fired before it was due")

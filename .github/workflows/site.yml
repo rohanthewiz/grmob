@@ -1,18 +1,37 @@
 # Publishes the interactive tutorial (examples/tutorial, built for the
 # browser) to GitHub Pages: https://rohanthewiz.github.io/grmob/
 #
-# The gate before deploying is the tutorial's own test suite plus the JS
-# runtime's transcript replay — the two checks that can break the site
-# specifically. The full release gate (gofmt, vet, -race across every package,
-# both natives) stays in ci.yml; duplicating it here would only slow the
-# deploy without guarding anything the site depends on.
+# # The gate is CI's run of the same commit
+#
+# A deploy follows a green CI run of a push to master (workflow_run), and
+# checks out exactly the commit that run verified. CI's Go job already runs
+# the tutorial's tests (under -race) and wasm/verify/run.sh, the two checks
+# that can break the site specifically, so this workflow no longer repeats
+# them: it used to, in parallel with CI, which cost about two minutes of
+# duplicate work per push and let a deploy go out while CI's other jobs were
+# still red.
+#
+#   push to master ──▶ CI ──(completed, success, event push)──▶ site: deploy
+#   workflow_dispatch ─────────────────────────▶ site: verify ──▶ deploy
+#
+# A manual dispatch has no CI run to lean on, so it keeps the old gate (the
+# tutorial's tests and the runtime replay) before deploying.
+#
+# The conditions on the run are not decoration. workflow_run also fires for
+# CI's pull-request and tag runs, and a fork's pull request can come from a
+# branch named master, so the deploy requires event == 'push' and the
+# branch filter both. The checkout pins head_sha because the default ref of
+# a workflow_run is the default branch's tip, which may already be a newer,
+# unverified commit.
 #
 # Requires Pages to be enabled with source = "GitHub Actions"
 # (Settings → Pages → Build and deployment).
 name: site
 
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [master]
   workflow_dispatch:
 
@@ -28,6 +47,8 @@ concurrency:
 
 jobs:
   verify:
+    # Only a manual deploy runs this; a workflow_run deploy was gated by CI.
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -48,6 +69,16 @@ jobs:
 
   deploy:
     needs: verify
+    # verify is skipped on a workflow_run, and a job whose need was skipped
+    # is skipped too unless its condition says otherwise; !cancelled() lets
+    # the two explicit gates below decide instead.
+    if: >-
+      !cancelled() && (
+        (github.event_name == 'workflow_dispatch' && needs.verify.result == 'success') ||
+        (github.event_name == 'workflow_run' &&
+         github.event.workflow_run.conclusion == 'success' &&
+         github.event.workflow_run.event == 'push')
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:
@@ -55,6 +86,10 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The commit CI verified; empty on a manual dispatch, which then
+          # checks out the dispatched ref as before.
+          ref: ${{ github.event.workflow_run.head_sha }}
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod

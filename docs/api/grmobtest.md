@@ -49,7 +49,7 @@ NoConcerns fails the test when debug mode is off, rather than passing with nothi
 
 ## Index
 
-- [Variables](#variables) — `AwaitTimeout`
+- [Variables](#variables) — `AwaitTimeout`, `SettleLimit`
 - [`func Button`](#func-button)
 - [`func Find`](#func-find)
 - [`func FindAll`](#func-findall)
@@ -60,6 +60,7 @@ NoConcerns fails the test when debug mode is off, rather than passing with nothi
 - [`func Parse`](#func-parse)
 - [`func Reset`](#func-reset)
 - [`func Shows`](#func-shows)
+- [`func WithFakeClock`](#func-withfakeclock)
 - [`type Driver`](#type-driver)
     - [`func New`](#func-new)
     - [`func NewWithContext`](#func-newwithcontext)
@@ -88,6 +89,14 @@ var AwaitTimeout = 5 * time.Second
 ```
 
 <small>[grmobtest/grmobtest.go:88](https://github.com/rohanthewiz/grmob/blob/master/grmobtest/grmobtest.go#L88)</small>
+
+SettleLimit is how much real time WithFakeClock gives a bubble before it decides the bubble will never settle. A bubble that works settles in milliseconds of real time whatever its fake clock reads, so this only has to outlast a slow, loaded CI machine running under -race.
+
+```go
+var SettleLimit = 30 * time.Second
+```
+
+<small>[grmobtest/clock.go:14](https://github.com/rohanthewiz/grmob/blob/master/grmobtest/clock.go#L14)</small>
 
 ## Functions
 
@@ -203,6 +212,28 @@ Every string prop is searched, because "on screen" is not one node type: a test 
 A code block (core.TextGrid) draws a line as several coloured runs, so a GridRow is matched on its runs joined; a match spanning two lines is not a match, as it would not be for a Text.
 
 <small>[grmobtest/tree.go:80](https://github.com/rohanthewiz/grmob/blob/master/grmobtest/tree.go#L80)</small>
+
+### func WithFakeClock
+
+```go
+func WithFakeClock(t *testing.T, fn func(t *testing.T))
+```
+
+WithFakeClock runs fn in a testing/synctest bubble, where time is fake: time.Sleep, timers, tickers and every hook built on them (UseInterval, UseTimeout, UseDebounce, UseNow, AwaitText's polling) wait on a clock that jumps ahead whenever every goroutine in the bubble is waiting. A test of a two-second timeout costs no real time, and cannot flake on a slow machine.
+
+	grmobtest.WithFakeClock(t, func(t *testing.T) {
+		app := grmobtest.New(t, App)  // inside: the app's timers are fake too
+		app.Tap("Start")
+		app.AwaitText("Done")         // 2 s of fake time, ~0 s of real time
+	})
+
+Make the Driver inside fn, as above: goroutines started outside the bubble (a Driver made before it, and its timers) keep real time.
+
+#### Why not synctest.Test directly
+
+It is synctest.Test plus a watchdog. In a bubble, a wait that never ends is a hot loop rather than a stall, because the fake clock jumps to the next timer the moment everything is waiting. The case that matters is a test that drains a channel until it goes quiet while a ticker nothing stopped keeps feeding it: a regression in a hook's Close path does exactly that to the hook's own test (UseInterval's, for one). Under bare synctest.Test that spins until go test's timeout, ten minutes by default; here it is a panic after SettleLimit of real time that names the test and ends the binary with every goroutine's stack, the runaway ticker's among them. (A goroutine still blocked when fn returns is synctest's own "deadlock" panic, at once; the watchdog is for the bubble that never gets that far.)
+
+<small>[grmobtest/clock.go:45](https://github.com/rohanthewiz/grmob/blob/master/grmobtest/clock.go#L45)</small>
 
 ## Types
 
