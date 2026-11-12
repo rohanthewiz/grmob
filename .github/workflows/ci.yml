@@ -93,7 +93,16 @@ jobs:
         # additionally instruments them, so it is run alone rather than after
         # a duplicate non-race pass. The engine dispatches callbacks and timer
         # pushes from different goroutines, which is exactly what -race is for.
-        run: go test -race ./...
+        #
+        # -shuffle=on runs each package's tests in a new random order every
+        # time. grmob keeps device records and pending host requests per
+        # process, and two tests once passed only in file order because of
+        # them (a location fix, a todo list); a test that reads another's
+        # leftovers now fails here rather than on the day the files are
+        # reordered. The seed is printed with the output (-test.shuffle N),
+        # so a failing order reruns with `go test -shuffle=N ./<pkg>`.
+        # grmobtest.Reset is the tool for a test that needs a fresh process.
+        run: go test -race -shuffle=on ./...
 
       - name: Build the docs server
         # cmd/docs is a module of its own — deliberately, so that gkdocs and

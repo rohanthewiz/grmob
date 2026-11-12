@@ -43,8 +43,28 @@ func TestMain(m *testing.M) {
 // so these tests exercise exactly the call sequence the native shells make:
 // read the current tree, dispatch a callback ID found in it, assert on the
 // patches (or the next full tree). The bridge is a process-wide singleton, so
-// the whole user journey lives in one ordered test rather than independent
-// tests that would fight over shared state.
+// the whole user journey lives in one test rather than in steps that would
+// fight over shared state, and each journey begins with freshApp.
+
+// freshApp puts the bridge where a first launch has it: an empty data
+// directory of the test's own and a newly registered Context, so the test
+// reads no rows and no state another test left behind, whatever order go
+// test -shuffle runs them in.
+//
+// Each step is needed. The store is closed first so the old engine does not
+// stay open on the directory it was given. The new directory is what makes
+// the store empty: openStore notices the changed path and opens there.
+// Register closes the previous app and starts one whose NewState slots are
+// unset, which drops its in-memory rows. grmobtest.Reset then clears the
+// process-wide records and the concern collector, after the old app has
+// closed and before the new one renders, which is the window its doc names.
+func freshApp(t *testing.T) {
+	t.Helper()
+	closeStore()
+	mobile.SetDataDir(t.TempDir())
+	mobile.Register(core.NewContext(), App)
+	grmobtest.Reset()
+}
 
 // mustCallback locates a widget in the live tree and returns the named
 // callback ID, failing the test if the widget or the prop is missing.
@@ -70,9 +90,10 @@ func addTodo(t *testing.T, title string) {
 }
 
 func TestTodoLifecycle(t *testing.T) {
-	// The concern collector is process-wide like the mode switch, so clear it
-	// first: without this, a finding from an earlier test would fail this one.
-	core.ClearConcerns()
+	// The journey starts from an empty list. It used to rely on running
+	// first in the package; under -shuffle it can follow TestTodoPersistence,
+	// whose two rows were then still on the screen.
+	freshApp(t)
 	defer grmobtest.NoConcerns(t)
 
 	initial := mobile.RenderInitial()
@@ -197,15 +218,10 @@ func relaunch(t *testing.T) {
 }
 
 func TestTodoPersistence(t *testing.T) {
-	core.ClearConcerns()
+	// A fresh directory and Context isolate this test from whatever another
+	// test left in the store or in memory; see freshApp.
+	freshApp(t)
 	defer grmobtest.NoConcerns(t)
-
-	// A fresh directory isolates this test from whatever TestTodoLifecycle
-	// left in the TestMain-wide store; openStore notices the changed path
-	// and reopens there. The fresh Register drops the previous test's
-	// in-memory state for the same reason.
-	mobile.SetDataDir(t.TempDir())
-	mobile.Register(core.NewContext(), App)
 
 	if tree := mobile.RenderInitial(); !strings.Contains(tree, "No tasks yet") {
 		t.Fatalf("fresh store isn't empty:\n%s", tree)

@@ -11,9 +11,10 @@ import (
 // UseWindow must subscribe once, request a render on every change, and
 // release the subscription when the tree closes.
 func TestUseWindowRequestsRenderOnChangeAndUnsubscribesOnClose(t *testing.T) {
-	// Leave a phone-sized window behind rather than whatever this test
-	// ended on; core's reset is unexported, and nothing else here reads it.
-	t.Cleanup(func() { core.ReceiveWindow(core.Window{Width: 1, Height: 1}) })
+	// The record is process-wide; freshProcessState leaves it as a fresh
+	// process has it, which no hand-written restore here could reach while
+	// core's reset was unexported.
+	freshProcessState(t)
 	ctx := core.NewContext()
 	renders := make(chan struct{}, 16)
 	ctx.OnStateChange(func() { renders <- struct{}{} })

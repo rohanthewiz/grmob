@@ -28,6 +28,7 @@ func recordSensorCommands(t *testing.T) *[]string {
 // UseHeading must start the sensor once, re-render on readings, and — the
 // half that costs battery if it is wrong — release the sensor on close.
 func TestUseHeadingStartsOnceRendersOnReadingsAndStopsOnClose(t *testing.T) {
+	freshProcessState(t)
 	cmds := recordSensorCommands(t)
 	ctx := core.NewContext()
 	renders := make(chan struct{}, 16)
@@ -83,6 +84,7 @@ func TestUseHeadingStartsOnceRendersOnReadingsAndStopsOnClose(t *testing.T) {
 // Two components holding the compass is the case the reference count exists
 // for: the first one to let go must not blind the second.
 func TestTwoConsumersEachHoldTheSensor(t *testing.T) {
+	freshProcessState(t)
 	cmds := recordSensorCommands(t)
 
 	first := core.NewContext()

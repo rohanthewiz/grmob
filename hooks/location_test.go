@@ -31,6 +31,7 @@ func recordLocationCommands(t *testing.T) *[]string {
 // that costs a measurable amount of battery if it is wrong — release it on
 // close.
 func TestUseLocationStartsOnceRendersOnFixesAndStopsOnClose(t *testing.T) {
+	freshProcessState(t)
 	cmds := recordLocationCommands(t)
 	ctx := core.NewContext()
 	renders := make(chan struct{}, 16)
@@ -85,6 +86,7 @@ func TestUseLocationStartsOnceRendersOnFixesAndStopsOnClose(t *testing.T) {
 // Two components holding the GPS is the case the reference count exists for,
 // and the one a plain on/off flag gets wrong silently.
 func TestTwoConsumersEachHoldTheLocationSensor(t *testing.T) {
+	freshProcessState(t)
 	cmds := recordLocationCommands(t)
 
 	first := core.NewContext()
@@ -116,6 +118,7 @@ func TestTwoConsumersEachHoldTheLocationSensor(t *testing.T) {
 // screen with a compass on it must not be holding the GPS, which is the
 // expensive half of that mistake.
 func TestTheLocationHookDoesNotStartTheCompass(t *testing.T) {
+	freshProcessState(t)
 	core.SetSystemEventHandler(func(string, map[string]any) {})
 	t.Cleanup(func() { core.SetSystemEventHandler(nil) })
 
@@ -140,6 +143,7 @@ func TestTheLocationHookDoesNotStartTheCompass(t *testing.T) {
 // else. A test that only counted starts and stops would pass on the broken
 // version.
 func TestUseLocationWhenFollowsTheFlagWithoutMovingTheSlotsBelowIt(t *testing.T) {
+	freshProcessState(t)
 	cmds := recordLocationCommands(t)
 	ctx := core.NewContext()
 
@@ -203,6 +207,7 @@ func TestUseLocationWhenFollowsTheFlagWithoutMovingTheSlotsBelowIt(t *testing.T)
 // second time — which on a refcounted sensor would take it away from a sibling
 // that is still holding it, and is the reason release is idempotent.
 func TestClosingAfterTheFlagWentFalseDoesNotStopTheSensorTwice(t *testing.T) {
+	freshProcessState(t)
 	cmds := recordLocationCommands(t)
 
 	holder := core.NewContext()
@@ -236,6 +241,7 @@ func TestClosingAfterTheFlagWentFalseDoesNotStopTheSensorTwice(t *testing.T) {
 // assumed, because the subscription moved into the record when the two were
 // merged and a dropped RequestRender is invisible to every count above.
 func TestUseLocationWhenRendersOnAFix(t *testing.T) {
+	freshProcessState(t)
 	recordLocationCommands(t)
 	ctx := core.NewContext()
 	renders := make(chan struct{}, 16)

@@ -11,6 +11,7 @@ import (
 // UseLifecycle must subscribe once, request a render on every transition,
 // and release the subscription when the tree closes.
 func TestUseLifecycleRequestsRenderOnTransitionAndUnsubscribesOnClose(t *testing.T) {
+	freshProcessState(t)
 	t.Cleanup(func() { core.ReceiveLifecycle(core.LifecycleActive) })
 	ctx := core.NewContext()
 	renders := make(chan struct{}, 16)

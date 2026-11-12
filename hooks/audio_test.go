@@ -11,6 +11,7 @@ import (
 // UseAudio must subscribe once, request a render on every status change,
 // and release the subscription when the tree closes.
 func TestUseAudioRequestsRenderOnStatusAndUnsubscribesOnClose(t *testing.T) {
+	freshProcessState(t)
 	t.Cleanup(core.AudioStop)
 	ctx := core.NewContext()
 	renders := make(chan struct{}, 16)

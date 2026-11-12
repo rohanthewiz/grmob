@@ -39,6 +39,7 @@ func recordPermissionCommands(t *testing.T) *[]string {
 // the user did nothing to cause, which is the surest route to a permanent
 // refusal.
 func TestUsePermissionChecksOnceAndNeverRequests(t *testing.T) {
+	freshProcessState(t)
 	cmds := recordPermissionCommands(t)
 	ctx := core.NewContext()
 	renders := make(chan struct{}, 16)
@@ -78,6 +79,7 @@ func TestUsePermissionChecksOnceAndNeverRequests(t *testing.T) {
 // permissions renders twice per answer, and a screen asking about one renders
 // for answers it has no interest in at all.
 func TestUsePermissionIgnoresOtherPermissionsAnswers(t *testing.T) {
+	freshProcessState(t)
 	recordPermissionCommands(t)
 	ctx := core.NewContext()
 	renders := make(chan struct{}, 16)
@@ -94,6 +96,7 @@ func TestUsePermissionIgnoresOtherPermissionsAnswers(t *testing.T) {
 // After a close the tree stays renderable and a re-mount must be able to
 // subscribe again — the same drain semantics UseInterval and UseHeading carry.
 func TestUsePermissionSubscribesAgainAfterAClose(t *testing.T) {
+	freshProcessState(t)
 	cmds := recordPermissionCommands(t)
 	ctx := core.NewContext()
 	body := func(ctx *core.Context) { hooks.UsePermission(ctx, permission.Location) }
@@ -112,6 +115,7 @@ func TestUsePermissionSubscribesAgainAfterAClose(t *testing.T) {
 // on Unknown, so a permission-gated screen under test takes the "cannot do
 // this" branch instead of drawing its spinner forever.
 func TestUsePermissionResolvesImmediatelyWithNoHost(t *testing.T) {
+	freshProcessState(t)
 	core.SetSystemEventHandler(nil)
 	ctx := core.NewContext()
 
@@ -139,6 +143,7 @@ func resumeApp() {
 // The bug this hook exists for: the user is refused, opens Settings, grants
 // it, and comes back to a screen still saying the camera is off.
 func TestUsePermissionLiveRechecksOnForeground(t *testing.T) {
+	freshProcessState(t)
 	cmds := recordPermissionCommands(t)
 	ctx := core.NewContext()
 	t.Cleanup(ctx.Close)
@@ -163,6 +168,7 @@ func TestUsePermissionLiveRechecksOnForeground(t *testing.T) {
 // A resume must never prompt. The user did nothing to ask for a dialog, and a
 // dialog they did not expect is the one they refuse.
 func TestUsePermissionLiveNeverRequests(t *testing.T) {
+	freshProcessState(t)
 	cmds := recordPermissionCommands(t)
 	ctx := core.NewContext()
 	t.Cleanup(ctx.Close)
@@ -183,6 +189,7 @@ func TestUsePermissionLiveNeverRequests(t *testing.T) {
 // The watch is released with the tree, and a re-mount takes it again — the
 // same drain semantics every other hook here carries.
 func TestUsePermissionLiveReleasesItsWatchOnClose(t *testing.T) {
+	freshProcessState(t)
 	recordPermissionCommands(t)
 	ctx := core.NewContext()
 	body := func(ctx *core.Context) { hooks.UsePermissionLive(ctx, permission.Storage) }
@@ -208,6 +215,7 @@ func TestUsePermissionLiveReleasesItsWatchOnClose(t *testing.T) {
 // Two screens watching the same kind is one check per resume, which is the
 // objection that used to keep this hook from existing.
 func TestTwoLiveScreensAreOneCheckPerResume(t *testing.T) {
+	freshProcessState(t)
 	cmds := recordPermissionCommands(t)
 	ctx := core.NewContext()
 	t.Cleanup(ctx.Close)
@@ -230,6 +238,7 @@ func TestTwoLiveScreensAreOneCheckPerResume(t *testing.T) {
 // other's slot. A component using both would otherwise have one of them
 // believe it had already started.
 func TestUsePermissionAndUsePermissionLiveDoNotShareASlot(t *testing.T) {
+	freshProcessState(t)
 	cmds := recordPermissionCommands(t)
 	ctx := core.NewContext()
 	t.Cleanup(ctx.Close)

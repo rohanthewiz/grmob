@@ -5,8 +5,26 @@ import (
 	"time"
 
 	"github.com/rohanthewiz/grmob/core"
+	"github.com/rohanthewiz/grmob/grmobtest"
 	"github.com/rohanthewiz/grmob/hooks"
 )
+
+// freshProcessState starts the test from a fresh process's device records
+// (window, lifecycle, audio, location, heading), pending host requests and
+// permission record, and leaves them that way when it ends.
+//
+// The device hooks read records that outlive any one Context, so a fix one
+// test delivered was the "current location" of the next test's first render.
+// In file order nothing noticed; under go test -shuffle (seeds 2 and 5),
+// TestUseLocationStartsOnceRendersOnFixesAndStopsOnClose read a fix another
+// location test had delivered and reported one before any arrived. The reset at
+// the end is registered first, so it runs after every Close the test's own
+// cleanups make, when no hook of the test's is still subscribed.
+func freshProcessState(t *testing.T) {
+	t.Helper()
+	grmobtest.Reset()
+	t.Cleanup(grmobtest.Reset)
+}
 
 // awaitSignal waits for one value on ch or fails the test. The generous
 // timeout only bounds a hang; passing runs take a few milliseconds.
