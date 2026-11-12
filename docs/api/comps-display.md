@@ -1020,7 +1020,7 @@ BibleVerse is a passage of scripture on a card: the text, the reference under it
 
 #### Where the text comes from
 
-The caller. The widget fetches nothing: comps is pure view code and is compiled into every browser build, where a network client would cost size for apps that never quote a verse. The blb package does the fetching, from Blue Letter Bible's ScriptTagger feed, and returns the reference, the numbered verses and the passage's address; the call above is the whole integration. Fetch in a goroutine or an effect, set Loading while it runs, and Error if it fails.
+The caller. The widget fetches nothing: comps is pure view code and is compiled into every browser build, where a network client would cost size for apps that never quote a verse. The blb package does the fetching, from Blue Letter Bible's ScriptTagger feed, and returns the reference, the numbered verses and the passage's address; the call above is the whole integration. hooks.UseAsync is the natural driver: its Loading, Err and Reload map onto Loading, Error and OnRetry, and it cancels a fetch whose reference has changed. A goroutine or an effect that sets Loading while it runs and Error if it fails does the same by hand.
 
 Text is for a passage that arrives as one string (a stored quote, another source). When Verses has any lines it wins, as a slot wins over a simple field elsewhere in comps.
 
@@ -1047,7 +1047,7 @@ Everything is the caller's, so BibleVerse may be rendered conditionally.
 	Error        Typography.Body, Colors.Error
 	Link         as Link: Colors.Primary's ink tone
 
-<small>[comps/bible_verse.go:94](https://github.com/rohanthewiz/grmob/blob/master/comps/bible_verse.go#L94)</small>
+<small>[comps/bible_verse.go:96](https://github.com/rohanthewiz/grmob/blob/master/comps/bible_verse.go#L96)</small>
 
 #### func (BibleVerse) Render
 
@@ -1057,7 +1057,7 @@ func (v BibleVerse) Render(ctx *core.Context) *core.Node
 
 Render draws the card. It takes no hook slot.
 
-<small>[comps/bible_verse.go:141](https://github.com/rohanthewiz/grmob/blob/master/comps/bible_verse.go#L141)</small>
+<small>[comps/bible_verse.go:143](https://github.com/rohanthewiz/grmob/blob/master/comps/bible_verse.go#L143)</small>
 
 ### type BibleVerseLine
 

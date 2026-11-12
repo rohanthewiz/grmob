@@ -18,10 +18,11 @@
 //
 // # Dependencies
 //
-//	UseEffect(ctx, fn)             every pass
-//	UseEffect(ctx, fn, a, b)       when a or b changes from the last pass
-//	UseEffect(ctx, fn)             with no deps and a Close registration:
-//	                               the once-and-teardown shape
+//	UseEffect(ctx, fn)             once, when the slot first mounts
+//	UseEffect(ctx, fn, a, b)       on mount, and when a or b changes from the
+//	                               last pass
+//	UseAsync(ctx, fetch, a, b)     the same schedule, with the run before it
+//	                               cancelled and its answer dropped
 //
 // Comparison is by value equality on the dependency list. A dependency that is
 // a function value or a freshly built slice compares unequal every pass, which
@@ -35,4 +36,13 @@
 // sees current state rather than the state of the pass that started the timer.
 // Both stop themselves when the context closes, which is what makes a ticker
 // inside a screen safe to leave to the navigator.
+//
+// # Async work
+//
+// [UseEffect] runs its function on a goroutine and forgets it: nothing
+// cancels a fetch whose deps have moved on, and a slow answer for the old
+// deps can land after a fast one for the new. [UseAsync] is the fetch shape
+// with both handled. It hands fn a context that is cancelled when the deps
+// change, on Reload and on close, keeps only the latest run's answer, and
+// returns Data, Err and Loading for the screen to branch on.
 package hooks

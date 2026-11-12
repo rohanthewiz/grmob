@@ -254,6 +254,7 @@ hooks.UseEffect(ctx, func() {
 					"Effects run on their own goroutine — never block a render, never touch the tree; communicate through Set.",
 					"Capture dep values at render time; by the time the effect runs, state may have moved on.",
 					"Loading UI falls out of data: store what the fetch was for, and derive 'loading' by comparing it to the current selection.",
+					"For a real fetch, hooks.UseAsync does this bookkeeping for you: it cancels the superseded request, drops its late answer, and returns Data, Err, Loading and Reload.",
 				),
 			)
 		},

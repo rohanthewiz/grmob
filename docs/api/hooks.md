@@ -14,10 +14,11 @@ Every hook here occupies one or more of the calling context's slots, and slots a
 
 ## Dependencies
 
-	UseEffect(ctx, fn)             every pass
-	UseEffect(ctx, fn, a, b)       when a or b changes from the last pass
-	UseEffect(ctx, fn)             with no deps and a Close registration:
-	                               the once-and-teardown shape
+	UseEffect(ctx, fn)             once, when the slot first mounts
+	UseEffect(ctx, fn, a, b)       on mount, and when a or b changes from the
+	                               last pass
+	UseAsync(ctx, fetch, a, b)     the same schedule, with the run before it
+	                               cancelled and its answer dropped
 
 Comparison is by value equality on the dependency list. A dependency that is a function value or a freshly built slice compares unequal every pass, which turns a conditional effect into an unconditional one — silently, since the effect still does the right thing, just far more often than intended.
 
@@ -25,8 +26,13 @@ Comparison is by value equality on the dependency list. A dependency that is a f
 
 [UseInterval](#func-useinterval) and [UseTimeout](#func-usetimeout) re-bind their function on every pass, so the callback that eventually fires is the one from the most recent render and sees current state rather than the state of the pass that started the timer. Both stop themselves when the context closes, which is what makes a ticker inside a screen safe to leave to the navigator.
 
+## Async work
+
+[UseEffect](#func-useeffect) runs its function on a goroutine and forgets it: nothing cancels a fetch whose deps have moved on, and a slow answer for the old deps can land after a fast one for the new. [UseAsync](#func-useasync) is the fetch shape with both handled. It hands fn a context that is cancelled when the deps change, on Reload and on close, keeps only the latest run's answer, and returns Data, Err and Loading for the screen to branch on.
+
 ## Index
 
+- [Variables](#variables) — `ErrAsyncPanicked`
 - [`func UseAudio`](#func-useaudio)
 - [`func UseCart`](#func-usecart)
 - [`func UseEffect`](#func-useeffect)
@@ -51,11 +57,23 @@ Comparison is by value equality on the dependency list. A dependency that is a f
     - [`func (AlarmRinger) Ringing`](#func-alarmringer-ringing)
     - [`func (AlarmRinger) Snooze`](#func-alarmringer-snooze)
     - [`func (AlarmRinger) Snoozed`](#func-alarmringer-snoozed)
+- [`type Async`](#type-async)
+    - [`func UseAsync`](#func-useasync)
 - [`type Debouncer`](#type-debouncer)
     - [`func UseDebounce`](#func-usedebounce)
     - [`func (*Debouncer) Call`](#func-debouncer-call)
     - [`func (*Debouncer) Cancel`](#func-debouncer-cancel)
     - [`func (*Debouncer) Pending`](#func-debouncer-pending)
+
+## Variables
+
+ErrAsyncPanicked is the Err of a run whose function panicked. The panic itself is recovered and logged with its stack (and reported as a handler-panic concern under debug mode), as core.Safely does for every hook goroutine; the screen gets an error it can show and a Reload it can offer.
+
+```go
+var ErrAsyncPanicked = errors.New("hooks.UseAsync: the function panicked (the panic and its stack are in the log)")
+```
+
+<small>[hooks/async.go:46](https://github.com/rohanthewiz/grmob/blob/master/hooks/async.go#L46)</small>
 
 ## Functions
 
@@ -115,7 +133,9 @@ UseEffect runs effect when the hook first mounts and again whenever deps change 
 
 The effect runs on its own goroutine so a slow effect cannot stall the render pass; anything it changes via State.Set reaches the screen through the normal RequestRender → push-channel path.
 
-<small>[hooks/effect.go:37](https://github.com/rohanthewiz/grmob/blob/master/hooks/effect.go#L37)</small>
+Nothing stops a running effect: not a deps change, not the tree closing. For a fetch, where a superseded request should be cancelled and its late answer ignored, use UseAsync, which does both.
+
+<small>[hooks/effect.go:41](https://github.com/rohanthewiz/grmob/blob/master/hooks/effect.go#L41)</small>
 
 ### func UseHeading
 
@@ -695,6 +715,69 @@ func (r AlarmRinger) Snoozed() (alarm.Alarm, time.Time, bool)
 Snoozed returns the soonest snoozed alarm and when it will ring again, and whether there is one — for a "Snoozed until 6:39" line.
 
 <small>[hooks/alarms.go:134](https://github.com/rohanthewiz/grmob/blob/master/hooks/alarms.go#L134)</small>
+
+### type Async
+
+```go
+type Async[T any] struct {
+	Data    T
+	Err     error
+	Loading bool
+
+	// Reload starts the work again with the same deps, cancelling a run in
+	// flight. It is safe to call from any goroutine (a handler, a timer, a
+	// pull-to-refresh) and does nothing once the hook's tree has closed. It
+	// clears Err at once, so a Retry button's tap shows Loading rather than
+	// the error it is retrying.
+	Reload func()
+}
+```
+
+Async is what UseAsync returns on each render: the state of the async work for the current deps.
+
+Data and Err describe the last run that finished for these deps; Loading says a newer run is in flight. They change together, so a screen picks one branch per render:
+
+	switch {
+	case a.Err != nil:  // the last run failed (Reload clears it)
+	case a.Loading:     // nothing finished yet, or a reload is running
+	default:            // a.Data is the answer
+	}
+
+Data is kept through a Reload, so a list can stay on screen under a refresh indicator, and dropped when the deps change, because it was the answer to a different question.
+
+<small>[hooks/async.go:28](https://github.com/rohanthewiz/grmob/blob/master/hooks/async.go#L28)</small>
+
+#### func UseAsync
+
+```go
+func UseAsync[T any](ctx *core.Context, fn func(context.Context) (T, error), deps ...any) Async[T]
+```
+
+UseAsync runs fn on its own goroutine when the hook first mounts and again whenever deps change between renders (compared with reflect.DeepEqual, as UseEffect does), and returns where that work stands.
+
+	verse := hooks.UseAsync(ctx, func(c context.Context) (blb.Passage, error) {
+		return client.Passage(c, ref)
+	}, ref)
+
+	comps.BibleVerse{
+		Passage: verse.Data,
+		Loading: verse.Loading,
+		Error:   errText(verse.Err),
+		OnRetry: verse.Reload,
+	}
+
+It is the fetch pattern UseEffect leaves to the caller, done once:
+
+  - fn's context is cancelled when the deps change, on Reload, and when the tree closes (render.Manager.Close, a popped route), so a fetch built on it stops;
+  - only the latest run's outcome is kept: a run that finishes after a newer one started is dropped, whatever order the network answers in;
+  - the outcome reaches the screen with a render request, like any state written off the render pass;
+  - a panic in fn is recovered and logged, and becomes ErrAsyncPanicked.
+
+The first render of a mount already reports Loading, with no extra render.
+
+Capture what fn needs at render time, as with UseEffect: the closure runs later, on another goroutine. A dep is anything fn's answer depends on; a value fn reads but the deps omit will not trigger a new run when it changes.
+
+<small>[hooks/async.go:124](https://github.com/rohanthewiz/grmob/blob/master/hooks/async.go#L124)</small>
 
 ### type Debouncer
 

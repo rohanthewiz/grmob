@@ -131,6 +131,47 @@ hooks.UseEffect(ctx, func() {
 }, userID) // re-runs when userID changes
 ```
 
+Nothing stops an effect once it runs: when `userID` changes mid-fetch, the
+old fetch carries on, and if it answers last it overwrites the new one. For
+a fetch, `UseAsync` handles both.
+
+### `hooks.UseAsync(ctx, fn, deps...)`
+
+Runs `fn(context)` on its own goroutine on mount and whenever `deps` change,
+like `UseEffect`, and returns where the work stands:
+
+```go
+posts := hooks.UseAsync(ctx, func(c context.Context) ([]Post, error) {
+    return api.Posts(c, userID) // c is cancelled if userID changes first
+}, userID)
+
+switch {
+case posts.Err != nil:
+    return errorRow(posts.Err, posts.Reload) // Reload: a Retry button
+case posts.Loading:
+    return comps.Skeleton{Lines: 3}
+default:
+    return postList(posts.Data)
+}
+```
+
+- `fn`'s context is cancelled when the deps change, on `Reload`, and when
+  the tree closes (a popped route, `render.Manager.Close`).
+- Only the latest run's outcome is kept. A run that finishes after a newer
+  one started is dropped, even if it ignored the cancellation.
+- `Data` and `Err` describe the last finished run for the current deps.
+  A deps change clears both, since they answered a different question;
+  `Reload` keeps `Data` (a list can stay up under a refresh) and clears `Err`
+  at once, so a Retry shows `Loading` rather than the error it is retrying.
+- The first render of a mount already reports `Loading`. The outcome arrives
+  with a render request, like any state set off the render pass.
+- A panic in `fn` is recovered and logged, and becomes
+  `hooks.ErrAsyncPanicked`.
+- `Reload` is safe from any goroutine and does nothing after close.
+
+Capture what `fn` needs at render time and list it in `deps`: a value `fn`
+reads that `deps` omit will not start a new run when it changes.
+
 ### `hooks.UseInterval(ctx, fn, interval)`
 
 Runs `fn` on a ticker. Re-renders refresh the callback, so ticks always run

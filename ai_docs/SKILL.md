@@ -289,8 +289,10 @@ siblings.
 ```go
 import "github.com/rohanthewiz/grmob/hooks"
 
-hooks.UseEffect(ctx, fn)                       // every pass
-hooks.UseEffect(ctx, fn, userID)               // when userID changes
+hooks.UseEffect(ctx, fn)                       // once, on mount
+hooks.UseEffect(ctx, fn, userID)               // on mount and when userID changes
+a   := hooks.UseAsync(ctx, fetch, userID)      // a.Data, a.Err, a.Loading, a.Reload;
+                                               // cancels and drops superseded runs
 hooks.UseInterval(ctx, tick, time.Second)      // self-cancelling on close
 hooks.UseTimeout(ctx, fire, 300*time.Millisecond)
 v   := hooks.UseMemo(ctx, expensive, dep)

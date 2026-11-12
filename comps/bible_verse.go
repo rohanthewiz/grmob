@@ -52,8 +52,10 @@ type BibleVerseLine struct {
 // for apps that never quote a verse. The blb package does the fetching, from
 // Blue Letter Bible's ScriptTagger feed, and returns the reference, the
 // numbered verses and the passage's address; the call above is the whole
-// integration. Fetch in a goroutine or an effect, set Loading while it runs,
-// and Error if it fails.
+// integration. hooks.UseAsync is the natural driver: its Loading, Err and
+// Reload map onto Loading, Error and OnRetry, and it cancels a fetch whose
+// reference has changed. A goroutine or an effect that sets Loading while it
+// runs and Error if it fails does the same by hand.
 //
 // Text is for a passage that arrives as one string (a stored quote, another
 // source). When Verses has any lines it wins, as a slot wins over a simple

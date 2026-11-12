@@ -34,6 +34,10 @@ type effectRecord struct {
 // The effect runs on its own goroutine so a slow effect cannot stall the
 // render pass; anything it changes via State.Set reaches the screen through
 // the normal RequestRender → push-channel path.
+//
+// Nothing stops a running effect: not a deps change, not the tree closing.
+// For a fetch, where a superseded request should be cancelled and its late
+// answer ignored, use UseAsync, which does both.
 func UseEffect(ctx *core.Context, effect func(), deps ...any) {
 	// The record is allocated every render but NewState only keeps the first;
 	// Get then returns the slot's live record on this and every later pass.
