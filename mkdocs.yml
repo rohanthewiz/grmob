@@ -100,3 +100,4 @@ nav:
       - mobile: api/mobile.md
       - permission: api/permission.md
       - keystore: api/keystore.md
+      - grmobtest: api/grmobtest.md

@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/rohanthewiz/grmob/core"
-	"github.com/rohanthewiz/grmob/render"
+	"github.com/rohanthewiz/grmob/grmobtest"
 )
 
 // The two-pane layout (split.go). The mode is delivered the way wasm/main.go
@@ -22,17 +22,17 @@ func setLayout(mode string) {
 // the path a live tree takes on the toggle and on a resize. The page's boot
 // sends the mode before the first render instead, which
 // TestAModeSentBeforeTheFirstRenderIsTheFirstFrame covers.
-func newSplitApp(t *testing.T) *render.Manager {
+func newSplitApp(t *testing.T) *grmobtest.Driver {
 	t.Helper()
-	mgr := newApp(t)
-	tree(t, mgr)
+	app := newApp(t)
+	app.Tree()
 	setLayout("split")
-	return mgr
+	return app
 }
 
 // byID finds the node the page's stylesheet would find by this id.
 func byID(root *node, id string) *node {
-	return findNode(root, func(n *node) bool {
+	return grmobtest.Find(root, func(n *node) bool {
 		return n.Style != nil && n.Style.AccessibilityID == id
 	})
 }
@@ -57,20 +57,20 @@ func isDemoPanel(n *node) bool { return strings.HasPrefix(n.Key, demoKeyPrefix) 
 // one: once that app closes, the following app boots in the phone layout.
 func TestAModeSentBeforeTheFirstRenderIsTheFirstFrame(t *testing.T) {
 	setLayout("split")
-	mgr := newApp(t)
-	if byID(tree(t, mgr), splitID) == nil {
+	app := newApp(t)
+	if byID(app.Tree(), splitID) == nil {
 		t.Fatal("a mode sent before the first render should be the first frame's layout")
 	}
-	mgr.Close()
+	app.Manager().Close()
 
 	next := newApp(t)
-	if byID(tree(t, next), splitID) != nil {
+	if byID(next.Tree(), splitID) != nil {
 		t.Fatal("the closed app's mode leaked into the next app's boot")
 	}
 	// A live tree's mode is its own state: sent now, it switches this tree
 	// and is not recorded as anyone's boot value.
 	setLayout("split")
-	if byID(tree(t, next), splitID) == nil {
+	if byID(next.Tree(), splitID) == nil {
 		t.Fatal("a mode sent to a live tree should switch it")
 	}
 	if bootSplit() {
@@ -81,38 +81,38 @@ func TestAModeSentBeforeTheFirstRenderIsTheFirstFrame(t *testing.T) {
 // Without a layout event nothing changes: the phone layout is the default on
 // every host, and it is the Navigator's tree untouched.
 func TestPhoneLayoutIsTheDefault(t *testing.T) {
-	mgr := newApp(t)
-	if byID(tree(t, mgr), splitID) != nil {
+	app := newApp(t)
+	if byID(app.Tree(), splitID) != nil {
 		t.Fatal("the contents must not be split before the page asks")
 	}
-	openLesson(t, mgr, "Hello, GrMob")
-	if byID(tree(t, mgr), splitID) != nil {
+	openLesson(t, app, "Hello, GrMob")
+	if byID(app.Tree(), splitID) != nil {
 		t.Fatal("a lesson must not be split before the page asks")
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 // Every lesson splits cleanly: its guide keeps the lesson's own words and
 // controls and loses every demo panel, each to the phone, with one pointer
 // left behind per panel; and no Modal is left over the reading pane.
 func TestEveryLessonSplitsIntoGuideAndPhone(t *testing.T) {
-	mgr := newSplitApp(t)
+	app := newSplitApp(t)
 
-	openLesson(t, mgr, flatLessons[0].Title)
+	openLesson(t, app, flatLessons[0].Title)
 	for i, e := range flatLessons {
-		guide, phone := panes(t, tree(t, mgr))
+		guide, phone := panes(t, app.Tree())
 
-		if !hasText(guide, e.ID+"  "+e.Title) {
+		if !grmobtest.HasText(guide, e.ID+"  "+e.Title) {
 			t.Fatalf("%s: the guide should carry the lesson's heading", e.ID)
 		}
-		if findNodes(guide, isDemoPanel) != nil {
+		if grmobtest.FindAll(guide, isDemoPanel) != nil {
 			t.Fatalf("%s: a demo panel was left in the guide", e.ID)
 		}
-		if findNode(guide, func(n *node) bool { return n.Type == "Modal" }) != nil {
+		if grmobtest.Find(guide, func(n *node) bool { return n.Type == "Modal" }) != nil {
 			t.Fatalf("%s: a Modal was left in the guide", e.ID)
 		}
-		demos := findNodes(phone, isDemoPanel)
-		pointers := findNodes(guide, func(n *node) bool {
+		demos := grmobtest.FindAll(phone, isDemoPanel)
+		pointers := grmobtest.FindAll(guide, func(n *node) bool {
 			return n.Type == "Text" && n.Props["content"] == "on the phone →"
 		})
 		if len(demos) == 0 {
@@ -123,90 +123,90 @@ func TestEveryLessonSplitsIntoGuideAndPhone(t *testing.T) {
 		}
 
 		if i < len(flatLessons)-1 {
-			tap(t, mgr, "Next ›") // the guide's own nav, which must still work
+			app.Tap("Next ›") // the guide's own nav, which must still work
 		}
 	}
-	tap(t, mgr, "Finish ✓")
-	assertNoConcerns(t)
+	app.Tap("Finish ✓")
+	grmobtest.NoConcerns(t)
 }
 
 // The contents open in the guide with the phone idle beside them, and a row
 // tapped there opens the lesson split.
 func TestContentsSplitWithASplash(t *testing.T) {
-	mgr := newSplitApp(t)
+	app := newSplitApp(t)
 
-	guide, phone := panes(t, tree(t, mgr))
-	if !hasText(guide, "GrMob Interactive Tutorial") {
+	guide, phone := panes(t, app.Tree())
+	if !grmobtest.HasText(guide, "GrMob Interactive Tutorial") {
 		t.Fatal("the contents should be in the guide")
 	}
 	if !hasTextContaining(phone, "Pick a lesson") {
 		t.Fatal("the phone should show the splash on the contents")
 	}
 
-	openLesson(t, mgr, "Hello, GrMob")
-	_, phone = panes(t, tree(t, mgr))
-	if !hasText(phone, "1.1  Hello, GrMob") {
+	openLesson(t, app, "Hello, GrMob")
+	_, phone = panes(t, app.Tree())
+	if !grmobtest.HasText(phone, "1.1  Hello, GrMob") {
 		t.Fatal("the phone's header should name the open lesson")
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 // The demos on the phone are the live demos: a control there drives the
 // lesson's state, and the result lands on the phone.
 func TestSplitDemoIsLive(t *testing.T) {
-	mgr := newSplitApp(t)
-	openLesson(t, mgr, "Hello, GrMob")
+	app := newSplitApp(t)
+	openLesson(t, app, "Hello, GrMob")
 
-	_, phone := panes(t, tree(t, mgr))
-	if !hasText(phone, "1.2k") {
+	_, phone := panes(t, app.Tree())
+	if !grmobtest.HasText(phone, "1.2k") {
 		t.Fatal("the stats block should render on the phone while its toggle is on")
 	}
-	toggleCheckbox(t, mgr, 1, false) // 0: Header, 1: Stats, 2: Bio
-	_, phone = panes(t, tree(t, mgr))
-	if hasText(phone, "1.2k") {
+	toggleCheckbox(t, app, 1, false) // 0: Header, 1: Stats, 2: Bio
+	_, phone = panes(t, app.Tree())
+	if grmobtest.HasText(phone, "1.2k") {
 		t.Fatal("unchecking Stats() on the phone should remove the stats subtree")
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 // Flipping the layout mid-lesson rearranges nodes and nothing else, so the
 // demo's state survives both directions — the whole reason the split works on
 // the rendered tree rather than by rendering the body differently.
 func TestLayoutSwitchKeepsDemoState(t *testing.T) {
-	mgr := newApp(t)
-	openLesson(t, mgr, "Hello, GrMob")
+	app := newApp(t)
+	openLesson(t, app, "Hello, GrMob")
 
-	toggleCheckbox(t, mgr, 2, true) // Bio on, in the phone layout
+	toggleCheckbox(t, app, 2, true) // Bio on, in the phone layout
 	setLayout("split")
-	_, phone := panes(t, tree(t, mgr))
+	_, phone := panes(t, app.Tree())
 	if !hasTextContaining(phone, "without leaving Go") {
 		t.Fatal("the bio turned on before the switch should still be on after it")
 	}
 
-	toggleCheckbox(t, mgr, 2, false) // and off, in the split layout
+	toggleCheckbox(t, app, 2, false) // and off, in the split layout
 	setLayout("phone")
-	root := tree(t, mgr)
+	root := app.Tree()
 	if byID(root, splitID) != nil {
 		t.Fatal(`"phone" should turn the split off`)
 	}
 	if hasTextContaining(root, "without leaving Go") {
 		t.Fatal("the bio turned off in the split should still be off in the phone layout")
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 // A screen a demo pushes (chapter 6) is not a lesson: it runs on the phone
 // whole, and the guide says which lesson the reader is in until it pops.
 func TestPushedDemoScreenRunsOnThePhone(t *testing.T) {
-	mgr := newSplitApp(t)
-	openLesson(t, mgr, "Screens are a stack")
+	app := newSplitApp(t)
+	openLesson(t, app, "Screens are a stack")
 
-	tap(t, mgr, "Push the detail screen ›")
-	guide, phone := panes(t, tree(t, mgr))
-	if !hasText(phone, "The detail screen") {
+	app.Tap("Push the detail screen ›")
+	guide, phone := panes(t, app.Tree())
+	if !grmobtest.HasText(phone, "The detail screen") {
 		t.Fatal("the pushed screen should be on the phone")
 	}
-	if hasText(guide, "The detail screen") {
+	if grmobtest.HasText(guide, "The detail screen") {
 		t.Fatal("the pushed screen must not be in the guide")
 	}
 	if !hasTextContaining(guide, "Screens are a stack") {
@@ -215,11 +215,11 @@ func TestPushedDemoScreenRunsOnThePhone(t *testing.T) {
 	// The covered lesson itself, not a note about it: its Next button is
 	// there, switched off, and nothing in the guide carries a callback ID,
 	// which would name one of the pushed screen's handlers by now.
-	next := findNode(guide, func(n *node) bool { return n.Type == "Button" && n.Props["label"] == "Next ›" })
+	next := grmobtest.Find(guide, func(n *node) bool { return n.Type == "Button" && n.Props["label"] == "Next ›" })
 	if next == nil || next.Style == nil || !next.Style.Disabled {
 		t.Fatal("the covered lesson's controls should be in the guide, disabled")
 	}
-	if cb := findNode(guide, func(n *node) bool {
+	if cb := grmobtest.Find(guide, func(n *node) bool {
 		for k, v := range n.Props {
 			if id, ok := v.(string); ok && id != "" && strings.HasPrefix(k, "on") {
 				return true
@@ -232,19 +232,19 @@ func TestPushedDemoScreenRunsOnThePhone(t *testing.T) {
 	// The lesson keeps slot 0 of the pane and its key, and the bar comes
 	// after it: the reconciler matches by position, so this is what keeps the
 	// guide's scroll position across the push and the pop.
-	pane := byID(tree(t, mgr), guideID)
+	pane := byID(app.Tree(), guideID)
 	if len(pane.Children) != 2 || !strings.HasSuffix(pane.Children[0].Key, "/"+lessonRootKey) ||
 		byID(pane.Children[1], guideNoteID) == nil {
 		t.Fatalf("expected [lesson, note] in the guide pane, got %d children", len(pane.Children))
 	}
 
-	tap(t, mgr, "‹ Pop back to the lesson")
-	guide, _ = panes(t, tree(t, mgr))
-	live := findNode(guide, func(n *node) bool { return n.Type == "Button" && n.Props["label"] == "Next ›" })
+	app.Tap("‹ Pop back to the lesson")
+	guide, _ = panes(t, app.Tree())
+	live := grmobtest.Find(guide, func(n *node) bool { return n.Type == "Button" && n.Props["label"] == "Next ›" })
 	if live == nil || live.Props["onClick"] == nil {
 		t.Fatal("popping back should bring the live lesson's guide back")
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 // inert copies: the tree it is given is frozen, like liftDemos'.
@@ -320,27 +320,27 @@ func TestLiftDemosCopiesOnWrite(t *testing.T) {
 // with a scroll command (core.ScrollIntoView). Which element the host then
 // scrolls is the host's; the stamp is what Go promises.
 func TestAPointerScrollsThePhoneToItsPanel(t *testing.T) {
-	mgr := newSplitApp(t)
-	openLesson(t, mgr, "Controlled inputs")
+	app := newSplitApp(t)
+	openLesson(t, app, "Controlled inputs")
 
-	guide, _ := panes(t, tree(t, mgr))
-	pointers := findNodes(guide, func(n *node) bool {
+	guide, _ := panes(t, app.Tree())
+	pointers := grmobtest.FindAll(guide, func(n *node) bool {
 		return n.Style != nil && strings.HasPrefix(n.Style.AccessibilityLabel, "Show on the phone: ")
 	})
 	if len(pointers) != 2 {
 		t.Fatalf("lesson 2.3 should leave two pointers in the guide, found %d", len(pointers))
 	}
-	if pointers[1].Style.AccessibilityRole != string(core.RoleButton) {
+	if pointers[1].Style.AccessibilityRole != core.RoleButton {
 		t.Fatal("a pointer is a button to accessibility")
 	}
 	id, _ := pointers[1].Props["onClick"].(string)
 	if id == "" {
 		t.Fatal("a pointer should be tappable")
 	}
-	mgr.DispatchCallback(id)
+	app.Manager().DispatchCallback(id)
 
-	_, phone := panes(t, tree(t, mgr))
-	panels := findNodes(phone, isDemoPanel)
+	_, phone := panes(t, app.Tree())
+	panels := grmobtest.FindAll(phone, isDemoPanel)
 	if len(panels) != 2 {
 		t.Fatalf("expected both panels on the phone, found %d", len(panels))
 	}
@@ -351,5 +351,5 @@ func TestAPointerScrollsThePhoneToItsPanel(t *testing.T) {
 	if e, _ := panels[1].Props["scrollEpoch"].(float64); e < 1 {
 		t.Fatalf("the second panel should carry the scroll command, got %#v", panels[1].Props)
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }

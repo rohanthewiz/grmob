@@ -3,22 +3,9 @@ package signup
 import (
 	"testing"
 
+	"github.com/rohanthewiz/grmob/grmobtest"
 	"github.com/rohanthewiz/grmob/internal/shotclaims"
 )
-
-// showsText reports whether anything in the tree puts this text on the
-// screen.
-//
-// Every prop rather than Text.content alone, because "on the screen" is
-// not one node type: a FormField's label, a Button's label, an Input's
-// placeholder and an error line are all words a reader sees, and this
-// screen's whole subject is the error line. Style is not searched — it is
-// a separate field on the wire, so a colour can never be read as a word.
-func showsText(n *node, s string) bool {
-	return findNode(n, func(n *node) bool {
-		return shotclaims.Shown(n.Props, s)
-	}) != nil
-}
 
 // TestTheSignupScreenshotStillShowsWhatItClaims drives this form to the
 // state docs/images/signup.png was taken in and asserts the picture's
@@ -43,18 +30,18 @@ func TestTheSignupScreenshotStillShowsWhatItClaims(t *testing.T) {
 	}
 
 	for _, c := range claims {
-		mgr := newApp(t)
+		app := newApp(t)
 
-		typeInto(t, mgr, "you@example.com", "ada@lovelace.dev")
-		typeInto(t, mgr, "••••••••", "hunter2222")
-		confirm := secondPasswordField(t, mgr)
-		mgr.DispatchTextCallback(confirm.Props["onChange"].(string), "hunter2221")
-		tickTerms(t, mgr, true)
-		tap(t, mgr, "Create account")
+		app.Type("you@example.com", "ada@lovelace.dev")
+		app.Type("••••••••", "hunter2222")
+		confirm := secondPasswordField(t, app)
+		app.Manager().DispatchTextCallback(confirm.Props["onChange"].(string), "hunter2221")
+		tickTerms(t, app, true)
+		app.Tap("Create account")
 
-		root := tree(t, mgr)
+		root := app.Tree()
 		for _, want := range c.Shows {
-			if !showsText(root, want) {
+			if !grmobtest.Shows(root, want) {
 				t.Errorf("docs/images/%s shows %q and this app no longer "+
 					"does, %s.\n\n"+
 					"The picture is now a statement about a version of this "+
@@ -63,6 +50,6 @@ func TestTheSignupScreenshotStillShowsWhatItClaims(t *testing.T) {
 					c.File, want, c.State)
 			}
 		}
+		app.NoConcerns()
 	}
-	assertNoConcerns(t)
 }

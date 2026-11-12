@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/rohanthewiz/grmob/core"
+	"github.com/rohanthewiz/grmob/grmobtest"
 )
 
 // The colour scheme (theme.go). Delivered the way wasm/main.go delivers every
@@ -27,28 +28,28 @@ var (
 // Without a theme event nothing changes: DefaultTheme on every host, and not
 // one darkTheme colour anywhere in the tree.
 func TestLightSchemeIsTheDefault(t *testing.T) {
-	mgr := newApp(t)
-	openLesson(t, mgr, "Hello, GrMob")
-	wire := mgr.RenderInitial()
+	app := newApp(t)
+	openLesson(t, app, "Hello, GrMob")
+	wire := app.Manager().RenderInitial()
 	if !strings.Contains(wire, lightCaption) {
 		t.Fatalf("expected DefaultTheme's caption ink %s in the light tree", lightCaption)
 	}
 	if strings.Contains(wire, darkCaption) {
 		t.Fatalf("darkTheme's caption ink %s leaked into the light tree", darkCaption)
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 // "dark" repaints the whole tree, and "light" puts it back byte for byte: the
 // scheme is a context swap, not a wrapper node, so the light tree is exactly
 // the tree the app drew before theme.go existed.
 func TestDarkSchemeRepaintsAndLightRestoresTheTree(t *testing.T) {
-	mgr := newApp(t)
-	openLesson(t, mgr, "Hello, GrMob")
-	before := mgr.RenderInitial()
+	app := newApp(t)
+	openLesson(t, app, "Hello, GrMob")
+	before := app.Manager().RenderInitial()
 
 	setScheme("dark")
-	dark := mgr.RenderInitial()
+	dark := app.Manager().RenderInitial()
 	if !strings.Contains(dark, darkCaption) {
 		t.Fatalf("expected darkTheme's caption ink %s after \"dark\"", darkCaption)
 	}
@@ -57,53 +58,53 @@ func TestDarkSchemeRepaintsAndLightRestoresTheTree(t *testing.T) {
 	}
 
 	setScheme("light")
-	if after := mgr.RenderInitial(); after != before {
+	if after := app.Manager().RenderInitial(); after != before {
 		t.Fatal("dark then light should restore the light tree exactly")
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 // Both panes of the split are drawn in the scheme: withScheme sits above the
 // layout, so the guide and the demos lifted onto the phone share one palette.
 func TestDarkSchemeReachesBothPanes(t *testing.T) {
-	mgr := newSplitApp(t)
-	openLesson(t, mgr, "Hello, GrMob")
+	app := newSplitApp(t)
+	openLesson(t, app, "Hello, GrMob")
 	setScheme("dark")
-	guide, phone := panes(t, tree(t, mgr))
+	guide, phone := panes(t, app.Tree())
 	for name, pane := range map[string]*node{"guide": guide, "phone": phone} {
-		dim := findNode(pane, func(n *node) bool {
+		dim := grmobtest.Find(pane, func(n *node) bool {
 			return n.Style != nil && n.Style.TextColor == darkCaption
 		})
 		if dim == nil {
 			t.Errorf("the %s pane has no text in darkTheme's caption ink", name)
 		}
-		stale := findNode(pane, func(n *node) bool {
+		stale := grmobtest.Find(pane, func(n *node) bool {
 			return n.Style != nil && n.Style.TextColor == lightCaption
 		})
 		if stale != nil {
 			t.Errorf("the %s pane still has text in DefaultTheme's caption ink", name)
 		}
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 // A demo's state survives the switch: the scheme changes colours, not hook
 // slots (theme.go, "How the palette is swapped").
 func TestSchemeSwitchKeepsDemoState(t *testing.T) {
-	mgr := newApp(t)
-	openLesson(t, mgr, "Hello, GrMob")
+	app := newApp(t)
+	openLesson(t, app, "Hello, GrMob")
 
-	toggleCheckbox(t, mgr, 2, true) // Bio on, in the light scheme
+	toggleCheckbox(t, app, 2, true) // Bio on, in the light scheme
 	setScheme("dark")
-	if !hasTextContaining(tree(t, mgr), "without leaving Go") {
+	if !hasTextContaining(app.Tree(), "without leaving Go") {
 		t.Fatal("the bio turned on before the switch should still be on after it")
 	}
-	toggleCheckbox(t, mgr, 2, false) // and off, in the dark scheme
+	toggleCheckbox(t, app, 2, false) // and off, in the dark scheme
 	setScheme("light")
-	if hasTextContaining(tree(t, mgr), "without leaving Go") {
+	if hasTextContaining(app.Tree(), "without leaving Go") {
 		t.Fatal("the bio turned off in the dark scheme should still be off in the light one")
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 // The page sends the scheme before RenderInitial, so a dark boot's first frame
@@ -111,18 +112,18 @@ func TestSchemeSwitchKeepsDemoState(t *testing.T) {
 // it was sent to.
 func TestASchemeSentBeforeTheFirstRenderIsTheFirstFrame(t *testing.T) {
 	setScheme("dark")
-	mgr := newApp(t)
-	if !strings.Contains(mgr.RenderInitial(), darkCaption) {
+	app := newApp(t)
+	if !strings.Contains(app.Manager().RenderInitial(), darkCaption) {
 		t.Fatal("a scheme sent before the first render should be the first frame's")
 	}
-	mgr.Close()
+	app.Manager().Close()
 
 	next := newApp(t)
-	if strings.Contains(next.RenderInitial(), darkCaption) {
+	if strings.Contains(next.Manager().RenderInitial(), darkCaption) {
 		t.Fatal("the closed app's scheme leaked into the next app's boot")
 	}
 	setScheme("dark")
-	if !strings.Contains(next.RenderInitial(), darkCaption) {
+	if !strings.Contains(next.Manager().RenderInitial(), darkCaption) {
 		t.Fatal("a scheme sent to a live tree should switch it")
 	}
 	if bootDark() {
@@ -156,33 +157,33 @@ func TestTheSystemSchemeRulesUntilAPageSays(t *testing.T) {
 	// test reads as light, as they always have.
 	t.Cleanup(func() { setSystem("") })
 
-	mgr := newApp(t)
-	openLesson(t, mgr, "Hello, GrMob")
+	app := newApp(t)
+	openLesson(t, app, "Hello, GrMob")
 	setSystem("dark")
-	if wire := mgr.RenderInitial(); !strings.Contains(wire, darkCaption) {
+	if wire := app.Manager().RenderInitial(); !strings.Contains(wire, darkCaption) {
 		t.Fatalf("a dark system with no page drew no darkTheme caption ink %s", darkCaption)
 	}
 	// And the page colour with it: a native's surface is light, and nothing
 	// but the root's own background would put darkTheme's ink on dark.
-	if root := rootOf(t, mgr.RenderInitial()); root.Style == nil || root.Style.Background != darkTheme.Colors.Background {
+	if root := rootOf(t, app.Manager().RenderInitial()); root.Style == nil || root.Style.Background != darkTheme.Colors.Background {
 		t.Fatalf("the dark root is not painted %s: %+v", darkTheme.Colors.Background, root.Style)
 	}
 	setSystem("light")
-	if wire := mgr.RenderInitial(); strings.Contains(wire, darkCaption) {
+	if wire := app.Manager().RenderInitial(); strings.Contains(wire, darkCaption) {
 		t.Fatal("the system went light and the tree stayed dark")
 	}
 
 	setSystem("dark")
 	setScheme("light")
-	if wire := mgr.RenderInitial(); strings.Contains(wire, darkCaption) {
+	if wire := app.Manager().RenderInitial(); strings.Contains(wire, darkCaption) {
 		t.Fatal("the page chose light on a dark system and the tree followed the system")
 	}
 	// A page paints its own panes, so a page's dark leaves the root alone.
 	setScheme("dark")
-	if root := rootOf(t, mgr.RenderInitial()); root.Style != nil && root.Style.Background == darkTheme.Colors.Background {
+	if root := rootOf(t, app.Manager().RenderInitial()); root.Style != nil && root.Style.Background == darkTheme.Colors.Background {
 		t.Error("a page's dark painted the root, which is the page's to paint")
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 // rootOf decodes a rendered tree's root, as a host receives it.

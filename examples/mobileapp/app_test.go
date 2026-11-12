@@ -1,12 +1,12 @@
 package mobileapp
 
 import (
-	"encoding/json"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/rohanthewiz/grmob/core"
+	"github.com/rohanthewiz/grmob/grmobtest"
 	"github.com/rohanthewiz/grmob/mobile"
 )
 
@@ -29,24 +29,9 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// assertNoConcerns fails the test with the full dump if the debug audit
-// recorded anything during the passes it drove.
-func assertNoConcerns(t *testing.T) {
-	t.Helper()
-	if cs := core.Concerns(); len(cs) != 0 {
-		t.Fatalf("debug concerns raised:\n%s", core.DumpConcerns())
-	}
-}
-
-type node struct {
-	Type     string
-	Props    map[string]any
-	Children []*node
-}
-
 // findProp depth-first searches the tree for the first node of the given type
 // and returns the named prop (callback IDs, values).
-func findProp(n *node, nodeType, prop string) (string, bool) {
+func findProp(n *core.Node, nodeType, prop string) (string, bool) {
 	if n == nil {
 		return "", false
 	}
@@ -67,20 +52,17 @@ func TestDemoAppRendersAndDispatchesEvents(t *testing.T) {
 	// The concern collector is process-wide like the mode switch, so clear it
 	// first: without this, a finding from an earlier test would fail this one.
 	core.ClearConcerns()
-	defer assertNoConcerns(t)
+	defer grmobtest.NoConcerns(t)
 
 	initial := mobile.RenderInitial()
 
-	var tree node
-	if err := json.Unmarshal([]byte(initial), &tree); err != nil {
-		t.Fatalf("initial tree is not valid JSON: %v", err)
-	}
+	tree := grmobtest.Parse(t, initial)
 	if !strings.Contains(initial, "Count: 0") {
 		t.Fatalf("initial tree missing counter text:\n%s", initial)
 	}
 
 	// Void event: tapping the Increment button must patch the counter text.
-	onClick, ok := findProp(&tree, "Button", "onClick")
+	onClick, ok := findProp(tree, "Button", "onClick")
 	if !ok {
 		t.Fatal("no Button with onClick in initial tree")
 	}
@@ -90,7 +72,7 @@ func TestDemoAppRendersAndDispatchesEvents(t *testing.T) {
 	}
 
 	// Int event: switching tabs must re-render with the new selectedIndex.
-	onTabChange, ok := findProp(&tree, "TabView", "onTabChange")
+	onTabChange, ok := findProp(tree, "TabView", "onTabChange")
 	if !ok {
 		t.Fatal("no TabView with onTabChange in initial tree")
 	}
@@ -103,11 +85,8 @@ func TestDemoAppRendersAndDispatchesEvents(t *testing.T) {
 	// Re-read the tree first — the callback IDs may have shifted with the
 	// tab switch above, and the shell always dispatches IDs from its
 	// current tree, never a stale one.
-	var current node
-	if err := json.Unmarshal([]byte(mobile.RenderInitial()), &current); err != nil {
-		t.Fatalf("re-rendered tree is not valid JSON: %v", err)
-	}
-	onChange, ok := findProp(&current, "Input", "onChange")
+	current := grmobtest.Parse(t, mobile.RenderInitial())
+	onChange, ok := findProp(current, "Input", "onChange")
 	if !ok {
 		t.Fatal("no Input with onChange in tree")
 	}
@@ -119,7 +98,7 @@ func TestDemoAppRendersAndDispatchesEvents(t *testing.T) {
 
 func TestFeedTabListGestures(t *testing.T) {
 	core.ClearConcerns()
-	defer assertNoConcerns(t)
+	defer grmobtest.NoConcerns(t)
 
 	// The gap-5 surface end to end at the bridge level: the Feed tab holds a
 	// List whose rows carry OnClick/OnLongPress behavior props — dispatching
@@ -165,11 +144,7 @@ func TestFeedTabListGestures(t *testing.T) {
 // the shells follow.
 func mustFindT(t *testing.T, nodeType, prop string) string {
 	t.Helper()
-	var tree node
-	if err := json.Unmarshal([]byte(mobile.RenderInitial()), &tree); err != nil {
-		t.Fatalf("tree is not valid JSON: %v", err)
-	}
-	v, ok := findProp(&tree, nodeType, prop)
+	v, ok := findProp(grmobtest.Parse(t, mobile.RenderInitial()), nodeType, prop)
 	if !ok {
 		t.Fatalf("no %s with %s in current tree", nodeType, prop)
 	}

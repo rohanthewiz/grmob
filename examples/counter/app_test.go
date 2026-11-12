@@ -1,15 +1,14 @@
 package counter
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/rohanthewiz/grmob/core"
+	"github.com/rohanthewiz/grmob/grmobtest"
 	"github.com/rohanthewiz/grmob/internal/shotclaims"
-	"github.com/rohanthewiz/grmob/render"
 )
 
 // TestMain turns debug mode on for the package, so every pass driven below
@@ -22,97 +21,33 @@ func TestMain(m *testing.M) {
 	m.Run()
 }
 
-type node struct {
-	Type     string
-	Props    map[string]any
-	Children []*node
-}
-
-func findNode(n *node, pred func(*node) bool) *node {
-	if n == nil {
-		return nil
-	}
-	if pred(n) {
-		return n
-	}
-	for _, c := range n.Children {
-		if found := findNode(c, pred); found != nil {
-			return found
-		}
-	}
-	return nil
-}
-
-// tree re-renders and parses the current tree. Callback IDs are per-pass
-// sequence numbers, so every dispatch reads its ID from a freshly rendered
-// tree rather than reusing one — the discipline the native shells follow.
-func tree(t *testing.T, mgr *render.Manager) *node {
-	t.Helper()
-	var root node
-	if err := json.Unmarshal([]byte(mgr.RenderInitial()), &root); err != nil {
-		t.Fatalf("tree is not valid JSON: %v", err)
-	}
-	return &root
-}
-
-func tap(t *testing.T, mgr *render.Manager, label string) {
-	t.Helper()
-	n := findNode(tree(t, mgr), func(n *node) bool {
-		return n.Type == "Button" && n.Props["label"] == label
-	})
-	if n == nil {
-		t.Fatalf("no Button labeled %q in the current tree", label)
-	}
-	mgr.DispatchCallback(n.Props["onClick"].(string))
-}
-
-// showsText reports whether anything in the tree puts this text on the
-// screen.
-//
-// Every prop rather than Text.content alone, because "on the screen" is
-// not one node type: the label of a Button, the title of a row and the
-// content of a Text are all words a reader sees, and a check that only
-// read one of them would be answering a narrower question than the one a
-// screenshot raises. Style is not searched — it is a separate field on the
-// wire, so a colour string can never be mistaken for a word.
-func showsText(n *node, s string) bool {
-	return findNode(n, func(n *node) bool {
-		return shotclaims.Shown(n.Props, s)
-	}) != nil
-}
-
-func assertNoConcerns(t *testing.T) {
-	t.Helper()
-	if cs := core.Concerns(); len(cs) != 0 {
-		t.Fatalf("debug concerns raised:\n%s", core.DumpConcerns())
-	}
-}
+// The tests below drive the app through grmobtest, which renders the same
+// tree a host receives and dispatches the callback IDs it finds there, so a
+// tap here takes the path a tap in the browser does.
 
 // --- The app -------------------------------------------------------------
 
 func TestCounterCountsBothWays(t *testing.T) {
-	core.ClearConcerns()
-	mgr := render.New(core.NewContext(), App)
-	defer mgr.Close()
+	app := grmobtest.New(t, App)
 
-	if !showsText(tree(t, mgr), "Count: 0") {
+	if !app.HasText("Count: 0") {
 		t.Fatal("the counter does not open on zero")
 	}
-	tap(t, mgr, "+")
-	tap(t, mgr, "+")
-	if !showsText(tree(t, mgr), "Count: 2") {
+	app.Tap("+")
+	app.Tap("+")
+	if !app.HasText("Count: 2") {
 		t.Fatal("two taps of + did not reach 2")
 	}
 	// The minus is a U+2212 MINUS SIGN and not a hyphen, here and in both
 	// documents that quote this file. Worth a sentence because the two are
 	// indistinguishable in most fonts, and a test that typed the hyphen
-	// would fail with "no Button labeled -", which reads as the button
-	// having gone.
-	tap(t, mgr, "−")
-	if !showsText(tree(t, mgr), "Count: 1") {
+	// would fail with `no tappable node on screen is a Button labelled "-"`,
+	// which reads as the button having gone.
+	app.Tap("−")
+	if !app.HasText("Count: 1") {
 		t.Fatal("a tap of − did not come back to 1")
 	}
-	assertNoConcerns(t)
+	app.NoConcerns()
 }
 
 // --- The screenshot ------------------------------------------------------
@@ -125,7 +60,6 @@ func TestCounterCountsBothWays(t *testing.T) {
 // this arm adds to the manifest's own checks is the only thing a manifest
 // cannot do for itself: it renders the app.
 func TestTheCounterScreenshotStillShowsWhatItClaims(t *testing.T) {
-	core.ClearConcerns()
 	claims := shotclaims.For("examples/counter")
 	if len(claims) == 0 {
 		t.Fatal("no claim names examples/counter, and docs/images/counter.png " +
@@ -134,18 +68,22 @@ func TestTheCounterScreenshotStillShowsWhatItClaims(t *testing.T) {
 	}
 
 	for _, c := range claims {
-		mgr := render.New(core.NewContext(), App)
+		app := grmobtest.New(t, App)
 
 		// The state in the claim, driven rather than posed: three taps of
 		// the same button a person would press, through the same dispatch
 		// path the browser host uses.
-		tap(t, mgr, "+")
-		tap(t, mgr, "+")
-		tap(t, mgr, "+")
+		app.Tap("+")
+		app.Tap("+")
+		app.Tap("+")
 
-		root := tree(t, mgr)
+		// Shows rather than HasText: "on the screen" is not one node type.
+		// The label of a Button and the content of a Text are both words a
+		// reader of the picture sees, and a check that read only one of them
+		// would answer a narrower question than the one a screenshot raises.
+		root := app.Tree()
 		for _, want := range c.Shows {
-			if !showsText(root, want) {
+			if !grmobtest.Shows(root, want) {
 				t.Errorf("docs/images/%s shows %q and this app no longer "+
 					"does, %s.\n\n"+
 					"The picture is now a statement about a version of this "+
@@ -154,9 +92,8 @@ func TestTheCounterScreenshotStillShowsWhatItClaims(t *testing.T) {
 					c.File, want, c.State)
 			}
 		}
-		mgr.Close()
+		app.NoConcerns()
 	}
-	assertNoConcerns(t)
 }
 
 // --- The two documents that quote this file ------------------------------

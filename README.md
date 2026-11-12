@@ -503,8 +503,9 @@ Gradle or Xcode — no global gomobile install.
 
 ## Developing with GrMob
 
-- Drive the whole engine from a plain Go test: `render.New` → `RenderInitial`
-  → `DispatchCallback`. No simulator, no browser.
+- Drive the whole engine from a plain Go test: `grmobtest.New(t, App)`, then
+  `Tap`, `Type` and `HasText` over the tree a host receives. No simulator, no
+  browser.
 - Snapshot views as HTML with `htmlout` and pin them byte for byte.
 - Inspect any render's patch set directly: `reconcile.Diff` returns plain
   `[]Patch` values, and `RenderAgain` / `TriggerCallback` hand the same set

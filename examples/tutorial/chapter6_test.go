@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/rohanthewiz/grmob/core"
-	"github.com/rohanthewiz/grmob/render"
+	"github.com/rohanthewiz/grmob/grmobtest"
 )
 
 // Chapter 6 demo-liveness tests. The navigation lessons drive the app's real
@@ -19,7 +19,7 @@ import (
 // one per screen in this chapter, so type alone addresses it.
 func modalNode(t *testing.T, root *node) *node {
 	t.Helper()
-	n := findNode(root, func(n *node) bool { return n.Type == "Modal" })
+	n := grmobtest.Find(root, func(n *node) bool { return n.Type == "Modal" })
 	if n == nil {
 		t.Fatal("no Modal node in the current tree")
 	}
@@ -29,25 +29,25 @@ func modalNode(t *testing.T, root *node) *node {
 // --- 6.1 Screens are a stack ------------------------------------------------
 
 func TestStackPushPopKeepsCoveredState(t *testing.T) {
-	mgr := newApp(t)
-	openLesson(t, mgr, "Screens are a stack")
+	app := newApp(t)
+	openLesson(t, app, "Screens are a stack")
 
 	// The lesson sits on top of the contents screen: depth 2.
-	if !hasTextContaining(tree(t, mgr), "StackDepth 2 · CanPop true") {
+	if !hasTextContaining(app.Tree(), "StackDepth 2 · CanPop true") {
 		t.Fatal("the lesson's telemetry should read depth 2")
 	}
 
 	// Give the lesson frame a value to recognize after the round trip.
-	tap(t, mgr, "+1")
-	tap(t, mgr, "+1")
-	if !hasTextContaining(tree(t, mgr), "This lesson frame's taps: 2") {
+	app.Tap("+1")
+	app.Tap("+1")
+	if !hasTextContaining(app.Tree(), "This lesson frame's taps: 2") {
 		t.Fatal("the lesson counter should have counted to 2")
 	}
 
 	// Push: the detail screen is a new frame with its own slot 0.
-	tap(t, mgr, "Push the detail screen ›")
-	cur := tree(t, mgr)
-	if !hasText(cur, "The detail screen") {
+	app.Tap("Push the detail screen ›")
+	cur := app.Tree()
+	if !grmobtest.HasText(cur, "The detail screen") {
 		t.Fatal("the detail screen should be on top after the push")
 	}
 	if !hasTextContaining(cur, "StackDepth 3") {
@@ -56,46 +56,46 @@ func TestStackPushPopKeepsCoveredState(t *testing.T) {
 	if !hasTextContaining(cur, "This frame's taps: 0") {
 		t.Fatal("the fresh frame's counter should start at 0")
 	}
-	tap(t, mgr, "+1")
-	if !hasTextContaining(tree(t, mgr), "This frame's taps: 1") {
+	app.Tap("+1")
+	if !hasTextContaining(app.Tree(), "This frame's taps: 1") {
 		t.Fatal("the detail counter should count in its own frame")
 	}
 
 	// Pop: the covered lesson frame comes back exactly as it was left.
-	tap(t, mgr, "‹ Pop back to the lesson")
-	if !hasTextContaining(tree(t, mgr), "This lesson frame's taps: 2") {
+	app.Tap("‹ Pop back to the lesson")
+	if !hasTextContaining(app.Tree(), "This lesson frame's taps: 2") {
 		t.Fatal("popping back should find the lesson counter untouched at 2")
 	}
 
 	// Re-push: a new frame, a new scope — the detail counter did not survive.
-	tap(t, mgr, "Push the detail screen ›")
-	if !hasTextContaining(tree(t, mgr), "This frame's taps: 0") {
+	app.Tap("Push the detail screen ›")
+	if !hasTextContaining(app.Tree(), "This frame's taps: 0") {
 		t.Fatal("a re-push must mint a fresh frame — the old count must be gone")
 	}
-	tap(t, mgr, "‹ Pop back to the lesson")
-	assertNoConcerns(t)
+	app.Tap("‹ Pop back to the lesson")
+	grmobtest.NoConcerns(t)
 }
 
 // --- 6.2 Replace ------------------------------------------------------------
 
 func TestReplaceKeepsDepthAndDiscardsTheStep(t *testing.T) {
-	mgr := newApp(t)
-	openLesson(t, mgr, "Replace: steps with no way back")
+	app := newApp(t)
+	openLesson(t, app, "Replace: steps with no way back")
 
-	tap(t, mgr, "Start checkout ›")
-	cur := tree(t, mgr)
-	if !hasText(cur, "Checkout — step 1") || !hasTextContaining(cur, "StackDepth 3") {
+	app.Tap("Start checkout ›")
+	cur := app.Tree()
+	if !grmobtest.HasText(cur, "Checkout — step 1") || !hasTextContaining(cur, "StackDepth 3") {
 		t.Fatal("checkout step 1 should be on top at depth 3")
 	}
 
 	// Fill the step, then Replace it away.
-	typeField(t, mgr, "A line for the card", "for June")
-	if fieldByPlaceholder(t, mgr, "A line for the card").Props["value"] != "for June" {
+	typeField(t, app, "A line for the card", "for June")
+	if fieldByPlaceholder(t, app, "A line for the card").Props["value"] != "for June" {
 		t.Fatal("the note field should echo what was typed")
 	}
-	tap(t, mgr, "Place the order")
-	cur = tree(t, mgr)
-	if !hasText(cur, "Order confirmed") {
+	app.Tap("Place the order")
+	cur = app.Tree()
+	if !grmobtest.HasText(cur, "Order confirmed") {
 		t.Fatal("Replace should have swapped in the confirmation screen")
 	}
 	// The defining property: same depth as the step it replaced.
@@ -105,86 +105,86 @@ func TestReplaceKeepsDepthAndDiscardsTheStep(t *testing.T) {
 
 	// One Pop from the confirmation lands on the lesson — step 1 is not in
 	// the history.
-	tap(t, mgr, "‹ Back to the lesson")
-	cur = tree(t, mgr)
+	app.Tap("‹ Back to the lesson")
+	cur = app.Tree()
 	if !hasTextContaining(cur, "Replace: steps with no way back") {
 		t.Fatal("popping the confirmation should land on the lesson")
 	}
-	if hasText(cur, "Checkout — step 1") {
+	if grmobtest.HasText(cur, "Checkout — step 1") {
 		t.Fatal("the replaced step must not be reachable by walking back")
 	}
 
 	// Re-entering runs a fresh frame: the note died with the old one.
-	tap(t, mgr, "Start checkout ›")
-	if fieldByPlaceholder(t, mgr, "A line for the card").Props["value"] != "" {
+	app.Tap("Start checkout ›")
+	if fieldByPlaceholder(t, app, "A line for the card").Props["value"] != "" {
 		t.Fatal("a re-entered checkout must start with an empty note")
 	}
-	tap(t, mgr, "‹ Abandon checkout")
-	assertNoConcerns(t)
+	app.Tap("‹ Abandon checkout")
+	grmobtest.NoConcerns(t)
 }
 
 // --- 6.3 PopToRoot ----------------------------------------------------------
 
 func TestDrillDownPopToRootLandsOnContents(t *testing.T) {
-	mgr := newApp(t)
-	openLesson(t, mgr, "Unwinding: PopToRoot vs Reset")
+	app := newApp(t)
+	openLesson(t, app, "Unwinding: PopToRoot vs Reset")
 
-	tap(t, mgr, "Enter the drill-down ›")
-	cur := tree(t, mgr)
-	if !hasText(cur, "Drill-down — level 1") || !hasTextContaining(cur, "StackDepth 3") {
+	app.Tap("Enter the drill-down ›")
+	cur := app.Tree()
+	if !grmobtest.HasText(cur, "Drill-down — level 1") || !hasTextContaining(cur, "StackDepth 3") {
 		t.Fatal("level 1 should sit at depth 3")
 	}
 
 	// Each Deeper is a Push of drillRoute(level+1) — parameters by closure.
-	tap(t, mgr, "Deeper ›")
-	tap(t, mgr, "Deeper ›")
-	cur = tree(t, mgr)
-	if !hasText(cur, "Drill-down — level 3") || !hasTextContaining(cur, "StackDepth 5") {
+	app.Tap("Deeper ›")
+	app.Tap("Deeper ›")
+	cur = app.Tree()
+	if !grmobtest.HasText(cur, "Drill-down — level 3") || !hasTextContaining(cur, "StackDepth 5") {
 		t.Fatal("two Deepers should reach level 3 at depth 5")
 	}
 
 	// Pop unwinds one level at a time…
-	tap(t, mgr, "‹ Pop one level")
-	cur = tree(t, mgr)
-	if !hasText(cur, "Drill-down — level 2") || !hasTextContaining(cur, "StackDepth 4") {
+	app.Tap("‹ Pop one level")
+	cur = app.Tree()
+	if !grmobtest.HasText(cur, "Drill-down — level 2") || !hasTextContaining(cur, "StackDepth 4") {
 		t.Fatal("one Pop should step back to level 2 at depth 4")
 	}
 
 	// …and Done unwinds everything: the levels AND the lesson, landing on the
 	// tutorial's root frame — the contents screen, progress intact because it
 	// lives above the Navigator.
-	tap(t, mgr, "Done — back to contents")
-	cur = tree(t, mgr)
-	if !hasText(cur, "GrMob Interactive Tutorial") {
+	app.Tap("Done — back to contents")
+	cur = app.Tree()
+	if !grmobtest.HasText(cur, "GrMob Interactive Tutorial") {
 		t.Fatal("PopToRoot should land on the contents screen")
 	}
 	if !hasTextContaining(cur, "1 of ") {
 		t.Fatal("progress should have survived the unwind")
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 // --- 6.4 Modal --------------------------------------------------------------
 
 func TestModalIsControlledAndItsContentPersists(t *testing.T) {
-	mgr := newApp(t)
-	openLesson(t, mgr, "Modal: the overlay that hides")
+	app := newApp(t)
+	openLesson(t, app, "Modal: the overlay that hides")
 
 	// Closed, but present: the content renders every pass regardless of
 	// Visible — hiding is a prop, not an unmount.
-	cur := tree(t, mgr)
+	cur := app.Tree()
 	m := modalNode(t, cur)
 	if m.Props["visible"] != false {
 		t.Fatal("the modal should start closed")
 	}
-	if !hasText(m, "Confirm your order") {
+	if !grmobtest.HasText(m, "Confirm your order") {
 		t.Fatal("the dialog content should be in the tree even while hidden")
 	}
 
 	// Opening is a state write reflected as a prop flip — the stack is not
 	// involved, so the depth telemetry still reads the lesson's own depth.
-	tap(t, mgr, "Open the modal")
-	cur = tree(t, mgr)
+	app.Tap("Open the modal")
+	cur = app.Tree()
 	if modalNode(t, cur).Props["visible"] != true {
 		t.Fatal("Open should flip Visible to true")
 	}
@@ -193,9 +193,9 @@ func TestModalIsControlledAndItsContentPersists(t *testing.T) {
 	}
 
 	// Tick the box, confirm, and the dialog closes through app state.
-	toggleCheckbox(t, mgr, 0, true)
-	tap(t, mgr, "Confirm")
-	cur = tree(t, mgr)
+	toggleCheckbox(t, app, 0, true)
+	app.Tap("Confirm")
+	cur = app.Tree()
 	if modalNode(t, cur).Props["visible"] != false {
 		t.Fatal("Confirm should close the dialog")
 	}
@@ -205,9 +205,9 @@ func TestModalIsControlledAndItsContentPersists(t *testing.T) {
 
 	// Reopen: the checkbox is exactly as it was left — modal content has no
 	// frame to die with, the opposite of 6.1's detail screen.
-	tap(t, mgr, "Open the modal")
-	cur = tree(t, mgr)
-	cb := findNode(cur, func(n *node) bool { return n.Type == "Checkbox" })
+	app.Tap("Open the modal")
+	cur = app.Tree()
+	cb := grmobtest.Find(cur, func(n *node) bool { return n.Type == "Checkbox" })
 	if cb == nil || cb.Props["checked"] != true {
 		t.Fatal("the dialog's state should survive a close and reopen")
 	}
@@ -218,11 +218,11 @@ func TestModalIsControlledAndItsContentPersists(t *testing.T) {
 	if !ok {
 		t.Fatal("an open modal with OnDismiss should carry its callback id")
 	}
-	mgr.DispatchCallback(id)
-	if modalNode(t, tree(t, mgr)).Props["visible"] != false {
+	app.Manager().DispatchCallback(id)
+	if modalNode(t, app.Tree()).Props["visible"] != false {
 		t.Fatal("the backdrop tap should have closed the dialog")
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 // --- 6.5 Toast --------------------------------------------------------------
@@ -245,15 +245,15 @@ func TestToastEmitsSystemEvents(t *testing.T) {
 	})
 	t.Cleanup(func() { core.SetSystemEventHandler(nil) })
 
-	mgr := newApp(t)
-	openLesson(t, mgr, "Toast: fire and forget")
+	app := newApp(t)
+	openLesson(t, app, "Toast: fire and forget")
 
 	// Rendering the lesson fires nothing: ShowToast lives in handlers only.
 	if len(events) != 0 {
 		t.Fatalf("rendering must not emit toasts, got %d", len(events))
 	}
 
-	tap(t, mgr, "Show a toast")
+	app.Tap("Show a toast")
 	if len(events) != 1 || events[0].name != "toast" {
 		t.Fatalf("expected one toast event, got %+v", events)
 	}
@@ -264,21 +264,21 @@ func TestToastEmitsSystemEvents(t *testing.T) {
 		t.Fatalf("the default duration should be 2000 ms, got %v", events[0].data["duration"])
 	}
 
-	tap(t, mgr, "Linger for five seconds")
+	app.Tap("Linger for five seconds")
 	if len(events) != 2 || events[1].data["duration"] != 5000 {
 		t.Fatalf("Duration(5000) should reach the host, got %+v", events)
 	}
 
-	tap(t, mgr, "Show it styled")
+	app.Tap("Show it styled")
 	if len(events) != 3 || events[2].data["style"] == nil {
 		t.Fatalf("UseToastStyle should ride along in the payload, got %+v", events)
 	}
 
 	// The only trace in the tree is the demo's own counter.
-	if !hasTextContaining(tree(t, mgr), "Toasts sent this visit: 3") {
+	if !hasTextContaining(app.Tree(), "Toasts sent this visit: 3") {
 		t.Fatal("the lesson's counter should have seen all three")
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 // --- 6.6 Dialog and settings rows ------------------------------------------
@@ -287,66 +287,66 @@ func TestToastEmitsSystemEvents(t *testing.T) {
 // subtree shows title, which is how a reader taps a settings row off its
 // control. It matches the deepest such node, so the lesson's scaffold (which
 // is not clickable) can never be picked instead.
-func tapRowTitled(t *testing.T, mgr *render.Manager, title string) {
+func tapRowTitled(t *testing.T, app *grmobtest.Driver, title string) {
 	t.Helper()
-	rows := findNodes(tree(t, mgr), func(n *node) bool {
+	rows := grmobtest.FindAll(app.Tree(), func(n *node) bool {
 		_, clickable := n.Props["onClick"].(string)
-		return clickable && n.Type == "Row" && hasText(n, title)
+		return clickable && n.Type == "Row" && grmobtest.HasText(n, title)
 	})
 	if len(rows) == 0 {
 		t.Fatalf("no tappable row titled %q", title)
 	}
-	mgr.DispatchCallback(rows[len(rows)-1].Props["onClick"].(string))
+	app.Manager().DispatchCallback(rows[len(rows)-1].Props["onClick"].(string))
 }
 
 func TestDialogLessonConfirmsOnlyWhenTheSwitchIsOn(t *testing.T) {
-	mgr := newApp(t)
-	openLesson(t, mgr, "Dialog and settings rows")
+	app := newApp(t)
+	openLesson(t, app, "Dialog and settings rows")
 
-	if modalNode(t, tree(t, mgr)).Props["visible"] != false {
+	if modalNode(t, app.Tree()).Props["visible"] != false {
 		t.Fatal("the dialog must start closed")
 	}
 
 	// Switch on (the default): delete asks first, Keep backs out.
-	tap(t, mgr, "Delete a note")
-	if modalNode(t, tree(t, mgr)).Props["visible"] != true {
+	app.Tap("Delete a note")
+	if modalNode(t, app.Tree()).Props["visible"] != true {
 		t.Fatal("with the switch on, delete must open the dialog")
 	}
-	tap(t, mgr, "Keep")
-	cur := tree(t, mgr)
-	if modalNode(t, cur).Props["visible"] != false || !hasText(cur, "Notes left: 3") {
+	app.Tap("Keep")
+	cur := app.Tree()
+	if modalNode(t, cur).Props["visible"] != false || !grmobtest.HasText(cur, "Notes left: 3") {
 		t.Fatal("Keep must close the dialog through OnDismiss and delete nothing")
 	}
 
 	// Confirm, with the checkbox ticked by tapping its row, not the box.
-	tapRowTitled(t, mgr, "Also delete attachments")
-	tap(t, mgr, "Delete a note")
-	tap(t, mgr, "Delete")
-	cur = tree(t, mgr)
-	if !hasText(cur, "Notes left: 2") || !hasText(cur, "✓ note and attachments deleted") {
+	tapRowTitled(t, app, "Also delete attachments")
+	app.Tap("Delete a note")
+	app.Tap("Delete")
+	cur = app.Tree()
+	if !grmobtest.HasText(cur, "Notes left: 2") || !grmobtest.HasText(cur, "✓ note and attachments deleted") {
 		t.Fatal("Delete must remove one note and report the checkbox's value")
 	}
 
 	// Switch off by its row: delete now happens with no dialog.
-	tapRowTitled(t, mgr, "Confirm before deleting")
-	tap(t, mgr, "Delete a note")
-	cur = tree(t, mgr)
-	if modalNode(t, cur).Props["visible"] != false || !hasText(cur, "Notes left: 1") {
+	tapRowTitled(t, app, "Confirm before deleting")
+	app.Tap("Delete a note")
+	cur = app.Tree()
+	if modalNode(t, cur).Props["visible"] != false || !grmobtest.HasText(cur, "Notes left: 1") {
 		t.Fatal("with the switch off, delete must skip the dialog")
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 // The web's double dispatch through the real Manager: the row's click, then
 // the switch's change reporting the value the row already set. One flip.
 func TestDialogLessonSwitchTapReachingGoTwiceFlipsOnce(t *testing.T) {
-	mgr := newApp(t)
-	openLesson(t, mgr, "Dialog and settings rows")
+	app := newApp(t)
+	openLesson(t, app, "Dialog and settings rows")
 
-	tapRowTitled(t, mgr, "Confirm before deleting") // bubbled click: true → false
-	toggleBool(t, mgr, "Switch", 0, false)          // change reports false
-	tap(t, mgr, "Delete a note")
-	if modalNode(t, tree(t, mgr)).Props["visible"] != false {
+	tapRowTitled(t, app, "Confirm before deleting") // bubbled click: true → false
+	toggleBool(t, app, "Switch", 0, false)          // change reports false
+	app.Tap("Delete a note")
+	if modalNode(t, app.Tree()).Props["visible"] != false {
 		t.Fatal("the switch should be off after one tap, so delete must not open the dialog")
 	}
 }
@@ -365,19 +365,19 @@ func sheetFiller(t *testing.T, root *node) *node {
 }
 
 func TestActionSheetLessonPicksAndDismisses(t *testing.T) {
-	mgr := newApp(t)
-	openLesson(t, mgr, "Action sheets & snackbars")
+	app := newApp(t)
+	openLesson(t, app, "Action sheets & snackbars")
 
 	open := func() {
 		t.Helper()
-		tapLabelled(t, mgr, "Open note actions")
-		if modalNode(t, tree(t, mgr)).Props["visible"] != true {
+		tapLabelled(t, app, "Open note actions")
+		if modalNode(t, app.Tree()).Props["visible"] != true {
 			t.Fatal("the ⋯ button should open the sheet")
 		}
 	}
 	closed := func(why string) {
 		t.Helper()
-		if modalNode(t, tree(t, mgr)).Props["visible"] != false {
+		if modalNode(t, app.Tree()).Props["visible"] != false {
 			t.Fatal(why)
 		}
 	}
@@ -386,36 +386,36 @@ func TestActionSheetLessonPicksAndDismisses(t *testing.T) {
 
 	// Picking an action runs it and closes the sheet with no extra handler.
 	open()
-	tap(t, mgr, "Duplicate")
-	cur := tree(t, mgr)
-	if !hasText(cur, "2 copies") || !hasText(cur, "✓ duplicated") {
+	app.Tap("Duplicate")
+	cur := app.Tree()
+	if !grmobtest.HasText(cur, "2 copies") || !grmobtest.HasText(cur, "✓ duplicated") {
 		t.Fatal("Duplicate should add a copy and report it")
 	}
 	closed("picking an action must close the sheet")
 
 	// Cancel dismisses.
 	open()
-	tap(t, mgr, "Cancel")
+	app.Tap("Cancel")
 	closed("Cancel must close the sheet")
 
 	// A tap on the filler above the panel dismisses too.
 	open()
-	mgr.DispatchCallback(sheetFiller(t, tree(t, mgr)).Props["onClick"].(string))
+	app.Manager().DispatchCallback(sheetFiller(t, app.Tree()).Props["onClick"].(string))
 	closed("a tap above the panel must close the sheet")
 
 	// And the scrim's own dismiss.
 	open()
-	mgr.DispatchCallback(modalNode(t, tree(t, mgr)).Props["onDismiss"].(string))
+	app.Manager().DispatchCallback(modalNode(t, app.Tree()).Props["onDismiss"].(string))
 	closed("the scrim must close the sheet")
 
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 // snackbarNode is the lesson's Snackbar strip: the only status region in 6.7.
 func snackbarNode(t *testing.T, root *node) *node {
 	t.Helper()
-	n := findNode(root, func(n *node) bool {
-		return n.Style != nil && n.Style.AccessibilityRole == string(core.RoleStatus)
+	n := grmobtest.Find(root, func(n *node) bool {
+		return n.Style != nil && n.Style.AccessibilityRole == core.RoleStatus
 	})
 	if n == nil {
 		t.Fatal("no Snackbar status strip in the lesson")
@@ -424,32 +424,32 @@ func snackbarNode(t *testing.T, root *node) *node {
 }
 
 func TestActionSheetLessonDeleteOffersUndo(t *testing.T) {
-	mgr := newApp(t)
-	openLesson(t, mgr, "Action sheets & snackbars")
+	app := newApp(t)
+	openLesson(t, app, "Action sheets & snackbars")
 
-	if snackbarNode(t, tree(t, mgr)).Style.Display != core.DisplayNone {
+	if snackbarNode(t, app.Tree()).Style.Display != core.DisplayNone {
 		t.Fatal("the snackbar is in the tree from the start, hidden")
 	}
 
-	tapLabelled(t, mgr, "Open note actions")
-	tap(t, mgr, "Delete")
-	cur := tree(t, mgr)
+	tapLabelled(t, app, "Open note actions")
+	app.Tap("Delete")
+	cur := app.Tree()
 	if s := snackbarNode(t, cur); s.Style.Display == core.DisplayNone {
 		t.Fatal("Delete should raise the snackbar")
 	}
-	if !hasText(cur, "0 copies") || !hasText(cur, "Deleted a copy · 0 copies left") {
+	if !grmobtest.HasText(cur, "0 copies") || !grmobtest.HasText(cur, "Deleted a copy · 0 copies left") {
 		t.Fatal("Delete should remove the copy and say so in the snackbar")
 	}
 
-	tap(t, mgr, "Undo")
-	cur = tree(t, mgr)
+	app.Tap("Undo")
+	cur = app.Tree()
 	if snackbarNode(t, cur).Style.Display != core.DisplayNone {
 		t.Fatal("Undo's handler hides the snackbar")
 	}
-	if !hasText(cur, "1 copy") || !hasText(cur, "✓ restored a copy") {
+	if !grmobtest.HasText(cur, "1 copy") || !grmobtest.HasText(cur, "✓ restored a copy") {
 		t.Fatal("Undo should restore the copy")
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 // --- 6.8 Settings rows for names and numbers ---------------------------------
@@ -463,36 +463,36 @@ func TestActionSheetLessonDeleteOffersUndo(t *testing.T) {
 // ends. Those two numbers disagreeing mid-drag *is* the lesson, so the test
 // asserts the disagreement rather than only the settled state.
 func TestMoreSettingsRowsLessonCommitsOnlyWhenTheDragEnds(t *testing.T) {
-	mgr := newApp(t)
-	openLesson(t, mgr, "Settings rows for names and numbers")
+	app := newApp(t)
+	openLesson(t, app, "Settings rows for names and numbers")
 
-	if !hasText(tree(t, mgr), "Committed: Match the system at 16 pt.") {
+	if !grmobtest.HasText(app.Tree(), "Committed: Match the system at 16 pt.") {
 		t.Fatal("the lesson opens on the system theme at 16pt")
 	}
-	if modalNode(t, tree(t, mgr)).Props["visible"] == true {
+	if modalNode(t, app.Tree()).Props["visible"] == true {
 		t.Fatal("the select row's sheet starts shut")
 	}
 
 	// The whole row is the target: it carries the click, and it is not a
 	// Button, so `tap` cannot find it and the row's own text has to.
-	row := findNode(tree(t, mgr), func(n *node) bool {
+	row := grmobtest.Find(app.Tree(), func(n *node) bool {
 		_, clickable := n.Props["onClick"].(string)
-		return clickable && n.Type != "Button" && hasText(n, "Appearance")
+		return clickable && n.Type != "Button" && grmobtest.HasText(n, "Appearance")
 	})
 	if row == nil {
 		t.Fatal("the appearance row should carry the tap")
 	}
-	mgr.DispatchCallback(row.Props["onClick"].(string))
-	if modalNode(t, tree(t, mgr)).Props["visible"] != true {
+	app.Manager().DispatchCallback(row.Props["onClick"].(string))
+	if modalNode(t, app.Tree()).Props["visible"] != true {
 		t.Fatal("tapping the row opens the sheet")
 	}
 
-	tap(t, mgr, "Always dark")
-	cur := tree(t, mgr)
+	app.Tap("Always dark")
+	cur := app.Tree()
 	if modalNode(t, cur).Props["visible"] == true {
 		t.Error("picking an option closes the sheet")
 	}
-	if !hasText(cur, "Committed: Always dark at 16 pt.") {
+	if !grmobtest.HasText(cur, "Committed: Always dark at 16 pt.") {
 		t.Fatal("picking should report the chosen value")
 	}
 
@@ -500,7 +500,7 @@ func TestMoreSettingsRowsLessonCommitsOnlyWhenTheDragEnds(t *testing.T) {
 	// onChangeEnd is the commit.
 	slider := func() *node {
 		t.Helper()
-		n := findNode(tree(t, mgr), func(n *node) bool { return n.Type == "Slider" })
+		n := grmobtest.Find(app.Tree(), func(n *node) bool { return n.Type == "Slider" })
 		if n == nil {
 			t.Fatal("the demo draws a SliderRow")
 		}
@@ -511,12 +511,12 @@ func TestMoreSettingsRowsLessonCommitsOnlyWhenTheDragEnds(t *testing.T) {
 	if !ok {
 		t.Fatal("the demo opts into a live reading, so the continuous callback is wired")
 	}
-	mgr.DispatchTextCallback(drag, "22")
-	cur = tree(t, mgr)
-	if !hasText(cur, "22 pt") {
+	app.Manager().DispatchTextCallback(drag, "22")
+	cur = app.Tree()
+	if !grmobtest.HasText(cur, "22 pt") {
 		t.Error("the reading beside the title follows the finger")
 	}
-	if !hasText(cur, "Committed: Always dark at 16 pt.") {
+	if !grmobtest.HasText(cur, "Committed: Always dark at 16 pt.") {
 		t.Error("a drag tick must not commit: that is the whole reason OnChange rides on the end")
 	}
 
@@ -524,10 +524,10 @@ func TestMoreSettingsRowsLessonCommitsOnlyWhenTheDragEnds(t *testing.T) {
 	if !ok {
 		t.Fatal("OnChange must ride on the drag's end")
 	}
-	mgr.DispatchTextCallback(end, "22")
-	if !hasText(tree(t, mgr), "Committed: Always dark at 22 pt.") {
+	app.Manager().DispatchTextCallback(end, "22")
+	if !grmobtest.HasText(app.Tree(), "Committed: Always dark at 22 pt.") {
 		t.Error("lifting the finger is what commits the value")
 	}
 
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }

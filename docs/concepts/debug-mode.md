@@ -205,22 +205,23 @@ mode **off** has likely tripped exactly these concerns.
 Concerns are assertable, which makes hook-discipline regressions testable:
 
 ```go
+func TestMain(m *testing.M) {
+    core.SetDebugMode(true) // once, before any app renders
+    m.Run()
+}
+
 func TestNoHookDrift(t *testing.T) {
-    core.ClearConcerns()
-    core.SetDebugMode(true)
-    defer core.SetDebugMode(false)
+    app := grmobtest.New(t, myapp.App) // clears the collector on the way in
+    app.Tap("Save")                    // drive some passes
+    app.Tree()
 
-    mgr := render.New(core.NewContext(), myapp.App)
-    defer mgr.Close()
-    mgr.RenderInitial()
-    mgr.DispatchCallback("cb_0") // drive some passes
-    mgr.RenderAgain()
-
-    if cs := core.Concerns(); len(cs) != 0 {
-        t.Fatalf("debug concerns raised:\n%s", core.DumpConcerns())
-    }
+    app.NoConcerns() // fails with core.DumpConcerns() on any finding
 }
 ```
+
+`NoConcerns` also fails when debug mode is off, since the audit then records
+nothing and an empty list proves nothing. Without `grmobtest`, the same check
+is `core.ClearConcerns()` before the passes and `core.Concerns()` after.
 
 Hosts that drive render passes by hand (no `render.Manager`) should call
 `ctx.EndRenderPass()` after each render, paired with

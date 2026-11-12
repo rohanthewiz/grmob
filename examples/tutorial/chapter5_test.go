@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/rohanthewiz/grmob/core"
-	"github.com/rohanthewiz/grmob/render"
+	"github.com/rohanthewiz/grmob/grmobtest"
 )
 
 // Chapter 5 demo-liveness tests. The form lessons hold several text fields per
@@ -18,9 +18,9 @@ import (
 // fieldByPlaceholder returns the current node of the input showing this
 // placeholder — for prop assertions (value, onBlur, focusAction) as well as
 // for dispatching.
-func fieldByPlaceholder(t *testing.T, mgr *render.Manager, placeholder string) *node {
+func fieldByPlaceholder(t *testing.T, app *grmobtest.Driver, placeholder string) *node {
 	t.Helper()
-	n := findNode(tree(t, mgr), func(n *node) bool {
+	n := grmobtest.Find(app.Tree(), func(n *node) bool {
 		return n.Props["placeholder"] == placeholder
 	})
 	if n == nil {
@@ -31,25 +31,25 @@ func fieldByPlaceholder(t *testing.T, mgr *render.Manager, placeholder string) *
 
 // typeField dispatches the field's change callback, as a platform text
 // watcher would.
-func typeField(t *testing.T, mgr *render.Manager, placeholder, value string) {
+func typeField(t *testing.T, app *grmobtest.Driver, placeholder, value string) {
 	t.Helper()
-	n := fieldByPlaceholder(t, mgr, placeholder)
-	mgr.DispatchTextCallback(n.Props["onChange"].(string), value)
+	n := fieldByPlaceholder(t, app, placeholder)
+	app.Manager().DispatchTextCallback(n.Props["onChange"].(string), value)
 }
 
 // blurField dispatches the field's onBlur, as the platform does when focus
 // leaves it. The prop exists only when the bound builder attached it — that
 // is, under RevealOnBlur — so a missing one here is a real failure, not a
 // test to soften.
-func blurField(t *testing.T, mgr *render.Manager, placeholder string) {
+func blurField(t *testing.T, app *grmobtest.Driver, placeholder string) {
 	t.Helper()
-	n := fieldByPlaceholder(t, mgr, placeholder)
+	n := fieldByPlaceholder(t, app, placeholder)
 	id, ok := n.Props["onBlur"].(string)
 	if !ok {
 		t.Fatalf("field %q carries no onBlur — expected one under RevealOnBlur: %#v",
 			placeholder, n.Props)
 	}
-	mgr.DispatchCallback(id)
+	app.Manager().DispatchCallback(id)
 }
 
 // countMarkers counts FormField's required asterisks. The marker is its own
@@ -76,12 +76,12 @@ func countMarkers(n *node) int {
 // --- 5.1 A form in four calls ----------------------------------------------
 
 func TestFirstFormRevealsOnSubmitThenConfirmsLive(t *testing.T) {
-	mgr := newApp(t)
-	openLesson(t, mgr, "A form in four calls")
+	app := newApp(t)
+	openLesson(t, app, "A form in four calls")
 
 	// Untouched, the form shows hints and nothing else: under the default
 	// policy nothing has earned a complaint yet.
-	cur := tree(t, mgr)
+	cur := app.Tree()
 	if !hasTextContaining(cur, "Used once, for the invite") {
 		t.Fatal("the email hint should show while there is no error")
 	}
@@ -92,8 +92,8 @@ func TestFirstFormRevealsOnSubmitThenConfirmsLive(t *testing.T) {
 
 	// The failed submit is the event that turns the explanations on — and an
 	// error outranks the hint in FormField's single feedback line.
-	tap(t, mgr, "RSVP")
-	cur = tree(t, mgr)
+	app.Tap("RSVP")
+	cur = app.Tree()
 	if !hasTextContaining(cur, "Tell us who's coming") ||
 		!hasTextContaining(cur, "An address for the invite") {
 		t.Fatal("a failed submit should reveal every field's error")
@@ -103,8 +103,8 @@ func TestFirstFormRevealsOnSubmitThenConfirmsLive(t *testing.T) {
 	}
 
 	// From then on corrections confirm live, field by field.
-	typeField(t, mgr, "June Gopher", "  June Gopher  ")
-	cur = tree(t, mgr)
+	typeField(t, app, "June Gopher", "  June Gopher  ")
+	cur = app.Tree()
 	if hasTextContaining(cur, "Tell us who's coming") {
 		t.Fatal("the name error should clear the instant it is fixed")
 	}
@@ -114,8 +114,8 @@ func TestFirstFormRevealsOnSubmitThenConfirmsLive(t *testing.T) {
 
 	// First-failing-rule ordering: a half-typed address reports its shape,
 	// not its absence.
-	typeField(t, mgr, "june@burrow.dev", "june@burrow")
-	cur = tree(t, mgr)
+	typeField(t, app, "june@burrow.dev", "june@burrow")
+	cur = app.Tree()
 	if hasTextContaining(cur, "An address for the invite") {
 		t.Fatal("Required should be satisfied by any non-empty value")
 	}
@@ -125,23 +125,23 @@ func TestFirstFormRevealsOnSubmitThenConfirmsLive(t *testing.T) {
 
 	// A clean submit hands the handler a copy — and the demo stores the
 	// Trimmed name, so the padding typed above must be gone.
-	typeField(t, mgr, "june@burrow.dev", "june@burrow.dev")
-	tap(t, mgr, "RSVP")
-	if !hasTextContaining(tree(t, mgr), "RSVP received for June Gopher") {
+	typeField(t, app, "june@burrow.dev", "june@burrow.dev")
+	app.Tap("RSVP")
+	if !hasTextContaining(app.Tree(), "RSVP received for June Gopher") {
 		t.Fatal("a valid submit should confirm with the trimmed name")
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 // --- 5.2 Rules & the required marker ----------------------------------------
 
 func TestRulesPlaygroundOrderingAndDerivedMarker(t *testing.T) {
-	mgr := newApp(t)
-	openLesson(t, mgr, "Rules & the required marker")
+	app := newApp(t)
+	openLesson(t, app, "Rules & the required marker")
 
 	// RevealAlways: the empty field complains from the first render, and the
 	// derived marker reflects the Required rule being in the list.
-	cur := tree(t, mgr)
+	cur := app.Tree()
 	if !hasTextContaining(cur, "Every gopher needs a handle") {
 		t.Fatal("RevealAlways should show the Required message immediately")
 	}
@@ -154,8 +154,8 @@ func TestRulesPlaygroundOrderingAndDerivedMarker(t *testing.T) {
 
 	// First failing rule wins: a non-empty value moves the complaint to
 	// MinLen, the next rule in the list.
-	typeField(t, mgr, "gopherella", "ab")
-	cur = tree(t, mgr)
+	typeField(t, app, "gopherella", "ab")
+	cur = app.Tree()
 	if hasTextContaining(cur, "Every gopher needs a handle") {
 		t.Fatal("Required should be satisfied by any non-empty value")
 	}
@@ -165,29 +165,29 @@ func TestRulesPlaygroundOrderingAndDerivedMarker(t *testing.T) {
 
 	// The spec is re-read every pass: unchecking MinLen removes the rule, and
 	// the same value is suddenly clean.
-	toggleCheckbox(t, mgr, 1, false) // 0: Required, 1: MinLen, 2: Pattern
-	if hasTextContaining(tree(t, mgr), "Give it at least 5 characters") {
+	toggleCheckbox(t, app, 1, false) // 0: Required, 1: MinLen, 2: Pattern
+	if hasTextContaining(app.Tree(), "Give it at least 5 characters") {
 		t.Fatal("a rule removed from the spec should stop firing on the next pass")
 	}
 
-	toggleCheckbox(t, mgr, 2, true)
-	typeField(t, mgr, "gopherella", "Ab1")
-	if !hasTextContaining(tree(t, mgr), "Lowercase letters only") {
+	toggleCheckbox(t, app, 2, true)
+	typeField(t, app, "gopherella", "Ab1")
+	if !hasTextContaining(app.Tree(), "Lowercase letters only") {
 		t.Fatal("the Pattern rule should fire once toggled in")
 	}
 
 	// The custom closure is always in the list — a plain func is a Rule.
-	typeField(t, mgr, "gopherella", "root")
-	if !hasTextContaining(tree(t, mgr), "That handle is reserved for the system") {
+	typeField(t, app, "gopherella", "root")
+	if !hasTextContaining(app.Tree(), "That handle is reserved for the system") {
 		t.Fatal("the closure rule should reject a reserved handle")
 	}
 
 	// Dropping Required takes the marker with it (it is derived, not
 	// declared), and an empty value then draws no complaint at all: every
 	// remaining rule is silent about "".
-	toggleCheckbox(t, mgr, 0, false)
-	typeField(t, mgr, "gopherella", "")
-	cur = tree(t, mgr)
+	toggleCheckbox(t, app, 0, false)
+	typeField(t, app, "gopherella", "")
+	cur = app.Tree()
 	if got := countMarkers(cur); got != 0 {
 		t.Fatalf("found %d required markers after dropping Required, want 0", got)
 	}
@@ -198,19 +198,19 @@ func TestRulesPlaygroundOrderingAndDerivedMarker(t *testing.T) {
 		hasTextContaining(cur, "reserved for the system") {
 		t.Fatal("every rule but Required is silent about an empty value")
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 // --- 5.3 When errors appear --------------------------------------------------
 
 func TestRevealPoliciesGateTheSameError(t *testing.T) {
-	mgr := newApp(t)
-	openLesson(t, mgr, "When errors appear")
+	app := newApp(t)
+	openLesson(t, app, "When errors appear")
 
 	// Under the default OnSubmit policy the field carries no onBlur at all —
 	// the binding is attached only under the policy that reads it.
-	cur := tree(t, mgr)
-	if _, ok := fieldByPlaceholder(t, mgr, "you@burrow.dev").Props["onBlur"]; ok {
+	cur := app.Tree()
+	if _, ok := fieldByPlaceholder(t, app, "you@burrow.dev").Props["onBlur"]; ok {
 		t.Fatal("no blur binding should be registered under RevealOnSubmit")
 	}
 	if !hasTextContaining(cur, "touched: false · blurred: false · submitted: false") {
@@ -218,16 +218,16 @@ func TestRevealPoliciesGateTheSameError(t *testing.T) {
 	}
 
 	// OnSubmit: typing changes nothing on screen; the failed submit reveals.
-	typeField(t, mgr, "you@burrow.dev", "yo")
-	cur = tree(t, mgr)
+	typeField(t, app, "you@burrow.dev", "yo")
+	cur = app.Tree()
 	if hasTextContaining(cur, "Not a valid email address") {
 		t.Fatal("RevealOnSubmit should say nothing while the user types")
 	}
 	if !hasTextContaining(cur, "touched: true · blurred: false · submitted: false") {
 		t.Fatal("typing should mark the field touched")
 	}
-	tap(t, mgr, "Check the form")
-	cur = tree(t, mgr)
+	app.Tap("Check the form")
+	cur = app.Tree()
 	if !hasTextContaining(cur, "Not a valid email address") {
 		t.Fatal("the failed submit should reveal the error")
 	}
@@ -236,8 +236,8 @@ func TestRevealPoliciesGateTheSameError(t *testing.T) {
 	}
 
 	// Live after the reveal — and a now-clean form says so.
-	typeField(t, mgr, "you@burrow.dev", "you@burrow.dev")
-	cur = tree(t, mgr)
+	typeField(t, app, "you@burrow.dev", "you@burrow.dev")
+	cur = app.Tree()
 	if hasTextContaining(cur, "Not a valid email address") {
 		t.Fatal("the error should clear the instant it is fixed")
 	}
@@ -246,23 +246,23 @@ func TestRevealPoliciesGateTheSameError(t *testing.T) {
 	}
 
 	// Reset clears values and all three reveal inputs.
-	tap(t, mgr, "Start over")
-	cur = tree(t, mgr)
+	app.Tap("Start over")
+	cur = app.Tree()
 	if !hasTextContaining(cur, "touched: false · blurred: false · submitted: false") {
 		t.Fatal("Reset should clear touched, blurred and submitted")
 	}
-	if got := fieldByPlaceholder(t, mgr, "you@burrow.dev").Props["value"]; got != "" {
+	if got := fieldByPlaceholder(t, app, "you@burrow.dev").Props["value"]; got != "" {
 		t.Fatalf("email value after reset = %v, want empty", got)
 	}
 
 	// OnBlur: silent while typing, speaks when focus leaves the field.
-	tap(t, mgr, "OnBlur")
-	typeField(t, mgr, "you@burrow.dev", "yo")
-	if hasTextContaining(tree(t, mgr), "Not a valid email address") {
+	app.Tap("OnBlur")
+	typeField(t, app, "you@burrow.dev", "yo")
+	if hasTextContaining(app.Tree(), "Not a valid email address") {
 		t.Fatal("RevealOnBlur should say nothing while the field is being edited")
 	}
-	blurField(t, mgr, "you@burrow.dev")
-	cur = tree(t, mgr)
+	blurField(t, app, "you@burrow.dev")
+	cur = app.Tree()
 	if !hasTextContaining(cur, "Not a valid email address") {
 		t.Fatal("leaving the field should reveal its error under RevealOnBlur")
 	}
@@ -272,35 +272,35 @@ func TestRevealPoliciesGateTheSameError(t *testing.T) {
 
 	// OnTouch: the edit itself reveals — on the second keystroke, not when
 	// the user is done.
-	tap(t, mgr, "Start over")
-	tap(t, mgr, "OnTouch")
-	typeField(t, mgr, "you@burrow.dev", "yo")
-	if !hasTextContaining(tree(t, mgr), "Not a valid email address") {
+	app.Tap("Start over")
+	app.Tap("OnTouch")
+	typeField(t, app, "you@burrow.dev", "yo")
+	if !hasTextContaining(app.Tree(), "Not a valid email address") {
 		t.Fatal("RevealOnTouch should reveal as soon as the field is edited")
 	}
 
 	// Always: the empty form complains with no interaction at all.
-	tap(t, mgr, "Start over")
-	tap(t, mgr, "Always")
-	if !hasTextContaining(tree(t, mgr), "An address is needed") {
+	app.Tap("Start over")
+	app.Tap("Always")
+	if !hasTextContaining(app.Tree(), "An address is needed") {
 		t.Fatal("RevealAlways should show the error from the first render")
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 // --- 5.4 Cross-field & server errors -----------------------------------------
 
 func TestCrossFieldAndServerErrors(t *testing.T) {
-	mgr := newApp(t)
-	openLesson(t, mgr, "Cross-field & server errors")
+	app := newApp(t)
+	openLesson(t, app, "Cross-field & server errors")
 
 	// With the confirmation empty, its own Required wins over Validate's
 	// mismatch — the field rule is the more specific complaint.
-	typeField(t, mgr, "gopher@burrow.dev", "fresh@burrow.dev")
-	typeField(t, mgr, "choose a password", "hunter2222")
-	tap(t, mgr, "Claim address")
-	cur := tree(t, mgr)
-	if !hasText(cur, "Required") {
+	typeField(t, app, "gopher@burrow.dev", "fresh@burrow.dev")
+	typeField(t, app, "choose a password", "hunter2222")
+	app.Tap("Claim address")
+	cur := app.Tree()
+	if !grmobtest.HasText(cur, "Required") {
 		t.Fatal("the empty confirmation should show its own Required message")
 	}
 	if hasTextContaining(cur, "don't match the password") {
@@ -308,78 +308,78 @@ func TestCrossFieldAndServerErrors(t *testing.T) {
 	}
 
 	// A filled-but-different confirmation is the gap only Validate can see.
-	typeField(t, mgr, "type it again", "hunter1111")
-	if !hasTextContaining(tree(t, mgr), "These don't match the password above") {
+	typeField(t, app, "type it again", "hunter1111")
+	if !hasTextContaining(app.Tree(), "These don't match the password above") {
 		t.Fatal("the cross-field mismatch should show once Required is satisfied")
 	}
-	typeField(t, mgr, "type it again", "hunter2222")
-	if hasTextContaining(tree(t, mgr), "These don't match the password above") {
+	typeField(t, app, "type it again", "hunter2222")
+	if hasTextContaining(app.Tree(), "These don't match the password above") {
 		t.Fatal("the cross-field error should clear once the values agree")
 	}
 
 	// A verdict only the registry can reach, arriving through SetErrors — and
 	// paired with a focus command that puts the cursor back on the problem.
-	typeField(t, mgr, "gopher@burrow.dev", "taken@example.com")
-	tap(t, mgr, "Claim address")
-	cur = tree(t, mgr)
+	typeField(t, app, "gopher@burrow.dev", "taken@example.com")
+	app.Tap("Claim address")
+	cur = app.Tree()
 	if !hasTextContaining(cur, "Someone got there first") {
 		t.Fatal("the taken address should come back with the server's error")
 	}
 	if hasTextContaining(cur, "✓ claimed") {
 		t.Fatal("the taken address must not be claimed")
 	}
-	email := fieldByPlaceholder(t, mgr, "gopher@burrow.dev")
+	email := fieldByPlaceholder(t, app, "gopher@burrow.dev")
 	if email.Props["focusAction"] != "focus" {
 		t.Fatalf("email focusAction = %v, want focus", email.Props["focusAction"])
 	}
 	// The other fields are stamped with the same command and nothing to do —
 	// not told to blur, which would race the focus on both native platforms.
-	pw := fieldByPlaceholder(t, mgr, "choose a password")
+	pw := fieldByPlaceholder(t, app, "choose a password")
 	if pw.Props["focusAction"] != "" {
 		t.Fatalf("password focusAction = %v, want empty", pw.Props["focusAction"])
 	}
 
 	// The external error drops on the field's first edit — the verdict was
 	// about the old text, so no second round trip is needed to clear it.
-	typeField(t, mgr, "gopher@burrow.dev", "fresh@burrow.dev")
-	if hasTextContaining(tree(t, mgr), "Someone got there first") {
+	typeField(t, app, "gopher@burrow.dev", "fresh@burrow.dev")
+	if hasTextContaining(app.Tree(), "Someone got there first") {
 		t.Fatal("editing the field should drop the server's error")
 	}
-	tap(t, mgr, "Claim address")
-	if !hasTextContaining(tree(t, mgr), "✓ claimed fresh@burrow.dev") {
+	app.Tap("Claim address")
+	if !hasTextContaining(app.Tree(), "✓ claimed fresh@burrow.dev") {
 		t.Fatal("a fresh address should claim successfully")
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 // --- 5.5 Values, initials & reset --------------------------------------------
 
 func TestValuesInitialsAndReset(t *testing.T) {
-	mgr := newApp(t)
-	openLesson(t, mgr, "Values, initials & reset")
+	app := newApp(t)
+	openLesson(t, app, "Values, initials & reset")
 
 	// Initial seeds the declared defaults: the quantity text and the ticked
 	// gift box, with the live caption showing a clean parse.
-	cur := tree(t, mgr)
-	if got := fieldByPlaceholder(t, mgr, "how many?").Props["value"]; got != "2" {
+	cur := app.Tree()
+	if got := fieldByPlaceholder(t, app, "how many?").Props["value"]; got != "2" {
 		t.Fatalf("quantity should open at its Initial of 2, got %v", got)
 	}
 	if !hasTextContaining(cur, "→ (2, true)") {
 		t.Fatal("the parse caption should show the seeded quantity")
 	}
-	gift := findNode(cur, func(n *node) bool { return n.Type == "Checkbox" })
+	gift := grmobtest.Find(cur, func(n *node) bool { return n.Type == "Checkbox" })
 	if gift == nil || gift.Props["checked"] != true {
 		t.Fatal("the gift checkbox should open ticked from its Initial")
 	}
 
 	// Values are text: the unparseable value survives to the form, the ok
 	// comes back false, and the Range rule gets its chance to complain.
-	typeField(t, mgr, "how many?", "12x")
-	if !hasTextContaining(tree(t, mgr), "→ (0, false)") {
+	typeField(t, app, "how many?", "12x")
+	if !hasTextContaining(app.Tree(), "→ (0, false)") {
 		t.Fatal("an unparseable quantity should read as (0, false)")
 	}
-	tap(t, mgr, "Place order")
-	cur = tree(t, mgr)
+	app.Tap("Place order")
+	cur = app.Tree()
 	if !hasTextContaining(cur, "Order between 1 and 12 gophers") {
 		t.Fatal("the failed submit should reveal the Range error")
 	}
@@ -389,19 +389,19 @@ func TestValuesInitialsAndReset(t *testing.T) {
 
 	// The typed getters feed the handler: Int for the quantity, Bool for the
 	// checkbox seeded true.
-	typeField(t, mgr, "how many?", "3")
-	if !hasTextContaining(tree(t, mgr), "→ (3, true)") {
+	typeField(t, app, "how many?", "3")
+	if !hasTextContaining(app.Tree(), "→ (3, true)") {
 		t.Fatal("the parse caption should confirm the fix live")
 	}
-	tap(t, mgr, "Place order")
-	if !hasTextContaining(tree(t, mgr), "order placed: quantity 3, gift-wrapped") {
+	app.Tap("Place order")
+	if !hasTextContaining(app.Tree(), "order placed: quantity 3, gift-wrapped") {
 		t.Fatal("the order should carry the parsed quantity and the ticked gift box")
 	}
 
 	// Unticking the box flows through Values.Bool on the next submit.
-	toggleCheckbox(t, mgr, 0, false)
-	tap(t, mgr, "Place order")
-	cur = tree(t, mgr)
+	toggleCheckbox(t, app, 0, false)
+	app.Tap("Place order")
+	cur = app.Tree()
 	if !hasTextContaining(cur, "order placed: quantity 3") {
 		t.Fatal("the re-placed order should keep the quantity")
 	}
@@ -411,16 +411,16 @@ func TestValuesInitialsAndReset(t *testing.T) {
 
 	// Initial is not re-applied between renders: a cleared field stays
 	// cleared even though the spec still names its default.
-	typeField(t, mgr, "how many?", "")
-	if got := fieldByPlaceholder(t, mgr, "how many?").Props["value"]; got != "" {
+	typeField(t, app, "how many?", "")
+	if got := fieldByPlaceholder(t, app, "how many?").Props["value"]; got != "" {
 		t.Fatalf("a cleared field should stay cleared, got %v", got)
 	}
 
 	// Reset is what re-reads the Initials — and clears the submitted flag, so
 	// the fresh form opens quiet.
-	tap(t, mgr, "Start over")
-	cur = tree(t, mgr)
-	if got := fieldByPlaceholder(t, mgr, "how many?").Props["value"]; got != "2" {
+	app.Tap("Start over")
+	cur = app.Tree()
+	if got := fieldByPlaceholder(t, app, "how many?").Props["value"]; got != "2" {
 		t.Fatalf("Reset should re-seed the Initial, got %v", got)
 	}
 	if hasTextContaining(cur, "order placed") {
@@ -429,11 +429,11 @@ func TestValuesInitialsAndReset(t *testing.T) {
 	if hasTextContaining(cur, "Order between 1 and 12 gophers") {
 		t.Fatal("Reset should clear the submitted flag, hiding the errors again")
 	}
-	gift = findNode(cur, func(n *node) bool { return n.Type == "Checkbox" })
+	gift = grmobtest.Find(cur, func(n *node) bool { return n.Type == "Checkbox" })
 	if gift == nil || gift.Props["checked"] != true {
 		t.Fatal("Reset should re-tick the gift box from its Initial")
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 // --- 5.6 Pickers ------------------------------------------------------------
@@ -442,9 +442,9 @@ func TestValuesInitialsAndReset(t *testing.T) {
 // Two pickers on the screen and neither carries a placeholder, so the value is
 // what tells them apart — which also means every lookup has to happen after
 // the dispatch that changed it, not before.
-func selectByValue(t *testing.T, mgr *render.Manager, value string) *node {
+func selectByValue(t *testing.T, app *grmobtest.Driver, value string) *node {
 	t.Helper()
-	n := findNode(tree(t, mgr), func(n *node) bool {
+	n := grmobtest.Find(app.Tree(), func(n *node) bool {
 		return n.Type == "Select" && n.Props["value"] == value
 	})
 	if n == nil {
@@ -454,12 +454,12 @@ func selectByValue(t *testing.T, mgr *render.Manager, value string) *node {
 }
 
 func TestPickerStoresTheValueAndIsRequiredWhenEmpty(t *testing.T) {
-	mgr := newApp(t)
-	openLesson(t, mgr, "Pickers: one value from a list")
+	app := newApp(t)
+	openLesson(t, app, "Pickers: one value from a list")
 
 	// The two declarations, side by side: the cabin picker opens on its
 	// Initial and the seat picker opens empty.
-	cur := tree(t, mgr)
+	cur := app.Tree()
 	if !hasTextContaining(cur, `class = "economy"   seat = ""`) {
 		t.Fatal("the pickers should open on their declarations — an Initial and an empty")
 	}
@@ -473,14 +473,14 @@ func TestPickerStoresTheValueAndIsRequiredWhenEmpty(t *testing.T) {
 	// commit, not a draft, so there is nothing for leaving one to signal. This
 	// is the assertion that fails if forms.Select ever grows a blur binding by
 	// being copied from Input.
-	if _, bound := selectByValue(t, mgr, "").Props["onBlur"]; bound {
+	if _, bound := selectByValue(t, app, "").Props["onBlur"]; bound {
 		t.Error("a picker attached a blur binding; a choice is a commit and has no draft state")
 	}
 
 	// Submitting without a seat reveals the rule, and the value the picker
 	// stores is the option's value rather than its label.
-	tap(t, mgr, "Book it")
-	cur = tree(t, mgr)
+	app.Tap("Book it")
+	cur = app.Tree()
 	if !hasTextContaining(cur, "Pick a seat before we can book it") {
 		t.Fatal("an unchosen picker should fail Required on submit")
 	}
@@ -488,15 +488,15 @@ func TestPickerStoresTheValueAndIsRequiredWhenEmpty(t *testing.T) {
 		t.Fatal("an invalid form must not book anything")
 	}
 
-	mgr.DispatchTextCallback(selectByValue(t, mgr, "").Props["onChange"].(string), "window")
-	mgr.DispatchTextCallback(selectByValue(t, mgr, "economy").Props["onChange"].(string), "business")
-	cur = tree(t, mgr)
+	app.Manager().DispatchTextCallback(selectByValue(t, app, "").Props["onChange"].(string), "window")
+	app.Manager().DispatchTextCallback(selectByValue(t, app, "economy").Props["onChange"].(string), "business")
+	cur = app.Tree()
 	if !hasTextContaining(cur, `class = "business"   seat = "window"`) {
 		t.Fatal("a choice should store the option's value")
 	}
 
-	tap(t, mgr, "Book it")
-	if !hasTextContaining(tree(t, mgr), "✓ business, window seat") {
+	app.Tap("Book it")
+	if !hasTextContaining(app.Tree(), "✓ business, window seat") {
 		t.Fatal("a complete form should book, carrying both picked values")
 	}
 }
@@ -516,14 +516,14 @@ func TestPickerStoresTheValueAndIsRequiredWhenEmpty(t *testing.T) {
 //	                          the case the prose points at and the one a
 //	                          label-dispatching renderer would get wrong
 func TestTheSeatPickerIsGroupedWithOneOptionDisabled(t *testing.T) {
-	mgr := newApp(t)
-	openLesson(t, mgr, "Pickers: one value from a list")
+	app := newApp(t)
+	openLesson(t, app, "Pickers: one value from a list")
 
-	opts, ok := selectByValue(t, mgr, "").Props["options"].([]any)
+	opts, ok := selectByValue(t, app, "").Props["options"].([]any)
 	if !ok {
 		// The tree here is the JSON round-trip, so the flattened maps arrive
 		// as []any of map[string]any rather than as core's own slice type.
-		t.Fatalf("the seat picker's options are %T", selectByValue(t, mgr, "").Props["options"])
+		t.Fatalf("the seat picker's options are %T", selectByValue(t, app, "").Props["options"])
 	}
 
 	var groups, labels []string
@@ -569,10 +569,10 @@ func str(v any) string {
 // resetting *to*. Checked live rather than in isolation because the claim is
 // about two widgets on one screen agreeing.
 func TestPickerAndTextFieldWearTheSameFrame(t *testing.T) {
-	mgr := newApp(t)
-	openLesson(t, mgr, "Pickers: one value from a list")
+	app := newApp(t)
+	openLesson(t, app, "Pickers: one value from a list")
 
-	picker := selectByValue(t, mgr, "economy")
+	picker := selectByValue(t, app, "economy")
 	if picker.Style == nil || picker.Style.BorderWidth == 0 || picker.Style.BorderColor == "" {
 		t.Fatalf("the picker carries no frame: %#v", picker.Style)
 	}
@@ -590,9 +590,9 @@ func TestPickerAndTextFieldWearTheSameFrame(t *testing.T) {
 }
 
 // pinField returns lesson 5.7's one field: the only Input on that screen.
-func pinField(t *testing.T, mgr *render.Manager) *node {
+func pinField(t *testing.T, app *grmobtest.Driver) *node {
 	t.Helper()
-	fields := findNodes(tree(t, mgr), func(n *node) bool { return n.Type == "Input" })
+	fields := grmobtest.FindAll(app.Tree(), func(n *node) bool { return n.Type == "Input" })
 	if len(fields) != 1 {
 		t.Fatalf("%d fields on the one-time code screen, want the one under the boxes", len(fields))
 	}
@@ -600,9 +600,9 @@ func pinField(t *testing.T, mgr *render.Manager) *node {
 }
 
 // typePIN reports the field's whole text, as a host does after an edit.
-func typePIN(t *testing.T, mgr *render.Manager, text string) {
+func typePIN(t *testing.T, app *grmobtest.Driver, text string) {
 	t.Helper()
-	mgr.DispatchTextCallback(pinField(t, mgr).Props["onChange"].(string), text)
+	app.Manager().DispatchTextCallback(pinField(t, app).Props["onChange"].(string), text)
 }
 
 // The claims lesson 5.7 makes that a tree can answer, driven through the real
@@ -610,25 +610,25 @@ func typePIN(t *testing.T, mgr *render.Manager, text string) {
 // completes the code once, a longer paste keeps what fits, and a backspace
 // empties the code without a completion.
 func TestPINLessonTypesPastesAndBackspacesThroughOneField(t *testing.T) {
-	mgr := newApp(t)
-	openLesson(t, mgr, "One-time codes: six boxes, one field")
+	app := newApp(t)
+	openLesson(t, app, "One-time codes: six boxes, one field")
 
-	if !hasTextContaining(tree(t, mgr), `Value = ""   ·   OnComplete fired 0 times`) {
+	if !hasTextContaining(app.Tree(), `Value = ""   ·   OnComplete fired 0 times`) {
 		t.Fatal("the lesson should open on an empty code")
 	}
-	typePIN(t, mgr, "4")
-	if !hasTextContaining(tree(t, mgr), `Value = "4"`) {
+	typePIN(t, app, "4")
+	if !hasTextContaining(app.Tree(), `Value = "4"`) {
 		t.Fatal("a character should reach the caption")
 	}
-	typePIN(t, mgr, "4172935")
-	if !hasTextContaining(tree(t, mgr), `Value = "417293"   ·   OnComplete fired 1 time`) {
+	typePIN(t, app, "4172935")
+	if !hasTextContaining(app.Tree(), `Value = "417293"   ·   OnComplete fired 1 time`) {
 		t.Fatal("a long paste should fill the field with what fits and complete it once")
 	}
-	if got := pinField(t, mgr).Props["value"]; got != "417293" {
+	if got := pinField(t, app).Props["value"]; got != "417293" {
 		t.Errorf("the field holds %v", got)
 	}
-	typePIN(t, mgr, "41729")
-	if !hasTextContaining(tree(t, mgr), `Value = "41729"   ·   OnComplete fired 1 time`) {
+	typePIN(t, app, "41729")
+	if !hasTextContaining(app.Tree(), `Value = "41729"   ·   OnComplete fired 1 time`) {
 		t.Error("a backspace should shorten the code without a completion")
 	}
 }
@@ -637,12 +637,12 @@ func TestPINLessonTypesPastesAndBackspacesThroughOneField(t *testing.T) {
 // draft, a paste commits all but its tail, a ✕ removes its own tag, and the
 // caption reads the lesson's state, which is the set and never the draft.
 func TestTagInputLessonCommitsPastesAndRemoves(t *testing.T) {
-	mgr := newApp(t)
-	openLesson(t, mgr, "Tags: a set typed one at a time")
+	app := newApp(t)
+	openLesson(t, app, "Tags: a set typed one at a time")
 
 	input := func() *node {
 		t.Helper()
-		n := findNode(tree(t, mgr), func(n *node) bool {
+		n := grmobtest.Find(app.Tree(), func(n *node) bool {
 			return n.Type == "Input" && n.Style != nil && n.Style.AccessibilityLabel == "Labels"
 		})
 		if n == nil {
@@ -652,27 +652,27 @@ func TestTagInputLessonCommitsPastesAndRemoves(t *testing.T) {
 	}
 	wantCaption := func(want string) {
 		t.Helper()
-		if !hasText(tree(t, mgr), want) {
+		if !grmobtest.HasText(app.Tree(), want) {
 			t.Errorf("caption should read %s", want)
 		}
 	}
 
 	wantCaption(`Tags = ["design" "urgent"]`)
 
-	mgr.DispatchTextCallback(input().Props["onChange"].(string), "q3")
+	app.Manager().DispatchTextCallback(input().Props["onChange"].(string), "q3")
 	wantCaption(`Tags = ["design" "urgent"]`)
-	mgr.DispatchCallback(input().Props["onSubmit"].(string))
+	app.Manager().DispatchCallback(input().Props["onSubmit"].(string))
 	wantCaption(`Tags = ["design" "urgent" "q3"]`)
 
-	mgr.DispatchTextCallback(input().Props["onChange"].(string), "a, b, c")
+	app.Manager().DispatchTextCallback(input().Props["onChange"].(string), "a, b, c")
 	wantCaption(`Tags = ["design" "urgent" "q3" "a" "b"]`)
 	if v := input().Props["value"]; v != " c" {
 		t.Errorf("draft = %v, want the paste's tail", v)
 	}
 
-	tapLabelled(t, mgr, "Remove urgent")
+	tapLabelled(t, app, "Remove urgent")
 	wantCaption(`Tags = ["design" "q3" "a" "b"]`)
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 // --- 5.9 Keypads, swatches, ranges and masks ---------------------------------
@@ -680,18 +680,18 @@ func TestTagInputLessonCommitsPastesAndRemoves(t *testing.T) {
 // The lesson's four demos, each driven the way a reader would: every widget's
 // value is lesson state, so each step is read back off a caption.
 func TestInputFamilyLessonDrivesAllFourWidgets(t *testing.T) {
-	mgr := newApp(t)
-	openLesson(t, mgr, "Keypads, swatches, ranges and masks")
+	app := newApp(t)
+	openLesson(t, app, "Keypads, swatches, ranges and masks")
 
 	wantCaption := func(want string) {
 		t.Helper()
-		if !hasText(tree(t, mgr), want) {
+		if !grmobtest.HasText(app.Tree(), want) {
 			t.Errorf("a caption should read %s", want)
 		}
 	}
 	labelled := func(typ, name string) *node {
 		t.Helper()
-		n := findNode(tree(t, mgr), func(n *node) bool {
+		n := grmobtest.Find(app.Tree(), func(n *node) bool {
 			return n.Type == typ && n.Style != nil && n.Style.AccessibilityLabel == name
 		})
 		if n == nil {
@@ -703,44 +703,44 @@ func TestInputFamilyLessonDrivesAllFourWidgets(t *testing.T) {
 	// NumberPad: the lesson caps the passcode at four, and then disables the
 	// pad, so a fifth key is both refused by OnKey and undeliverable.
 	for _, k := range []string{"1", "2", "3"} {
-		tap(t, mgr, k)
+		app.Tap(k)
 	}
 	wantCaption(`Passcode = "123"`)
-	tapLabelled(t, mgr, "Delete")
+	tapLabelled(t, app, "Delete")
 	wantCaption(`Passcode = "12"`)
-	tap(t, mgr, "0")
-	tap(t, mgr, "9")
+	app.Tap("0")
+	app.Tap("9")
 	wantCaption("✓ Four digits entered; the pad is Disabled.")
 	if !labelled("Button", "Delete").Style.Disabled {
 		t.Error("the pad should be disabled once the passcode is full")
 	}
-	tap(t, mgr, "Clear")
+	app.Tap("Clear")
 	wantCaption(`Passcode = ""`)
 
 	// ColorSwatchPicker: a swatch by its spoken name, then a typed hex.
 	wantCaption("Value = #2A78D6")
-	tapLabelled(t, mgr, "orange")
+	tapLabelled(t, app, "orange")
 	wantCaption("Value = #EB6834")
-	mgr.DispatchTextCallback(labelled("Input", "Custom colour, hex").Props["onChange"].(string), "#7b2ff0")
+	app.Manager().DispatchTextCallback(labelled("Input", "Custom colour, hex").Props["onChange"].(string), "#7b2ff0")
 	wantCaption("Value = #7B2FF0")
 
 	// RangeSlider: the minimum dragged past the maximum carries it along.
 	wantCaption("Low = 20   ·   High = 80")
-	mgr.DispatchTextCallback(labelled("Slider", "Minimum").Props["onChangeEnd"].(string), "120")
+	app.Manager().DispatchTextCallback(labelled("Slider", "Minimum").Props["onChangeEnd"].(string), "120")
 	wantCaption("Low = 120   ·   High = 120")
-	if !hasText(tree(t, mgr), "$120 – $120") {
+	if !grmobtest.HasText(app.Tree(), "$120 – $120") {
 		t.Error("the title line should state the new range in words")
 	}
 
 	// MaskedInput: the host sends the text as the reader left it, Go holds
 	// the raw value and draws the formatted one.
-	mgr.DispatchTextCallback(labelled("Input", "Phone").Props["onChange"].(string), "5551234567")
+	app.Manager().DispatchTextCallback(labelled("Input", "Phone").Props["onChange"].(string), "5551234567")
 	wantCaption(`phone = "5551234567"   ·   card = ""`)
 	if v := labelled("Input", "Phone").Props["value"]; v != "(555) 123-4567" {
 		t.Errorf("the phone field draws %v, want (555) 123-4567", v)
 	}
-	mgr.DispatchTextCallback(labelled("Input", "Phone").Props["onChange"].(string), "(555) 123-456x")
+	app.Manager().DispatchTextCallback(labelled("Input", "Phone").Props["onChange"].(string), "(555) 123-456x")
 	wantCaption(`phone = "555123456"   ·   card = ""`)
 
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }

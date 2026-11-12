@@ -379,8 +379,9 @@ so a test survives a layout change. Cover these:
 - when extracting a component from app code, pin `htmlout.ExportHTML` of the
   tree before the extraction and compare it after
 
-For a whole screen, drive the component through `render.Manager` as in
-[Debug Mode](debug-mode.md).
+For a whole screen, drive the app with `grmobtest` (`grmobtest.New(t, App)`,
+then `Tap`, `Type`, `HasText`, `NoConcerns`), which renders through
+`render.Manager` as every host does; [Debug Mode](debug-mode.md) shows it.
 
 ## When it is not a component
 

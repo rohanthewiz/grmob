@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/rohanthewiz/grmob/core"
+	"github.com/rohanthewiz/grmob/grmobtest"
 )
 
 // Chapter 7 demo-liveness tests. Unlike the earlier chapters, most of what
@@ -18,7 +19,7 @@ import (
 // styles, so a missing struct is a broken demo, not a soft miss.
 func styledText(t *testing.T, root *node, content string) *node {
 	t.Helper()
-	n := findNode(root, func(n *node) bool {
+	n := grmobtest.Find(root, func(n *node) bool {
 		return n.Type == "Text" && n.Props["content"] == content
 	})
 	if n == nil {
@@ -36,8 +37,8 @@ func styledText(t *testing.T, root *node, content string) *node {
 // excludes them — but the marker keeps the finder honest if that changes.
 func demoBoxNode(t *testing.T, root *node, marker string) *node {
 	t.Helper()
-	n := findNode(root, func(n *node) bool {
-		return n.Type == "Column" && n.Style != nil && n.Style.Background != "" && hasText(n, marker)
+	n := grmobtest.Find(root, func(n *node) bool {
+		return n.Type == "Column" && n.Style != nil && n.Style.Background != "" && grmobtest.HasText(n, marker)
 	})
 	if n == nil {
 		t.Fatalf("no styled Column containing %q", marker)
@@ -48,25 +49,25 @@ func demoBoxNode(t *testing.T, root *node, marker string) *node {
 // --- 7.1 The style pipeline --------------------------------------------------
 
 func TestStylePipelineLastPropWins(t *testing.T) {
-	mgr := newApp(t)
-	openLesson(t, mgr, "The style pipeline")
+	app := newApp(t)
+	openLesson(t, app, "The style pipeline")
 
 	const marker = "Painted by the last prop standing"
 
 	// Base coat only: the box wears the blue it started with.
-	if got := demoBoxNode(t, tree(t, mgr), marker).Style.Background; got != boxBlue {
+	if got := demoBoxNode(t, app.Tree(), marker).Style.Background; got != boxBlue {
 		t.Fatalf("with no coats on, the box should be %s, got %s", boxBlue, got)
 	}
 
 	// Teal appended after the base overrides it.
-	toggleCheckbox(t, mgr, 0, true)
-	if got := demoBoxNode(t, tree(t, mgr), marker).Style.Background; got != boxTeal {
+	toggleCheckbox(t, app, 0, true)
+	if got := demoBoxNode(t, app.Tree(), marker).Style.Background; got != boxTeal {
 		t.Fatalf("the teal coat should win over the base, got %s", got)
 	}
 
 	// Both on: plum is appended after teal, so plum wins — the whole rule.
-	toggleCheckbox(t, mgr, 1, true)
-	cur := tree(t, mgr)
+	toggleCheckbox(t, app, 1, true)
+	cur := app.Tree()
 	if got := demoBoxNode(t, cur, marker).Style.Background; got != boxPlum {
 		t.Fatalf("with both coats on the later prop must win, got %s", got)
 	}
@@ -75,32 +76,32 @@ func TestStylePipelineLastPropWins(t *testing.T) {
 	}
 
 	// Removing the later coat re-resolves the list: teal shows again.
-	toggleCheckbox(t, mgr, 1, false)
-	if got := demoBoxNode(t, tree(t, mgr), marker).Style.Background; got != boxTeal {
+	toggleCheckbox(t, app, 1, false)
+	if got := demoBoxNode(t, app.Tree(), marker).Style.Background; got != boxTeal {
 		t.Fatalf("dropping plum should fall back to teal, got %s", got)
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 // --- 7.2 UseStyle merging ----------------------------------------------------
 
 func TestUseStyleMergesAndCannotClear(t *testing.T) {
-	mgr := newApp(t)
-	openLesson(t, mgr, "UseStyle: layers that merge")
+	app := newApp(t)
+	openLesson(t, app, "UseStyle: layers that merge")
 
 	const marker = "One node, one Style — watch the corners and the type."
 
 	// The named role alone: calloutStyle's fields, verbatim.
-	s := styledText(t, tree(t, mgr), marker).Style
+	s := styledText(t, app.Tree(), marker).Style
 	if s.Background != boxPlum || s.FontSize != 15 || s.BorderRadius != 14 {
 		t.Fatalf("the callout role should apply verbatim, got %+v", s)
 	}
 
 	// Layering bigType changes ONLY the type fields — fill, ink and corners
 	// pass through because the layer never set them. This is the merge rule.
-	toggleCheckbox(t, mgr, 0, true)
-	s = styledText(t, tree(t, mgr), marker).Style
-	if s.FontSize != 24 || s.FontWeight != int(core.Bold) {
+	toggleCheckbox(t, app, 0, true)
+	s = styledText(t, app.Tree(), marker).Style
+	if s.FontSize != 24 || s.FontWeight != core.Bold {
 		t.Fatalf("bigType should set the type fields, got %+v", s)
 	}
 	if s.Background != boxPlum || s.TextColor != "#FFFFFF" || s.BorderRadius != 14 {
@@ -108,17 +109,17 @@ func TestUseStyleMergesAndCannotClear(t *testing.T) {
 	}
 
 	// The documented no-op: a zero field in a UseStyle merge holds no opinion.
-	toggleCheckbox(t, mgr, 1, true)
-	if s = styledText(t, tree(t, mgr), marker).Style; s.BorderRadius != 14 {
+	toggleCheckbox(t, app, 1, true)
+	if s = styledText(t, app.Tree(), marker).Style; s.BorderRadius != 14 {
 		t.Fatalf("UseStyle(Style{BorderRadius: 0}) must change nothing, got %v", s.BorderRadius)
 	}
 
 	// The direct prop assigns unconditionally — and it runs last.
-	toggleCheckbox(t, mgr, 2, true)
-	if s = styledText(t, tree(t, mgr), marker).Style; s.BorderRadius != 0 {
+	toggleCheckbox(t, app, 2, true)
+	if s = styledText(t, app.Tree(), marker).Style; s.BorderRadius != 0 {
 		t.Fatalf("core.BorderRadius(0) must force the field to zero, got %v", s.BorderRadius)
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 // --- 7.3 Theme anatomy -------------------------------------------------------
@@ -133,15 +134,15 @@ func TestUseStyleMergesAndCannotClear(t *testing.T) {
 // the lessons did.
 func TestBothThemeLessonsOfferEveryBundledTheme(t *testing.T) {
 	for _, lesson := range []string{"Inside a Theme", "Two themes, one tree"} {
-		mgr := newApp(t)
-		openLesson(t, mgr, lesson)
-		cur := tree(t, mgr)
+		app := newApp(t)
+		openLesson(t, app, lesson)
+		cur := app.Tree()
 		for name := range core.BundledThemes() {
 			label := strings.TrimSuffix(name, "Theme")
 			// A Button carrying the label, which is what tap() needs: the
 			// picker's segments are buttons, so this asserts an operable
 			// control rather than the word appearing somewhere on the page.
-			seg := findNode(cur, func(n *node) bool {
+			seg := grmobtest.Find(cur, func(n *node) bool {
 				return n.Type == "Button" && n.Props["label"] == label
 			})
 			if seg == nil {
@@ -154,13 +155,13 @@ func TestBothThemeLessonsOfferEveryBundledTheme(t *testing.T) {
 }
 
 func TestThemeInspectorReadsBothBundledThemes(t *testing.T) {
-	mgr := newApp(t)
-	openLesson(t, mgr, "Inside a Theme")
+	app := newApp(t)
+	openLesson(t, app, "Inside a Theme")
 
 	// The inspector opens on DefaultTheme's data: iOS blue, and a scale
 	// topping out at 28. The hex captions are literal Text nodes.
-	cur := tree(t, mgr)
-	if !hasText(cur, core.DefaultTheme.Colors.Primary) {
+	cur := app.Tree()
+	if !grmobtest.HasText(cur, core.DefaultTheme.Colors.Primary) {
 		t.Fatal("the Default palette should list its Primary hex")
 	}
 	if !hasTextContaining(cur, "Title 28") {
@@ -169,12 +170,12 @@ func TestThemeInspectorReadsBothBundledThemes(t *testing.T) {
 
 	// Flip to Material: same rows, re-read from the other value — including
 	// the teal Secondary the prose points at, and the smaller scale.
-	tap(t, mgr, "Material")
-	cur = tree(t, mgr)
-	if !hasText(cur, core.MaterialTheme.Colors.Primary) {
+	app.Tap("Material")
+	cur = app.Tree()
+	if !grmobtest.HasText(cur, core.MaterialTheme.Colors.Primary) {
 		t.Fatal("the Material palette should list its Primary hex")
 	}
-	if !hasText(cur, core.MaterialTheme.Colors.Secondary) {
+	if !grmobtest.HasText(cur, core.MaterialTheme.Colors.Secondary) {
 		t.Fatal("the Material palette should list its teal Secondary")
 	}
 	if !hasTextContaining(cur, "Title 22") {
@@ -186,9 +187,9 @@ func TestThemeInspectorReadsBothBundledThemes(t *testing.T) {
 
 	// And the third palette, which is the one this test was extended for: the
 	// rows are the same rows and the data is Amber's.
-	tap(t, mgr, "Amber")
-	cur = tree(t, mgr)
-	if !hasText(cur, core.AmberTheme.Colors.Primary) {
+	app.Tap("Amber")
+	cur = app.Tree()
+	if !grmobtest.HasText(cur, core.AmberTheme.Colors.Primary) {
 		t.Fatal("the Amber palette should list its Primary hex")
 	}
 	if !hasTextContaining(cur, core.AmberTheme.Components.Button.Background) {
@@ -196,21 +197,21 @@ func TestThemeInspectorReadsBothBundledThemes(t *testing.T) {
 	}
 
 	// And back — the inspector is plain state over plain data.
-	tap(t, mgr, "Default")
-	if !hasText(tree(t, mgr), core.DefaultTheme.Colors.Primary) {
+	app.Tap("Default")
+	if !grmobtest.HasText(app.Tree(), core.DefaultTheme.Colors.Primary) {
 		t.Fatal("switching back should re-read DefaultTheme")
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 // --- 7.4 The live theme switcher ---------------------------------------------
 
 func TestThemeSwitcherReskinsOnlyTheWrappedSubtree(t *testing.T) {
-	mgr := newApp(t)
-	openLesson(t, mgr, "Two themes, one tree")
+	app := newApp(t)
+	openLesson(t, app, "Two themes, one tree")
 
 	followBtn := func(root *node, label string) *node {
-		n := findNode(root, func(n *node) bool {
+		n := grmobtest.Find(root, func(n *node) bool {
 			return n.Type == "Button" && n.Props["label"] == label
 		})
 		if n == nil || n.Style == nil {
@@ -220,7 +221,7 @@ func TestThemeSwitcherReskinsOnlyTheWrappedSubtree(t *testing.T) {
 	}
 
 	// Under Default, the preview's button wears DefaultTheme's Button base.
-	cur := tree(t, mgr)
+	cur := app.Tree()
 	def := core.DefaultTheme.Components.Button
 	if got := followBtn(cur, "Follow").Style; got.Background != def.Background {
 		t.Fatalf("under Default the preview button should be %s, got %s",
@@ -229,8 +230,8 @@ func TestThemeSwitcherReskinsOnlyTheWrappedSubtree(t *testing.T) {
 
 	// Swap the subtree to Material: the same button re-resolves to the
 	// Material base — fill and corner radius both.
-	tap(t, mgr, "Material")
-	cur = tree(t, mgr)
+	app.Tap("Material")
+	cur = app.Tree()
 	mat := core.MaterialTheme.Components.Button
 	got := followBtn(cur, "Follow").Style
 	if got.Background != mat.Background || got.BorderRadius != mat.BorderRadius {
@@ -241,14 +242,14 @@ func TestThemeSwitcherReskinsOnlyTheWrappedSubtree(t *testing.T) {
 	// The third palette re-skins the same subtree — asserted because a picker
 	// that renders a button and wires it to nothing looks identical in a tree
 	// dump to one that works.
-	tap(t, mgr, "Amber")
+	app.Tap("Amber")
 	amb := core.AmberTheme.Components.Button
-	if got := followBtn(tree(t, mgr), "Follow").Style; got.Background != amb.Background {
+	if got := followBtn(app.Tree(), "Follow").Style; got.Background != amb.Background {
 		t.Fatalf("under Amber the preview button should be %s, got %s",
 			amb.Background, got.Background)
 	}
-	tap(t, mgr, "Material")
-	cur = tree(t, mgr)
+	app.Tap("Material")
+	cur = app.Tree()
 
 	// The scoping claim: the lesson's own footer sits OUTSIDE the wrapper and
 	// must still wear the app's DefaultTheme.
@@ -258,9 +259,9 @@ func TestThemeSwitcherReskinsOnlyTheWrappedSubtree(t *testing.T) {
 
 	// Handlers work across the themed boundary: the preview's state lives in
 	// the lesson's frame and arrives by closure.
-	tap(t, mgr, "Follow")
-	cur = tree(t, mgr)
-	if findNode(cur, func(n *node) bool { return n.Props["label"] == "Following ✓" }) == nil {
+	app.Tap("Follow")
+	cur = app.Tree()
+	if grmobtest.Find(cur, func(n *node) bool { return n.Props["label"] == "Following ✓" }) == nil {
 		t.Fatal("tapping Follow should flip the label through lesson state")
 	}
 	// The interaction must not have disturbed the theme choice.
@@ -268,24 +269,24 @@ func TestThemeSwitcherReskinsOnlyTheWrappedSubtree(t *testing.T) {
 		t.Fatalf("the theme choice should survive the tap, got %s", got.Background)
 	}
 
-	tap(t, mgr, "Default")
-	if got := followBtn(tree(t, mgr), "Following ✓").Style; got.Background != def.Background {
+	app.Tap("Default")
+	if got := followBtn(app.Tree(), "Following ✓").Style; got.Background != def.Background {
 		t.Fatalf("switching back should restore the Default base, got %s", got.Background)
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 // --- 7.5 Transitions ---------------------------------------------------------
 
 func TestTransitionDeclarationRidesTheStyle(t *testing.T) {
-	mgr := newApp(t)
-	openLesson(t, mgr, "Transitions: declare the motion")
+	app := newApp(t)
+	openLesson(t, app, "Transitions: declare the motion")
 
 	const marker = "Same patch, different journey"
 
 	// The demo opens at 250 ms: the canonical "<ms>ms <easing>" serialization
 	// should already be on the box.
-	box := demoBoxNode(t, tree(t, mgr), marker)
+	box := demoBoxNode(t, app.Tree(), marker)
 	if box.Style.Transition != "250ms ease-in-out" {
 		t.Fatalf("the box should open declaring 250ms ease-in-out, got %q", box.Style.Transition)
 	}
@@ -294,8 +295,8 @@ func TestTransitionDeclarationRidesTheStyle(t *testing.T) {
 	}
 
 	// The flip is an ordinary state change — the new style just lands.
-	tap(t, mgr, "Flip the look")
-	box = demoBoxNode(t, tree(t, mgr), marker)
+	app.Tap("Flip the look")
+	box = demoBoxNode(t, app.Tree(), marker)
 	if box.Style.Background != boxPlum || box.Style.BorderRadius != 24 {
 		t.Fatalf("the flip should swap to the alert look, got %+v", box.Style)
 	}
@@ -306,18 +307,18 @@ func TestTransitionDeclarationRidesTheStyle(t *testing.T) {
 
 	// Snap is Transition(0): the declaration clears entirely rather than
 	// serializing a zero duration.
-	tap(t, mgr, "Snap")
-	box = demoBoxNode(t, tree(t, mgr), marker)
+	app.Tap("Snap")
+	box = demoBoxNode(t, app.Tree(), marker)
 	if box.Style.Transition != "" {
 		t.Fatalf("Transition(0) must clear the declaration, got %q", box.Style.Transition)
 	}
 
-	tap(t, mgr, "800 ms")
-	box = demoBoxNode(t, tree(t, mgr), marker)
+	app.Tap("800 ms")
+	box = demoBoxNode(t, app.Tree(), marker)
 	if box.Style.Transition != "800ms ease-in-out" {
 		t.Fatalf("the pace picker should re-declare at 800 ms, got %q", box.Style.Transition)
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 // 7.2's second half: the box model, where the merge's granularity is what
@@ -329,8 +330,8 @@ func TestTransitionDeclarationRidesTheStyle(t *testing.T) {
 // indices 3 and 4: the first three belong to the radius demo above and this
 // test would otherwise silently drive those instead.
 func TestPerSidePropIndentsWithoutClearingTheOtherThree(t *testing.T) {
-	mgr := newApp(t)
-	openLesson(t, mgr, "UseStyle: layers that merge")
+	app := newApp(t)
+	openLesson(t, app, "UseStyle: layers that merge")
 
 	const marker = "indent me"
 
@@ -338,8 +339,8 @@ func TestPerSidePropIndentsWithoutClearingTheOtherThree(t *testing.T) {
 	// with and what both toggles are then measured against.
 	box := func() *node {
 		t.Helper()
-		n := findNode(tree(t, mgr), func(n *node) bool {
-			return n.Type == "Box" && n.Style != nil && hasText(n, marker)
+		n := grmobtest.Find(app.Tree(), func(n *node) bool {
+			return n.Type == "Box" && n.Style != nil && grmobtest.HasText(n, marker)
 		})
 		if n == nil {
 			t.Fatalf("no padded Box containing %q", marker)
@@ -354,7 +355,7 @@ func TestPerSidePropIndentsWithoutClearingTheOtherThree(t *testing.T) {
 
 	// The whole-struct layer: Left arrives, and the three sides the layer
 	// never named go to zero with it. That is the trap, drawn.
-	toggleCheckbox(t, mgr, 3, true)
+	toggleCheckbox(t, app, 3, true)
 	p = box().Style.Padding
 	if p.Left != 40 {
 		t.Errorf("UseStyle(Style{Padding:{Left:40}}) should set the left inset, got %+v", p)
@@ -362,10 +363,10 @@ func TestPerSidePropIndentsWithoutClearingTheOtherThree(t *testing.T) {
 	if p.Top != 0 || p.Right != 0 || p.Bottom != 0 {
 		t.Errorf("the whole-struct layer should have replaced all four sides, got %+v", p)
 	}
-	toggleCheckbox(t, mgr, 3, false)
+	toggleCheckbox(t, app, 3, false)
 
 	// The per-side prop: one field written, the base's other three intact.
-	toggleCheckbox(t, mgr, 4, true)
+	toggleCheckbox(t, app, 4, true)
 	p = box().Style.Padding
 	if p.Left != 40 {
 		t.Errorf("core.PaddingLeft(40) should set the left inset, got %+v", p)
@@ -378,5 +379,5 @@ func TestPerSidePropIndentsWithoutClearingTheOtherThree(t *testing.T) {
 	if p.Horizontal != 0 || p.Vertical != 0 {
 		t.Errorf("a side prop should leave no shorthand behind, got %+v", p)
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }

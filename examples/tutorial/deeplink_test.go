@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/rohanthewiz/grmob/core"
-	"github.com/rohanthewiz/grmob/render"
+	"github.com/rohanthewiz/grmob/grmobtest"
 )
 
 // Deep links, both directions (deeplink.go). Host events are delivered the
@@ -30,13 +30,10 @@ func recordRoutes(t *testing.T) *[]string {
 // newAppWithContext is newApp keeping hold of the root context, for the
 // tests below that assert on the navigation stack's depth: the Manager does
 // not expose its context, and core.StackDepth needs one.
-func newAppWithContext(t *testing.T) (*render.Manager, *core.Context) {
+func newAppWithContext(t *testing.T) (*grmobtest.Driver, *core.Context) {
 	t.Helper()
-	core.ClearConcerns()
 	ctx := core.NewContext().WithTheme(core.DefaultTheme)
-	mgr := render.New(ctx, App)
-	t.Cleanup(mgr.Close)
-	return mgr, ctx
+	return grmobtest.NewWithContext(t, ctx, App), ctx
 }
 
 // route delivers what the page sends at boot and on hashchange.
@@ -54,12 +51,12 @@ func deepLink(url string) {
 
 func TestNavigationReportsRoutes(t *testing.T) {
 	routes := recordRoutes(t)
-	mgr := newApp(t)
+	app := newApp(t)
 
-	openLesson(t, mgr, flatLessons[0].Title) // contents row → Push
-	tap(t, mgr, "Next ›")                    // → Replace
-	tap(t, mgr, "‹ Prev")                    // → Replace
-	tap(t, mgr, "‹ Contents")                // → Pop
+	openLesson(t, app, flatLessons[0].Title) // contents row → Push
+	app.Tap("Next ›")                        // → Replace
+	app.Tap("‹ Prev")                        // → Replace
+	app.Tap("‹ Contents")                    // → Pop
 
 	want := []string{flatLessons[0].ID, flatLessons[1].ID, flatLessons[0].ID, ""}
 	if len(*routes) != len(want) {
@@ -72,35 +69,35 @@ func TestNavigationReportsRoutes(t *testing.T) {
 	}
 
 	// Rendering reports nothing: the address bar only moves on navigation.
-	tree(t, mgr)
+	app.Tree()
 	if len(*routes) != len(want) {
 		t.Fatalf("a render pass must not report a route, got %v", *routes)
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 func TestFinishReportsContents(t *testing.T) {
 	routes := recordRoutes(t)
-	mgr := newApp(t)
+	app := newApp(t)
 	last := flatLessons[len(flatLessons)-1]
 
-	openLesson(t, mgr, last.Title)
-	tap(t, mgr, "Finish ✓")
+	openLesson(t, app, last.Title)
+	app.Tap("Finish ✓")
 	if n := len(*routes); n != 2 || (*routes)[0] != last.ID || (*routes)[1] != "" {
 		t.Fatalf("expected [%s \"\"], got %v", last.ID, *routes)
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 // --- Inbound: a link opens its lesson --------------------------------------
 
 func TestRouteOpensLessonFromContents(t *testing.T) {
 	routes := recordRoutes(t)
-	mgr, ctx := newAppWithContext(t)
-	tree(t, mgr) // the first render is what subscribes the app
+	app, ctx := newAppWithContext(t)
+	app.Tree() // the first render is what subscribes the app
 
 	route("2.3")
-	cur := tree(t, mgr)
+	cur := app.Tree()
 	if !hasTextContaining(cur, "2.3  ") {
 		t.Fatal("route 2.3 should open lesson 2.3")
 	}
@@ -108,8 +105,8 @@ func TestRouteOpensLessonFromContents(t *testing.T) {
 		t.Fatalf("a link from the contents should Push, depth %d", core.StackDepth(ctx))
 	}
 	// Opening by link counts as opening: the contents row is badged.
-	tap(t, mgr, "‹ Contents")
-	if !hasText(tree(t, mgr), "opened") {
+	app.Tap("‹ Contents")
+	if !grmobtest.HasText(app.Tree(), "opened") {
 		t.Fatal("a lesson opened by link should be marked opened")
 	}
 	// The inbound hop never echoes back — the page's hash is already right.
@@ -117,16 +114,16 @@ func TestRouteOpensLessonFromContents(t *testing.T) {
 	if len(*routes) != 1 || (*routes)[0] != "" {
 		t.Fatalf("a route host event must not report a route back, got %v", *routes)
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 func TestRouteBetweenLessonsReplaces(t *testing.T) {
-	mgr, ctx := newAppWithContext(t)
-	tree(t, mgr)
+	app, ctx := newAppWithContext(t)
+	app.Tree()
 
 	route("1.1")
 	route("3.2")
-	if !hasTextContaining(tree(t, mgr), "3.2  ") {
+	if !hasTextContaining(app.Tree(), "3.2  ") {
 		t.Fatal("route 3.2 should show lesson 3.2")
 	}
 	if d := core.StackDepth(ctx); d != 2 {
@@ -135,21 +132,21 @@ func TestRouteBetweenLessonsReplaces(t *testing.T) {
 
 	// "" is the contents.
 	route("")
-	if !hasText(tree(t, mgr), "GrMob Interactive Tutorial") {
+	if !grmobtest.HasText(app.Tree(), "GrMob Interactive Tutorial") {
 		t.Fatal("an empty route should land on the contents")
 	}
 	if d := core.StackDepth(ctx); d != 1 {
 		t.Fatalf("expected depth 1 on the contents, got %d", d)
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 func TestRouteIgnoresUnknownAndCurrent(t *testing.T) {
-	mgr, ctx := newAppWithContext(t)
-	tree(t, mgr)
+	app, ctx := newAppWithContext(t)
+	app.Tree()
 
 	route("9.9")
-	if !hasText(tree(t, mgr), "GrMob Interactive Tutorial") {
+	if !grmobtest.HasText(app.Tree(), "GrMob Interactive Tutorial") {
 		t.Fatal("an unknown lesson must be ignored")
 	}
 
@@ -157,25 +154,25 @@ func TestRouteIgnoresUnknownAndCurrent(t *testing.T) {
 	// frame: the demo's state has to survive. Lesson 2.1's counter is the
 	// probe.
 	route("2.1")
-	tap(t, mgr, "+1")
-	tap(t, mgr, "+1")
+	app.Tap("+1")
+	app.Tap("+1")
 	route("2.1")
-	if !hasText(tree(t, mgr), "2") {
+	if !grmobtest.HasText(app.Tree(), "2") {
 		t.Fatal("re-routing to the current lesson must keep its demo state")
 	}
 	if d := core.StackDepth(ctx); d != 2 {
 		t.Fatalf("expected depth 2, got %d", d)
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 // A chapter link is its first lesson (deeplink.go, resolveRoute).
 func TestChapterRouteOpensFirstLesson(t *testing.T) {
-	mgr, ctx := newAppWithContext(t)
-	tree(t, mgr)
+	app, ctx := newAppWithContext(t)
+	app.Tree()
 
 	route("3")
-	if !hasTextContaining(tree(t, mgr), "3.1  ") {
+	if !hasTextContaining(app.Tree(), "3.1  ") {
 		t.Fatal("route 3 should open lesson 3.1")
 	}
 	if d := core.StackDepth(ctx); d != 2 {
@@ -184,36 +181,36 @@ func TestChapterRouteOpensFirstLesson(t *testing.T) {
 
 	// The chapter spelling of the lesson already showing is a no-op: the
 	// demo's state survives.
-	toggleCheckbox(t, mgr, 0, true) // "Pause the count"
+	toggleCheckbox(t, app, 0, true) // "Pause the count"
 	route("3")
-	if !hasTextContaining(tree(t, mgr), "Paused —") {
+	if !hasTextContaining(app.Tree(), "Paused —") {
 		t.Fatal("re-routing to the current chapter must keep the lesson's state")
 	}
 
 	// Past the end, and the malformed spellings Atoi would have accepted.
 	for _, bad := range []string{"9", "0", "03", "+3", " 3", "3."} {
 		route(bad)
-		if !hasTextContaining(tree(t, mgr), "3.1  ") {
+		if !hasTextContaining(app.Tree(), "3.1  ") {
 			t.Fatalf("route %q should be ignored", bad)
 		}
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 // Subscriptions are process-wide; a closed app must let go of the channel
 // so the next app (a browser re-mount, the next test) is the only listener.
 func TestClosedAppStopsListening(t *testing.T) {
 	first, firstCtx := newAppWithContext(t)
-	tree(t, first)
-	first.Close()
+	first.Tree()
+	first.Manager().Close()
 
 	second := newApp(t)
-	tree(t, second)
+	second.Tree()
 	route("1.2")
 	if d := core.StackDepth(firstCtx); d != 1 {
 		t.Fatalf("a closed app must not navigate, depth %d", d)
 	}
-	if !hasTextContaining(tree(t, second), "1.2  ") {
+	if !hasTextContaining(second.Tree(), "1.2  ") {
 		t.Fatal("the live app should have navigated")
 	}
 }
@@ -231,11 +228,11 @@ func TestClosedAppStopsListening(t *testing.T) {
 // recognise would do.
 func TestDeepLinkOpensLessonAndIgnoresWhatItDoesNotClaim(t *testing.T) {
 	routes := recordRoutes(t)
-	mgr, ctx := newAppWithContext(t)
-	tree(t, mgr) // the first render is what subscribes the app
+	app, ctx := newAppWithContext(t)
+	app.Tree() // the first render is what subscribes the app
 
 	deepLink("grmob://lesson/4.12")
-	if !hasTextContaining(tree(t, mgr), "4.12  ") {
+	if !hasTextContaining(app.Tree(), "4.12  ") {
 		t.Fatal("a deep link to 4.12 did not open it — the natives' only route in")
 	}
 	if core.StackDepth(ctx) != 2 {
@@ -249,7 +246,7 @@ func TestDeepLinkOpensLessonAndIgnoresWhatItDoesNotClaim(t *testing.T) {
 
 	// A chapter, which is the shorthand the web hash also accepts.
 	deepLink("grmob://lesson/6")
-	if !hasTextContaining(tree(t, mgr), "6.1  ") {
+	if !hasTextContaining(app.Tree(), "6.1  ") {
 		t.Fatal("a chapter link should open the chapter's first lesson")
 	}
 
@@ -263,7 +260,7 @@ func TestDeepLinkOpensLessonAndIgnoresWhatItDoesNotClaim(t *testing.T) {
 		"not a url at all",
 	} {
 		deepLink(url)
-		if !hasTextContaining(tree(t, mgr), "6.1  ") {
+		if !hasTextContaining(app.Tree(), "6.1  ") {
 			t.Errorf("%q moved the reader off the lesson they were reading", url)
 		}
 	}
@@ -274,7 +271,7 @@ func TestDeepLinkOpensLessonAndIgnoresWhatItDoesNotClaim(t *testing.T) {
 		t.Errorf("a link to the contents should pop to the root, depth %d",
 			core.StackDepth(ctx))
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 // lessonFromURL on its own, because most of its answers are invisible through
@@ -337,15 +334,15 @@ func outermostOnBack(n *node) string {
 // lesson was ignored as the one already on screen.
 func TestSystemBackOnALessonTakesTheContentsDoor(t *testing.T) {
 	routes := recordRoutes(t)
-	mgr, ctx := newAppWithContext(t)
+	app, ctx := newAppWithContext(t)
 	first := flatLessons[0]
 
-	openLesson(t, mgr, first.Title)
-	id := outermostOnBack(tree(t, mgr))
+	openLesson(t, app, first.Title)
+	id := outermostOnBack(app.Tree())
 	if id == "" {
 		t.Fatal("a lesson screen should claim back")
 	}
-	mgr.DispatchCallback(id)
+	app.Manager().DispatchCallback(id)
 
 	if d := core.StackDepth(ctx); d != 1 {
 		t.Fatalf("back on a lesson should return to the contents, depth %d", d)
@@ -354,9 +351,9 @@ func TestSystemBackOnALessonTakesTheContentsDoor(t *testing.T) {
 		t.Fatalf("back should report the contents route, got %v", *routes)
 	}
 	route(first.ID)
-	tree(t, mgr)
+	app.Tree()
 	if d := core.StackDepth(ctx); d != 2 {
 		t.Fatalf("a link to the lesson just left should open it again, depth %d", d)
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }

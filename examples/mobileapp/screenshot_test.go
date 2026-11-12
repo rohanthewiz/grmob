@@ -1,51 +1,14 @@
 package mobileapp
 
 import (
-	"encoding/json"
 	"strconv"
 	"testing"
 
 	"github.com/rohanthewiz/grmob/core"
+	"github.com/rohanthewiz/grmob/grmobtest"
 	"github.com/rohanthewiz/grmob/internal/shotclaims"
 	"github.com/rohanthewiz/grmob/mobile"
 )
-
-// findNode is the general walk this file needs and app_test.go's findProp
-// is not: the question here is "does any node say this", which no search
-// keyed on a node type and a prop name can ask.
-func findNode(n *node, pred func(*node) bool) *node {
-	if n == nil {
-		return nil
-	}
-	if pred(n) {
-		return n
-	}
-	for _, c := range n.Children {
-		if found := findNode(c, pred); found != nil {
-			return found
-		}
-	}
-	return nil
-}
-
-// showsText reports whether anything in the tree puts this text on the
-// screen. See shotclaims.Shown for why the search reaches into nested prop
-// values — this screen's tab strip is exactly that shape, a list of tab
-// objects under one prop of the TabView.
-func showsText(n *node, s string) bool {
-	return findNode(n, func(n *node) bool {
-		return shotclaims.Shown(n.Props, s)
-	}) != nil
-}
-
-func currentTree(t *testing.T) *node {
-	t.Helper()
-	var root node
-	if err := json.Unmarshal([]byte(mobile.RenderInitial()), &root); err != nil {
-		t.Fatalf("tree is not valid JSON: %v", err)
-	}
-	return &root
-}
 
 // TestTheTabsScreenshotStillShowsWhatItClaims drives this demo to the state
 // docs/images/tabs-list.png was taken in and asserts the picture's strings
@@ -61,7 +24,7 @@ func currentTree(t *testing.T) *node {
 // of something that happened rather than of state that was written in.
 func TestTheTabsScreenshotStillShowsWhatItClaims(t *testing.T) {
 	core.ClearConcerns()
-	defer assertNoConcerns(t)
+	defer grmobtest.NoConcerns(t)
 
 	claims := shotclaims.For("examples/mobileapp")
 	if len(claims) == 0 {
@@ -77,10 +40,10 @@ func TestTheTabsScreenshotStillShowsWhatItClaims(t *testing.T) {
 	mobile.TriggerIntCallback(mustFindT(t, "TabView", "onTabChange"), feedTabIndex(t))
 	tapArticle(t, 3)
 
-	root := currentTree(t)
+	root := grmobtest.Parse(t, mobile.RenderInitial())
 	for _, c := range claims {
 		for _, want := range c.Shows {
-			if !showsText(root, want) {
+			if !grmobtest.Shows(root, want) {
 				t.Errorf("docs/images/%s shows %q and this app no longer "+
 					"does, with %s.\n\n"+
 					"The picture is now a statement about a version of this "+
@@ -95,7 +58,7 @@ func TestTheTabsScreenshotStillShowsWhatItClaims(t *testing.T) {
 // feedTabIndex is the position of the tab labelled "Feed" in the strip.
 func feedTabIndex(t *testing.T) int {
 	t.Helper()
-	strip := findNode(currentTree(t), func(n *node) bool { return n.Type == "TabView" })
+	strip := grmobtest.Find(grmobtest.Parse(t, mobile.RenderInitial()), func(n *core.Node) bool { return n.Type == "TabView" })
 	if strip == nil {
 		t.Fatal("no TabView in the current tree")
 	}
@@ -122,14 +85,14 @@ func feedTabIndex(t *testing.T) int {
 func tapArticle(t *testing.T, n int) {
 	t.Helper()
 	title := "Article " + strconv.Itoa(n)
-	row := innermostTappableShowing(currentTree(t), title)
+	row := innermostTappableShowing(grmobtest.Parse(t, mobile.RenderInitial()), title)
 	if row == nil {
 		t.Fatalf("no tappable row showing %q", title)
 	}
 	mobile.TriggerCallback(row.Props["onClick"].(string))
 }
 
-func innermostTappableShowing(n *node, title string) *node {
+func innermostTappableShowing(n *core.Node, title string) *core.Node {
 	if n == nil {
 		return nil
 	}
@@ -138,7 +101,7 @@ func innermostTappableShowing(n *node, title string) *node {
 			return found
 		}
 	}
-	if _, clickable := n.Props["onClick"].(string); clickable && showsText(n, title) {
+	if _, clickable := n.Props["onClick"].(string); clickable && grmobtest.Shows(n, title) {
 		return n
 	}
 	return nil

@@ -4,18 +4,10 @@ import (
 	"testing"
 
 	"github.com/rohanthewiz/grmob/core"
+	"github.com/rohanthewiz/grmob/grmobtest"
 	"github.com/rohanthewiz/grmob/internal/shotclaims"
 	"github.com/rohanthewiz/grmob/mobile"
 )
-
-// showsText reports whether anything in the current tree puts this text on
-// the screen. See shotclaims.Shown for why the search reaches into nested
-// prop values rather than stopping at top-level strings.
-func showsText(n *node, s string) bool {
-	return findNode(n, func(n *node) bool {
-		return shotclaims.Shown(n.Props, s)
-	}) != nil
-}
 
 // TestTheTodoScreenshotStillShowsWhatItClaims drives this app to the state
 // docs/images/todo.png was taken in and asserts the picture's strings are
@@ -61,10 +53,10 @@ func TestTheTodoScreenshotStillShowsWhatItClaims(t *testing.T) {
 		tickRow(t, title)
 	}
 
-	root := currentTree(t)
+	root := grmobtest.Parse(t, mobile.RenderInitial())
 	for _, c := range claims {
 		for _, want := range c.Shows {
-			if !showsText(root, want) {
+			if !grmobtest.Shows(root, want) {
 				t.Errorf("docs/images/%s shows %q and this app no longer "+
 					"does, with %s.\n\n"+
 					"The picture is now a statement about a version of this "+
@@ -78,7 +70,7 @@ func TestTheTodoScreenshotStillShowsWhatItClaims(t *testing.T) {
 	// Left as it was found, so that a test added after this one does not
 	// inherit four todos it never created.
 	emptyTheList(t)
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 // emptyTheList taps the first row's delete button until no row has one.
@@ -92,7 +84,7 @@ func emptyTheList(t *testing.T) {
 	t.Helper()
 	const bound = 100
 	for i := 0; ; i++ {
-		row := findNode(currentTree(t), buttonLabeled("✕"))
+		row := grmobtest.Find(grmobtest.Parse(t, mobile.RenderInitial()), grmobtest.Button("✕"))
 		if row == nil {
 			return
 		}
@@ -120,15 +112,15 @@ func emptyTheList(t *testing.T) {
 // and the first node to answer is the deepest one that can.
 func tickRow(t *testing.T, title string) {
 	t.Helper()
-	row := innermostRowShowing(currentTree(t), title)
+	row := innermostRowShowing(grmobtest.Parse(t, mobile.RenderInitial()), title)
 	if row == nil {
 		t.Fatalf("no row showing %q with a checkbox in it", title)
 	}
-	box := findNode(row, byType("Checkbox"))
+	box := grmobtest.Find(row, grmobtest.OfType("Checkbox"))
 	mobile.TriggerBoolCallback(box.Props["onToggle"].(string), true)
 }
 
-func innermostRowShowing(n *node, title string) *node {
+func innermostRowShowing(n *core.Node, title string) *core.Node {
 	if n == nil {
 		return nil
 	}
@@ -137,7 +129,7 @@ func innermostRowShowing(n *node, title string) *node {
 			return found
 		}
 	}
-	if showsText(n, title) && findNode(n, byType("Checkbox")) != nil {
+	if grmobtest.Shows(n, title) && grmobtest.Find(n, grmobtest.OfType("Checkbox")) != nil {
 		return n
 	}
 	return nil

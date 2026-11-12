@@ -6,13 +6,13 @@ import (
 	"testing"
 
 	"github.com/rohanthewiz/grmob/core"
-	"github.com/rohanthewiz/grmob/render"
+	"github.com/rohanthewiz/grmob/grmobtest"
 )
 
 // TestMain turns on debug mode for the whole package. Debug mode is
 // process-wide, so one switch covers every test here, and every render pass
 // driven below is audited for cursor drift and duplicate keys. The tests then
-// assert the audit found nothing — see assertNoConcerns.
+// assert the audit found nothing (grmobtest's NoConcerns).
 func TestMain(m *testing.M) {
 	core.SetDebugMode(true)
 	m.Run()
@@ -68,35 +68,13 @@ func buttonLabeled(label string) func(*node) bool {
 // per-pass sequence numbers, so every dispatch reads its ID from a freshly
 // rendered tree rather than reusing one from an earlier pass — the same
 // discipline the native shells follow.
-func tree(t *testing.T, mgr *render.Manager) *node {
+func tree(t *testing.T, app *grmobtest.Driver) *node {
 	t.Helper()
 	var root node
-	if err := json.Unmarshal([]byte(mgr.RenderInitial()), &root); err != nil {
+	if err := json.Unmarshal([]byte(app.Manager().RenderInitial()), &root); err != nil {
 		t.Fatalf("tree is not valid JSON: %v", err)
 	}
 	return &root
-}
-
-// tap locates a button by its label in the live tree and dispatches its
-// onClick, returning the resulting patch JSON.
-func tap(t *testing.T, mgr *render.Manager, label string) string {
-	t.Helper()
-	n := findNode(tree(t, mgr), buttonLabeled(label))
-	if n == nil {
-		t.Fatalf("no Button labeled %q in the current tree", label)
-	}
-	id, ok := n.Props["onClick"].(string)
-	if !ok {
-		t.Fatalf("Button %q has no onClick callback: %#v", label, n.Props)
-	}
-	return mgr.DispatchCallback(id)
-}
-
-func assertNoConcerns(t *testing.T) {
-	t.Helper()
-	if cs := core.Concerns(); len(cs) != 0 {
-		t.Fatalf("debug concerns raised:\n%s", core.DumpConcerns())
-	}
 }
 
 // TestNavigationKeepsRouteAndTabStateSeparate is the executable form of the
@@ -112,47 +90,44 @@ func assertNoConcerns(t *testing.T) {
 // on the stack keeps its state. The root frame is never popped, so the shell
 // comes back exactly as it was left.
 func TestNavigationKeepsRouteAndTabStateSeparate(t *testing.T) {
-	// The concern collector is process-wide too, so clear it up front rather
-	// than inheriting a finding from another test in the package.
-	core.ClearConcerns()
+	// The concern collector is process-wide too; grmobtest resets it on the
+	// way in, so no finding is inherited from another test in the package.
+	app := grmobtest.NewWithContext(t, core.NewContext().WithTheme(core.DefaultTheme), App)
 
-	mgr := render.New(core.NewContext().WithTheme(core.DefaultTheme), App)
-	defer mgr.Close()
-
-	initial := mgr.RenderInitial()
+	initial := app.Manager().RenderInitial()
 	if !strings.Contains(initial, "Página Inicial") {
 		t.Fatalf("initial route is not the home tab:\n%s", initial)
 	}
 
 	// Push the details route: it replaces the whole tabbed shell, tab bar
 	// included, because Navigator renders only the top of the stack.
-	pushed := tap(t, mgr, "Abrir Detalhes")
+	pushed := app.Tap("Abrir Detalhes")
 	if !strings.Contains(pushed, "Contador: 0") {
 		t.Fatalf("pushed route missing its scoped counter:\n%s", pushed)
 	}
 
 	// Two increments, so the assertion after the pop distinguishes "state
 	// survived" from "state was re-initialized to its first-increment value".
-	tap(t, mgr, "➕ Incrementar")
-	if after := tap(t, mgr, "➕ Incrementar"); !strings.Contains(after, "Contador: 2") {
+	app.Tap("➕ Incrementar")
+	if after := app.Tap("➕ Incrementar"); !strings.Contains(after, "Contador: 2") {
 		t.Fatalf("counter did not reach 2:\n%s", after)
 	}
 
 	// Pop: the shell must come back intact. A tab state clobbered by an
 	// aliased slot would leave Match with no matching case — an empty screen.
-	popped := tap(t, mgr, "⬅️ Voltar")
+	popped := app.Tap("⬅️ Voltar")
 	if !strings.Contains(popped, "Página Inicial") {
 		t.Fatalf("popping did not restore the home tab:\n%s", popped)
 	}
 
 	// The tab bar still works after the round trip, which is the other half of
 	// "the routes never touched each other's slots".
-	searched := tap(t, mgr, "🔍")
+	searched := app.Tap("🔍")
 	if !strings.Contains(searched, "Pesquisa") {
 		t.Fatalf("tab state broken after the push/pop round trip:\n%s", searched)
 	}
 
-	assertNoConcerns(t)
+	app.NoConcerns()
 }
 
 // TestPushedRouteStateIsDiscardedOnPop is the counterpart to the test above:
@@ -167,25 +142,22 @@ func TestNavigationKeepsRouteAndTabStateSeparate(t *testing.T) {
 // Asserting "Contador: 0" rather than "not 2" is deliberate: it distinguishes
 // a genuinely fresh frame from one that was merely re-initialized part-way.
 func TestPushedRouteStateIsDiscardedOnPop(t *testing.T) {
-	core.ClearConcerns()
+	app := grmobtest.NewWithContext(t, core.NewContext().WithTheme(core.DefaultTheme), App)
+	app.Manager().RenderInitial()
 
-	mgr := render.New(core.NewContext().WithTheme(core.DefaultTheme), App)
-	defer mgr.Close()
-	mgr.RenderInitial()
-
-	tap(t, mgr, "Abrir Detalhes")
-	tap(t, mgr, "➕ Incrementar")
-	if after := tap(t, mgr, "➕ Incrementar"); !strings.Contains(after, "Contador: 2") {
+	app.Tap("Abrir Detalhes")
+	app.Tap("➕ Incrementar")
+	if after := app.Tap("➕ Incrementar"); !strings.Contains(after, "Contador: 2") {
 		t.Fatalf("counter did not reach 2 before the pop:\n%s", after)
 	}
-	tap(t, mgr, "⬅️ Voltar")
+	app.Tap("⬅️ Voltar")
 
-	again := tap(t, mgr, "Abrir Detalhes")
+	again := app.Tap("Abrir Detalhes")
 	if !strings.Contains(again, "Contador: 0") {
 		t.Fatalf("re-pushed route inherited the popped frame's state:\n%s", again)
 	}
 
-	assertNoConcerns(t)
+	app.NoConcerns()
 }
 
 // The bottom bar as a real tab strip, end to end.
@@ -200,12 +172,9 @@ func TestPushedRouteStateIsDiscardedOnPop(t *testing.T) {
 // the two ends of the reference agreeing. What the two web targets do with
 // them is htmlout's and the runtime's to prove, and both do.
 func TestTheTabStripStatesItsSemantics(t *testing.T) {
-	core.ClearConcerns()
-
-	mgr := render.New(core.NewContext().WithTheme(core.DefaultTheme), App)
-	defer mgr.Close()
-	mgr.RenderInitial()
-	root := tree(t, mgr)
+	app := grmobtest.NewWithContext(t, core.NewContext().WithTheme(core.DefaultTheme), App)
+	app.Manager().RenderInitial()
+	root := tree(t, app)
 
 	// The strip claims its children are tabs, so it must hold nothing else —
 	// see core/role.go. Counting is the executable half of that claim.
@@ -252,7 +221,7 @@ func TestTheTabStripStatesItsSemantics(t *testing.T) {
 		}
 	}
 
-	assertNoConcerns(t)
+	app.NoConcerns()
 }
 
 // The selection and the panel's name follow the tap. Both are derived from one
@@ -261,14 +230,11 @@ func TestTheTabStripStatesItsSemantics(t *testing.T) {
 // as current, and a panel whose name went stale would announce the reader into
 // the wrong page.
 func TestTheTabStripFollowsTheSelection(t *testing.T) {
-	core.ClearConcerns()
+	app := grmobtest.NewWithContext(t, core.NewContext().WithTheme(core.DefaultTheme), App)
+	app.Manager().RenderInitial()
+	app.Tap("🔍")
 
-	mgr := render.New(core.NewContext().WithTheme(core.DefaultTheme), App)
-	defer mgr.Close()
-	mgr.RenderInitial()
-	tap(t, mgr, "🔍")
-
-	root := tree(t, mgr)
+	root := tree(t, app)
 	for glyph, want := range map[string]string{"🏠": "false", "🔍": "true", "👤": "false"} {
 		if got := styleString(findNode(root, buttonLabeled(glyph)), "AccessibilitySelected"); got != want {
 			t.Errorf("%s: aria-selected = %q, want %q after tapping search", glyph, got, want)
@@ -279,5 +245,5 @@ func TestTheTabStripFollowsTheSelection(t *testing.T) {
 		t.Errorf("panel name = %q, want the tab that is now showing", got)
 	}
 
-	assertNoConcerns(t)
+	app.NoConcerns()
 }

@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/rohanthewiz/grmob/core"
-	"github.com/rohanthewiz/grmob/render"
+	"github.com/rohanthewiz/grmob/grmobtest"
 )
 
 // TestMain turns on debug mode for the whole package, following the signup
@@ -22,194 +22,17 @@ func TestMain(m *testing.M) {
 	m.Run()
 }
 
-type node struct {
-	Type     string
-	Key      string
-	Props    map[string]any
-	Style    *nodeStyle
-	Children []*node
-}
-
-// nodeStyle decodes the handful of core.Style fields the tests assert on —
-// the wire tree is a straight json.Marshal of core.Node, so the keys are the
-// Go field names. Chapter 7's tests read these to watch prop order, merging,
-// theme swaps and transition declarations land on actual nodes.
-type nodeStyle struct {
-	// Chapter 1's alignment lesson asserts on MinWidth, and chapter 2's
-	// events lesson on AccessibilityKeyShortcuts. Both are style fields with
-	// nothing in the tree's text to show them: a floor is a size, and a
-	// shortcut is a key nobody pressed.
-	MinWidth                  string
-	AccessibilityKeyShortcuts string
-
-	// Chapter 4's foldables lesson asserts on Width: the pane that ends at
-	// the hinge is found by the length it was given.
-	Width string
-
-	// Chapter 4's endless-feed lesson asserts on FlexGrow: its footer strip's
-	// spacer is an empty Box, so the grow factor is all there is to find.
-	FlexGrow float64
-
-	Background   string
-	TextColor    string
-	FontSize     float64
-	FontWeight   int
-	BorderRadius float64
-	Transition   string
-
-	// Chapter 4's stock-ticker lesson asserts on Glide: a gliding tape is
-	// two copies of the same quotes, and the period is the only thing in the
-	// tree that says they move.
-	Glide int
-
-	// The three layout fields chapter 4's endless-feed lesson asserts on.
-	// core.Horizontal and core.StickyHeader are StyleProps rather than props,
-	// which is the whole point of how they are built — so the only place a
-	// test can see them is here, in the style the renderers receive.
-	FlexDirection string
-	Overflow      string
-	Position      string
-
-	// Chapter 4's calendar lesson asserts on these three. A day cell is a
-	// tappable Box rather than a Button — it stacks a numeral over a mark —
-	// so its spoken name is the only thing that identifies it, its ring is a
-	// border rather than a fill, and whether it is inert is a style flag
-	// rather than a missing handler.
-	AccessibilityLabel string
-	BorderWidth        float64
-	Disabled           bool
-
-	// Chapter 4's compass lesson asserts on this one. core.Rotate is a style
-	// field and the rose is an unlabelled Box, so the angle is the only thing
-	// in the tree that says which way the widget is pointing.
-	Rotate float64
-
-	// Chapter 4's small-controls lesson asserts on this one. A hidden
-	// comps.Spinner stays in the tree (the demo flips Hidden) and is hidden by
-	// Display, so this is the only field that says whether it is showing.
-	Display core.DisplayMode
-
-	// Chapter 4's tab-strip arrangement asserts on these two. They are the
-	// whole subject of that demo — the same widget announcing itself
-	// differently — and neither is visible anywhere else in the tree: a tab
-	// and a filter chip draw identically, so the style is the only place the
-	// difference exists.
-	AccessibilityRole     string
-	AccessibilitySelected string
-
-	// The disclosure state, for 4.4's accordion lesson. It is the one thing on
-	// that screen with no visual counterpart at all: the chevron flips and the
-	// section opens whether or not this is stated, which is how the widget
-	// shipped without it for as long as it did.
-	AccessibilityExpanded string
-
-	// The heading tier, for the outline assertion in this file. It is the one
-	// property of a lesson screen that exists nowhere else in the tree: three
-	// headings on one screen draw at three different sizes, but "which is a
-	// section of which" is carried by this number alone.
-	AccessibilityHeadingLevel int
-
-	// The collection depth, for chapter 4's flattened-outline demo. Same
-	// argument one role over: the rows are indented in pixels and siblings in
-	// the tree, so this number is the only place their nesting exists.
-	AccessibilityNestingLevel int
-
-	// The spoken value, for 4.32's half-star rating. A read-only rating's
-	// glyphs are hidden drawings, so "3.5 of 5" exists only here.
-	AccessibilityValue struct{ Text string }
-
-	// The field frame, for chapter 5's picker lesson. The claim there is that
-	// a picker and a text field wear the same edge, and the edge is a style
-	// field on both — there is nothing in the props to compare.
-	BorderColor string
-
-	// The two IDREF props, for 4.5's hand-assembled tab strip. They are the
-	// only place the relationship between a tab and the region it shows
-	// exists at all: the strip and the pages are siblings in the tree, drawn
-	// identically whether or not either end has been stated.
-	AccessibilityID       string
-	AccessibilityControls string
-
-	// What a trigger opens, for 4.17's menus. A Menu's "⋯" draws the same
-	// whether or not it says it opens a dialog, so this is the only place the
-	// warning a reader hears before the press exists.
-	AccessibilityHasPopup string
-
-	// Which item of a set is the current one, for 4.4's bottom bar, 4.17's
-	// sort picker and 4.18's drawer. The current item's name no longer changes
-	// with the selection, so this is the only place the state is visible.
-	AccessibilityCurrent string
-
-	// Chapter 4's drawer lesson asserts on this one. An open drawer hides the
-	// screen layer beneath it from assistive technology and changes nothing
-	// visible about that layer, so the flag is the only evidence it happened.
-	AccessibilityHidden bool
-
-	// The drawer's panel layer is always displayed now, so that it can slide;
-	// shut, it is inert and its panel translated off the leading edge. Those
-	// two are how the lesson's test tells shut from open.
-	Inert      bool
-	TranslateX string
-
-	// The inset set, for 7.2's box-model half. The lesson there is entirely
-	// about which of the four sides a layer leaves behind, so the sides have
-	// to be readable individually — a rendered box does not say in its props
-	// whether its top padding survived. Decoded as the wire shape, six fields
-	// and not four, because the shorthand pair is exactly what the per-side
-	// props dissolve and the test wants to see it gone.
-	Padding struct {
-		Top, Right, Bottom, Left int
-		Horizontal, Vertical     int
-	}
-}
-
-func findNode(n *node, pred func(*node) bool) *node {
-	if n == nil {
-		return nil
-	}
-	if pred(n) {
-		return n
-	}
-	for _, c := range n.Children {
-		if found := findNode(c, pred); found != nil {
-			return found
-		}
-	}
-	return nil
-}
-
-// findNodes is findNode's plural: every node under n matching the predicate,
-// in tree order.
+// node is the tree grmobtest decodes: core.Node, read back from the JSON a
+// host receives, so Style's fields have their Go names and types. An alias
+// rather than a rename across the chapter files, where *node is the word
+// several hundred predicates already use; it also leaves those predicates
+// interchangeable with grmobtest.Find and its helpers.
 //
-// It exists for the assertions that are about a *set* of nodes rather than
-// one — chapter 4's tab strip, where what is being checked is that every tab
-// answers and exactly one says yes. Written as a separate walk rather than by
-// giving findNode a limit, so the singular stays the cheap early-exit it is
-// for the dozen callers that want the first match.
-func findNodes(n *node, pred func(*node) bool) []*node {
-	var out []*node
-	var walk func(*node)
-	walk = func(n *node) {
-		if n == nil {
-			return
-		}
-		if pred(n) {
-			out = append(out, n)
-		}
-		for _, c := range n.Children {
-			walk(c)
-		}
-	}
-	walk(n)
-	return out
-}
-
-// hasText reports whether any Text node under n carries exactly this content.
-func hasText(n *node, content string) bool {
-	return findNode(n, func(n *node) bool {
-		return n.Type == "Text" && n.Props["content"] == content
-	}) != nil
-}
+// It replaced a hand-written mirror of the wire shape whose Style decoded
+// only the fields some test had needed, one comment per field. With the
+// real type every field is there, and a test asserting on a field nobody
+// read before needs no edit here first.
+type node = core.Node
 
 // hasTextContaining matches on substring — for labels assembled with
 // Sprintf, where pinning the whole string would make every wording tweak a
@@ -226,7 +49,7 @@ func hasText(n *node, content string) bool {
 // would simply stop being found, which is a passing negative check and a
 // failing positive one.
 func hasTextContaining(n *node, sub string) bool {
-	return findNode(n, func(n *node) bool {
+	return grmobtest.Find(n, func(n *node) bool {
 		if s, ok := n.Props["content"].(string); ok && n.Type == "Text" {
 			return strings.Contains(s, sub)
 		}
@@ -261,31 +84,6 @@ func gridRowText(n *node) string {
 	return b.String()
 }
 
-// tree re-renders and parses the current tree. Callback IDs are per-pass
-// sequence numbers, so every dispatch reads its ID from a freshly rendered
-// tree rather than reusing one — the discipline the native shells follow.
-func tree(t *testing.T, mgr *render.Manager) *node {
-	t.Helper()
-	var root node
-	if err := json.Unmarshal([]byte(mgr.RenderInitial()), &root); err != nil {
-		t.Fatalf("tree is not valid JSON: %v", err)
-	}
-	return &root
-}
-
-// tap finds the button with this label and dispatches its click, as a native
-// tap would.
-func tap(t *testing.T, mgr *render.Manager, label string) {
-	t.Helper()
-	n := findNode(tree(t, mgr), func(n *node) bool {
-		return n.Type == "Button" && n.Props["label"] == label
-	})
-	if n == nil {
-		t.Fatalf("no Button labeled %q in the current tree", label)
-	}
-	mgr.DispatchCallback(n.Props["onClick"].(string))
-}
-
 // openLesson taps the contents row whose subtree shows the lesson's title.
 // A row is any clickable node (ListRow registers OnClick only when OnTap is
 // set) with the title Text beneath it — matching by structure rather than by
@@ -303,23 +101,23 @@ func tap(t *testing.T, mgr *render.Manager, label string) {
 // this function exists to find, on every test whose chapter happened to be open
 // already (chapter 1 always is, and so is whichever one a previous step
 // visited).
-func openLesson(t *testing.T, mgr *render.Manager, title string) {
+func openLesson(t *testing.T, app *grmobtest.Driver, title string) {
 	t.Helper()
 	row := func() *node {
-		return findNode(tree(t, mgr), func(n *node) bool {
+		return grmobtest.Find(app.Tree(), func(n *node) bool {
 			_, clickable := n.Props["onClick"].(string)
-			return clickable && n.Type != "Button" && hasText(n, title)
+			return clickable && n.Type != "Button" && grmobtest.HasText(n, title)
 		})
 	}
 	n := row()
 	if n == nil {
-		expandChapterFor(t, mgr, title)
+		expandChapterFor(t, app, title)
 		n = row()
 	}
 	if n == nil {
 		t.Fatalf("no tappable contents row titled %q", title)
 	}
-	mgr.DispatchCallback(n.Props["onClick"].(string))
+	app.Manager().DispatchCallback(n.Props["onClick"].(string))
 }
 
 // expandChapterFor presses the disclosure on the chapter card holding the
@@ -334,7 +132,7 @@ func openLesson(t *testing.T, mgr *render.Manager, title string) {
 // The band itself is matched on the exact words it draws (chapterBandText), and
 // those words are only ever inside the disclosure's button, so there is nothing
 // else in the tree for this to land on.
-func expandChapterFor(t *testing.T, mgr *render.Manager, title string) {
+func expandChapterFor(t *testing.T, app *grmobtest.Driver, title string) {
 	t.Helper()
 	chapter := -1
 	for _, e := range flatLessons {
@@ -346,15 +144,15 @@ func expandChapterFor(t *testing.T, mgr *render.Manager, title string) {
 	if chapter < 0 {
 		t.Fatalf("no lesson titled %q in the curriculum", title)
 	}
-	expandChapter(t, mgr, chapter)
+	expandChapter(t, app, chapter)
 }
 
 // toggleCheckbox flips the idx-th checkbox in tree order. The demos'
 // checkboxes carry no distinguishing props, so position is the only address —
 // the same walk signup uses for its second password field.
-func toggleCheckbox(t *testing.T, mgr *render.Manager, idx int, on bool) {
+func toggleCheckbox(t *testing.T, app *grmobtest.Driver, idx int, on bool) {
 	t.Helper()
-	toggleBool(t, mgr, "Checkbox", idx, on)
+	toggleBool(t, app, "Checkbox", idx, on)
 }
 
 // toggleBool is the same walk over either boolean control. It takes the node
@@ -362,7 +160,7 @@ func toggleCheckbox(t *testing.T, mgr *render.Manager, idx int, on bool) {
 // `checked` and both report through `onToggle` (see core.Switch) — so a test
 // that asked for "the first bool control" would flip whichever one the demo
 // happened to write first.
-func toggleBool(t *testing.T, mgr *render.Manager, nodeType string, idx int, on bool) {
+func toggleBool(t *testing.T, app *grmobtest.Driver, nodeType string, idx int, on bool) {
 	t.Helper()
 	var found []*node
 	var walk func(n *node)
@@ -377,26 +175,20 @@ func toggleBool(t *testing.T, mgr *render.Manager, nodeType string, idx int, on 
 			walk(c)
 		}
 	}
-	walk(tree(t, mgr))
+	walk(app.Tree())
 	if idx >= len(found) {
 		t.Fatalf("wanted %s %d, tree has %d", nodeType, idx, len(found))
 	}
-	mgr.DispatchBoolCallback(found[idx].Props["onToggle"].(string), on)
+	app.Manager().DispatchBoolCallback(found[idx].Props["onToggle"].(string), on)
 }
 
-func assertNoConcerns(t *testing.T) {
+// newApp opens the tutorial under the default theme. grmobtest resets the
+// process-wide state (the concern collector, the window record) when it
+// opens the only live app and again when the last one closes, so no test
+// inherits another's leftovers whatever order go test -shuffle runs them in.
+func newApp(t *testing.T) *grmobtest.Driver {
 	t.Helper()
-	if cs := core.Concerns(); len(cs) != 0 {
-		t.Fatalf("debug concerns raised:\n%s", core.DumpConcerns())
-	}
-}
-
-func newApp(t *testing.T) *render.Manager {
-	t.Helper()
-	core.ClearConcerns() // the collector is process-wide; do not inherit
-	mgr := render.New(core.NewContext().WithTheme(core.DefaultTheme), App)
-	t.Cleanup(mgr.Close)
-	return mgr
+	return grmobtest.NewWithContext(t, core.NewContext().WithTheme(core.DefaultTheme), App)
 }
 
 // --- The contents screen -------------------------------------------------
@@ -411,16 +203,16 @@ func newApp(t *testing.T) *render.Manager {
 // rows. Both halves are checked, because a screen that had stopped drawing the
 // rows of an OPEN chapter would pass a check that only counted headers.
 func TestHomeListsEveryChapterAndTheOpenChapterSLessons(t *testing.T) {
-	mgr := newApp(t)
-	root := tree(t, mgr)
+	app := newApp(t)
+	root := app.Tree()
 
-	if !hasText(root, "GrMob Interactive Tutorial") {
+	if !grmobtest.HasText(root, "GrMob Interactive Tutorial") {
 		t.Fatal("home is missing its title")
 	}
 
 	// Every chapter has a band, open or shut.
 	for ci := range Chapters {
-		if !hasText(root, chapterBandText(ci)) {
+		if !grmobtest.HasText(root, chapterBandText(ci)) {
 			t.Errorf("home is missing chapter %d's disclosure", ci+1)
 		}
 	}
@@ -431,11 +223,11 @@ func TestHomeListsEveryChapterAndTheOpenChapterSLessons(t *testing.T) {
 	// stopped collapsing would pass.
 	for _, e := range flatLessons {
 		open := e.ChapterNum == 1
-		if got := hasText(root, e.Title); got != open {
+		if got := grmobtest.HasText(root, e.Title); got != open {
 			t.Errorf("lesson %s (%s) on screen = %v, want %v",
 				e.ID, e.Title, got, open)
 		}
-		if got := hasText(root, e.ID); got != open {
+		if got := grmobtest.HasText(root, e.ID); got != open {
 			t.Errorf("the %s ordinal on screen = %v, want %v", e.ID, got, open)
 		}
 	}
@@ -444,18 +236,18 @@ func TestHomeListsEveryChapterAndTheOpenChapterSLessons(t *testing.T) {
 	// the old whole-screen check was really making.
 	for ci := range Chapters {
 		if ci > 0 {
-			expandChapter(t, mgr, ci)
+			expandChapter(t, app, ci)
 		}
-		now := tree(t, mgr)
+		now := app.Tree()
 		for _, e := range flatLessons {
 			if e.ChapterNum-1 != ci {
 				continue
 			}
-			if !hasText(now, e.Title) {
+			if !grmobtest.HasText(now, e.Title) {
 				t.Errorf("lesson %s (%s) is unreachable with chapter %d open",
 					e.ID, e.Title, ci+1)
 			}
-			if !hasText(now, e.ID) {
+			if !grmobtest.HasText(now, e.ID) {
 				t.Errorf("the %s ordinal is unreachable with chapter %d open",
 					e.ID, ci+1)
 			}
@@ -463,26 +255,26 @@ func TestHomeListsEveryChapterAndTheOpenChapterSLessons(t *testing.T) {
 	}
 
 	want := fmt.Sprintf("0 of %d lessons opened", len(flatLessons))
-	if !hasText(tree(t, mgr), want) {
+	if !grmobtest.HasText(app.Tree(), want) {
 		t.Fatalf("home is missing the progress caption %q", want)
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 // A chapter card's disclosure, pressed once. Toggles: the caller has to know
 // which way it will go, which is why openLesson asks whether the row is
 // already showing before it comes here.
-func expandChapter(t *testing.T, mgr *render.Manager, chapter int) {
+func expandChapter(t *testing.T, app *grmobtest.Driver, chapter int) {
 	t.Helper()
 	words := chapterBandText(chapter)
-	n := findNode(tree(t, mgr), func(n *node) bool {
+	n := grmobtest.Find(app.Tree(), func(n *node) bool {
 		_, clickable := n.Props["onClick"].(string)
-		return clickable && hasText(n, words)
+		return clickable && grmobtest.HasText(n, words)
 	})
 	if n == nil {
 		t.Fatalf("no chapter disclosure showing %q", words)
 	}
-	mgr.DispatchCallback(n.Props["onClick"].(string))
+	app.Manager().DispatchCallback(n.Props["onClick"].(string))
 }
 
 // The contents screen is inset once, by its List.
@@ -500,10 +292,10 @@ func expandChapter(t *testing.T, mgr *render.Manager, chapter int) {
 //	  └─ Column   padding 0        ← a safe-area frame, nothing else
 //	       └─ List padding 12/16   ← the page, inset once
 func TestHomeIsInsetOnce(t *testing.T) {
-	mgr := newApp(t)
-	root := tree(t, mgr)
+	app := newApp(t)
+	root := app.Tree()
 
-	list := findNode(root, func(n *node) bool { return n.Type == "List" })
+	list := grmobtest.Find(root, func(n *node) bool { return n.Type == "List" })
 	if list == nil || list.Style == nil {
 		t.Fatal("the contents screen is not a List any more; the inset rule below is about that List")
 	}
@@ -514,7 +306,7 @@ func TestHomeIsInsetOnce(t *testing.T) {
 
 	// The scaffold's column is the List's parent, so it is the one node
 	// between the safe area and the page that could inset it a second time.
-	col := findNode(root, func(n *node) bool {
+	col := grmobtest.Find(root, func(n *node) bool {
 		if n.Type != "Column" {
 			return false
 		}
@@ -527,81 +319,81 @@ func TestHomeIsInsetOnce(t *testing.T) {
 		t.Errorf("the contents screen is inset twice: the scaffold's column adds %+v on top of the List's",
 			col.Style.Padding)
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 // --- Opening a lesson, and coming back -----------------------------------
 
 func TestOpenLessonMarksProgressAndPopsBack(t *testing.T) {
-	mgr := newApp(t)
+	app := newApp(t)
 
-	openLesson(t, mgr, "Hello, GrMob")
-	lesson := tree(t, mgr)
+	openLesson(t, app, "Hello, GrMob")
+	lesson := app.Tree()
 	if !hasTextContaining(lesson, "1.1  Hello, GrMob") {
 		t.Fatal("lesson screen did not open on 1.1")
 	}
-	if !hasText(lesson, "TRY IT") {
+	if !grmobtest.HasText(lesson, "TRY IT") {
 		t.Fatal("lesson screen is missing its demo panel")
 	}
 	// First lesson: no Prev, and the chapter tag names its chapter.
-	if findNode(lesson, func(n *node) bool { return n.Props["label"] == "‹ Prev" }) != nil {
+	if grmobtest.Find(lesson, func(n *node) bool { return n.Props["label"] == "‹ Prev" }) != nil {
 		t.Fatal("first lesson should not offer Prev")
 	}
 	if !hasTextContaining(lesson, "Chapter 1 · Views & Layout") {
 		t.Fatal("lesson screen is missing its chapter tag")
 	}
 
-	tap(t, mgr, "‹ Contents")
-	home := tree(t, mgr)
+	app.Tap("‹ Contents")
+	home := app.Tree()
 	want := fmt.Sprintf("1 of %d lessons opened", len(flatLessons))
-	if !hasText(home, want) {
+	if !grmobtest.HasText(home, want) {
 		t.Fatalf("after opening one lesson, home should say %q", want)
 	}
-	if !hasText(home, "opened") {
+	if !grmobtest.HasText(home, "opened") {
 		t.Fatal("the opened lesson's row should carry an 'opened' badge")
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 // --- Walking the whole curriculum with Next ------------------------------
 
 func TestNextWalksEveryLessonAndFinishes(t *testing.T) {
-	mgr := newApp(t)
+	app := newApp(t)
 
-	openLesson(t, mgr, flatLessons[0].Title)
+	openLesson(t, app, flatLessons[0].Title)
 	for i, e := range flatLessons {
-		cur := tree(t, mgr)
+		cur := app.Tree()
 		if !hasTextContaining(cur, e.ID+"  "+e.Title) {
 			t.Fatalf("step %d: expected lesson %s (%s) on screen", i, e.ID, e.Title)
 		}
 		if i < len(flatLessons)-1 {
-			tap(t, mgr, "Next ›")
+			app.Tap("Next ›")
 		}
 	}
 
 	// The last lesson offers Finish instead of Next, and Finish pops home.
-	tap(t, mgr, "Finish ✓")
-	home := tree(t, mgr)
+	app.Tap("Finish ✓")
+	home := app.Tree()
 	want := fmt.Sprintf("%d of %d lessons opened", len(flatLessons), len(flatLessons))
-	if !hasText(home, want) {
+	if !grmobtest.HasText(home, want) {
 		t.Fatalf("after the full walk, home should say %q", want)
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 func TestPrevStepsBack(t *testing.T) {
-	mgr := newApp(t)
+	app := newApp(t)
 
-	openLesson(t, mgr, flatLessons[0].Title)
-	tap(t, mgr, "Next ›")
-	if !hasTextContaining(tree(t, mgr), flatLessons[1].Title) {
+	openLesson(t, app, flatLessons[0].Title)
+	app.Tap("Next ›")
+	if !hasTextContaining(app.Tree(), flatLessons[1].Title) {
 		t.Fatal("Next did not reach lesson 2")
 	}
-	tap(t, mgr, "‹ Prev")
-	if !hasTextContaining(tree(t, mgr), flatLessons[0].Title) {
+	app.Tap("‹ Prev")
+	if !hasTextContaining(app.Tree(), flatLessons[0].Title) {
 		t.Fatal("Prev did not return to lesson 1")
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 // --- The demos are live --------------------------------------------------
@@ -609,49 +401,49 @@ func TestPrevStepsBack(t *testing.T) {
 // Lesson 1.1's composition toggles: unchecking Stats() must drop that
 // subtree from the tree — the demo's whole claim.
 func TestHelloDemoRecomposes(t *testing.T) {
-	mgr := newApp(t)
-	openLesson(t, mgr, "Hello, GrMob")
+	app := newApp(t)
+	openLesson(t, app, "Hello, GrMob")
 
-	if !hasText(tree(t, mgr), "1.2k") {
+	if !grmobtest.HasText(app.Tree(), "1.2k") {
 		t.Fatal("stats block should render while its toggle is on")
 	}
-	toggleCheckbox(t, mgr, 1, false) // 0: Header, 1: Stats, 2: Bio
-	if hasText(tree(t, mgr), "1.2k") {
+	toggleCheckbox(t, app, 1, false) // 0: Header, 1: Stats, 2: Bio
+	if grmobtest.HasText(app.Tree(), "1.2k") {
 		t.Fatal("unchecking Stats() should remove the stats subtree")
 	}
-	toggleCheckbox(t, mgr, 2, true)
-	if !hasTextContaining(tree(t, mgr), "without leaving Go") {
+	toggleCheckbox(t, app, 2, true)
+	if !hasTextContaining(app.Tree(), "without leaving Go") {
 		t.Fatal("checking Bio should add the bio text")
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 // Lesson 1.3's axis switch swaps the demo container between Row and Column.
 // The demo container is identified by its Gap changing with the stepper —
 // so this drives both controls and watches the tree respond.
 func TestStacksDemoSwitchesAxis(t *testing.T) {
-	mgr := newApp(t)
-	openLesson(t, mgr, "Rows, Columns & spacing")
+	app := newApp(t)
+	openLesson(t, app, "Rows, Columns & spacing")
 
 	// The A/B/C boxes start out inside a Row (axis 0).
 	boxRow := func(root *node, typ string) *node {
-		return findNode(root, func(n *node) bool {
-			return n.Type == typ && hasText(n, "A") && hasText(n, "B") && hasText(n, "C")
+		return grmobtest.Find(root, func(n *node) bool {
+			return n.Type == typ && grmobtest.HasText(n, "A") && grmobtest.HasText(n, "B") && grmobtest.HasText(n, "C")
 		})
 	}
-	if boxRow(tree(t, mgr), "Row") == nil {
+	if boxRow(app.Tree(), "Row") == nil {
 		t.Fatal("demo boxes should start in a Row")
 	}
 
 	// Flip the axis via the segmented control's "Column" chip. A Chip
 	// renders as a core.Button whose label is the caption, so the ordinary
 	// tap helper reaches it.
-	tap(t, mgr, "Column")
+	app.Tap("Column")
 
-	if boxRow(tree(t, mgr), "Column") == nil {
+	if boxRow(app.Tree(), "Column") == nil {
 		t.Fatal("after switching the axis, the boxes should sit in a Column")
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 // --- 1.4 Alignment & flex ------------------------------------------------
@@ -661,13 +453,13 @@ func TestStacksDemoSwitchesAxis(t *testing.T) {
 // lesson's subject, so the test reads the style the renderers receive rather
 // than any text: unticked, A has no floor; ticked, it carries "40%" exactly.
 func TestAlignmentDemoFloorsABoxByPercentage(t *testing.T) {
-	mgr := newApp(t)
-	openLesson(t, mgr, "Alignment & flex")
+	app := newApp(t)
+	openLesson(t, app, "Alignment & flex")
 
 	boxA := func() *node {
-		n := findNode(tree(t, mgr), func(n *node) bool {
+		n := grmobtest.Find(app.Tree(), func(n *node) bool {
 			return n.Type == "Column" && len(n.Children) == 1 &&
-				n.Children[0].Type == "Text" && hasText(n, "A")
+				n.Children[0].Type == "Text" && grmobtest.HasText(n, "A")
 		})
 		if n == nil {
 			t.Fatal("no demo box labelled A in the tree")
@@ -678,11 +470,11 @@ func TestAlignmentDemoFloorsABoxByPercentage(t *testing.T) {
 		t.Fatalf("A should start with no floor; its MinWidth is %q", got.MinWidth)
 	}
 	// Checkbox 0 is FlexGrow on B, checkbox 1 the floor on A.
-	toggleCheckbox(t, mgr, 1, true)
+	toggleCheckbox(t, app, 1, true)
 	if got := boxA().Style; got == nil || got.MinWidth != "40%" {
 		t.Fatalf("ticking the MinWidth checkbox should floor A at 40%%; got %+v", got)
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 // --- What the contents screen costs to send ------------------------------
@@ -764,8 +556,8 @@ func TestAlignmentDemoFloorsABoxByPercentage(t *testing.T) {
 // should not fail a test, and a screen that suddenly sends four megabytes
 // should.
 func TestHomeTreeSize(t *testing.T) {
-	mgr := newApp(t)
-	size := len(mgr.RenderInitial())
+	app := newApp(t)
+	size := len(app.Manager().RenderInitial())
 	t.Logf("the contents screen is %d bytes of JSON on the wire", size)
 
 	// The current size, not the launch-measured one. The A/B above was taken
@@ -816,7 +608,7 @@ func TestHomeTreeSize(t *testing.T) {
 			"Not a budget failure — a prompt to re-measure and rewrite that "+
 			"table.", size, recorded)
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 // TestWhatWindowingWouldSave prints how much of the contents screen lies in
@@ -932,8 +724,8 @@ func TestHomeTreeSize(t *testing.T) {
 // was always a framework answer rather than a tutorial one; what changed is
 // that the tutorial stopped being the screen that argued for it.
 func TestWhatWindowingWouldSave(t *testing.T) {
-	mgr := newApp(t)
-	tree := mgr.RenderInitial()
+	app := newApp(t)
+	tree := app.Manager().RenderInitial()
 
 	// Decoded through json.RawMessage rather than the `node` type above,
 	// because the interesting quantity is the exact byte count each child
@@ -1021,7 +813,7 @@ func TestWhatWindowingWouldSave(t *testing.T) {
 			"went on being quoted at the old one for a session.",
 			windowChildren, share, windowShareLow, windowShareHigh)
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 // The window the profile is read at, and the share of the payload it sent when
@@ -1079,23 +871,23 @@ func TestTheChapterAReaderCameOutOfIsOpen(t *testing.T) {
 	// nothing about this arm depends on openLesson having expanded anything —
 	// and then Next, which lands in chapter 2. Chapter 2 is shut at that
 	// moment, and what is being checked is that coming back finds it open.
-	mgr := newApp(t)
+	app := newApp(t)
 	last := flatLessons[0]
 	for _, e := range flatLessons {
 		if e.ChapterNum == 1 {
 			last = e
 		}
 	}
-	openLesson(t, mgr, last.Title)
-	tap(t, mgr, "Next ›")
-	tap(t, mgr, "‹ Contents")
+	openLesson(t, app, last.Title)
+	app.Tap("Next ›")
+	app.Tap("‹ Contents")
 	next := flatLessons[last.Index+1]
 	if next.ChapterNum != 2 {
 		t.Fatalf("the lesson after %s is %s, not the start of chapter 2 —"+
 			" this test's route through the curriculum no longer crosses a"+
 			" chapter boundary", last.ID, next.ID)
 	}
-	if !hasText(tree(t, mgr), next.Title) {
+	if !grmobtest.HasText(app.Tree(), next.Title) {
 		t.Errorf("chapter 2 is shut after coming back from %s", next.ID)
 	}
 
@@ -1103,12 +895,12 @@ func TestTheChapterAReaderCameOutOfIsOpen(t *testing.T) {
 	// `open`. This is the path that was actually broken when the rule lived on
 	// one door — grmob://lesson/2.3 opens a lesson the reader never pressed a
 	// row for, and ‹ Contents afterwards landed them on a shut card.
-	mgr2 := newApp(t)
-	tree(t, mgr2) // the first render is what subscribes the app
+	app2 := newApp(t)
+	app2.Tree() // the first render is what subscribes the app
 	route("2.3")
-	tap(t, mgr2, "‹ Contents")
+	app2.Tap("‹ Contents")
 	linked, _ := resolveRoute("2.3")
-	if !hasText(tree(t, mgr2), linked.Title) {
+	if !grmobtest.HasText(app2.Tree(), linked.Title) {
 		t.Errorf("chapter 2 is shut after a deep link to 2.3 and back")
 	}
 }
@@ -1116,20 +908,20 @@ func TestTheChapterAReaderCameOutOfIsOpen(t *testing.T) {
 // A chapter's band says how far the reader has gotten in it, which is the only
 // progress a shut card can show.
 func TestAChapterBandCountsItsLessons(t *testing.T) {
-	mgr := newApp(t)
+	app := newApp(t)
 	n := len(Chapters[0].Lessons)
 
-	root := tree(t, mgr)
-	if want := fmt.Sprintf("%d lessons", n); !hasText(root, want) {
+	root := app.Tree()
+	if want := fmt.Sprintf("%d lessons", n); !grmobtest.HasText(root, want) {
 		t.Errorf("chapter 1's band is missing %q", want)
 	}
 
 	// Open one, come back: the count becomes a ratio. "1 of 6" rather than
 	// "6 lessons" is the difference between a card that says how big it is and
 	// one that says where the reader is in it.
-	openLesson(t, mgr, Chapters[0].Lessons[0].Title)
-	tap(t, mgr, "‹ Contents")
-	if want := fmt.Sprintf("1 of %d", n); !hasText(tree(t, mgr), want) {
+	openLesson(t, app, Chapters[0].Lessons[0].Title)
+	app.Tap("‹ Contents")
+	if want := fmt.Sprintf("1 of %d", n); !grmobtest.HasText(app.Tree(), want) {
 		t.Errorf("chapter 1's band is missing %q after opening one lesson", want)
 	}
 }
@@ -1138,16 +930,16 @@ func TestAChapterBandCountsItsLessons(t *testing.T) {
 // command and nothing else; "Back to row 1" moves the stamp to row 1 with a
 // higher epoch. The scrolling itself is each host's (core/scroll_to.go).
 func TestSurfacesJumpStampsItsRow(t *testing.T) {
-	mgr := newApp(t)
-	openLesson(t, mgr, "Surfaces")
+	app := newApp(t)
+	openLesson(t, app, "Surfaces")
 
 	stamped := func() (string, float64) {
-		n := findNode(tree(t, mgr), func(n *node) bool { _, ok := n.Props["scrollEpoch"]; return ok })
+		n := grmobtest.Find(app.Tree(), func(n *node) bool { _, ok := n.Props["scrollEpoch"]; return ok })
 		if n == nil {
 			return "", 0
 		}
 		label := ""
-		if txt := findNode(n, func(c *node) bool { return c.Type == "Text" }); txt != nil {
+		if txt := grmobtest.Find(n, func(c *node) bool { return c.Type == "Text" }); txt != nil {
 			label, _ = txt.Props["content"].(string)
 		}
 		e, _ := n.Props["scrollEpoch"].(float64)
@@ -1156,15 +948,15 @@ func TestSurfacesJumpStampsItsRow(t *testing.T) {
 	if label, _ := stamped(); label != "" {
 		t.Fatalf("nothing should be stamped before a jump, found %q", label)
 	}
-	tap(t, mgr, "Jump to row 10")
+	app.Tap("Jump to row 10")
 	label, first := stamped()
 	if label != "Row 10" {
 		t.Fatalf("the jump should stamp Row 10, stamped %q", label)
 	}
-	tap(t, mgr, "Back to row 1")
+	app.Tap("Back to row 1")
 	label, second := stamped()
 	if label != "Row 1" || second <= first {
 		t.Fatalf("back should stamp Row 1 with a newer epoch, got %q at %v after %v", label, second, first)
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }

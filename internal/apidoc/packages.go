@@ -354,6 +354,11 @@ var Packages = []Pkg{
 		Group: "Platform",
 		Blurb: "Small secrets — a bearer token, an API key — in the iOS Keychain and the Android Keystore.",
 	},
+	{
+		Dir:   "grmobtest",
+		Group: "Testing",
+		Blurb: "Drive an app from a plain go test: tap, type and read the tree a host receives, with process-wide state reset between tests.",
+	},
 }
 
 // Loaded is one package's parsed documentation, plus the fileset its positions

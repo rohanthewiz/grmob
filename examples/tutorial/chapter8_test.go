@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/rohanthewiz/grmob/core"
+	"github.com/rohanthewiz/grmob/grmobtest"
 )
 
 // Chapter 8's demos are the one place in the tutorial that deliberately
@@ -35,23 +36,23 @@ func assertOnlyConcernKind(t *testing.T, kind string) {
 // --- 8.1 Error boundaries ---------------------------------------------------
 
 func TestErrorBoundaryFallsBackAndHeals(t *testing.T) {
-	mgr := newApp(t)
-	openLesson(t, mgr, "Error boundaries")
+	app := newApp(t)
+	openLesson(t, app, "Error boundaries")
 
 	// Healthy: the protected panel renders, no fallback in sight.
-	root := tree(t, mgr)
+	root := app.Tree()
 	if !hasTextContaining(root, "Standup moved") {
 		t.Fatal("the inbox panel should render while the data is intact")
 	}
-	if hasText(root, "Inbox is unavailable") {
+	if grmobtest.HasText(root, "Inbox is unavailable") {
 		t.Fatal("no fallback should render while the child is healthy")
 	}
 
 	// Arm the planted bug: the panel's messages[0] read now panics, and the
 	// boundary must swap in the fallback carrying the real panic message.
-	toggleCheckbox(t, mgr, 0, true)
-	root = tree(t, mgr)
-	if !hasText(root, "Inbox is unavailable") {
+	toggleCheckbox(t, app, 0, true)
+	root = app.Tree()
+	if !grmobtest.HasText(root, "Inbox is unavailable") {
 		t.Fatal("the boundary should render the fallback when the child panics")
 	}
 	if !hasTextContaining(root, "index out of range") {
@@ -64,30 +65,30 @@ func TestErrorBoundaryFallsBackAndHeals(t *testing.T) {
 	assertOnlyConcernKind(t, core.ConcernRenderPanic)
 
 	// Disarm: the boundary does not latch, so the very next pass heals.
-	toggleCheckbox(t, mgr, 0, false)
-	root = tree(t, mgr)
+	toggleCheckbox(t, app, 0, false)
+	root = app.Tree()
 	if !hasTextContaining(root, "Standup moved") {
 		t.Fatal("the panel should be back the pass after the state settles")
 	}
-	if hasText(root, "Inbox is unavailable") {
+	if grmobtest.HasText(root, "Inbox is unavailable") {
 		t.Fatal("the fallback should be gone once the child renders clean")
 	}
 
 	core.ClearConcerns()
-	_ = tree(t, mgr) // one benign pass: nothing may re-file
-	assertNoConcerns(t)
+	_ = app.Tree() // one benign pass: nothing may re-file
+	grmobtest.NoConcerns(t)
 }
 
 // --- 8.2 Handler panics -----------------------------------------------------
 
 func TestHandlerPanicSkewsStateAndIsRecovered(t *testing.T) {
-	mgr := newApp(t)
-	openLesson(t, mgr, "When a handler panics")
+	app := newApp(t)
+	openLesson(t, app, "When a handler panics")
 
 	// The handler completes: both counters move together.
-	tap(t, mgr, "Advance both counters")
-	root := tree(t, mgr)
-	if !hasText(root, "A: 1") || !hasText(root, "B: 1") {
+	app.Tap("Advance both counters")
+	root := app.Tree()
+	if !grmobtest.HasText(root, "A: 1") || !grmobtest.HasText(root, "B: 1") {
 		t.Fatal("a completing handler should advance both counters")
 	}
 	if !hasTextContaining(root, "in step") {
@@ -98,10 +99,10 @@ func TestHandlerPanicSkewsStateAndIsRecovered(t *testing.T) {
 	// the write after it never runs — and the process survives, which is
 	// the guard's whole job (an unguarded dispatch would kill the test
 	// binary right here).
-	toggleCheckbox(t, mgr, 0, true)
-	tap(t, mgr, "Advance both counters")
-	root = tree(t, mgr)
-	if !hasText(root, "A: 2") || !hasText(root, "B: 1") {
+	toggleCheckbox(t, app, 0, true)
+	app.Tap("Advance both counters")
+	root = app.Tree()
+	if !grmobtest.HasText(root, "A: 2") || !grmobtest.HasText(root, "B: 1") {
 		t.Fatal("the panic between the writes should leave the state half-applied")
 	}
 	if !hasTextContaining(root, "Skewed by 1") {
@@ -110,16 +111,16 @@ func TestHandlerPanicSkewsStateAndIsRecovered(t *testing.T) {
 	assertOnlyConcernKind(t, core.ConcernHandlerPanic)
 
 	// Repair is app policy — the demo's repair button re-syncs.
-	toggleCheckbox(t, mgr, 0, false)
-	tap(t, mgr, "Repair (set B = A)")
-	root = tree(t, mgr)
-	if !hasText(root, "B: 2") || !hasTextContaining(root, "in step") {
+	toggleCheckbox(t, app, 0, false)
+	app.Tap("Repair (set B = A)")
+	root = app.Tree()
+	if !grmobtest.HasText(root, "B: 2") || !hasTextContaining(root, "in step") {
 		t.Fatal("repair should bring B back level with A")
 	}
 
 	core.ClearConcerns()
-	_ = tree(t, mgr)
-	assertNoConcerns(t)
+	_ = app.Tree()
+	grmobtest.NoConcerns(t)
 }
 
 // --- 8.3 Debug mode ---------------------------------------------------------
@@ -128,18 +129,18 @@ func TestHandlerPanicSkewsStateAndIsRecovered(t *testing.T) {
 // SetDebugMode switch, index 1 renders the duplicate-key list.
 
 func TestDebugLessonRecordsAndClearsConcerns(t *testing.T) {
-	mgr := newApp(t)
-	openLesson(t, mgr, "Debug mode")
+	app := newApp(t)
+	openLesson(t, app, "Debug mode")
 
-	if !hasTextContaining(tree(t, mgr), "None — the collector is empty") {
+	if !hasTextContaining(app.Tree(), "None — the collector is empty") {
 		t.Fatal("the inspector should start empty")
 	}
 
 	// Render the bad list: the duplicate-key check fires during the same
 	// pass, and the inspector — rendered below the list in the tree — shows
 	// the finding immediately.
-	toggleCheckbox(t, mgr, 1, true)
-	root := tree(t, mgr)
+	toggleCheckbox(t, app, 1, true)
+	root := app.Tree()
 	if !hasTextContaining(root, "Row A — Keyed") {
 		t.Fatal("the provoked list should actually render")
 	}
@@ -148,8 +149,8 @@ func TestDebugLessonRecordsAndClearsConcerns(t *testing.T) {
 	}
 
 	// Stop provoking: the list goes, the recorded finding stays.
-	toggleCheckbox(t, mgr, 1, false)
-	root = tree(t, mgr)
+	toggleCheckbox(t, app, 1, false)
+	root = app.Tree()
 	if hasTextContaining(root, "Row A — Keyed") {
 		t.Fatal("the bad list should be gone once unchecked")
 	}
@@ -159,26 +160,26 @@ func TestDebugLessonRecordsAndClearsConcerns(t *testing.T) {
 
 	// The demo's own clear button empties the collector; with the provoker
 	// off, nothing re-files on the following passes.
-	tap(t, mgr, "Clear concerns")
-	if !hasTextContaining(tree(t, mgr), "None — the collector is empty") {
+	app.Tap("Clear concerns")
+	if !hasTextContaining(app.Tree(), "None — the collector is empty") {
 		t.Fatal("the inspector should be empty after Clear concerns")
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 func TestDebugSwitchOffRecordsNothing(t *testing.T) {
-	mgr := newApp(t)
+	app := newApp(t)
 	// The demo drives the real process-wide switch; make sure a failure
 	// between here and the end cannot leave the rest of the suite unaudited.
 	t.Cleanup(func() { core.SetDebugMode(true) })
-	openLesson(t, mgr, "Debug mode")
+	openLesson(t, app, "Debug mode")
 
 	// Flip debug off through the demo's own switch, then render the bad
 	// list: the zero-overhead claim, proven — the same duplicate keys
 	// record nothing at all.
-	toggleCheckbox(t, mgr, 0, false)
-	toggleCheckbox(t, mgr, 1, true)
-	root := tree(t, mgr)
+	toggleCheckbox(t, app, 0, false)
+	toggleCheckbox(t, app, 1, true)
+	root := app.Tree()
 	if !hasTextContaining(root, "Row A — Keyed") {
 		t.Fatal("the bad list should render regardless of the debug switch")
 	}
@@ -191,19 +192,19 @@ func TestDebugSwitchOffRecordsNothing(t *testing.T) {
 
 	// Disarm first, then re-enable the checks; the passes that follow are
 	// audited again and must stay clean.
-	toggleCheckbox(t, mgr, 1, false)
-	toggleCheckbox(t, mgr, 0, true)
-	_ = tree(t, mgr)
-	assertNoConcerns(t)
+	toggleCheckbox(t, app, 1, false)
+	toggleCheckbox(t, app, 0, true)
+	_ = app.Tree()
+	grmobtest.NoConcerns(t)
 }
 
 // --- 8.4 Cached -------------------------------------------------------------
 
 func TestCachedLessonRendersUnderDebugBypass(t *testing.T) {
-	mgr := newApp(t)
-	openLesson(t, mgr, "Cached: freeze the static")
+	app := newApp(t)
+	openLesson(t, app, "Cached: freeze the static")
 
-	root := tree(t, mgr)
+	root := app.Tree()
 	if !hasTextContaining(root, "Live — rendered at") {
 		t.Fatal("the live stamp card should render")
 	}
@@ -216,15 +217,15 @@ func TestCachedLessonRendersUnderDebugBypass(t *testing.T) {
 		t.Fatal("under debug mode the demo should announce the cache bypass")
 	}
 
-	tap(t, mgr, "Force another pass")
-	if !hasTextContaining(tree(t, mgr), "passes forced: 1") {
+	app.Tap("Force another pass")
+	if !hasTextContaining(app.Tree(), "passes forced: 1") {
 		t.Fatal("the pass counter should advance")
 	}
 
 	// The meaningful half of the audit: the cached probe is contract-clean
 	// (no hooks, no callbacks, no theme reads), so even with the debug
 	// bypass measuring it every pass, no cached-* concern may appear.
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }
 
 // --- 8.5 Finale -------------------------------------------------------------
@@ -240,19 +241,19 @@ func TestFinaleReportsCurriculumAndToasts(t *testing.T) {
 	})
 	t.Cleanup(func() { core.SetSystemEventHandler(nil) })
 
-	mgr := newApp(t)
-	openLesson(t, mgr, "The whole model")
+	app := newApp(t)
+	openLesson(t, app, "The whole model")
 
 	// The stats are computed from the live curriculum, so they can never
 	// drift from what the reader actually walked.
 	want := fmt.Sprintf("%d lessons across %d chapters", len(flatLessons), len(Chapters))
-	if !hasTextContaining(tree(t, mgr), want) {
+	if !hasTextContaining(app.Tree(), want) {
 		t.Fatalf("the finale should report %q", want)
 	}
 
-	tap(t, mgr, "Take a bow 🎉")
+	app.Tap("Take a bow 🎉")
 	if len(toasts) != 1 || toasts[0] != "Tutorial complete — now go build something" {
 		t.Fatalf("expected the completion toast, got %v", toasts)
 	}
-	assertNoConcerns(t)
+	grmobtest.NoConcerns(t)
 }

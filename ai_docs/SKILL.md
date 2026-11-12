@@ -606,7 +606,8 @@ Asserting the concern list is **empty** is the standard test shape.
 
 ## Testing — the fastest loop there is
 
-No simulator, no browser, no device. Drive the real engine from a Go test:
+No simulator, no browser, no device. Drive the real engine from a Go test
+with `grmobtest`:
 
 ```go
 func TestMain(m *testing.M) {
@@ -615,21 +616,30 @@ func TestMain(m *testing.M) {
 }
 
 func TestIncrement(t *testing.T) {
-    mgr := render.New(core.NewContext(), App)
-    defer mgr.Close()
+    app := grmobtest.New(t, App)   // closed by the test's cleanup
 
-    tree := mgr.RenderInitial()             // the whole tree, as JSON
-    id := findCallbackID(tree, "+")
-    patches := mgr.DispatchCallback(id)     // tap it; get the diff back
-
-    if !strings.Contains(patches, "Count: 1") {
-        t.Fatalf("got %s", patches)
+    app.Tap("+")                   // the Button labelled "+", as a finger would
+    if !app.HasText("Count: 1") {  // a Text saying exactly this
+        t.Fatal("one tap did not reach 1")
     }
-    if c := core.DumpConcerns(); c != "" {
-        t.Fatalf("concerns:\n%s", c)
-    }
+    app.NoConcerns()               // the debug audit found nothing
 }
 ```
+
+The Driver reads every callback ID from a freshly rendered tree, as the hosts
+do. Its verbs: `Tree` (a `*core.Node` decoded from the wire), `Find` /
+`FindAll`, `Tap(label)`, `TapWhere(pred, what)`, `Type(placeholder, text)`,
+`Toggle(name, on)`, `HasText` (exact Text), `Shows` (substring in any word on
+screen, never a callback ID), `AwaitText` (polls; on the fake clock under
+`testing/synctest`), `NoConcerns`, and `Manager()` for anything else.
+
+`grmobtest.New` resets grmob's process-wide state (device records, pending
+host requests, permissions, concerns) when it opens the only live app and
+again when the last one closes, so tests pass under `go test -shuffle=on`.
+Send a host's boot report (`core.ReceiveWindow`, a scheme) after `New` and
+before the first read: `New` renders nothing. A test driving the `mobile`
+bridge instead calls `grmobtest.Reset()` itself, between closing one app and
+rendering the next. Do not use `t.Parallel` in these tests.
 
 `render.Manager` is the app-lifetime owner: `New`, `SetListener`,
 `RenderInitial`, `Dispatch(label, fn)`, `DispatchCallback` /

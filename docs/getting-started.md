@@ -96,20 +96,24 @@ Three things to notice:
 
 ### 1. Drive it from a test (no simulator, no browser)
 
-`render.Manager` is the same engine the native shells use, and it works in a
-plain Go test:
+`grmobtest` drives `render.Manager`, the same engine the native shells use,
+from a plain Go test:
 
 ```go
 func TestCounter(t *testing.T) {
-    mgr := render.New(core.NewContext(), counter.App)
-    defer mgr.Close()
+    app := grmobtest.New(t, counter.App)
 
-    tree := mgr.RenderInitial() // full tree JSON
-    // Find the "+" button's callback ID in the tree, then:
-    patches := mgr.DispatchCallback("cb_1") // tap → handler → re-render → diff
-    // assert on the patch JSON
+    app.Tap("+") // find the "+" Button in the tree, dispatch its click
+    if !app.HasText("Count: 1") {
+        t.Fatal("one tap did not reach 1")
+    }
 }
 ```
+
+Every read renders the tree a host would receive and every tap dispatches the
+callback ID found in it, so the test takes the path a finger does. For the
+raw wire, `app.Manager()` is the `render.Manager`: `RenderInitial` returns
+the whole tree as JSON and `DispatchCallback` the patches a tap produced.
 
 `examples/counter/app_test.go` is that test written out, against the package
 above. `examples/todoapp/app_test.go` shows the same pattern at three levels of

@@ -1,6 +1,7 @@
 package tutorial
 
 import (
+	"github.com/rohanthewiz/grmob/grmobtest"
 	"testing"
 
 	"github.com/rohanthewiz/grmob/internal/shotclaims"
@@ -22,7 +23,7 @@ func showsText(n *node, s string) bool {
 	if hasTextContaining(n, s) {
 		return true
 	}
-	return findNode(n, func(n *node) bool {
+	return grmobtest.Find(n, func(n *node) bool {
 		return shotclaims.Shown(n.Props, s)
 	}) != nil
 }
@@ -77,9 +78,9 @@ func claimFor(t *testing.T, file string) shotclaims.Claim {
 // README's alt text, the site page and this picture; a lesson added
 // anywhere moves the computed one and none of the copies.
 func TestTheTutorialContentsScreenshotStillShowsWhatItClaims(t *testing.T) {
-	mgr := newApp(t)
-	assertShows(t, tree(t, mgr), claimFor(t, "tutorial-contents.png"))
-	assertNoConcerns(t)
+	app := newApp(t)
+	assertShows(t, app.Tree(), claimFor(t, "tutorial-contents.png"))
+	grmobtest.NoConcerns(t)
 }
 
 // TestTheTutorialLessonScreenshotStillShowsWhatItClaims holds
@@ -94,8 +95,8 @@ func TestTheTutorialContentsScreenshotStillShowsWhatItClaims(t *testing.T) {
 // the frame: the highlighted code, the paragraph under it, and the TRY IT
 // panel with the profile card its toggles recompose.
 func TestTheTutorialLessonScreenshotStillShowsWhatItClaims(t *testing.T) {
-	mgr := newApp(t)
-	openLesson(t, mgr, "Hello, GrMob")
-	assertShows(t, tree(t, mgr), claimFor(t, "tutorial-lesson.png"))
-	assertNoConcerns(t)
+	app := newApp(t)
+	openLesson(t, app, "Hello, GrMob")
+	assertShows(t, app.Tree(), claimFor(t, "tutorial-lesson.png"))
+	grmobtest.NoConcerns(t)
 }
