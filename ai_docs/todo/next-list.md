@@ -36,7 +36,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-145
+**Next ID:** N-146
 
 ## Open
 
@@ -184,6 +184,16 @@ with each item's `raised` traced back through all session docs.
   so the pump skips a pass the dispatch already rendered, the web host
   dropping its redundant `RenderAgain` and `IsDirty` poll (P1), the
   generated equality (P2), and the registry purging in place (P3).
+  - P0 landed 2026-11-11 (`2026-1111-1851-n140-n144-n138-grmobtest-useasync-shuffle-fake-clocks-p0`).
+    The benchmarks: `BenchmarkDiffUnchanged` and `BenchmarkDiffOneChange`
+    in reconcile (1,001 and 10,001 nodes; 1.06 ms and 1,150 allocs at
+    1,001 unchanged on an M3), `BenchmarkManagerNoopPass` and
+    `BenchmarkManagerTap` in render (1.40 ms and 1.42 ms at 250 rows, debug
+    mode off). P1's pin is `TestATapRendersTheRootTwiceToday` (render): 20
+    taps with a listener render the root 40 times; P1 changes its `perTap`
+    to 1. Debug mode records a `core.PassStat` per pass (handler, build,
+    diff, encode, patches, bytes) in `core.PassStats` (last 512), with
+    `core.SetPassLogging` for a line per pass. P1, P2 and P3 remain.
 - **N-139** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value low
   **Host and library hot spots (plan P6-P9).** The one felt daily is P7:
   the dev watcher runs `go list -deps` on every 250 ms poll, about half a
@@ -192,15 +202,6 @@ with each item's `raised` traced back through all session docs.
   node (P6); `CodeEditor` re-tokenising, `DataTable` re-sorting, O(fields²)
   form error reads (P8); iOS min-content re-measurement and uncached,
   full-resolution images (P9).
-- **N-140** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value high
-  **`grmobtest` and `hooks.UseAsync` (plan C1, C2).** The test driver
-  (`tree`, `find`, `tap`, `assertNoConcerns`) is hand-written 16 times across
-  six example test files and in the `grmob new` scaffold; `grmobtest` would
-  also export one `Reset()` over the eleven unexported `…ForTest` resets.
-  `UseAsync[T](ctx, fn, deps...)` returning `{Data, Loading, Err, Reload}`
-  with cancellation and stale-result dropping replaces the pattern the
-  tutorial and four `comps` widgets ask callers to write by hand, and gives
-  `UseEffect` its missing cleanup story.
 - **N-141** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
   **CLI: `go tool grmob`, a one-ABI bind, and shell upgrades that keep the
   app's edits (plan C3-C5).** Register `cmd/grmob` as a `go.mod` tool in the
@@ -235,6 +236,20 @@ with each item's `raised` traced back through all session docs.
     PE; not the fat header, which a Java class file shares). It named
     exactly these two before the untrack. History still carries their bytes
     unless rewritten, which is not proposed.
+  - One drift line fixed 2026-11-11 (`2026-1111-1851-n140-n144-n138-grmobtest-useasync-shuffle-fake-clocks-p0`):
+    `hooks/doc.go`'s dependency table said a dep-less `UseEffect` runs every
+    pass (it runs once), and `ai_docs/SKILL.md`'s hooks list said the same;
+    both corrected with N-140's UseAsync docs. The rest of D6 (README's 84
+    lessons, `docs/index.md`'s five hooks, `build.sh`'s 40%,
+    `wasm/index.html`'s 51) and D3, D5, D7 remain.
+- **N-145** · raised `2026-1111-1851-n140-n144-n138-grmobtest-useasync-shuffle-fake-clocks-p0` · value low
+  **Nothing compresses the 13.1 MB wasm module (plan P10d).** gzip gives
+  2.98 MB and brotli 2.07 MB, and `serve` never sets `Content-Encoding`.
+  The fix the plan names: precompress in `build.sh` and serve the `.br` or
+  `.gz` when the request accepts it; what GitHub Pages does for `.wasm` was
+  not checked. Split out of N-144 when its P10 landed, because N-144 is
+  repairs to tests and CI only and this one changes what `serve` sends.
+  Related: N-142's `grmob web -dist` with precompressed assets (C7).
 
 ## Validate
 
@@ -826,6 +841,28 @@ defect, which then becomes its own Open item.
     carrying on. `ios/verify/remedy.sh` passed end to end. The Android
     drill was not run here (it fills a cold gradle cache from the network),
     so whether CI stays green is this item's check. R9n and P10 remain.
+  - R9n and P10 a–c landed 2026-11-11 (`2026-1111-1851-n140-n144-n138-grmobtest-useasync-shuffle-fake-clocks-p0`),
+    and the item moved here from Open: what is left is watching CI.
+    - R9n: hooks tests that feed a device or permission record start with
+      `freshProcessState` (`grmobtest.Reset` in and out); todoapp's two
+      journeys start with `freshApp`. CI runs `-shuffle=on`. The full suite
+      passed under eight seeds and once with `-race -shuffle=on`.
+    - P10a: the race step covers product packages only; the source
+      censuses (`CENSUS_PKGS` in ci.yml) run in their own step without
+      `-race` (about 32 s against 127 s over that set, locally).
+    - P10b: timer tests run on `grmobtest.WithFakeClock` (synctest plus a
+      30 s watchdog): hooks 5.3 s to 0.3 s, the tutorial 9.4 s to 1.6 s.
+    - P10c: site.yml deploys on a green CI `workflow_run` of a push to
+      master, checking out `head_sha`; a manual dispatch keeps the old gate.
+    - P10d (serving a compressed module) is a product change, split out as
+      N-145.
+    - The R9o check so far: run 43070809214 (2026-11-11, `15f2b4c`) ran
+      `android/verify/remedy.sh` and its Android job passed. The flake was
+      intermittent, so one green run is not yet the answer.
+  Checks left: the Android remedy drill stays green across CI runs; the
+  split test steps and `-shuffle=on` run green in CI; the site workflow's
+  first `workflow_run` deploy succeeds after CI and publishes the commit CI
+  verified.
 
 ## Non-goals
 
@@ -946,6 +983,28 @@ defect, which then becomes its own Open item.
 
 ## Closed
 
+- **N-140** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value high
+  · closed 2026-11-11, `2026-1111-1851-n140-n144-n138-grmobtest-useasync-shuffle-fake-clocks-p0` — both halves landed.
+  - C1 (`5adce9a`): `grmobtest.New(t, App)` returns a Driver over
+    render.Manager with `Tree` (a `*core.Node` decoded from the wire),
+    `Find`/`FindAll`, `Tap`, `TapWhere`, `Type`, `Toggle`, `HasText` (exact
+    Text), `Shows` (any word on screen, never a callback ID), `AwaitText`
+    and `NoConcerns` (which also fails with debug mode off). `Reset` runs
+    the eleven unexported resets through `internal/testreset` (core,
+    keystore and permission register from init; a census test holds every
+    `reset…ForTest` to a registration), plus the concern and pass records.
+    New resets when it opens the only live Driver and the last close
+    resets again, so a host's boot report is sent after New. Migrated: the
+    scaffold, counter, signup, social, mobileapp, todoapp and the tutorial
+    (its `node` is now `core.Node`). Later (`34cdb34`) `WithFakeClock`:
+    synctest plus a real-time watchdog.
+  - C2 (`4addc41`): `hooks.UseAsync[T](ctx, fn, deps...)` returns
+    `Async{Data, Err, Loading, Reload}`. fn's context is cancelled on a
+    deps change, on Reload and on close; a generation check drops any
+    superseded answer; a deps change clears Data and Err, and Reload keeps
+    Data and clears Err at once; a panic becomes `ErrAsyncPanicked`.
+    Mutation-checked on four guarantees. Documented in hooks' package doc,
+    state-and-hooks.md, SKILL.md, BibleVerse's doc and the Effects lesson.
 - **N-137** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value low
   · closed 2026-11-11, `2026-1111-1142-n137-d-e-lazy-keys-and-web-teardown` — the plan's eleven small
   reliability items (R9 b–l), each landed and pinned on its own; one line
