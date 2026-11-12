@@ -45,7 +45,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
 
 | Topic | What it covers | Declares |
 | --- | --- | --- |
-| [Views & state](core-views.md) | View, Node, Context and state slots; text and inline runs; conditionals, caching, error boundaries and debug-mode concerns. | 12 types, 61 functions and methods |
+| [Views & state](core-views.md) | View, Node, Context and state slots; text and inline runs; conditionals, caching, error boundaries and debug-mode concerns. | 13 types, 67 functions and methods |
 | [Layout](core-layout.md) | Rows, columns, stacks, scrolls and lists, and the alignment vocabulary they are placed with. | 2 types, 28 functions and methods |
 | [Styling: the Style struct](core-style.md) | Style and the value types its fields take: alignment, flex, position, weights and edge insets. | 11 types, 12 functions and methods |
 | [Styling: style props](core-style-props.md) | The StyleProp constructors: spacing and per-side insets, flex, typography, colour, borders, per-corner radii and animation. | 2 types, 74 functions and methods |
@@ -62,12 +62,15 @@ Package core's reference is split into 11 topic pages by source file. The index 
 - [Views & state](core-views.md)
     - [Constants](core-views.md#constants) — `ConcernCachedCallbacks`, `ConcernCachedHooks`, `ConcernCursorDrift`, `ConcernDuplicateKey`, `ConcernHandlerPanic`, `ConcernRenderPanic`, `ConcernUnencodablePass`, `ConcernUnknownItem`
     - [`func ClearConcerns`](core-views.md#func-clearconcerns)
+    - [`func ClearPassStats`](core-views.md#func-clearpassstats)
     - [`func DumpConcerns`](core-views.md#func-dumpconcerns)
     - [`func IsDebugMode`](core-views.md#func-isdebugmode)
     - [`func MaybeProp`](core-views.md#func-maybeprop)
+    - [`func RecordPassStat`](core-views.md#func-recordpassstat)
     - [`func ReportConcern`](core-views.md#func-reportconcern)
     - [`func Safely`](core-views.md#func-safely)
     - [`func SetDebugMode`](core-views.md#func-setdebugmode)
+    - [`func SetPassLogging`](core-views.md#func-setpasslogging)
     - [`func WithConfigOpt`](core-views.md#func-withconfigopt)
     - [`func WithThemeOpt`](core-views.md#func-withthemeopt)
     - [`type AppConfig`](core-views.md#type-appconfig)
@@ -81,6 +84,8 @@ Package core's reference is split into 11 topic pages by source file. The index 
         - [`func Case`](core-views.md#func-case)
         - [`func Default`](core-views.md#func-default)
     - [`type Node`](core-views.md#type-node)
+    - [`type PassStat`](core-views.md#type-passstat)
+        - [`func PassStats`](core-views.md#func-passstats)
     - [`type RenderError`](core-views.md#type-rendererror)
         - [`func Guard`](core-views.md#func-guard)
     - [`type RenderManager`](core-views.md#type-rendermanager)

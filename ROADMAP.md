@@ -1512,15 +1512,22 @@
 
 ### 🛠️ DevTools
 - [ ] State inspector overlay (similar to React DevTools)
-- [ ] Patch logging — a debug-mode trace of what each pass emitted
+- [ ] Patch logging — a debug-mode trace of what each pass emitted.
+      Partly there: under debug mode `core.PassStats` records each pass's
+      phase timings, patch count and payload size, and `core.SetPassLogging`
+      logs a line per pass. The patches themselves are not logged yet
 - [ ] Visual patch viewer
 - [x] Hot module replacement — WASM only (`go run ./serve -dev`: watch,
       rebuild, swap the module in place; the lesson and scroll survive, Go
       state does not). Native has no equivalent; see docs/platforms/wasm.md
 
 ### 🧪 Testing & Perf
-- [ ] Benchmark diff/patch engine
-- [ ] Latency profiling in runtime patching
+- [x] Benchmark diff/patch engine — `BenchmarkDiffUnchanged` and
+      `BenchmarkDiffOneChange` in `reconcile` (1,001 and 10,001 nodes),
+      `BenchmarkManagerNoopPass` and `BenchmarkManagerTap` in `render`
+- [ ] Latency profiling in runtime patching. Go's side is measured (debug
+      mode's `core.PassStats`: handler, build, diff, encode); the hosts'
+      apply time is not
 
 ### 🧬 Extensions
 - [ ] Router-style navigation for web

@@ -223,6 +223,41 @@ func TestNoHookDrift(t *testing.T) {
 nothing and an empty list proves nothing. Without `grmobtest`, the same check
 is `core.ClearConcerns()` before the passes and `core.Concerns()` after.
 
+## Pass statistics
+
+Debug mode also records what each render pass cost. `render.Manager` times
+the pass's phases and hands one `core.PassStat` per pass to
+`core.RecordPassStat`; `core.PassStats()` returns the most recent 512,
+oldest first:
+
+```go
+for _, s := range core.PassStats() {
+    fmt.Println(s) // grmob: pass dispatch cb_3: 1.21ms (handler 12µs, build 1.1ms, diff 97µs, encode 20µs), 3 patches, 412 B
+}
+```
+
+| Field | What it measures |
+|---|---|
+| `Kind` | `mount` (RenderInitial), `dispatch` (a host event and its handler), `render` (a pass no handler started: the push of a state change, or an explicit RenderAgain) |
+| `Trigger` | the dispatch's callback ID or `Dispatch` label |
+| `Handler` | the event handler |
+| `Build` | the root view's render, the Go tree |
+| `Diff` | `reconcile.Diff` against the tree the host holds |
+| `Encode` | the JSON the host receives |
+| `Patches`, `Bytes` | the payload: its patch count (0 for a mount's tree) and size |
+
+`core.SetPassLogging(true)` also logs that line per pass, for watching a
+screen's cost while using it. `core.ClearPassStats()` empties the record
+(`grmobtest.Reset` does too).
+
+The numbers are debug mode's, which costs more than a release build: every
+`core.Cached` subtree re-renders fresh, and every pass is audited. The audit
+is counted in no phase, but the uncached builds are in `Build`. Compare
+passes with each other, not with a release build; for that, the benchmarks
+(`go test -run '^$' -bench . ./reconcile ./render`) run with debug mode off.
+A pass that panicked or would not encode is not recorded; it is logged and
+reported as a concern where it happened.
+
 Hosts that drive render passes by hand (no `render.Manager`) should call
 `ctx.EndRenderPass()` after each render, paired with
 `ctx.BeginRenderPass()` / `ctx.Reset()` before it, to get the cursor audit.

@@ -6,18 +6,21 @@ import "github.com/rohanthewiz/grmob/core"
 
 View, Node, Context and state slots; text and inline runs; conditionals, caching, error boundaries and debug-mode concerns.
 
-One of 11 topic pages of [package core](core.md), which has the package overview and an index of every topic. This page documents the declarations in `core/view.go`, `core/node.go`, `core/text.go`, `core/paragraph.go`, `core/context.go`, `core/cleanup.go`, `core/cached.go`, `core/conditionals.go`, `core/error_boundary.go`, `core/safely.go`, `core/render_manager.go`, `core/debug.go`.
+One of 11 topic pages of [package core](core.md), which has the package overview and an index of every topic. This page documents the declarations in `core/view.go`, `core/node.go`, `core/text.go`, `core/paragraph.go`, `core/context.go`, `core/cleanup.go`, `core/cached.go`, `core/conditionals.go`, `core/error_boundary.go`, `core/safely.go`, `core/render_manager.go`, `core/debug.go`, `core/pass_stats.go`.
 
 ## Index
 
 - [Constants](#constants) — `ConcernCachedCallbacks`, `ConcernCachedHooks`, `ConcernCursorDrift`, `ConcernDuplicateKey`, `ConcernHandlerPanic`, `ConcernRenderPanic`, `ConcernUnencodablePass`, `ConcernUnknownItem`
 - [`func ClearConcerns`](#func-clearconcerns)
+- [`func ClearPassStats`](#func-clearpassstats)
 - [`func DumpConcerns`](#func-dumpconcerns)
 - [`func IsDebugMode`](#func-isdebugmode)
 - [`func MaybeProp`](#func-maybeprop)
+- [`func RecordPassStat`](#func-recordpassstat)
 - [`func ReportConcern`](#func-reportconcern)
 - [`func Safely`](#func-safely)
 - [`func SetDebugMode`](#func-setdebugmode)
+- [`func SetPassLogging`](#func-setpasslogging)
 - [`func WithConfigOpt`](#func-withconfigopt)
 - [`func WithThemeOpt`](#func-withthemeopt)
 - [`type AppConfig`](#type-appconfig)
@@ -56,6 +59,10 @@ One of 11 topic pages of [package core](core.md), which has the package overview
     - [`func Case`](#func-case)
     - [`func Default`](#func-default)
 - [`type Node`](#type-node)
+- [`type PassStat`](#type-passstat)
+    - [`func PassStats`](#func-passstats)
+    - [`func (PassStat) String`](#func-passstat-string)
+    - [`func (PassStat) Total`](#func-passstat-total)
 - [`type RenderError`](#type-rendererror)
     - [`func Guard`](#func-guard)
     - [`func (*RenderError) Error`](#func-rendererror-error)
@@ -164,6 +171,16 @@ ClearConcerns drops all recorded concerns. Tests call it between cases; apps can
 
 <small>[core/debug.go:172](https://github.com/rohanthewiz/grmob/blob/master/core/debug.go#L172)</small>
 
+### func ClearPassStats
+
+```go
+func ClearPassStats()
+```
+
+ClearPassStats empties the record, as ClearConcerns empties the concern collector; a test measuring its own passes calls it first.
+
+<small>[core/pass_stats.go:123](https://github.com/rohanthewiz/grmob/blob/master/core/pass_stats.go#L123)</small>
+
 ### func DumpConcerns
 
 ```go
@@ -225,6 +242,16 @@ The return type is PropsAndChildren (i.e. any), so this is only valid in the con
 
 <small>[core/conditionals.go:135](https://github.com/rohanthewiz/grmob/blob/master/core/conditionals.go#L135)</small>
 
+### func RecordPassStat
+
+```go
+func RecordPassStat(s PassStat)
+```
+
+RecordPassStat adds one pass to the record, and logs it when pass logging is on. render.Manager calls it; a host that drives render passes itself may too. It does nothing when debug mode is off, so the callers' timing is the only cost they need to skip.
+
+<small>[core/pass_stats.go:91](https://github.com/rohanthewiz/grmob/blob/master/core/pass_stats.go#L91)</small>
+
 ### func ReportConcern
 
 ```go
@@ -285,6 +312,16 @@ func SetDebugMode(on bool)
 SetDebugMode turns the debug checks on or off. Zero overhead when off: every check site guards with IsDebugMode before doing any work.
 
 <small>[core/debug.go:30](https://github.com/rohanthewiz/grmob/blob/master/core/debug.go#L30)</small>
+
+### func SetPassLogging
+
+```go
+func SetPassLogging(on bool)
+```
+
+SetPassLogging turns on a log line per recorded pass (PassStat.String), for watching a screen's cost while using it. It needs debug mode too, since that is what records the passes; it is a switch of its own because a line per pass is too much to have on whenever debug mode is.
+
+<small>[core/pass_stats.go:134](https://github.com/rohanthewiz/grmob/blob/master/core/pass_stats.go#L134)</small>
 
 ### func WithConfigOpt
 
@@ -706,6 +743,81 @@ Node is the retained render-tree element the reconciler diffs.
 Immutability contract: a Node is frozen once its render pass returns it. Builders may assemble a node freely while constructing it (Keyed sets Key, containerNode applies behavior props), but after render nothing may write to it — the reconciler only reads, and renderers must also only read. The contract is what makes sharing safe: Cached returns the same \*Node every pass and Diff treats pointer equality as proof the subtree is unchanged, so a post-render mutation would silently never reach the screen.
 
 <small>[core/node.go:12](https://github.com/rohanthewiz/grmob/blob/master/core/node.go#L12)</small>
+
+### type PassStat
+
+```go
+type PassStat struct {
+	// At is when the pass began: the handler's start for a dispatch, the
+	// render's otherwise.
+	At time.Time
+
+	// Kind is "mount" (RenderInitial), "dispatch" (a host event and its
+	// handler), or "render" (a pass with no handler: the pump's push, or a
+	// host's explicit RenderAgain).
+	Kind string
+
+	// Trigger is the dispatch's callback ID or Dispatch label; empty for the
+	// other kinds.
+	Trigger string
+
+	Handler time.Duration
+	Build   time.Duration
+	Diff    time.Duration
+	Encode  time.Duration
+
+	// Patches is the number of patches the pass sent; 0 for a mount, whose
+	// payload is a tree, and 0 for a pass that changed nothing ("[]").
+	Patches int
+
+	// Bytes is the payload's size: what crossed to the host.
+	Bytes int
+}
+```
+
+PassStat is what one render pass cost, as the render loop measured it. Recorded only under debug mode (SetDebugMode); read with PassStats.
+
+The phases are the pass's own, in the order they run:
+
+	host event ─▶ Handler ─▶ Build ─▶ Diff ─▶ Encode ─▶ payload to the host
+	              (dispatch)  the view    reconcile  json
+	                          tree        .Diff
+
+A mount has no handler and no diff (its payload is the whole tree), and a push (a state change from a timer or a goroutine, rendered by the pump) has no handler. A pass that was abandoned (a panicking render, an unencodable value) is not recorded: those are logged, and reported as concerns, where they happen.
+
+<small>[core/pass_stats.go:25](https://github.com/rohanthewiz/grmob/blob/master/core/pass_stats.go#L25)</small>
+
+#### func PassStats
+
+```go
+func PassStats() []PassStat
+```
+
+PassStats returns the recorded passes, oldest first: the most recent 512 while debug mode has been on.
+
+<small>[core/pass_stats.go:110](https://github.com/rohanthewiz/grmob/blob/master/core/pass_stats.go#L110)</small>
+
+#### func (PassStat) String
+
+```go
+func (s PassStat) String() string
+```
+
+String is the one-line form SetPassLogging writes:
+
+	grmob: pass dispatch cb_3: 1.21ms (handler 12µs, build 1.1ms, diff 97µs, encode 20µs), 3 patches, 412 B
+
+<small>[core/pass_stats.go:60](https://github.com/rohanthewiz/grmob/blob/master/core/pass_stats.go#L60)</small>
+
+#### func (PassStat) Total
+
+```go
+func (s PassStat) Total() time.Duration
+```
+
+Total is the pass's whole cost in Go: handler, build, diff and encode.
+
+<small>[core/pass_stats.go:53](https://github.com/rohanthewiz/grmob/blob/master/core/pass_stats.go#L53)</small>
 
 ### type RenderError
 

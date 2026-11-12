@@ -61,7 +61,7 @@ type Manager struct {
 }
 ```
 
-<small>[render/manager.go:36](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L36)</small>
+<small>[render/manager.go:37](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L37)</small>
 
 #### func New
 
@@ -69,7 +69,7 @@ type Manager struct {
 func New(ctx *core.Context, rootView func(*core.Context) core.View) *Manager
 ```
 
-<small>[render/manager.go:73](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L73)</small>
+<small>[render/manager.go:88](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L88)</small>
 
 #### func (*Manager) Close
 
@@ -79,7 +79,7 @@ func (m *Manager) Close()
 
 Close stops the push pump and closes the app's context tree, which stops the background resources hooks registered on it (interval tickers, pending timeouts). The Manager is the app-lifetime owner, so its Close is the one shutdown entry point: hosts that replace an app (mobile.Register, the WASM runtime re-mounting) close the old Manager and thereby cannot leak tickers rendering into a dead tree. Normally an app-lifetime singleton, so this mainly matters for tests and hot-reload hosts.
 
-<small>[render/manager.go:97](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L97)</small>
+<small>[render/manager.go:112](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L112)</small>
 
 #### func (*Manager) Dispatch
 
@@ -91,7 +91,7 @@ Dispatch runs fn under the render mutex — the same serialization the callback 
 
 Before the initial mount there is no tree to diff against, so fn runs and the state it wrote is simply part of the RenderInitial that follows; the "\[]" tells the host nothing needs applying. That case is rare (a status tick cannot precede the Load that caused it, and Load needs a rendered button) but a host that sent it would otherwise receive a diff against nothing, which no renderer can apply.
 
-<small>[render/manager.go:495](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L495)</small>
+<small>[render/manager.go:585](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L585)</small>
 
 #### func (*Manager) DispatchBoolCallback
 
@@ -101,7 +101,7 @@ func (m *Manager) DispatchBoolCallback(id string, value bool) string
 
 DispatchBoolCallback is DispatchCallback for bool-carrying events.
 
-<small>[render/manager.go:468](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L468)</small>
+<small>[render/manager.go:558](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L558)</small>
 
 #### func (*Manager) DispatchCallback
 
@@ -115,7 +115,7 @@ Handlers may call State.Set freely: the resulting RequestRender nudge is asynchr
 
 With a listener attached the patches are handed to it before the lock is released and the return value is "\[]"; without one they are returned. Every Dispatch\* below does the same. See deliverLocked for the ordering hole the return value left open.
 
-<small>[render/manager.go:441](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L441)</small>
+<small>[render/manager.go:531](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L531)</small>
 
 #### func (*Manager) DispatchIntCallback
 
@@ -125,7 +125,7 @@ func (m *Manager) DispatchIntCallback(id string, value int) string
 
 DispatchIntCallback is DispatchCallback for int-carrying events.
 
-<small>[render/manager.go:476](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L476)</small>
+<small>[render/manager.go:566](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L566)</small>
 
 #### func (*Manager) DispatchTextCallback
 
@@ -135,7 +135,7 @@ func (m *Manager) DispatchTextCallback(id string, value string) string
 
 DispatchTextCallback is DispatchCallback for string-carrying events.
 
-<small>[render/manager.go:449](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L449)</small>
+<small>[render/manager.go:539](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L539)</small>
 
 #### func (*Manager) DispatchTextEdit
 
@@ -145,7 +145,7 @@ func (m *Manager) DispatchTextEdit(id string, value string, seq, epoch int) stri
 
 DispatchTextEdit is DispatchTextCallback for a native text field's keystroke, carrying the host's sequence number and adopted rewrite epoch. An edit typed against text Go has since rewritten is acknowledged without reaching the handler; see core/text\_edit.go for the protocol.
 
-<small>[render/manager.go:460](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L460)</small>
+<small>[render/manager.go:550](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L550)</small>
 
 #### func (*Manager) RenderAgain
 
@@ -155,7 +155,7 @@ func (r *Manager) RenderAgain() string
 
 RenderAgain ReRender Used after an event (input/click/state change) to get diff
 
-<small>[render/manager.go:335](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L335)</small>
+<small>[render/manager.go:382](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L382)</small>
 
 #### func (*Manager) RenderAndGetPatches
 
@@ -167,7 +167,7 @@ RenderAndGetPatches renders one pass and returns whichever payload the host need
 
 It delegates rather than re-implementing the two passes, which is the whole of the fix here. Its own copy had drifted badly: it reset the root cursor with \`r.context.Cursor = 0\` instead of \`Reset()\`, so every child scope kept its cursor from the previous pass and its slots grew by one per render; and it never called PurgeUnusedCallbacks or ClearDirty, so handlers for vanished nodes stayed dispatchable and a polling host re-rendered forever.
 
-<small>[render/manager.go:622](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L622)</small>
+<small>[render/manager.go:725](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L725)</small>
 
 #### func (*Manager) RenderInitial
 
@@ -175,7 +175,7 @@ It delegates rather than re-implementing the two passes, which is the whole of t
 func (r *Manager) RenderInitial() string
 ```
 
-<small>[render/manager.go:260](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L260)</small>
+<small>[render/manager.go:275](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L275)</small>
 
 #### func (*Manager) Resync
 
@@ -195,7 +195,7 @@ currentTree, which is the tree the last committed pass left the host with (an un
 
 It goes out like a dispatch (deliverLocked): through the listener inside the lock when one is attached, so it cannot be overtaken by a pass and cannot overtake one, and returned otherwise. Before the mount there is nothing to send, and the answer is "\[]".
 
-<small>[render/manager.go:534](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L534)</small>
+<small>[render/manager.go:625](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L625)</small>
 
 #### func (*Manager) SetListener
 
@@ -205,7 +205,7 @@ func (m *Manager) SetListener(l PatchListener)
 
 SetListener attaches (or replaces) the native push target. Any state change that happened before attachment is flushed immediately so the listener never starts out behind.
 
-<small>[render/manager.go:107](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L107)</small>
+<small>[render/manager.go:122](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L122)</small>
 
 ### type PatchListener
 
@@ -221,5 +221,5 @@ The single string-parameter method is deliberate: gomobile bind maps this interf
 
 ApplyPatches is invoked from a background goroutine (the pump), or from the thread that called a Dispatch\* method, inside that call: with a listener attached, a dispatch delivers its pass here rather than returning it (see deliverLocked). Either way the render lock is held. Native implementations must hop to their UI thread before touching views (runOnUiThread / DispatchQueue.main) and return, without waiting on the hop; the payload is the same patch-array JSON RenderAgain returns, and an empty patch set is never pushed.
 
-<small>[render/manager.go:32](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L32)</small>
+<small>[render/manager.go:33](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L33)</small>
 

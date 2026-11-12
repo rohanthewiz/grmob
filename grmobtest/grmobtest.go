@@ -279,8 +279,9 @@ func Parse(t testing.TB, wire string) *core.Node {
 
 // Reset returns grmob's process-wide state to a fresh process's: the device
 // records and their subscriptions, every pending host request, the
-// permission record, and the debug concern collector. The debug-mode switch
-// itself is left alone, since TestMain sets it once for the package.
+// permission record, the debug concern collector and the debug pass record
+// (core.PassStats). The debug-mode switch itself is left alone, since
+// TestMain sets it once for the package, and so is core.SetPassLogging.
 //
 // New and the last Driver's cleanup call it, so a test using a Driver need
 // not. Call it directly between tests that drive an app some other way (the
@@ -289,6 +290,7 @@ func Parse(t testing.TB, wire string) *core.Node {
 func Reset() {
 	testreset.All()
 	core.ClearConcerns()
+	core.ClearPassStats()
 }
 
 // live counts the Drivers not yet closed, so Reset runs only on the edges:

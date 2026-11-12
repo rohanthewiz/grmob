@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"time"
 
 	"github.com/rohanthewiz/grmob/core"
 	"github.com/rohanthewiz/grmob/reconcile"
@@ -68,6 +69,20 @@ type Manager struct {
 	renderRequests chan struct{}
 	stop           chan struct{}
 	stopOnce       sync.Once
+
+	// cause is what started the pass renderAgainLocked is about to run, for
+	// the debug-mode core.PassStat. A dispatch fills it in (runHandler)
+	// before it renders; the render reads and clears it, so a pass that no
+	// handler started (the pump's push, an explicit RenderAgain) finds it
+	// empty. Only touched under mu, and only filled under debug mode.
+	cause passCause
+}
+
+// passCause is the handler half of a dispatch's PassStat.
+type passCause struct {
+	trigger string
+	start   time.Time
+	handler time.Duration
 }
 
 func New(ctx *core.Context, rootView func(*core.Context) core.View) *Manager {
@@ -265,13 +280,23 @@ func (r *Manager) RenderInitial() string {
 
 // renderInitialLocked is the mount pass; callers must hold mu.
 func (r *Manager) renderInitialLocked() string {
+	// The pass is timed only under debug mode, the only time a PassStat is
+	// recorded; with it off a pass pays one atomic load for the question.
+	timed := core.IsDebugMode()
+	var start time.Time
+	if timed {
+		start = time.Now()
+	}
+
 	r.context.BeginRenderPass()
 	r.context.Reset()
 
 	var tree *core.Node
+	stoodIn := false
 	if rerr := core.Guard(func() {
 		tree = r.renderFunc(r.context).Render(r.context)
 	}); rerr != nil {
+		stoodIn = true
 		// Nothing was mounted, so unlike a later pass there is no last-good
 		// tree to fall back to — the screen would be blank and, worse,
 		// currentTree would stay nil, which the pump reads as "not mounted
@@ -285,6 +310,10 @@ func (r *Manager) renderInitialLocked() string {
 	// the initial pass records each context's baseline hook count for the
 	// cursor-drift check on later passes.
 	r.context.EndRenderPass()
+	var built time.Time
+	if timed {
+		built = time.Now()
+	}
 	// And the accessibility audit over the tree that pass produced —
 	// duplicate ids, dangling aria-controls, ids that are not ids, and
 	// disclosures nothing can open. It runs here rather than in an exporter
@@ -297,13 +326,31 @@ func (r *Manager) renderInitialLocked() string {
 	// every host refused, and the screen stayed blank. The placeholder stands
 	// in, as for a panic, and is what the next pass diffs against, so the
 	// app comes up the moment its state encodes. See unencodable.
+	//
+	// The audit just above is counted in no phase of the PassStat: it is
+	// debug mode's own cost, which a release build never pays.
+	var audited time.Time
+	if timed {
+		audited = time.Now()
+	}
 	out, err := encodePass(tree)
 	if err != nil {
 		r.unencodable("initial render", err, tree)
 		tree = panicPlaceholder()
 		out, _ = encodePass(tree) // a Text with one string prop always encodes
+		stoodIn = true
 	}
 	r.currentTree = tree
+	// A placeholder's mount is not the app's cost, so it is not recorded.
+	if timed && !stoodIn {
+		core.RecordPassStat(core.PassStat{
+			At:     start,
+			Kind:   "mount",
+			Build:  built.Sub(start),
+			Encode: time.Since(audited),
+			Bytes:  len(out),
+		})
+	}
 	return out
 }
 
@@ -340,6 +387,16 @@ func (r *Manager) RenderAgain() string {
 
 // renderAgainLocked is the diff-producing render pass; callers must hold mu.
 func (r *Manager) renderAgainLocked() string {
+	// The dispatch's handler half, if a dispatch started this pass; cleared
+	// at once so the next pass (the pump's, say) does not inherit it.
+	cause := r.cause
+	r.cause = passCause{}
+	timed := core.IsDebugMode()
+	var start time.Time
+	if timed {
+		start = time.Now()
+	}
+
 	// BeginRenderPass must precede the render so callback IDs restart from
 	// zero and re-registrations line up with the previous pass; the purge
 	// after the diff then drops only IDs no longer registered this pass.
@@ -386,13 +443,28 @@ func (r *Manager) renderAgainLocked() string {
 	// Before the diff rather than after, so the audit sees the tree it was
 	// asked about even though nothing between them touches it: the two debug
 	// passes belong together and both describe the render, not the patch.
+	//
+	// For the PassStat the audit is counted in no phase, as at the mount:
+	// Build ends before it and Diff starts after it.
 	r.context.EndRenderPass()
+	var built time.Time
+	if timed {
+		built = time.Now()
+	}
 	core.AuditTree(newTree)
+	var audited time.Time
+	if timed {
+		audited = time.Now()
+	}
 	patches := reconcile.Diff(r.currentTree, newTree, "root")
 	if patches == nil {
 		// A no-change render must serialize as "[]", not "null": the native
 		// runtimes iterate the decoded patch list without a null check.
 		patches = []reconcile.Patch{}
+	}
+	var diffed time.Time
+	if timed {
+		diffed = time.Now()
 	}
 
 	// Encoded BEFORE the pass is committed. currentTree is Go's record of
@@ -414,6 +486,24 @@ func (r *Manager) renderAgainLocked() string {
 		r.unencodable("render pass", err, newTree)
 		r.context.ClearDirty()
 		return "[]"
+	}
+	if timed {
+		stat := core.PassStat{
+			At:      start,
+			Kind:    "render",
+			Build:   built.Sub(start),
+			Diff:    diffed.Sub(audited),
+			Encode:  time.Since(diffed),
+			Patches: len(patches),
+			Bytes:   len(out),
+		}
+		if !cause.start.IsZero() {
+			stat.At = cause.start
+			stat.Kind = "dispatch"
+			stat.Trigger = cause.trigger
+			stat.Handler = cause.handler
+		}
+		core.RecordPassStat(stat)
 	}
 	r.currentTree = newTree
 	r.context.ClearDirty()
@@ -441,7 +531,7 @@ func (r *Manager) renderAgainLocked() string {
 func (m *Manager) DispatchCallback(id string) string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.guardHandler(id, func() { m.context.TriggerCallback(id) })
+	m.runHandler(id, func() { m.context.TriggerCallback(id) })
 	return m.deliverLocked(m.renderAgainLocked())
 }
 
@@ -449,7 +539,7 @@ func (m *Manager) DispatchCallback(id string) string {
 func (m *Manager) DispatchTextCallback(id string, value string) string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.guardHandler(id, func() { m.context.TriggerTextCallback(id, value) })
+	m.runHandler(id, func() { m.context.TriggerTextCallback(id, value) })
 	return m.deliverLocked(m.renderAgainLocked())
 }
 
@@ -460,7 +550,7 @@ func (m *Manager) DispatchTextCallback(id string, value string) string {
 func (m *Manager) DispatchTextEdit(id string, value string, seq, epoch int) string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.guardHandler(id, func() { m.context.TriggerTextEdit(id, value, seq, epoch) })
+	m.runHandler(id, func() { m.context.TriggerTextEdit(id, value, seq, epoch) })
 	return m.deliverLocked(m.renderAgainLocked())
 }
 
@@ -468,7 +558,7 @@ func (m *Manager) DispatchTextEdit(id string, value string, seq, epoch int) stri
 func (m *Manager) DispatchBoolCallback(id string, value bool) string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.guardHandler(id, func() { m.context.TriggerBoolCallback(id, value) })
+	m.runHandler(id, func() { m.context.TriggerBoolCallback(id, value) })
 	return m.deliverLocked(m.renderAgainLocked())
 }
 
@@ -476,7 +566,7 @@ func (m *Manager) DispatchBoolCallback(id string, value bool) string {
 func (m *Manager) DispatchIntCallback(id string, value int) string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.guardHandler(id, func() { m.context.TriggerIntCallback(id, value) })
+	m.runHandler(id, func() { m.context.TriggerIntCallback(id, value) })
 	return m.deliverLocked(m.renderAgainLocked())
 }
 
@@ -495,8 +585,9 @@ func (m *Manager) DispatchIntCallback(id string, value int) string {
 func (m *Manager) Dispatch(label string, fn func()) string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.guardHandler(label, fn)
+	m.runHandler(label, fn)
 	if m.currentTree == nil {
+		m.cause = passCause{} // no pass follows to claim it
 		return "[]"
 	}
 	return m.deliverLocked(m.renderAgainLocked())
@@ -563,6 +654,18 @@ func (m *Manager) Resync() string {
 // that follows simply renders whatever state actually exists. That is strictly
 // better than the alternative — the same half-written state, plus a dead
 // process.
+// runHandler is guardHandler, timed under debug mode for the PassStat of
+// the pass the dispatch renders next (see Manager.cause).
+func (m *Manager) runHandler(id string, fn func()) {
+	if !core.IsDebugMode() {
+		m.guardHandler(id, fn)
+		return
+	}
+	start := time.Now()
+	m.guardHandler(id, fn)
+	m.cause = passCause{trigger: id, start: start, handler: time.Since(start)}
+}
+
 func (m *Manager) guardHandler(id string, fn func()) {
 	if rerr := core.Guard(fn); rerr != nil {
 		logRenderPanic("event handler "+id, rerr)
