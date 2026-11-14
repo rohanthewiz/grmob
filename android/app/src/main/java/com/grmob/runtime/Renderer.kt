@@ -307,11 +307,29 @@ val LocalGrMobGroupSaid = compositionLocalOf { emptySet<String>() }
  * Folding is trim + lowercase because a screen reader speaks "Notebook" and
  * "notebook " identically; a duplicate to the ear is the thing being removed,
  * not a duplicate to the byte.
+ *
+ * # Why each phrase of the label counts too
+ *
+ * A label is often a list of what the group shows, said in one breath: a
+ * comps.Discussion header row is named "Ben, reply to Ana, 1h" and draws the
+ * Texts "Ben" and "1h". Matching only the whole label let both through, and
+ * the row's one stop read "Ben, reply to Ana, 1h, Ben, 1h". Measured on the
+ * emulator (Google TalkBack, stepped with a virtual HID keyboard's Alt+Right,
+ * 2026-11-13, N-101); TalkBack did not stop on either Text separately, since
+ * the merge had taken them. So each comma-separated phrase is added as well.
+ *
+ * The split is on ", " and not on a bare comma, so "1,234" stays one number
+ * and a Text "234" is not taken for something already said. A phrase only
+ * silences a Text that is *exactly* that phrase: "Ana" under "reply to Ana"
+ * is still read, which is right, since it would be a different Text saying
+ * something the phrase only mentions.
  */
 internal fun spokenByLabel(node: GrMobNode): Set<String> {
     val s = node.style ?: return emptySet()
     if (s.accessibilityHidden || s.accessibilityLabel.isEmpty()) return emptySet()
-    val said = mutableSetOf(s.accessibilityLabel.trim().lowercase())
+    val label = s.accessibilityLabel.trim().lowercase()
+    val said = mutableSetOf(label)
+    label.split(", ").map { it.trim() }.filterTo(said) { it.isNotEmpty() }
     val value = s.accessibilityValue.text
     if (value.isNotEmpty()) said.add(value.trim().lowercase())
     return said
@@ -609,8 +627,18 @@ fun RenderNode(node: GrMobNode, extra: Modifier = Modifier) {
     // each labelled node rather than latched on, because Compose's merge
     // stops at a node that merges its own descendants. An unlabelled node
     // says nothing of its own, so `said` is empty and the scope is inherited.
-    val said = spokenByLabel(node)
-    val says = said.isNotEmpty() && said != LocalGrMobGroupSaid.current
+    //
+    // Except at a tappable node with no label. gestureModifier's
+    // combinedClickable merges its descendants too, so it is a stop of its
+    // own and its Texts are its whole announcement: one that matched a phrase
+    // of the outer label would leave that stop silent. The scope is reset to
+    // nothing there. The condition mirrors gestureModifier's: a disabled node
+    // gets no clickable, so it does not merge and stays in the outer scope.
+    val ownStop = node.style?.accessibilityLabel.isNullOrEmpty() &&
+        (node.stringProp("onClick").isNotEmpty() || node.stringProp("onLongPress").isNotEmpty()) &&
+        !node.isDisabled()
+    val said = if (ownStop) emptySet() else spokenByLabel(node)
+    val says = (said.isNotEmpty() || ownStop) && said != LocalGrMobGroupSaid.current
     // core.Inert, and every node under it, takes no keyboard focus; see
     // LocalGrMobInert for why every node rather than the inert one alone.
     val inertHere = LocalGrMobInert.current || node.style?.inert == true

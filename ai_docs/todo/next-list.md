@@ -36,20 +36,10 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-146
+**Next ID:** N-148
 
 ## Open
 
-- **N-003** · raised `2026-0913-2140-next-list-hooks-shortcuts-strips-bidi-and-floors` · value low
-  **`.claude/settings.json` cannot be edited from a session**
-  (`[Self-Modification]`). Worth an upstream report. Not re-checked since
-  2026-09-15. (was #2; lapsed@0917-1659)
-  - Re-rated 2026-10-10 from medium: nothing waits on a settings edit. The
-    hook that hit it landed when the user pasted the entry (`bbf5fed`,
-    2026-09-15). Claude Code now ships an `update-config` skill as its route
-    for settings.json edits; whether the classifier still refuses through it
-    is untried. Try that route the next time a hook changes, and file the
-    report only if it is still refused.
 - **N-009** · raised `2026-0916-1032-clocks-canvas-alarm` · value low
   **A Notify alarm is a banner, not a ringing screen.** The route is AlarmKit
   or full-screen intents. (was #15; lapsed@0917-1659)
@@ -242,6 +232,15 @@ with each item's `raised` traced back through all session docs.
     both corrected with N-140's UseAsync docs. The rest of D6 (README's 84
     lessons, `docs/index.md`'s five hooks, `build.sh`'s 40%,
     `wasm/index.html`'s 51) and D3, D5, D7 remain.
+
+- **N-146** · raised 2026-11-13 (N-101's walk) · value medium
+  **A silent TalkBack stop after a code block's "Copy code".** Walking lesson
+  4.40 with Alt+Right on the emulator, the stop after "Copy code. Copies to
+  the clipboard, Button" spoke nothing, then "TRY IT" followed. Seen in every
+  walk, before and after N-101's change. Likely the code block's own node (a
+  scroll container, perhaps) taking focus with no text. Check other lessons
+  with a code block, find the node, and give it a name or take it out of
+  the walk.
 
 ## Validate
 
@@ -699,17 +698,6 @@ defect, which then becomes its own Open item.
 
   church_mobile's N-004 swap is the natural first real consumer.
 
-- **N-101** · raised `2026-1010-1955-next-list-n043-caret-burst-n091-natives-look-n100-align-self` · value low
-  **Discussion's header rows: does a screen reader read the name and time
-  again after the row's label?** Each header row carries the label the
-  natives need ("Ben, reply to Ana, 1h", seen in both trees on 2026-10-10).
-  Its inner Texts ("Ben", "1h") still appear as separate nodes in the
-  emulator's uiautomator dump and in XCUITest's tree. Neither tree is what
-  TalkBack or VoiceOver walks, so whether a swipe stops on them is unheard.
-  The emulator's Tab-driven harness cannot settle it (N-058); the Fold6's HID
-  harness can. N-058's fix (2026-10-11) does not change that: Tab visits
-  controls, and the question is about the texts a swipe stops on.
-
 - **N-111** · raised `2026-1017-2211-gallery-widget` · value medium
   **`comps.Gallery` has been seen on the web and partly on Compose** (headless
   Chrome shots of lesson 4.41: theme, cinema with deck and thumbnails,
@@ -856,6 +844,28 @@ defect, which then becomes its own Open item.
   first `workflow_run` deploy succeeds after CI and publishes the commit CI
   verified.
 
+- **N-147** · raised 2026-11-13 (split from N-101) · value low
+  **VoiceOver on Discussion's header rows.** Android is heard and fixed
+  (N-101). On iOS a header row holds no controls, so grMobChildMode gives it
+  `.combine`, and its explicit label should replace the children: one stop,
+  "Ben, reply to Ana, 1h". That is reasoned, not heard. The simulator has no
+  VoiceOver, and the 2026-10-10 XCUITest tree listed "Ben" and "1h" as
+  nodes of their own, which does not fit a combine. Hear it on a device, or
+  check what that XCUITest tree really showed.
+
+## Roadmap
+
+- **N-003** · raised `2026-0913-2140-next-list-hooks-shortcuts-strips-bidi-and-floors` · value low
+  **`.claude/settings.json` cannot be edited from a session**
+  (`[Self-Modification]`). Worth an upstream report. Not re-checked since
+  2026-09-15. (was #2; lapsed@0917-1659)
+  - Re-rated 2026-10-10 from medium: nothing waits on a settings edit. The
+    hook that hit it landed when the user pasted the entry (`bbf5fed`,
+    2026-09-15). Claude Code now ships an `update-config` skill as its route
+    for settings.json edits; whether the classifier still refuses through it
+    is untried. Try that route the next time a hook changes, and file the
+    report only if it is still refused.
+
 ## Non-goals
 
 - **N-001** · declined `2026-0912-1744-the-widget-library-answers-to-comps` —
@@ -974,6 +984,29 @@ defect, which then becomes its own Open item.
   comment. The tutorial page that does set cover is N-088.
 
 ## Closed
+
+- **N-101** · raised `2026-1010-1955-next-list-n043-caret-burst-n091-natives-look-n100-align-self` · value low
+  · closed 2026-11-13 (no session doc yet) — heard on Android and fixed; iOS reasoned, split out as N-147.
+  - Heard on the API 36 emulator with Google TalkBack, not the Fold6 (it was
+    not attached). The HID-keyboard harness works there too: TalkBack's
+    next-item shortcut is Alt+Right, the same as a swipe in reading order.
+  - Answer: no swipe stops on "Ben" or "1h". Compose merges them into the
+    labelled row. But that one stop read them again after the label:
+    "Ben, reply to Ana, 1h, Ben, 1h". The echo-drop (LocalGrMobGroupSaid)
+    only silenced a Text equal to the *whole* label.
+  - Fix, `Renderer.kt` `spokenByLabel`: each ", "-separated phrase of a
+    labelled group's label is also "already said", so a Text that is
+    exactly one phrase is dropped. Split on ", " so "1,234" stays whole.
+    Also, an unlabelled tappable node (combinedClickable merges, so it is
+    its own stop) now resets the scope, so its Texts are never silenced by
+    an outer label's phrase.
+  - Heard after: all six headers once each ("Ana, 2h", "Ben, reply to Ana,
+    1h", "Chen, reply to Ben, 45m", "Dev, reply to Ana, 40m" over the deleted
+    comment, "Ana, reply to Dev, 30m", "Chen, 20m"). Bodies, Reply, Like and
+    the folds are unchanged.
+  - Harness note: send the key-down and key-up reports in one write. A
+    separate key-up written later let Android's key repeat fire once and
+    skipped to the page's end.
 
 - **N-145** · raised `2026-1111-1851-n140-n144-n138-grmobtest-useasync-shuffle-fake-clocks-p0` · value low
   · closed 2026-11-13, `2026-1113-2300-n145-precompressed-wasm-siblings` — `serve` sends precompressed siblings; the site needed nothing.
