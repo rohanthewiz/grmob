@@ -162,46 +162,6 @@ with each item's `raised` traced back through all session docs.
     clears it), which compiles and lints but no test executes: ios/verify's
     `checkResync` is the model (a faithful replay never asks; a node-sized
     hole asks once and the answer matches Go's final tree).
-- **N-138** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
-  **The engine's per-pass cost (plan P0-P3).** Every event renders the whole
-  app twice (20 taps ran the root 40 times), and the diff is 10x slower than
-  a generated `Style.Equal` with lazy child paths (975 µs against 97 µs at
-  1,001 nodes). First commit the benchmarks and debug-mode pass statistics
-  (P0; ROADMAP's "Benchmark diff/patch engine"). Then a generation counter
-  so the pump skips a pass the dispatch already rendered, the web host
-  dropping its redundant `RenderAgain` and `IsDirty` poll (P1), the
-  generated equality (P2), and the registry purging in place (P3).
-  - P0 landed 2026-11-11 (`2026-1111-1851-n140-n144-n138-grmobtest-useasync-shuffle-fake-clocks-p0`).
-    The benchmarks: `BenchmarkDiffUnchanged` and `BenchmarkDiffOneChange`
-    in reconcile (1,001 and 10,001 nodes; 1.06 ms and 1,150 allocs at
-    1,001 unchanged on an M3), `BenchmarkManagerNoopPass` and
-    `BenchmarkManagerTap` in render (1.40 ms and 1.42 ms at 250 rows, debug
-    mode off). P1's pin is `TestATapRendersTheRootTwiceToday` (render): 20
-    taps with a listener render the root 40 times; P1 changes its `perTap`
-    to 1. Debug mode records a `core.PassStat` per pass (handler, build,
-    diff, encode, patches, bytes) in `core.PassStats` (last 512), with
-    `core.SetPassLogging` for a line per pass. P1, P2 and P3 remain.
-  - P1 landed 2026-11-14. The dirty flag is a generation: a pass reads
-    `DirtyGeneration` before it builds and `ClearDirtyThrough` that gen when
-    it commits, so a write made during the pass stays dirty. The pump skips
-    when `IsDirty` is false under the render lock, and the mount clears too.
-    `TriggerRender` calls the handler inline, not on a goroutine. `State.Set`
-    of an unchanged built-in scalar requests nothing. The web hosts bind
-    `RenderAgain` to `render.Manager.RenderIfDirty`, and the runtime's
-    per-frame `IsDirty` poll is gone. Pins: `TestATapRendersTheRootOnce`
-    (20 taps, 20 roots), `TestAWriteDuringATapsPassStillGetsItsOwnPass`
-    (fails with a plain `ClearDirty`), core's `dirty_test.go`. Go suite and
-    `wasm/verify/run.sh` (headless Chrome) pass. P2 and P3 remain.
-  - P2 landed 2026-11-14. `core.Style.Equal` is generated
-    (`go run ./internal/styleeq/gen`, from core's source, not by reflection,
-    so a removed field cannot block its own regeneration). Its test fails on
-    a stale file and fuzzes agreement with `reflect.DeepEqual` over 20,000
-    pairs. Props compare string, bool, int and float64 without reflection.
-    The walk keeps child indices and spells a path only when it emits a
-    patch. On an M3: `BenchmarkDiffUnchanged` at 1,001 nodes went from
-    1.08 ms and 1,150 allocs to 120 µs and 1; at 10,001, 11.7 ms to 1.27 ms.
-    `BenchmarkManagerNoopPass` at 250 rows went from 1.59 ms to about
-    0.8 ms. P3 remains.
 - **N-139** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value low
   **Host and library hot spots (plan P6-P9).** The one felt daily is P7:
   the dev watcher runs `go list -deps` on every 250 ms poll, about half a
@@ -1024,6 +984,51 @@ defect, which then becomes its own Open item.
 
 ## Closed
 
+- **N-138** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
+  · closed 2026-11-14 — P0–P3 all landed. P3: the callback registry deletes
+  unmarked entries in place and `clear`s its marks instead of allocating five
+  maps a pass; `BenchmarkManagerNoopPass` at 250 rows is now about 0.58 ms and
+  8,314 allocs, from 1.59 ms and 9,501 before P1–P3. Go suite and
+  `wasm/verify/run.sh` pass.
+  **The engine's per-pass cost (plan P0-P3).** Every event renders the whole
+  app twice (20 taps ran the root 40 times), and the diff is 10x slower than
+  a generated `Style.Equal` with lazy child paths (975 µs against 97 µs at
+  1,001 nodes). First commit the benchmarks and debug-mode pass statistics
+  (P0; ROADMAP's "Benchmark diff/patch engine"). Then a generation counter
+  so the pump skips a pass the dispatch already rendered, the web host
+  dropping its redundant `RenderAgain` and `IsDirty` poll (P1), the
+  generated equality (P2), and the registry purging in place (P3).
+  - P0 landed 2026-11-11 (`2026-1111-1851-n140-n144-n138-grmobtest-useasync-shuffle-fake-clocks-p0`).
+    The benchmarks: `BenchmarkDiffUnchanged` and `BenchmarkDiffOneChange`
+    in reconcile (1,001 and 10,001 nodes; 1.06 ms and 1,150 allocs at
+    1,001 unchanged on an M3), `BenchmarkManagerNoopPass` and
+    `BenchmarkManagerTap` in render (1.40 ms and 1.42 ms at 250 rows, debug
+    mode off). P1's pin is `TestATapRendersTheRootTwiceToday` (render): 20
+    taps with a listener render the root 40 times; P1 changes its `perTap`
+    to 1. Debug mode records a `core.PassStat` per pass (handler, build,
+    diff, encode, patches, bytes) in `core.PassStats` (last 512), with
+    `core.SetPassLogging` for a line per pass. P1, P2 and P3 remain.
+  - P1 landed 2026-11-14. The dirty flag is a generation: a pass reads
+    `DirtyGeneration` before it builds and `ClearDirtyThrough` that gen when
+    it commits, so a write made during the pass stays dirty. The pump skips
+    when `IsDirty` is false under the render lock, and the mount clears too.
+    `TriggerRender` calls the handler inline, not on a goroutine. `State.Set`
+    of an unchanged built-in scalar requests nothing. The web hosts bind
+    `RenderAgain` to `render.Manager.RenderIfDirty`, and the runtime's
+    per-frame `IsDirty` poll is gone. Pins: `TestATapRendersTheRootOnce`
+    (20 taps, 20 roots), `TestAWriteDuringATapsPassStillGetsItsOwnPass`
+    (fails with a plain `ClearDirty`), core's `dirty_test.go`. Go suite and
+    `wasm/verify/run.sh` (headless Chrome) pass. P2 and P3 remain.
+  - P2 landed 2026-11-14. `core.Style.Equal` is generated
+    (`go run ./internal/styleeq/gen`, from core's source, not by reflection,
+    so a removed field cannot block its own regeneration). Its test fails on
+    a stale file and fuzzes agreement with `reflect.DeepEqual` over 20,000
+    pairs. Props compare string, bool, int and float64 without reflection.
+    The walk keeps child indices and spells a path only when it emits a
+    patch. On an M3: `BenchmarkDiffUnchanged` at 1,001 nodes went from
+    1.08 ms and 1,150 allocs to 120 µs and 1; at 10,001, 11.7 ms to 1.27 ms.
+    `BenchmarkManagerNoopPass` at 250 rows went from 1.59 ms to about
+    0.8 ms. P3 remains.
 - **N-151** · raised `2026-1114-0017-n009-ringing-alarms-alarmkit-full-screen-intent` · value medium
   · closed 2026-11-14 — `group_echo_test.go` pins the new lines: `ownStop` (its three
   conditions, the gesture names through `valuesOf` since `codeOf` masks string

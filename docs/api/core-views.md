@@ -435,7 +435,7 @@ func (ctx *Context) BeginRenderPass()
 
 BeginRenderPass starts a callback ID pass for this context tree; see callbackRegistry.beginPass for the stability contract.
 
-<small>[core/event.go:484](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L484)</small>
+<small>[core/event.go:490](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L490)</small>
 
 #### func (*Context) ClearDirty
 
@@ -566,7 +566,7 @@ PurgeUnusedCallbacks drops handlers not re-registered in the current pass; see c
 
 OnEndReached's debounce ledger is trimmed in the same breath and against the registry's own survivors, so the two can never disagree about which lists are still on screen — a guard outliving its handler would silently suppress the first page fetch of whatever list next inherits the ID.
 
-<small>[core/event.go:495](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L495)</small>
+<small>[core/event.go:501](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L501)</small>
 
 #### func (*Context) ReceiveEventPayload
 
@@ -593,7 +593,7 @@ A value of the wrong type for its kind is logged and dropped. Before, its handle
 
 This used to sniff the value's type instead, and a string was first tried as a JSON envelope of its own, with its inner "value" delivered in its place. No host ever sent one, and the strings that do arrive are what the user typed. So typing {"value":"x"} into a field delivered x, and typing {"value":true} or {"value":7} called no handler at all, because the unwrapped bool or number went looking in a map the text ID is not in. The controlled field then snapped back. A CodeEditor holding JSON, or any field a user pastes JSON into, was exposed. Routing by the ID needs no guess, so the text arrives as typed.
 
-<small>[core/event.go:562](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L562)</small>
+<small>[core/event.go:568](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L568)</small>
 
 #### func (*Context) RequestRender
 
@@ -647,7 +647,7 @@ func (ctx *Context) TriggerBoolCallback(id string, val bool)
 
 TriggerBoolCallback dispatches a bool-carrying event (e.g. a toggle).
 
-<small>[core/event.go:517](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L517)</small>
+<small>[core/event.go:523](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L523)</small>
 
 #### func (*Context) TriggerCallback
 
@@ -657,7 +657,7 @@ func (ctx *Context) TriggerCallback(id string)
 
 TriggerCallback dispatches a void event (e.g. a button tap) by callback ID. Unknown IDs are silent no-ops: a late native event racing a purge is expected traffic, not an error.
 
-<small>[core/event.go:503](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L503)</small>
+<small>[core/event.go:509](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L509)</small>
 
 #### func (*Context) TriggerIntCallback
 
@@ -667,7 +667,7 @@ func (ctx *Context) TriggerIntCallback(id string, val int)
 
 TriggerIntCallback dispatches an int-carrying event (e.g. tab selection).
 
-<small>[core/event.go:524](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L524)</small>
+<small>[core/event.go:530](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L530)</small>
 
 #### func (*Context) TriggerTextCallback
 
@@ -677,7 +677,7 @@ func (ctx *Context) TriggerTextCallback(id string, val string)
 
 TriggerTextCallback dispatches a string-carrying event (e.g. input change).
 
-<small>[core/event.go:510](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L510)</small>
+<small>[core/event.go:516](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L516)</small>
 
 #### func (*Context) TriggerTextEdit
 

@@ -189,8 +189,13 @@ func (r *callbackRegistry) beginPass() {
 	r.total = 0
 	r.trail = r.trail[:0]
 	// Fresh liveness marks for this pass: only callbacks re-registered below
-	// survive the post-render purge.
-	r.used = make(map[string]bool)
+	// survive the post-render purge. Cleared in place rather than replaced,
+	// so a steady app reuses one map's buckets every pass (N-138, plan P3).
+	if r.used == nil {
+		r.used = make(map[string]bool)
+	} else {
+		clear(r.used)
+	}
 }
 
 // idKeyEscaper keeps a key from forging a scope boundary. '/' ends a path
@@ -396,41 +401,42 @@ func (r *callbackRegistry) purge() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	newVoid := make(map[string]func())
-	newText := make(map[string]func(string))
-	newBool := make(map[string]func(bool))
-	newInt := make(map[string]func(int))
-
-	for id, fn := range r.voidCBs {
-		if r.used[id] {
-			newVoid[id] = fn
+	// Deleted in place. This used to build four new maps from the survivors
+	// and a fifth for the marks, every pass, when the survivors are nearly
+	// always every entry: a pass that changes nothing re-registers every ID.
+	// Deleting while ranging is defined in Go (an entry not yet reached and
+	// deleted is not produced), so one walk per map does it (N-138, plan P3).
+	//
+	// The trade: a Go map never gives back its buckets, so a registry that
+	// once held a 10,000-row list keeps that capacity after the list goes.
+	// That is a few hundred KB at worst, against allocating every map anew
+	// on every pass of every app.
+	for id := range r.voidCBs {
+		if !r.used[id] {
+			delete(r.voidCBs, id)
 		}
 	}
-	for id, fn := range r.textCBs {
-		if r.used[id] {
-			newText[id] = fn
+	for id := range r.textCBs {
+		if !r.used[id] {
+			delete(r.textCBs, id)
 		}
 	}
-	for id, fn := range r.boolCBs {
-		if r.used[id] {
-			newBool[id] = fn
+	for id := range r.boolCBs {
+		if !r.used[id] {
+			delete(r.boolCBs, id)
 		}
 	}
-	for id, fn := range r.intCBs {
-		if r.used[id] {
-			newInt[id] = fn
+	for id := range r.intCBs {
+		if !r.used[id] {
+			delete(r.intCBs, id)
 		}
 	}
 
 	// A ledger lives exactly as long as its text callback, for the same
 	// reason the debounce ledger in PurgeUnusedCallbacks does.
-	r.purgeEditsLocked(newText)
+	r.purgeEditsLocked(r.textCBs)
 
-	r.voidCBs = newVoid
-	r.textCBs = newText
-	r.boolCBs = newBool
-	r.intCBs = newInt
-	r.used = make(map[string]bool)
+	clear(r.used)
 }
 
 // ---- Context-facing surface ----
