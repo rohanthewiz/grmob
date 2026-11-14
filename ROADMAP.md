@@ -1489,10 +1489,12 @@
 ## 🔜 Planned
 
 ### 📦 Packaging
-- [ ] `grmob build --target=wasm`
-- [ ] `grmob build --target=android`
-- [ ] `grmob build --target=ios`
-      (today: `android/build.sh`, `ios/build.sh`, and `GOOS=js GOARCH=wasm go build ./wasm`)
+- [x] The `grmob` CLI (`cmd/grmob`): `grmob new` scaffolds an app, and
+      `grmob web`, `grmob android` and `grmob ios` build it for each target,
+      with `grmob doctor` checking the toolchains. The repository's own
+      `android/build.sh` and `ios/build.sh` remain for the bundled demo
+- [ ] Release outputs: a signed AAB, an iOS archive and a web `dist`
+      (N-142, plan C6-C7)
 
 ### Native Bridge (Planned for Android/iOS)
 
@@ -1500,7 +1502,10 @@
       `keystore.Delete()` — see the Keystore entry under the done list. The
       church app and cats-mobile still keep their tokens in bytdb until they
       swap their store files over
-- [ ] URL-scheme deep links (`cats://pair` from a QR lands in the app)
+- [x] URL-scheme deep links: `core.OnDeepLink` hears a link the OS opened the
+      app with, on all three hosts. The shells claim `grmob://`, and a
+      `grmob new` app claims its application ID in lower case
+      (docs/platforms/native.md)
 - [ ] Device Storage (Plain): `DeviceStorage.Set()`, `DeviceStorage.Get()`
 - [ ] Bluetooth: `Scan`, `Connect`, `Send`
 - [ ] FaceID / Biometric authentication

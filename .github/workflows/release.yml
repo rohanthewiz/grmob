@@ -1,0 +1,99 @@
+# Release notes as GitHub Releases, and an API check against the last tag.
+#
+# A tag's notes have always been written into its annotation (`git tag -a`),
+# where `git tag -n` shows them and nobody else does: pkg.go.dev, `go get`
+# users and the repository page see no release at all (plan D3, N-143). This
+# workflow turns the annotation into a GitHub Release, unchanged, when the
+# tag is pushed. Nothing is published for a branch push, and nothing is
+# written to the repository itself.
+#
+# Before publishing it runs apidiff between the previous tag and this one,
+# which used to be done by hand. The report goes to the job summary. The rule
+# it enforces is the semver one that matters before 1.0:
+#
+#   vX.Y.Z with Z > 0   (a patch release)   an incompatible change fails the
+#                                           job, and no release is published
+#   vX.Y.0              (a minor release)   reported, not failed: below 1.0 a
+#                                           minor version may break, and the
+#                                           tag's notes say how
+#
+# A failed check leaves the tag where it is. Fix it by deleting and re-cutting
+# the tag, or by cutting a minor release instead.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  apidiff:
+    name: API change against the previous tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # every tag, to find the previous one
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: apidiff
+        # Pinned rather than @latest, so a change in apidiff's own rules
+        # cannot fail a release that changed nothing.
+        run: |
+          set -eu
+          go install golang.org/x/exp/cmd/apidiff@v0.0.0-20261014143641-f0251eb4aa3e
+          tag="${GITHUB_REF_NAME}"
+          # The newest tag reachable from the commit before this one: the
+          # release this one follows.
+          prev=$(git describe --tags --abbrev=0 --match 'v*' "${tag}^" 2>/dev/null || true)
+          if [ -z "$prev" ]; then
+            echo "No earlier tag; nothing to compare." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          module=$(go list -m)
+          git worktree add -q "$RUNNER_TEMP/prev" "$prev"
+          (cd "$RUNNER_TEMP/prev" && apidiff -m -w "$RUNNER_TEMP/old.api" "$module")
+          apidiff -m -w "$RUNNER_TEMP/new.api" "$module"
+          apidiff -m "$RUNNER_TEMP/old.api" "$RUNNER_TEMP/new.api" > "$RUNNER_TEMP/report.txt"
+          {
+            echo "## Exported API: $prev → $tag"
+            echo '```'
+            cat "$RUNNER_TEMP/report.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          cat "$RUNNER_TEMP/report.txt"
+          patch="${tag##*.}"
+          if grep -q '^Incompatible changes:' "$RUNNER_TEMP/report.txt" && [ "$patch" != "0" ]; then
+            echo "::error::$tag is a patch release with incompatible API changes since $prev"
+            exit 1
+          fi
+
+  release:
+    name: Publish the tag's notes as a GitHub Release
+    needs: apidiff
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write # the one thing this job writes: the release
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gh release create
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # --notes-from-tag uses the annotation as written. --verify-tag
+        # refuses to create a tag if the push somehow did not, so this job
+        # can never invent one. A re-run on a tag that already has a release
+        # leaves it alone.
+        run: |
+          set -eu
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists; leaving it."
+            exit 0
+          fi
+          gh release create "$GITHUB_REF_NAME" --verify-tag --notes-from-tag --title "$GITHUB_REF_NAME"

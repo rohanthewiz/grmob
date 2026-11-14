@@ -2,7 +2,6 @@
 
 const GrMob = (() => {
     let rootElement = null;
-    const DEBUG = true;
 
     function renderNode(node, path = "") {
         const el = createElement(node);

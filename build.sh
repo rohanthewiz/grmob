@@ -15,8 +15,11 @@ set -eu
 cd "$(dirname "$0")"
 
 # -trimpath and -s -w for the same reason as any shipped binary: no build
-# machine paths in the module, no symbol/DWARF tables. It is a ~40% saving on
-# a wasm module and the site is the one place its size is a user-visible cost.
+# machine paths in the module, no symbol/DWARF tables. The saving is small on
+# a wasm module: 13.78 MB to 13.28 MB, 3.6% (measured 2026-11-14; an older
+# comment here said 40%, which was never true for js/wasm). It is kept
+# because the site is the one place the module's size is a user-visible cost,
+# and compression (serve's .br/.gz siblings, Pages' gzip) does the rest.
 GOOS=js GOARCH=wasm go build -trimpath -ldflags='-s -w' -o wasm/main.wasm ./wasm
 
 goroot=$(go env GOROOT)

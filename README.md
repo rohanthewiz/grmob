@@ -157,7 +157,7 @@ go run ./serve -dev
 
 The quickest way to learn GrMob is the
 **[interactive tutorial](docs/tutorial-interactive.md)** — a GrMob app that
-teaches GrMob in 84 live lessons across 8 chapters, each with the explanation,
+teaches GrMob in 87 live lessons across 8 chapters, each with the explanation,
 the code, and a "TRY IT" panel wired to real state.
 **[Open it in your browser](https://rohanthewiz.github.io/grmob/)**, or see
 [Next: the full tutorial](#next-the-full-tutorial) for the chapter list and how

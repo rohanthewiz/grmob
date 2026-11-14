@@ -265,9 +265,6 @@ func (ctx *Context) auditCursor() {
 		ctx.debugPassSeen = true
 	}
 
-	for _, child := range ctx.children {
-		child.auditCursor()
-	}
 	for _, slot := range slots {
 		if c, ok := slot.(*Context); ok {
 			c.auditCursor()

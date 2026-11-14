@@ -9,7 +9,6 @@ type Context struct {
 	Cursor int
 	theme  *Theme
 	config *AppConfig
-	idGen  int
 	lock   sync.Mutex
 	parent *Context
 
@@ -61,9 +60,12 @@ type Context struct {
 	// cursor under one lock, exactly as if WithTheme were not there.
 	hooks *Context
 
-	children       []*Context
-	childrenCursor int
-	scopes         map[string]*Context
+	// Child hook scopes are found through the slots (a *Context in a slot is
+	// a UseChildContext scope) and through scopes below. There used to be a
+	// children slice and a childrenCursor here as well, and an idGen above;
+	// nothing ever wrote any of the three, so the loops over children ran
+	// over nil. Removed with plan item D5 (N-143).
+	scopes map[string]*Context
 
 	// Debug-mode bookkeeping for the cursor-drift check (see auditCursor):
 	// the ending cursor of the last pass in which this context rendered
@@ -180,9 +182,13 @@ type AppConfig struct {
 	Name        string
 	Description string
 	Version     string
-	Locale      string
-	Author      string
-	Meta        map[string]string
+	// Locale is carried for the app's own use; nothing in grmob reads it.
+	// Text direction comes from the host's locale, not from here. Kept
+	// because removing an exported field breaks callers that set it (plan D5,
+	// N-143).
+	Locale string
+	Author string
+	Meta   map[string]string
 }
 
 func NewContext() *Context {
@@ -433,9 +439,6 @@ func (ctx *Context) Reset() {
 	// (and unused) slot list.
 	ctx = ctx.hookOwner()
 	ctx.Cursor = 0
-	for _, child := range ctx.children {
-		child.Reset()
-	}
 	// Snapshot the slots under the lock before scanning for child contexts:
 	// iterating the live slice would read each element unsynchronized against
 	// a concurrent State.Set overwriting it. Child contexts themselves are

@@ -214,7 +214,7 @@ with each item's `raised` traced back through all session docs.
   pause, pull-to-refresh, `UsePersisted`, and the `core.Style` size
   experiment (1,024 bytes a node; keep only for a 30% gain). Which of these
   are wanted is the user's call.
-- **N-143** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value low
+- **N-143** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value low (user's decision)
   **Housekeeping (plan Part D).** ~~`chat` (a 3.9 MB Mach-O at the repo root,
   21% of every module download) and `cmd/docs/docs` (9.6 MB) are tracked:
   untrack, ignore, and add a census check.~~ Publish tag notes as GitHub
@@ -236,6 +236,26 @@ with each item's `raised` traced back through all session docs.
     both corrected with N-140's UseAsync docs. The rest of D6 (README's 84
     lessons, `docs/index.md`'s five hooks, `build.sh`'s 40%,
     `wasm/index.html`'s 51) and D3, D5, D7 remain.
+  - D3, D5, D6 and D7 landed 2026-11-14.
+    - D3: `.github/workflows/release.yml` runs on a pushed `v*` tag. It runs
+      apidiff (pinned) against the previous tag into the job summary, and
+      fails a patch release with incompatible changes. Then it publishes the
+      tag's annotation as a GitHub Release (`--notes-from-tag
+      --verify-tag`). The apidiff commands were run locally from v0.8.1 to
+      HEAD (compatible additions only). The workflow itself first runs on the
+      next tag. No release was backfilled for past tags.
+    - D5: `Context.idGen`, `children` and `childrenCursor` are gone. Nothing
+      wrote them, so the two loops over `children` ran over nil. The
+      runtime's unused `const DEBUG` is gone too. `AppConfig.Locale` is
+      exported, so it stays, documented as unread.
+    - D6: README says 87 lessons, and `wasm/index.html`'s description says
+      87. `docs/index.md` names the twenty hooks and links the reference.
+      `build.sh`'s saving was re-measured at 3.6% (13.78 MB to 13.28 MB).
+    - D7: ROADMAP marks deep links and the `grmob` CLI done, and points
+      release outputs at N-142.
+    What remains is the user's decision on whether `ai_docs/` stays in the
+    module (D2). README's "Upgrading to v0.3.0?" callout was left in place:
+    it still helps someone upgrading from before 0.3.
 
 - **N-146** · raised 2026-11-13 (N-101's walk) · value medium
   **A silent TalkBack stop after a code block's "Copy code".** Walking lesson

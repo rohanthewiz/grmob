@@ -53,10 +53,13 @@ flowchart LR
   `Card`, `List`, `Text`, `Button`, `Input`, and friends, plus conditional
   helpers (`If`, `IfElse`, `Match`, `For`, `MaybeProp`) that keep render logic reading
   like prose.
-- **Hook-based state** — `NewState`, `hooks.UseEffect`, `hooks.UseInterval`,
-  `hooks.UseTimeout`, `hooks.UseMemo`, `hooks.UseReducer`; state changes mark
-  the tree dirty and re-render
-  automatically, including from timers and background goroutines.
+- **Hook-based state** — `NewState` and twenty hooks in `hooks`: state and
+  effects (`UseEffect`, `UseMemo`, `UseReducer`, `UseAsync`), time
+  (`UseInterval`, `UseTimeout`, `UseDebounce`, `UseNow`), the device
+  (`UseWindow`, `UseLifecycle`, `UseLocation`, `UseHeading`, `UsePermission`,
+  `UseAudio`, `UseAlarms`) and `UseCart`, each listed in the
+  [hooks reference](api/hooks.md). State changes mark the tree dirty and
+  re-render automatically, including from timers and background goroutines.
 - **Minimal updates** — a reconciler diffs retained `Node` trees and emits
   positional patches, so an unchanged screen costs nothing and a one-field
   change patches one node.
