@@ -276,7 +276,7 @@ with each item's `raised` traced back through all session docs.
   pending across a relaunch is lost. Options: report snoozes in the sweep's
   reply (`snoozed: [{id, at}]`) and fold them into the hook's snoozes, or
   have the sweep leave snoozed entries alone.
-- **N-153** · raised `2026-1114-1745-n146-talkback-walks-charts-poll-grid-cart-biblestudy-share` · value low
+- **N-153** · raised `2026-1114-1736-n146-talkback-walks-charts-poll-grid-cart-biblestudy-share` · value low
   **TalkBack's swipe order skips row 2's Category cell in lesson 4.37's
   EditableGrid.** Seen on every Alt+Right walk on the emulator (2026-11-14):
   rows 1, 3 and 4 read "Category, row N, <choice>", but row 2 goes from Item
@@ -887,7 +887,7 @@ defect, which then becomes its own Open item.
   button from the app (`Alarms.alert`), and on 17–25, where the build must
   launch (AlarmKit is weak-linked) and post banners.
 
-- **N-152** · raised `2026-1114-1745-n146-talkback-walks-charts-poll-grid-cart-biblestudy-share` · value low
+- **N-152** · raised `2026-1114-1736-n146-talkback-walks-charts-poll-grid-cart-biblestudy-share` · value low
   **Does TalkBack say "Ana is typing" before every stop while lesson 4.34's
   TypingIndicator shows?** On the emulator with TTS disabled (the harness),
   each of the first twelve Alt+Right steps logged "Ana is typing" ahead of
@@ -1030,7 +1030,7 @@ defect, which then becomes its own Open item.
 ## Closed
 
 - **N-150** · raised `2026-1114-0017-n009-ringing-alarms-alarmkit-full-screen-intent` · value low
-  · closed 2026-11-14 — the ringing notification now has a delete intent.
+  · closed 2026-11-14, `2026-1114-1744-n150-missed-alarm-banner-and-run-summary` — the ringing notification now has a delete intent.
   The system sends it when `setTimeoutAfter` removes the alarm, but not for
   this app's own cancels (Snooze, Stop, Go's takeover) or a tap.
   `Notifications.onRangOut` then posts a silent banner under the same id:
@@ -1045,7 +1045,7 @@ defect, which then becomes its own Open item.
   nothing stays in the shade. OnRing still hears about it on return. A
   quiet "Missed alarm" banner posted on timeout would restore the record.
 - **N-146** · raised 2026-11-13 (N-101's walk) · value medium
-  · closed 2026-11-14, `2026-1114-1745-n146-talkback-walks-charts-poll-grid-cart-biblestudy-share` — the premise was the harness's, not
+  · closed 2026-11-14, `2026-1114-1736-n146-talkback-walks-charts-poll-grid-cart-biblestudy-share` — the premise was the harness's, not
   the app's. TalkBack does read the code block at that stop: the whole
   snippet, as one utterance whose text holds newlines. The harness matched
   `text:…, earcons:` one logcat line at a time, so a multi-line utterance
