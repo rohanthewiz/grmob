@@ -204,6 +204,17 @@ with each item's `raised` traced back through all session docs.
   framework-owned runtime sources on every build, copy app-owned files once,
   keep a pristine copy for `grmob upgrade --diff`, stamp a content hash, and
   delete files the new shell dropped.
+  - C3's core landed 2026-11-14. `grmob new` runs `go mod edit
+    -tool=…/cmd/grmob`, so an app runs `go tool grmob android` at go.mod's
+    version. The Done message, the app README template, README,
+    getting-started and SKILL.md now say `go tool grmob`, with the
+    `go get -tool` line for an app made before. `grmob version` names the
+    release, a replace directory, or a checkout's VCS revision. The scaffold
+    test runs `go tool grmob version` in the new app. Remaining:
+    - C3: `grmob dev`, and doctor checks (`platforms/android-34`, licences,
+      a connected device, shell and host-page drift, `go.work`);
+    - C4: `-fast` and skipping an unchanged bind;
+    - C5: the runtime-source sync, pristine copy and content hash.
 - **N-142** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value low (user's decision)
   **Release builds, a web `dist`, dev conveniences and the larger bets (plan
   C6-C10, P4).** Signed AAB and iOS archive, with `targetSdk` raised from 34;

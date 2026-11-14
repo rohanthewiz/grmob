@@ -5,10 +5,15 @@
 //	grmob android [-install] bind the app into the Android shell and assemble an APK
 //	grmob ios [-open] [-run] bind the app into the iOS shell and build it for the simulator
 //	grmob web [-refresh]     check the host page against go.mod's grmob, then build for the browser
+//	grmob version            the grmob version this command was built from
 //
-// Install or run it at the same version as the framework the app uses:
+// Start an app with the latest release:
 //
 //	go run github.com/rohanthewiz/grmob/cmd/grmob@latest new myapp
+//
+// The scaffold registers the command as a tool in the app's go.mod, so from
+// then on it is `go tool grmob android`, at the same version as the framework
+// the app uses.
 //
 // # Why a command and not a copy of this repository's scripts
 //
@@ -78,6 +83,8 @@ func main() {
 		err = cmdIOS(args)
 	case "web":
 		err = cmdWeb(args)
+	case "version", "-version", "--version":
+		fmt.Println(versionString())
 	case "help", "-h", "-help", "--help":
 		usage()
 	default:
@@ -100,6 +107,7 @@ func usage() {
   ios           build the app for iOS (needs Xcode + xcodegen, macOS only)
   web           build the app for the browser; warns when wasm/index.html
                 differs from go.mod's grmob page (-refresh re-renders it)
+  version       print the grmob version this command was built from
 
 Run "grmob <command> -h" for a command's flags.
 `)

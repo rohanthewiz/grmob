@@ -146,15 +146,18 @@ Done. Next:
 A one-off browser build, after checking wasm/index.html against go.mod's grmob
 (it warns when an upgrade changed the page; -refresh re-renders it):
 
-  go run %s/cmd/grmob web
+  go tool grmob web
 
 Native targets, once their SDKs are installed:
 
-  go run %s/cmd/grmob doctor     # what this machine can build, and what to install
-  go run %s/cmd/grmob android    # APK via the Android SDK + NDK
-  go run %s/cmd/grmob ios        # simulator build via Xcode
+  go tool grmob doctor     # what this machine can build, and what to install
+  go tool grmob android    # APK via the Android SDK + NDK
+  go tool grmob ios        # simulator build via Xcode
 
-`, rel, grmobModule, grmobModule, grmobModule, grmobModule)
+go tool runs the grmob in go.mod, so an upgrade of the framework upgrades
+the command with it.
+
+`, rel)
 	return nil
 }
 
@@ -211,6 +214,13 @@ func scaffoldApp(abs string, data scaffoldData, require, replaceDir string) erro
 		// "this module runs that package": tidy then keeps its dependencies,
 		// and dev.sh needs no change.
 		func() error { return run(abs, nil, "go", "mod", "edit", "-tool="+grmobModule+"/serve") },
+		// And this command itself, so the app runs it as `go tool grmob
+		// android`, always at go.mod's grmob, instead of `go run
+		// github.com/rohanthewiz/grmob/cmd/grmob android`, which is long to
+		// type and resolves to whatever the current module requires anyway
+		// (plan C3, N-141). cmd/grmob imports only the standard library, so
+		// the line adds nothing to the app's dependency graph.
+		func() error { return run(abs, nil, "go", "mod", "edit", "-tool="+grmobModule+"/cmd/grmob") },
 		func() error { return run(abs, nil, "go", "mod", "tidy") },
 	}
 	for _, step := range steps {

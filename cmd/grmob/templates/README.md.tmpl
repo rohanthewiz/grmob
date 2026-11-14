@@ -34,10 +34,13 @@ go get github.com/rohanthewiz/grmob@<version> && go mod tidy
 Install the SDKs when you need them; the browser target never does.
 
 ```bash
-go run github.com/rohanthewiz/grmob/cmd/grmob doctor            # what's installed, what's missing
-go run github.com/rohanthewiz/grmob/cmd/grmob android -install   # APK, installed on a device/emulator
-go run github.com/rohanthewiz/grmob/cmd/grmob ios -open          # simulator build, then open Xcode
+go tool grmob doctor            # what's installed, what's missing
+go tool grmob android -install   # APK, installed on a device/emulator
+go tool grmob ios -open          # simulator build, then open Xcode
 ```
+
+`go tool grmob` is the grmob command at the version in `go.mod` (the scaffold
+registered it as a tool), so upgrading the framework upgrades the command.
 
 The first native build copies grmob's shell into `android/` or `ios/`. After
 that the shell is part of this app: change the icon, permissions or manifest

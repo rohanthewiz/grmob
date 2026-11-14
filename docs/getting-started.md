@@ -18,11 +18,16 @@ go run github.com/rohanthewiz/grmob/cmd/grmob@latest new myapp
 cd myapp
 ./dev.sh     # http://localhost:8080 — rebuilds and hot-swaps on every save
 
-go run github.com/rohanthewiz/grmob/cmd/grmob doctor    # which targets this machine can build
-go run github.com/rohanthewiz/grmob/cmd/grmob android   # APK: Android SDK + NDK, JDK 17+
-go run github.com/rohanthewiz/grmob/cmd/grmob ios       # simulator build: Xcode + xcodegen
-go run github.com/rohanthewiz/grmob/cmd/grmob web       # browser build, checking wasm/index.html first
+go tool grmob doctor    # which targets this machine can build
+go tool grmob android   # APK: Android SDK + NDK, JDK 17+
+go tool grmob ios       # simulator build: Xcode + xcodegen
+go tool grmob web       # browser build, checking wasm/index.html first
 ```
+
+An app whose `go.mod` has no `tool github.com/rohanthewiz/grmob/cmd/grmob` line
+(one made by an older `grmob new`) adds it once with
+`go get -tool github.com/rohanthewiz/grmob/cmd/grmob`; `go run
+github.com/rohanthewiz/grmob/cmd/grmob <command>` also works in any app.
 
 The rule the scaffold keeps is that anything grmob owns comes from the grmob
 version in the app's `go.mod`, at build time: the browser host is the

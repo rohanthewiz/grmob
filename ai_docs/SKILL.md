@@ -86,11 +86,16 @@ Every later command runs from anywhere inside the app (it walks up to
 `grmob.json`):
 
 ```sh
-go run github.com/rohanthewiz/grmob/cmd/grmob doctor          # which targets this machine can build
-go run github.com/rohanthewiz/grmob/cmd/grmob web             # one-off browser build (+ host-page check)
-go run github.com/rohanthewiz/grmob/cmd/grmob android -install # APK; Android SDK + NDK, JDK 17+
-go run github.com/rohanthewiz/grmob/cmd/grmob ios -run        # simulator; Xcode + xcodegen (-open: Xcode)
+go tool grmob doctor          # which targets this machine can build
+go tool grmob web             # one-off browser build (+ host-page check)
+go tool grmob android -install # APK; Android SDK + NDK, JDK 17+
+go tool grmob ios -run        # simulator; Xcode + xcodegen (-open: Xcode)
 ```
+
+`go tool grmob` works because `grmob new` registers the command as a tool in
+the app's `go.mod`. An older app without that line runs
+`go get -tool github.com/rohanthewiz/grmob/cmd/grmob` once, or uses
+`go run github.com/rohanthewiz/grmob/cmd/grmob <command>`.
 
 The first native build vendors grmob's shell into `android/` or `ios/`; after
 that the icon, permissions and manifest there are the app's to change.

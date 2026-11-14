@@ -111,11 +111,16 @@ go test ./app     # drive the app from a plain Go test
 for every target. When you want it on a phone:
 
 ```bash
-go run github.com/rohanthewiz/grmob/cmd/grmob doctor    # what this machine can build, and what to install
-go run github.com/rohanthewiz/grmob/cmd/grmob android   # APK: Android SDK + NDK, JDK 17+ (-install puts it on a device)
-go run github.com/rohanthewiz/grmob/cmd/grmob ios       # simulator build: Xcode + xcodegen (-run launches it, -open opens Xcode)
-go run github.com/rohanthewiz/grmob/cmd/grmob web       # browser build; warns when wasm/index.html is not go.mod's grmob page (-refresh re-renders it)
+go tool grmob doctor    # what this machine can build, and what to install
+go tool grmob android   # APK: Android SDK + NDK, JDK 17+ (-install puts it on a device)
+go tool grmob ios       # simulator build: Xcode + xcodegen (-run launches it, -open opens Xcode)
+go tool grmob web       # browser build; warns when wasm/index.html is not go.mod's grmob page (-refresh re-renders it)
 ```
+
+An app whose `go.mod` has no `tool github.com/rohanthewiz/grmob/cmd/grmob` line
+(one made by an older `grmob new`) adds it once with
+`go get -tool github.com/rohanthewiz/grmob/cmd/grmob`; `go run
+github.com/rohanthewiz/grmob/cmd/grmob <command>` also works in any app.
 
 Everything GrMob owns — the browser host (`webhost`), the runtime JavaScript,
 the dev server — comes from the GrMob version in the app's `go.mod`, at build

@@ -245,6 +245,16 @@ func TestNewScaffoldsAnAppThatBuildsAndPasses(t *testing.T) {
 		t.Errorf("GOOS=js go vet ./wasm in the scaffolded app: %v\n%s", err, out)
 	}
 
+	// The command itself is a tool of the app, so `go tool grmob` runs the
+	// grmob in go.mod (plan C3, N-141). Asked of the go command rather than
+	// read out of go.mod's text, and run for real: a tool line whose package
+	// does not build would pass a text check.
+	ver := exec.Command("go", "tool", "grmob", "version")
+	ver.Dir = dir
+	if out, err := ver.CombinedOutput(); err != nil || !strings.HasPrefix(string(out), "grmob ") {
+		t.Errorf("go tool grmob version in the scaffolded app: %v\n%s", err, out)
+	}
+
 	// A second build must not rewrite the runtime copies: the dev server
 	// reads a changed .js in wasm/ as a page edit and would reload the page
 	// after every hot swap.
