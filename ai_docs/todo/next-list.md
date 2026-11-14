@@ -36,7 +36,7 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-152
+**Next ID:** N-154
 
 ## Open
 
@@ -268,14 +268,6 @@ with each item's `raised` traced back through all session docs.
     module (D2). README's "Upgrading to v0.3.0?" callout was left in place:
     it still helps someone upgrading from before 0.3.
 
-- **N-146** · raised 2026-11-13 (N-101's walk) · value medium
-  **A silent TalkBack stop after a code block's "Copy code".** Walking lesson
-  4.40 with Alt+Right on the emulator, the stop after "Copy code. Copies to
-  the clipboard, Button" spoke nothing, then "TRY IT" followed. Seen in every
-  walk, before and after N-101's change. Likely the code block's own node (a
-  scroll container, perhaps) taking focus with no text. Check other lessons
-  with a code block, find the node, and give it a name or take it out of
-  the walk.
 - **N-149** · raised `2026-1114-0017-n009-ringing-alarms-alarmkit-full-screen-intent` · value low
   **A snooze pressed on the OS's alarm is invisible to UseAlarms.** Android's
   notification Snooze and AlarmKit's Snooze re-ring the same id by
@@ -289,6 +281,14 @@ with each item's `raised` traced back through all session docs.
   `setTimeoutAfter(ring_for)` removes the notification, so unlike a banner
   nothing stays in the shade. OnRing still hears about it on return. A
   quiet "Missed alarm" banner posted on timeout would restore the record.
+- **N-153** · raised `2026-1114-1745-n146-talkback-walks-charts-poll-grid-cart-biblestudy-share` · value low
+  **TalkBack's swipe order skips row 2's Category cell in lesson 4.37's
+  EditableGrid.** Seen on every Alt+Right walk on the emulator (2026-11-14):
+  rows 1, 3 and 4 read "Category, row N, <choice>", but row 2 goes from Item
+  to Amount. uiautomator shows row 2's cell like the others ("Category, row
+  2" holding a TextView "Food"). The move to row 2 also scrolls the grid
+  sideways (N-072), so the scroll may be what drops it. Find whether it is
+  the scroll, and whether a Tab walk skips it too.
 
 ## Validate
 
@@ -464,6 +464,11 @@ defect, which then becomes its own Open item.
     emulator: "Tabs, Button", "Spaces, Button", "Whatever gofmt says,
     Button". Whether a swipe skips the hidden ProgressBar and texts is still
     unheard (Tab visits controls only).
+    Heard by swipe order (2026-11-14, emulator TalkBack, Alt+Right on a virtual HID keyboard, HEAD build): the open poll is one stop per option
+    ("Tabs, Button"…), and the closed poll's results are one stop each
+    ("Tabs, 34 percent, 1 vote"), with no ProgressBar or text stops. Poll is
+    done on TalkBack. While the typing indicator was on screen, every step
+    began with "Ana is typing"; idle for 12s it said nothing. That is N-152.
 - **N-064** · raised `2026-0921-0935-core-opacity-and-typing-indicator-fade` · value medium
   **`core.Opacity` is unrun on a device.** It
   compiles on all four targets and its call sites, layer order and sentinel
@@ -653,6 +658,10 @@ defect, which then becomes its own Open item.
       captured from outside with `simctl io screenshot`).
     - After release it resumes from the drop: 3:34 and 3:51.
   - Every chart's one spoken sentence on TalkBack and VoiceOver.
+    TalkBack done (2026-11-14, emulator TalkBack, Alt+Right on a virtual HID keyboard, HEAD build): "ACME: 10 periods, from open 102 in 1…; 8 up,
+    2 down", "Checkout: Visited 1200; Signed up 744, 62% of the step before;
+    …; 8% overall", "Player: Ade, Speed 8, Power 6, Stamina 7, Skill 9,
+    Vision 5", "Audio waveform, 30 percent played, Image". VoiceOver remains.
   - 2026-10-03: iOS charts now carry an `AXChartDescriptor` (N-010), which
     type-checks and survives the Release build but has not been opened in
     VoiceOver's chart details or played as an Audio Graph.
@@ -717,6 +726,12 @@ defect, which then becomes its own Open item.
     row 2. Moving to row 2 scrolls the grid back sideways, and TalkBack first
     says "Amount, row 2" before the correction to "Row 2. Opens the row's
     menu". The editor, the RoleAlert and the row menu are still unheard.
+    All three heard (2026-11-14, emulator TalkBack, Alt+Right on a virtual HID keyboard, HEAD build). Activating row 2's Amount: "Editing, 310.5,
+    Edit box, Amount, row 2". Typing -5 and pressing return: "Amount, row 2.
+    An amount cannot be negative." then the alert again on its own.
+    Activating "Row 1": a "Row 1" sheet with Insert below, Delete and
+    Cancel. Row 2's Category cell was skipped on every walk (N-153).
+    VoiceOver and the phone cost remain.
   - The cost on a phone: the doc's "about 5,000 cells" is 4µs a cell measured
     on an M3, times a guess. Type into a 10 × 500 sheet on the Fold6.
 - **N-097** · raised `2026-1010-1728-keystore-binding` · value low
@@ -793,6 +808,10 @@ defect, which then becomes its own Open item.
   to check:
   - Android: the chooser opening from 4.41 on the emulator or the Fold6,
     and the text and link arriving joined in a messenger;
+    the chooser half done 2026-11-14 on the API 36 emulator. The card's
+    Share opened `com.android.intentresolver` as "Sharing text", previewing
+    "River valley" and the picsum link together. No messenger was tried;
+    the emulator has none signed in.
   - the web in a phone browser (Chrome on Android, Safari on iOS), where
     the tap's user activation must reach `navigator.share` through the
     wasm callback;
@@ -829,6 +848,10 @@ defect, which then becomes its own Open item.
   - TalkBack and VoiceOver: each line's text as one phrase, the Stepper
     named "Quantity, <item>", "Remove <item>", "Cart, 3 items", and the
     refusal alert;
+    TalkBack heard (2026-11-14, emulator TalkBack, Alt+Right on a virtual HID keyboard, HEAD build): "Pour-over kettle, Matte black, $45.00", "1,
+    Quantity, Pour-over kettle", "Remove Pour-over kettle, Button", "Cart,
+    3 items, Button", and the promo field and summary rows each once. The
+    refusal alert was not triggered. VoiceOver remains.
   - SwipeToRemove under real touch, with N-122's checks;
   - `cartdb` on a device: a cart under `mobile.DataDir()` survives killing
     the app.
@@ -844,6 +867,12 @@ defect, which then becomes its own Open item.
   - TalkBack and VoiceOver: each row read as "Verse 2, He maketh me…" with
     the hint, the prompt caption skipped, and the sheet named
     "Psalms 23:2 (KJV)";
+    TalkBack done (2026-11-14, emulator TalkBack, Alt+Right on a virtual HID keyboard, HEAD build): "Verse 2, He maketh me to lie down… still
+    waters.. Opens study tools on Blue Letter Bible, Button". The verse's
+    own full stop and the hint's join make the double period, which TalkBack
+    does not voice. Activating it opened "Psalms 23:2 (KJV)" with
+    Interlinear & Strong's, Cross-references, Commentaries, Dictionaries,
+    Compare translations and Cancel. VoiceOver remains.
   - BLB's study page on a phone browser landing on the named tab
     (Cross-Refs, not the default Interlinear).
 - **N-147** · raised 2026-11-13 (split from N-101) · value low
@@ -862,6 +891,16 @@ defect, which then becomes its own Open item.
   Also a real iPhone on iOS 26.0, the one release that takes the Stop
   button from the app (`Alarms.alert`), and on 17–25, where the build must
   launch (AlarmKit is weak-linked) and post banners.
+
+- **N-152** · raised `2026-1114-1745-n146-talkback-walks-charts-poll-grid-cart-biblestudy-share` · value low
+  **Does TalkBack say "Ana is typing" before every stop while lesson 4.34's
+  TypingIndicator shows?** On the emulator with TTS disabled (the harness),
+  each of the first twelve Alt+Right steps logged "Ana is typing" ahead of
+  the stop's own text. Idle for 12s, nothing was spoken, so the dots' phase
+  ticks are not re-announcing by themselves. It may be TalkBack flushing a
+  queued polite announcement only because TTS is off. Hear it with TTS on (a
+  person, or the Fold6's Display speech output). If it is real, the live
+  region needs to stop changing on each phase step.
 
 ## Roadmap
 
@@ -995,6 +1034,24 @@ defect, which then becomes its own Open item.
 
 ## Closed
 
+- **N-146** · raised 2026-11-13 (N-101's walk) · value medium
+  · closed 2026-11-14, `2026-1114-1745-n146-talkback-walks-charts-poll-grid-cart-biblestudy-share` — the premise was the harness's, not
+  the app's. TalkBack does read the code block at that stop: the whole
+  snippet, as one utterance whose text holds newlines. The harness matched
+  `text:…, earcons:` one logcat line at a time, so a multi-line utterance
+  matched nothing and looked silent. Checked by reinstalling the unchanged
+  build and reading the raw log at the stop. A split of the scroll and text
+  semantics was tried first and reverted. The walk script now joins
+  `SpeechControllerImpl` lines, and also reads TalkBack's
+  `LogUtils: Bad formatting string` lines, where a text holding '%' lands.
+  Memory `emulator-talkback-harness` says so.
+  **A silent TalkBack stop after a code block's "Copy code".** Walking lesson
+  4.40 with Alt+Right on the emulator, the stop after "Copy code. Copies to
+  the clipboard, Button" spoke nothing, then "TRY IT" followed. Seen in every
+  walk, before and after N-101's change. Likely the code block's own node (a
+  scroll container, perhaps) taking focus with no text. Check other lessons
+  with a code block, find the node, and give it a name or take it out of
+  the walk.
 - **N-144** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
   · closed 2026-11-14, `2026-1114-1650-n151-n138-n144-group-echo-pins-one-pass-per-event-generated-style-equal` — CI watched. The Android remedy drill passed in all seven
   runs since R9o (43070809214 through 43649142856). The only two red runs,
