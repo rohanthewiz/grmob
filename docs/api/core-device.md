@@ -132,7 +132,7 @@ AlarmAnswered tells the host that the ring the app took over from the alarm noti
 
 	wire: "notification" {command: "answered", id}
 
-<small>[core/notifications.go:305](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L305)</small>
+<small>[core/notifications.go:307](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L307)</small>
 
 ### func AngleDelta
 
@@ -244,7 +244,7 @@ func CancelNotification(id string)
 
 CancelNotification takes down the notification posted under id, whether it is still on screen or already in the notification list. Cancelling one that is not there is harmless on every host.
 
-<small>[core/notifications.go:236](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L236)</small>
+<small>[core/notifications.go:238](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L238)</small>
 
 ### func Cardinal
 
@@ -543,7 +543,7 @@ OnNotificationTap subscribes fn to taps on the app's notifications; fn receives 
 
 Like OnDeepLink, a typed wrapper over OnHostEvent and nothing more: core keeps no record of taps, because a tap is an instruction ("show me this") rather than a state anyone reads later. fn runs on the goroutine that delivered the host event and must not block. An empty or absent id is dropped — a subscriber cannot route a tap it cannot identify.
 
-<small>[core/notifications.go:255](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L255)</small>
+<small>[core/notifications.go:257](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L257)</small>
 
 ### func OnRegionChange
 
@@ -574,7 +574,7 @@ It is what lets an app take a ring over — show its own ringing screen, play it
 
 Only Android reports ringing taps today. iOS's AlarmKit alert is the system's own screen, with its own Stop and Snooze, and tells the app nothing; an iOS banner chimes once and is never ringing when tapped.
 
-<small>[core/notifications.go:283](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L283)</small>
+<small>[core/notifications.go:285](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L285)</small>
 
 ### func OnWindow
 
@@ -606,7 +606,7 @@ func PostNotification(n LocalNotification)
 
 PostNotification asks the host to show n — now, or at n.At — replacing any notification already showing or scheduled under the same ID. Dropped without an ID or without any text; see the file comment for why the ID is required and for permissions.
 
-<small>[core/notifications.go:191](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L191)</small>
+<small>[core/notifications.go:193](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L193)</small>
 
 ### func ReadClipboard
 
@@ -775,7 +775,7 @@ SweepNotifications cancels every notification still scheduled under an ID beginn
 
 An empty prefix is refused (fn runs with no ids and nothing is sent): sweeping everything would take down notifications this caller never posted. With no host registered fn runs at once on the caller's goroutine, as ReadClipboard's does; otherwise on the goroutine that delivers the reply.
 
-<small>[core/notifications.go:370](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L370)</small>
+<small>[core/notifications.go:372](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L372)</small>
 
 ### func WrapLongitude
 
@@ -1268,7 +1268,7 @@ type LocalNotification struct {
 
 LocalNotification is one banner to post. ID is required; Title and Body may each be empty but not both.
 
-<small>[core/notifications.go:135](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L135)</small>
+<small>[core/notifications.go:137](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L137)</small>
 
 ### type Location
 
@@ -1368,7 +1368,7 @@ type NotificationAlarm struct {
 
 NotificationAlarm is how an alarm-style notification behaves once it rings. Both lengths are rounded to whole seconds on the wire; neither host can time anything finer.
 
-<small>[core/notifications.go:158](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L158)</small>
+<small>[core/notifications.go:160](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L160)</small>
 
 ### type Posture
 
