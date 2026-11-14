@@ -1080,3 +1080,62 @@ func TestMarkBlurredIsSafeConcurrently(t *testing.T) {
 		t.Error("a concurrent blur was lost")
 	}
 }
+
+// Showing an error under each of n fields runs each rule once a pass, not n
+// times (plan P8c, N-139): Error and Errors share one evaluation per dirty
+// generation. A write to the form is a new generation, so the next read sees
+// it. Valid and Submit run the rules fresh, because a rule may read state the
+// framework does not see change, such as a plain variable the handler just
+// set before submitting.
+func TestErrorReadsRunTheRulesOncePerChange(t *testing.T) {
+	ctx := core.NewContext()
+	const n = 40
+	calls := 0
+	agreed := false
+	fields := make([]forms.Field, n)
+	for i := range fields {
+		fields[i] = forms.Field{Name: fmt.Sprintf("f%d", i), Rules: []forms.Rule{
+			func(v string) string {
+				calls++
+				if v == "" {
+					return "Required"
+				}
+				return ""
+			},
+		}}
+	}
+	fields[0].Rules = append(fields[0].Rules, func(string) string {
+		if !agreed {
+			return "Agree first"
+		}
+		return ""
+	})
+	spec := forms.Spec{Reveal: forms.RevealAlways, Fields: fields}
+	form := render(ctx, spec)
+
+	for i := range n {
+		if got := form.Error(fmt.Sprintf("f%d", i)); got != "Required" {
+			t.Fatalf("f%d error = %q, want Required", i, got)
+		}
+	}
+	form.Errors()
+	if calls != n {
+		t.Fatalf("%d error reads ran the rules %d times, want %d (once each)", n+1, calls, n)
+	}
+
+	form.SetValue("f3", "x")
+	if got := form.Error("f3"); got != "" {
+		t.Fatalf("after SetValue f3 still reads %q: the memo outlived the write", got)
+	}
+
+	for i := range n {
+		form.SetValue(fmt.Sprintf("f%d", i), "x")
+	}
+	if form.Valid() {
+		t.Fatal("valid before agreeing")
+	}
+	agreed = true // not a core.State: no generation moves
+	if !form.Valid() {
+		t.Fatal("Valid answered from a stale evaluation after the handler's own change")
+	}
+}

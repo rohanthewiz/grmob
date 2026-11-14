@@ -188,7 +188,14 @@ with each item's `raised` traced back through all session docs.
       slot or a cache keyed on the Rows slice's identity, and the second goes
       stale if a caller reorders Rows in place. Left until a 10,000-row table
       shows up.
-    - P8c (form error reads) remains.
+    - P8c landed 2026-11-14. `Form.Error` and `Errors` share one rule
+      evaluation per dirty generation (every record write, and every
+      `core.State` a rule could read, bumps it). `Error` reads its field
+      directly, without building the whole map. `Valid` and `Submit` still
+      run the rules fresh. `TestErrorReadsRunTheRulesOncePerChange` checks
+      40 fields: 41 reads make 40 rule calls, a SetValue is seen, and a
+      plain variable read by a rule still reaches `Valid`.
+    P6 (web runtime), P8b (the decision above) and P9 (iOS) remain.
 - **N-141** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
   **CLI: `go tool grmob`, a one-ABI bind, and shell upgrades that keep the
   app's edits (plan C3-C5).** Register `cmd/grmob` as a `go.mod` tool in the

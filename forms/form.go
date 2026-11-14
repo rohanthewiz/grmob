@@ -174,6 +174,26 @@ type Form struct {
 	ctx  *core.Context
 	rec  *formRecord
 	spec Spec
+
+	// memo keeps derived's answer for the reads that only display it (Errors
+	// and Error), keyed by the app's dirty generation. A screen that shows
+	// an error under each of n fields calls Error n times a pass, and each
+	// call used to run every rule of every field and copy the values: O(n²)
+	// rule calls, 314 µs and 655 KB a pass at 40 fields (plan P8c, N-139).
+	//
+	// Why the dirty generation is the right key: every write to the form's
+	// record (SetValue, MarkBlurred, Submit, SetErrors, Reset) requests a
+	// render, and so does every core.State a rule might close over, and each
+	// request bumps the generation. Within one generation nothing a rule
+	// reads through the framework has changed, so neither has its answer.
+	//
+	// Valid and Submit do not use it. They decide whether a handler runs,
+	// and a rule may read state that is not a core.State (a plain variable
+	// the handler just set); for them the rules always run fresh, which is
+	// one evaluation per call and never quadratic.
+	memoMu  sync.Mutex
+	memoGen uint64
+	memo    map[string]string // nil until the first display read
 }
 
 // UseForm allocates (or re-binds) a form on the context's hook slot at the
@@ -504,7 +524,7 @@ func (f *Form) problems() map[string]string {
 // seen and rejected.
 func (f *Form) Errors() map[string]string {
 	out := make(map[string]string)
-	for name, msg := range f.derived() {
+	for name, msg := range f.displayDerived() {
 		if f.revealed(name) {
 			out[name] = msg
 		}
@@ -531,7 +551,42 @@ func (f *Form) Errors() map[string]string {
 // An empty result can mean either "valid" or "not revealed yet"; ask Valid or
 // Submitted if the difference matters.
 func (f *Form) Error(name string) string {
-	return f.Errors()[name]
+	// The same answer as Errors()[name], for one field: an external error
+	// wins, then a derived one if the policy reveals it. Read directly
+	// rather than through Errors, which builds the whole map for every field
+	// (see Form.memo).
+	f.rec.mu.Lock()
+	ext, ok := f.rec.external[name]
+	f.rec.mu.Unlock()
+	if ok {
+		return ext
+	}
+	if msg := f.displayDerived()[name]; msg != "" && f.revealed(name) {
+		return msg
+	}
+	return ""
+}
+
+// displayDerived is derived, memoised for the current dirty generation; see
+// Form.memo. The map is shared between calls, so callers only read it.
+func (f *Form) displayDerived() map[string]string {
+	gen := f.ctx.DirtyGeneration()
+	f.memoMu.Lock()
+	if f.memo != nil && f.memoGen == gen {
+		m := f.memo
+		f.memoMu.Unlock()
+		return m
+	}
+	f.memoMu.Unlock()
+
+	// Rules run outside memoMu, for derived's own reason: they are caller
+	// code, and caller code may read this Form back.
+	m := f.derived()
+
+	f.memoMu.Lock()
+	f.memo, f.memoGen = m, gen
+	f.memoMu.Unlock()
+	return m
 }
 
 // Valid reports whether the form would submit as it stands, ignoring the

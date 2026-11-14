@@ -172,7 +172,7 @@ UseForm allocates (or re-binds) a form on the context's hook slot at the current
 
 It consumes exactly one slot, so the rules of hooks apply: call it unconditionally, in a stable position, on every pass.
 
-<small>[forms/form.go:184](https://github.com/rohanthewiz/grmob/blob/master/forms/form.go#L184)</small>
+<small>[forms/form.go:204](https://github.com/rohanthewiz/grmob/blob/master/forms/form.go#L204)</small>
 
 #### func (*Form) Blurred
 
@@ -184,7 +184,7 @@ Blurred reports whether focus has entered and left the field since mount or Rese
 
 It reports what has been \*observed\*, which is not the same as what has happened: nothing polls the platform, so a field whose control never attaches Form.OnBlur reads as unblurred forever. Under any policy but RevealOnBlur the bound builders do not attach it, so this stays false throughout — that is the honest answer ("no blur was reported"), not a bug.
 
-<small>[forms/form.go:290](https://github.com/rohanthewiz/grmob/blob/master/forms/form.go#L290)</small>
+<small>[forms/form.go:310](https://github.com/rohanthewiz/grmob/blob/master/forms/form.go#L310)</small>
 
 #### func (*Form) Checkbox
 
@@ -210,7 +210,7 @@ func (f *Form) Checked(name string) bool
 
 Checked reads a field as a checkbox. See Values.Bool for what counts.
 
-<small>[forms/form.go:229](https://github.com/rohanthewiz/grmob/blob/master/forms/form.go#L229)</small>
+<small>[forms/form.go:249](https://github.com/rohanthewiz/grmob/blob/master/forms/form.go#L249)</small>
 
 #### func (*Form) Error
 
@@ -229,7 +229,7 @@ Error is the message to show for one field, or "" when there is nothing to show 
 
 An empty result can mean either "valid" or "not revealed yet"; ask Valid or Submitted if the difference matters.
 
-<small>[forms/form.go:533](https://github.com/rohanthewiz/grmob/blob/master/forms/form.go#L533)</small>
+<small>[forms/form.go:553](https://github.com/rohanthewiz/grmob/blob/master/forms/form.go#L553)</small>
 
 #### func (*Form) Errors
 
@@ -243,7 +243,7 @@ External errors ignore the policy on purpose. A message that came back from a su
 
 They are also laid over the derived ones rather than filling in around them, because they are the newer information: a server verdict comes from a check the rules cannot make, and it is dropped the moment the field changes (see SetValue), so the two can only meet on a value the server has already seen and rejected.
 
-<small>[forms/form.go:505](https://github.com/rohanthewiz/grmob/blob/master/forms/form.go#L505)</small>
+<small>[forms/form.go:525](https://github.com/rohanthewiz/grmob/blob/master/forms/form.go#L525)</small>
 
 #### func (*Form) Input
 
@@ -277,7 +277,7 @@ Unlike SetValue this deliberately does \*not\* mark the field touched or drop it
 
 Safe to call from any goroutine.
 
-<small>[forms/form.go:305](https://github.com/rohanthewiz/grmob/blob/master/forms/form.go#L305)</small>
+<small>[forms/form.go:325](https://github.com/rohanthewiz/grmob/blob/master/forms/form.go#L325)</small>
 
 #### func (*Form) OnBlur
 
@@ -292,7 +292,7 @@ OnBlur returns the field's blur handler, ready to hand to core.OnBlur:
 
 The bound builders attach this themselves under RevealOnBlur; this is for a control they do not cover.
 
-<small>[forms/form.go:332](https://github.com/rohanthewiz/grmob/blob/master/forms/form.go#L332)</small>
+<small>[forms/form.go:352](https://github.com/rohanthewiz/grmob/blob/master/forms/form.go#L352)</small>
 
 #### func (*Form) OnChange
 
@@ -306,7 +306,7 @@ OnChange returns the field's change handler, ready to hand to any builder that t
 
 The bound builders (Form.Input and friends) are this pairing pre-made; use this one for a control they do not cover.
 
-<small>[forms/form.go:265](https://github.com/rohanthewiz/grmob/blob/master/forms/form.go#L265)</small>
+<small>[forms/form.go:285](https://github.com/rohanthewiz/grmob/blob/master/forms/form.go#L285)</small>
 
 #### func (*Form) OnSubmit
 
@@ -318,7 +318,7 @@ OnSubmit adapts Submit to the void-callback shape every commit affordance takes 
 
 	comps.Button{Label: "Create account", OnTap: form.OnSubmit(createAccount)}
 
-<small>[forms/form.go:599](https://github.com/rohanthewiz/grmob/blob/master/forms/form.go#L599)</small>
+<small>[forms/form.go:654](https://github.com/rohanthewiz/grmob/blob/master/forms/form.go#L654)</small>
 
 #### func (*Form) OnToggle
 
@@ -328,7 +328,7 @@ func (f *Form) OnToggle(name string) func(bool)
 
 OnToggle returns a checkbox's handler, storing the bool as text through the same spelling Values.Bool reads.
 
-<small>[forms/form.go:271](https://github.com/rohanthewiz/grmob/blob/master/forms/form.go#L271)</small>
+<small>[forms/form.go:291](https://github.com/rohanthewiz/grmob/blob/master/forms/form.go#L291)</small>
 
 #### func (*Form) Password
 
@@ -365,7 +365,7 @@ Three consequences worth knowing:
 
 Unknown names are not required, which is also the answer for a field with no rules at all.
 
-<small>[forms/form.go:371](https://github.com/rohanthewiz/grmob/blob/master/forms/form.go#L371)</small>
+<small>[forms/form.go:391](https://github.com/rohanthewiz/grmob/blob/master/forms/form.go#L391)</small>
 
 #### func (*Form) Reset
 
@@ -379,7 +379,7 @@ Initials are re-read from \*this pass's\* Spec, not from the ones the form mount
 
 Fields not named by the current spec are dropped entirely rather than left behind, so a reset form's Values is exactly its declaration.
 
-<small>[forms/form.go:647](https://github.com/rohanthewiz/grmob/blob/master/forms/form.go#L647)</small>
+<small>[forms/form.go:702](https://github.com/rohanthewiz/grmob/blob/master/forms/form.go#L702)</small>
 
 #### func (*Form) Select
 
@@ -413,7 +413,7 @@ Blank messages are dropped here and nowhere else: this is the only writer of the
 
 Safe to call from any goroutine; this is the one form method whose usual caller is a network response.
 
-<small>[forms/form.go:623](https://github.com/rohanthewiz/grmob/blob/master/forms/form.go#L623)</small>
+<small>[forms/form.go:678](https://github.com/rohanthewiz/grmob/blob/master/forms/form.go#L678)</small>
 
 #### func (*Form) SetValue
 
@@ -427,7 +427,7 @@ All three follow from the one fact that the value changed, whoever changed it: t
 
 Safe to call from any goroutine.
 
-<small>[forms/form.go:244](https://github.com/rohanthewiz/grmob/blob/master/forms/form.go#L244)</small>
+<small>[forms/form.go:264](https://github.com/rohanthewiz/grmob/blob/master/forms/form.go#L264)</small>
 
 #### func (*Form) Submit
 
@@ -455,7 +455,7 @@ handler runs on the calling goroutine — the native event thread, for a button 
 
 The values are already a copy, so the goroutine is free to outlive the pass.
 
-<small>[forms/form.go:573](https://github.com/rohanthewiz/grmob/blob/master/forms/form.go#L573)</small>
+<small>[forms/form.go:628](https://github.com/rohanthewiz/grmob/blob/master/forms/form.go#L628)</small>
 
 #### func (*Form) Submitted
 
@@ -465,7 +465,7 @@ func (f *Form) Submitted() bool
 
 Submitted reports whether Submit has been attempted since mount or Reset — successfully or not. It is what RevealOnSubmit keys on, and it is also the honest test for "has the user asked for this form to be checked yet".
 
-<small>[forms/form.go:395](https://github.com/rohanthewiz/grmob/blob/master/forms/form.go#L395)</small>
+<small>[forms/form.go:415](https://github.com/rohanthewiz/grmob/blob/master/forms/form.go#L415)</small>
 
 #### func (*Form) TextArea
 
@@ -487,7 +487,7 @@ func (f *Form) Touched(name string) bool
 
 Touched reports whether the field has been changed since mount or Reset.
 
-<small>[forms/form.go:276](https://github.com/rohanthewiz/grmob/blob/master/forms/form.go#L276)</small>
+<small>[forms/form.go:296](https://github.com/rohanthewiz/grmob/blob/master/forms/form.go#L296)</small>
 
 #### func (*Form) Valid
 
@@ -499,7 +499,7 @@ Valid reports whether the form would submit as it stands, ignoring the reveal po
 
 Note what \*not\* to do with it. Under the default RevealOnSubmit, disabling the submit button on !Valid() produces a dead end: nothing is revealed until a submit, and no submit can happen while the button is disabled, so the user is left with a form that refuses to work and says nothing about why. Let the submit run and fail — that is the event that turns the explanations on. core.Disabled belongs on a submit that is \*in flight\*, not on one that is invalid.
 
-<small>[forms/form.go:547](https://github.com/rohanthewiz/grmob/blob/master/forms/form.go#L547)</small>
+<small>[forms/form.go:602](https://github.com/rohanthewiz/grmob/blob/master/forms/form.go#L602)</small>
 
 #### func (*Form) Value
 
@@ -509,7 +509,7 @@ func (f *Form) Value(name string) string
 
 Value reads a field's current text.
 
-<small>[forms/form.go:215](https://github.com/rohanthewiz/grmob/blob/master/forms/form.go#L215)</small>
+<small>[forms/form.go:235](https://github.com/rohanthewiz/grmob/blob/master/forms/form.go#L235)</small>
 
 #### func (*Form) Values
 
@@ -519,7 +519,7 @@ func (f *Form) Values() Values
 
 Values returns an independent copy of every field's text.
 
-<small>[forms/form.go:222](https://github.com/rohanthewiz/grmob/blob/master/forms/form.go#L222)</small>
+<small>[forms/form.go:242](https://github.com/rohanthewiz/grmob/blob/master/forms/form.go#L242)</small>
 
 ### type Reveal
 
