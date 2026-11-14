@@ -34,6 +34,17 @@ var templates embed.FS
 type appConfig struct {
 	Name string `json:"name"` // what a launcher shows: "My App"
 	ID   string `json:"id"`   // Android applicationId and iOS bundle identifier
+
+	// Alarms opts the app in to ringing alarms (permission.Alarms; "Alarms"
+	// in core/notifications.go). The two platform declarations that capability
+	// needs are gated by store policy on what the app is for — Play grants
+	// USE_FULL_SCREEN_INTENT only to alarm-clock and calling apps and wants a
+	// declaration for it, and NSAlarmKitUsageDescription is text App Review
+	// reads — so they are not something every app should inherit from the
+	// scaffold. Without it the exported shells carry neither, and alarms post
+	// as banners. It is read when a shell is copied, so changing it needs
+	// `-refresh`.
+	Alarms bool `json:"alarms,omitempty"`
 }
 
 // scaffoldData is what the templates see.

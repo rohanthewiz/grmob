@@ -126,12 +126,14 @@ func TestABrowserRequestReadsBeforeAndAfterItAsks(t *testing.T) {
 		}
 	}
 
-	// storage never reaches the query: it has no descriptor, so the read would
-	// be a round trip to an answer this file already knows.
-	if !strings.Contains(src, `if (kind === "storage") {`) {
-		t.Error("grmob-runtime.js: a storage request no longer short-circuits ahead of " +
-			"the query — there is no descriptor for it, so the read cannot answer and " +
-			"the request would fall through to a prompt() with no arm")
+	// storage and alarms never reach the query: neither has a descriptor, so
+	// the read would be a round trip to an answer this file already knows, and
+	// prompt() has no arm for either — a request that fell through would never
+	// be answered.
+	if !strings.Contains(src, `if (kind === "storage" || kind === "alarms") {`) {
+		t.Error("grmob-runtime.js: a storage or alarms request no longer short-circuits " +
+			"ahead of the query — there is no descriptor for either, so the read cannot " +
+			"answer and the request would fall through to a prompt() with no arm")
 	}
 }
 

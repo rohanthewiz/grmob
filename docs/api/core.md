@@ -55,7 +55,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
 | [Events & focus](core-events.md) | Event props and swipes, host and system events, focus refs and focus order, and scrolling a node into view. | 3 types, 25 functions and methods |
 | [Navigation & overlays](core-navigation.md) | The navigator stack, modals, toasts, deep links and opening URLs. | 4 types, 19 functions and methods |
 | [Accessibility](core-accessibility.md) | Roles, selected, expanded and current states, value ranges and the accessibility audit. | 13 types, 20 functions and methods |
-| [Device services](core-device.md) | Audio, camera, clipboard, the share sheet, haptics, local notifications, compass heading, location, maps, the app lifecycle, and the window's size and fold. | 21 types, 72 functions and methods |
+| [Device services](core-device.md) | Audio, camera, clipboard, the share sheet, haptics, local notifications, compass heading, location, maps, the app lifecycle, and the window's size and fold. | 22 types, 74 functions and methods |
 
 ## Index
 
@@ -419,6 +419,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
         - [`func ValueOf`](core-accessibility.md#func-valueof)
 - [Device services](core-device.md)
     - [Constants](core-device.md#constants) — `DefaultMapZoom`
+    - [`func AlarmAnswered`](core-device.md#func-alarmanswered)
     - [`func AngleDelta`](core-device.md#func-angledelta)
     - [`func AudioLoad`](core-device.md#func-audioload)
     - [`func AudioPause`](core-device.md#func-audiopause)
@@ -449,6 +450,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
     - [`func OnMarkerTap`](core-device.md#func-onmarkertap)
     - [`func OnNotificationTap`](core-device.md#func-onnotificationtap)
     - [`func OnRegionChange`](core-device.md#func-onregionchange)
+    - [`func OnRingingAlarmTap`](core-device.md#func-onringingalarmtap)
     - [`func OnWindow`](core-device.md#func-onwindow)
     - [`func ParseLatLng`](core-device.md#func-parselatlng)
     - [`func PostNotification`](core-device.md#func-postnotification)
@@ -496,6 +498,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
     - [`type LocalNotification`](core-device.md#type-localnotification)
     - [`type Location`](core-device.md#type-location)
         - [`func CurrentLocation`](core-device.md#func-currentlocation)
+    - [`type NotificationAlarm`](core-device.md#type-notificationalarm)
     - [`type Posture`](core-device.md#type-posture)
     - [`type Region`](core-device.md#type-region)
         - [`func ParseRegion`](core-device.md#func-parseregion)

@@ -137,3 +137,66 @@ func TestExactAlarmRecheckNeedsNoActivity(t *testing.T) {
 		}
 	}
 }
+
+// Alarms ride on the same post (core/notifications.go, "Alarms"), with keys of
+// their own that only some shells read: Android reads every one — the alarm
+// object, its two lengths, the ringing flag on a tap and the "answered"
+// command — and iOS reads the alarm object and its snooze for AlarmKit. A
+// misspelling is an alarm that quietly posts as a banner, or a lock screen
+// that never comes back over the app, so each is held here.
+func TestAlarmNotificationSpellingsAgree(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		files []string
+		want  []string
+	}{
+		{"android", []string{
+			nativeFile("android", "app", "src", "main", "java", "com", "grmob", "app", "Notifications.kt"),
+			kotlinMainActivity,
+		}, []string{`"alarm"`, `"snooze"`, `"ring_for"`, `"ringing"`, `"answered"`}},
+		{"ios", []string{
+			nativeFile("ios", "GrMob", "App", "Notifications.swift"),
+		}, []string{`"alarm"`, `"snooze"`}},
+	} {
+		var src strings.Builder
+		for _, f := range c.files {
+			raw, err := os.ReadFile(f)
+			if err != nil {
+				t.Fatalf("reading %s: %v", f, err)
+			}
+			src.Write(raw)
+		}
+		for _, lit := range c.want {
+			if !strings.Contains(src.String(), lit) {
+				t.Errorf("%s shell never spells %s", c.name, lit)
+			}
+		}
+	}
+}
+
+// The pieces of the Android alarm that live outside Notifications.kt: the
+// action receiver Snooze and Stop broadcast to (an undeclared receiver drops
+// both buttons' presses), and MainActivity's lock-screen hand-off, which must
+// be released as well as taken.
+func TestTheAndroidAlarmIsWiredThroughTheShell(t *testing.T) {
+	for _, c := range []struct{ file, want, why string }{
+		{androidManifest, `android:name=".NotificationActionReceiver"`,
+			"Snooze and Stop broadcast to it; undeclared, both buttons do nothing"},
+		{androidManifest, `android:name="android.permission.USE_FULL_SCREEN_INTENT"`,
+			"the opt-in the shell reads as alarmsDeclared; grmob's own shell keeps it for the tutorial"},
+		{kotlinMainActivity, `Notifications.tapRinging(intent)`,
+			"the ringing flag on a tap, and the reason to show over the lock screen"},
+		{kotlinMainActivity, `Notifications.showingOverLockScreen(id) { setLockScreenFlags(false) }`,
+			"the release core.AlarmAnswered calls; without it the app stays over the lock screen"},
+		{kotlinMainActivity, `Notifications.activityGone(isChangingConfigurations)`,
+			"a destroyed Activity's release must not be called"},
+	} {
+		raw, err := os.ReadFile(c.file)
+		if err != nil {
+			t.Fatalf("reading %s: %v", c.file, err)
+		}
+		if !strings.Contains(string(raw), c.want) {
+			t.Errorf("%s: %q not found — %s", c.file, c.want, c.why)
+		}
+	}
+}

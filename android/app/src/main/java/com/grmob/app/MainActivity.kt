@@ -92,7 +92,23 @@ class MainActivity : ComponentActivity() {
         // Only on a fresh create: a recreation (rotation) is handed the same
         // launch intent again, and re-reporting it would re-route the reader
         // to the banner they already opened.
-        if (savedInstanceState == null) reportNotificationTap(intent)
+        if (savedInstanceState == null) {
+            reportNotificationTap(intent)
+        } else {
+            // A rotation while a ringing alarm holds the lock screen: the new
+            // Activity takes the flags over, or the ringing screen would drop
+            // under the keyguard mid-ring.
+            Notifications.lockScreenAlarm()?.takeIf { it == Notifications.tapId(intent) }?.let(::showOverLockScreen)
+        }
+    }
+
+    override fun onDestroy() {
+        // A release closure for this Activity must not outlive it; see
+        // Notifications "Over the lock screen". A configuration change keeps
+        // the alarm's claim on the lock screen for the Activity that replaces
+        // this one (see onCreate).
+        Notifications.activityGone(isChangingConfigurations)
+        super.onDestroy()
     }
 
     // core.AccessibilityKeyShortcuts from a hardware keyboard. Offered to the
@@ -214,6 +230,41 @@ class MainActivity : ComponentActivity() {
      */
     private fun reportNotificationTap(intent: Intent?) {
         val id = Notifications.tapId(intent) ?: return
-        runtime?.hostEvent("notification_tap", JSONObject().put("id", id).toString())
+        val payload = JSONObject().put("id", id)
+        // A ringing alarm's launch — the full-screen intent on a locked or
+        // sleeping phone, or a tap while it rings — is reported as ringing,
+        // so Go can take the ring over (core.OnRingingAlarmTap), and shows
+        // this Activity over the lock screen for it.
+        if (Notifications.tapRinging(intent)) {
+            payload.put("ringing", true)
+            showOverLockScreen(id)
+        }
+        runtime?.hostEvent("notification_tap", payload.toString())
+    }
+
+    /**
+     * Shows this Activity over the keyguard, and wakes the screen, for alarm
+     * [id] — and only until that alarm is answered, when Notifications calls
+     * the release and the keyguard comes back over the app. See
+     * Notifications "Over the lock screen" for why it is never left set.
+     *
+     * The two flags became Activity methods in API 27; below that they are
+     * window flags with the same meaning.
+     */
+    private fun showOverLockScreen(id: String) {
+        setLockScreenFlags(true)
+        Notifications.showingOverLockScreen(id) { setLockScreenFlags(false) }
+    }
+
+    private fun setLockScreenFlags(on: Boolean) {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(on)
+            setTurnScreenOn(on)
+        } else {
+            @Suppress("DEPRECATION")
+            val flags = android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+            if (on) window.addFlags(flags) else window.clearFlags(flags)
+        }
     }
 }

@@ -339,3 +339,145 @@ func TestUseAlarmsSweepsItsOwnGroup(t *testing.T) {
 		t.Errorf("sweeps = %v, want one of grmob.alarms.work.", *prefixes)
 	}
 }
+
+// Every notification Notify schedules is an alarm, with this configuration's
+// Snooze and RingFor, so a host that can ring one does and one that cannot
+// posts the banner.
+func TestAlarmsNotifyPostsAlarms(t *testing.T) {
+	seen := notificationHost(t)
+	r := newRecord(at(12, 0, 0), alarm.Alarm{ID: "wake", Hour: 13, Enabled: true})
+	r.opts = AlarmOptions{Notify: true, Snooze: 5 * time.Minute}
+	r.setAway(true, at(12, 0, 0))
+	if len(*seen) != 1 {
+		t.Fatalf("posted %v, want one", *seen)
+	}
+	got, _ := (*seen)[0]["alarm"].(map[string]any)
+	if got["snooze"] != int64(5*60*1000) || got["ring_for"] != int64(10*60*1000) {
+		t.Errorf("alarm = %v, want snooze 300000 and the default ring_for 600000", got)
+	}
+}
+
+// A ringing tap on one of this configuration's alarms moves the ring into the
+// app and cancels the OS's notification; a second alarm waits behind it, the
+// same alarm again only cancels, and an id that is not this configuration's —
+// or names an alarm that is gone — is left to the OS.
+func TestAlarmsTakeOverARingingTap(t *testing.T) {
+	seen := notificationHost(t)
+	wake := alarm.Alarm{ID: "wake", Hour: 6, Enabled: true}
+	nap := alarm.Alarm{ID: "nap.v2", Hour: 6, Minute: 1, Enabled: false} // switched off by OnRing; still found
+	r := newRecord(at(6, 0, 0), wake, nap)
+	r.opts.Notify = true
+
+	cancels := func() []string {
+		var ids []string
+		for _, e := range *seen {
+			if e["command"] == "cancel" {
+				ids = append(ids, e["id"].(string))
+			}
+		}
+		*seen = nil
+		return ids
+	}
+
+	for _, id := range []string{
+		"grmob.alarms.work.wake." + itoa(at(6, 0, 0)), // another group's
+		"grmob.alarm.deleted." + itoa(at(6, 0, 0)),    // not in the list
+		"grmob.alarm.wake",                            // no instant
+	} {
+		if r.takeOver(id, at(6, 0, 5)) {
+			t.Errorf("took over %q", id)
+		}
+	}
+	if got := cancels(); len(got) != 0 || r.ringing != nil {
+		t.Fatalf("cancelled %v, ringing %v for ids that are not this record's", got, r.ringing)
+	}
+
+	wakeID := "grmob.alarm.wake." + itoa(at(6, 0, 0))
+	if !r.takeOver(wakeID, at(6, 0, 5)) {
+		t.Fatal("did not take over the ringing alarm")
+	}
+	if a, ok := (AlarmRinger{rec: r}).Ringing(); !ok || a.ID != "wake" || !r.ringSince.Equal(at(6, 0, 5)) {
+		t.Errorf("ringing %v since %v, want wake since the takeover", a, r.ringSince)
+	}
+	if got := cancels(); !slices.Equal(got, []string{wakeID}) {
+		t.Errorf("cancelled %v, want the taken-over notification", got)
+	}
+
+	napID := "grmob.alarm.nap.v2." + itoa(at(6, 1, 0))
+	if r.takeOver(napID, at(6, 1, 2)) {
+		t.Error("a queued alarm asked for a render")
+	}
+	if r.takeOver(napID, at(6, 1, 3)) || r.takeOver(wakeID, at(6, 1, 4)) {
+		t.Error("a repeated tap asked for a render")
+	}
+	if len(r.queue) != 1 || r.queue[0].ID != "nap.v2" || r.ringing.ID != "wake" {
+		t.Errorf("queue %v, ringing %v; want nap.v2 waiting behind wake", r.queue, r.ringing)
+	}
+	if got := cancels(); !slices.Equal(got, []string{napID, napID, wakeID}) {
+		t.Errorf("cancelled %v, want every tapped notification", got)
+	}
+}
+
+// The subscription is UseAlarms's own: a ringing tap reaches a mounted hook
+// and starts the ring; a plain tap does not.
+func TestUseAlarmsHearsRingingTaps(t *testing.T) {
+	notificationHost(t)
+	ctx := core.NewContext()
+	defer ctx.Close()
+	alarms := []alarm.Alarm{{ID: "wake", Hour: 6, Enabled: true}}
+	ringer := UseAlarms(ctx, alarms, AlarmOptions{Notify: true})
+
+	id := "grmob.alarm.wake." + itoa(at(6, 0, 0))
+	core.ReceiveHostEvent("notification_tap", map[string]any{"id": id})
+	if _, ok := ringer.Ringing(); ok {
+		t.Fatal("a plain tap started a ring")
+	}
+	core.ReceiveHostEvent("notification_tap", map[string]any{"id": id, "ringing": true})
+	if a, ok := ringer.Ringing(); !ok || a.ID != "wake" {
+		t.Errorf("Ringing() = %v, %v after a ringing tap", a, ok)
+	}
+}
+
+// A taken-over ring is answered — and the host told, so Android can let the
+// keyguard back over the app — when it is silenced however that happens; a
+// queued takeover dropped by leaving the screen is answered too. An alarm the
+// app rang by itself is not a takeover and reports nothing.
+func TestAlarmsAnswerTakeovers(t *testing.T) {
+	seen := notificationHost(t)
+	wake := alarm.Alarm{ID: "wake", Hour: 6, Enabled: true}
+	nap := alarm.Alarm{ID: "nap", Hour: 6, Minute: 1, Enabled: true}
+	r := newRecord(at(5, 59, 59), wake, nap)
+	r.opts.Notify = true
+	answered := func() []string {
+		var ids []string
+		for _, e := range *seen {
+			if e["command"] == "answered" {
+				ids = append(ids, e["id"].(string))
+			}
+		}
+		*seen = nil
+		return ids
+	}
+
+	// Rung in the app, not taken over: Dismiss answers nothing to the host.
+	r.check(at(6, 0, 0))
+	AlarmRinger{rec: r, ctx: core.NewContext()}.Dismiss()
+	if got := answered(); len(got) != 0 {
+		t.Errorf("an in-app ring reported %v as answered", got)
+	}
+
+	wakeID := "grmob.alarm.wake." + itoa(at(6, 0, 0))
+	napID := "grmob.alarm.nap." + itoa(at(6, 1, 0))
+	r.takeOver(wakeID, at(6, 1, 1))
+	r.takeOver(napID, at(6, 1, 2))
+	AlarmRinger{rec: r, ctx: core.NewContext()}.Snooze()
+	if got := answered(); !slices.Equal(got, []string{wakeID}) {
+		t.Errorf("snoozing the takeover answered %v, want [%s]", got, wakeID)
+	}
+	// nap is queued behind it; leaving the screen drops the queue, and the
+	// dropped takeover is answered rather than left holding the lock screen.
+	r.setAway(true, at(6, 1, 3))
+	if got := answered(); !slices.Equal(got, []string{napID}) {
+		t.Errorf("leaving the screen answered %v, want [%s]", got, napID)
+	}
+}

@@ -163,6 +163,35 @@ const (
 	// on; an exact alarm with banners refused rings nothing, and a banner
 	// without exact alarms rings late.
 	ExactAlarms Permission = "exact_alarms"
+
+	// Alarms is whether a scheduled alarm (core.LocalNotification with an
+	// Alarm, which hooks.UseAlarms posts with Notify) rings as an alarm clock
+	// does — a screen over the lock screen, ringing until answered — rather
+	// than as a banner. Without it the host posts the banner, so an app that
+	// never asks still rings, just less insistently.
+	//
+	// It exists only in apps built with `"alarms": true` in grmob.json, which
+	// keeps the platform declarations below in the exported shell; anywhere
+	// else the answer is Unavailable. Both platforms gate the capability on
+	// what the app is for (see core/notifications.go, "Alarms"), which is why
+	// it is opt-in rather than in every app.
+	//
+	//	iOS       26+: AlarmManager.authorizationState, and requestAuthorization
+	//	          to ask (a dialog). Below 26, or with no
+	//	          NSAlarmKitUsageDescription, Unavailable.
+	//	Android   USE_FULL_SCREEN_INTENT. Not declared: Unavailable. Below 34 it
+	//	          is granted with the declaration. From 34,
+	//	          NotificationManager.canUseFullScreenIntent(): Play grants it
+	//	          at install to apps whose declared core function is an alarm
+	//	          clock or calling, and to others it is a Settings page, so —
+	//	          like ExactAlarms — Request opens the page, the answer is
+	//	          Granted or Denied, and UsePermissionLive hears the change.
+	//	Browser   Unavailable: a page cannot ring over the lock screen.
+	//
+	// The ringing itself needs Notifications as well on Android, where the
+	// alarm is a notification; on iOS AlarmKit's authorization is the whole
+	// answer.
+	Alarms Permission = "alarms"
 )
 
 // Permissions returns every declared Permission, in declaration order.
@@ -172,7 +201,7 @@ const (
 // has no arm for a permission drops it silently, which on this bridge is
 // indistinguishable from a user who has not answered yet.
 func Permissions() []Permission {
-	return []Permission{Camera, Location, Storage, Microphone, Notifications, ExactAlarms}
+	return []Permission{Camera, Location, Storage, Microphone, Notifications, ExactAlarms, Alarms}
 }
 
 // Status is what the platform says about one Permission.

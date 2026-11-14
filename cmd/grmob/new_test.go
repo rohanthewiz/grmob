@@ -121,6 +121,59 @@ func TestShellPatchesStillApply(t *testing.T) {
 	}
 }
 
+// The alarms opt-in (appConfig.Alarms) decides whether the two policy-gated
+// declarations survive the copy: without it neither the full-screen-intent
+// permission nor the AlarmKit usage key, nor the comments explaining them,
+// reach the app; with it both do, and the usage key names the app rather than
+// grmob's demo.
+func TestShellPatchesFollowTheAlarmsOptIn(t *testing.T) {
+	apply := func(t *testing.T, dir string, patches []patch, file string) string {
+		t.Helper()
+		b, err := os.ReadFile(filepath.Join(repoRoot, dir, file))
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := string(b)
+		for _, p := range patches {
+			if p.file != file {
+				continue
+			}
+			if out, err = p.apply(out); err != nil {
+				t.Fatalf("%s/%s: %v", dir, file, err)
+			}
+		}
+		return out
+	}
+	const manifest = "app/src/main/AndroidManifest.xml"
+	for _, alarms := range []bool{false, true} {
+		cfg := appConfig{Name: "Wake", ID: "com.example.wake", Alarms: alarms}
+		android := apply(t, "android", androidPatches(cfg), manifest)
+		ios := apply(t, "ios", iosPatches(cfg), "project.yml")
+
+		has := map[string]bool{
+			"the full-screen-intent permission": strings.Contains(android, `android:name="`+fullScreenIntent+`"`),
+			"its manifest comment":              strings.Contains(android, "<!-- permission.Alarms"),
+			"the AlarmKit usage key":            strings.Contains(ios, alarmKitUsageKey+":"),
+			"its project.yml comment":           strings.Contains(ios, "# permission.Alarms"),
+		}
+		for what, present := range has {
+			if present != alarms {
+				t.Errorf("alarms=%v: %s present = %v", alarms, what, present)
+			}
+		}
+		if alarms && !strings.Contains(ios, alarmKitUsageKey+`: "Wake rings the alarms you set`) {
+			t.Errorf("alarms=true: the AlarmKit usage key does not name the app")
+		}
+		if strings.Contains(ios, "Demonstrates permission.Alarms") {
+			t.Errorf("alarms=%v: the demo's AlarmKit text reached the app", alarms)
+		}
+		// The neighbours of what was removed are untouched.
+		if !strings.Contains(android, "RECEIVE_BOOT_COMPLETED") || !strings.Contains(ios, "NSPhotoLibraryUsageDescription:") {
+			t.Errorf("alarms=%v: the removal took a neighbouring declaration with it", alarms)
+		}
+	}
+}
+
 // TestShellSkipsNameRealPaths keeps the skip lists honest in one direction:
 // a skip entry naming something the shell no longer has is dead weight at
 // best, and at worst a sign the thing it meant to exclude was renamed and is

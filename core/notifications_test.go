@@ -1,6 +1,7 @@
 package core
 
 import (
+	"slices"
 	"testing"
 	"time"
 )
@@ -150,5 +151,54 @@ func TestSweepNotificationsWithoutAPrefixOrHost(t *testing.T) {
 	SweepNotifications("", func(f []string) { ran = f == nil })
 	if !ran || len(*seen) != 0 {
 		t.Errorf("empty prefix: ran=%v sent=%v", ran, *seen)
+	}
+}
+
+// An alarm post carries an "alarm" object with its lengths in milliseconds,
+// rounded to the second; unset lengths are absent, and a plain post has no
+// "alarm" key at all — that absence is what keeps it a banner on every host.
+func TestAlarmNotificationWireShape(t *testing.T) {
+	seen := notificationHost(t)
+	PostNotification(LocalNotification{ID: "a", Title: "Wake", Alarm: &NotificationAlarm{
+		Snooze: 9 * time.Minute, RingFor: 10*time.Minute + 400*time.Millisecond,
+	}})
+	PostNotification(LocalNotification{ID: "b", Title: "Wake", Alarm: &NotificationAlarm{}})
+	PostNotification(LocalNotification{ID: "c", Title: "Wake"})
+	if len(*seen) != 3 {
+		t.Fatalf("got %d events, want 3", len(*seen))
+	}
+	full, _ := (*seen)[0][notificationAlarm].(map[string]any)
+	if full[notificationAlarmSnooze] != int64(9*60*1000) || full[notificationAlarmRingFor] != int64(10*60*1000) {
+		t.Errorf("alarm = %v, want snooze 540000 and ring_for 600000", full)
+	}
+	bare, ok := (*seen)[1][notificationAlarm].(map[string]any)
+	if !ok || len(bare) != 0 {
+		t.Errorf("an alarm with no lengths = %v (%T), want an empty object", (*seen)[1][notificationAlarm], (*seen)[1][notificationAlarm])
+	}
+	if _, has := (*seen)[2][notificationAlarm]; has {
+		t.Errorf("a plain post carries %q", notificationAlarm)
+	}
+}
+
+// A ringing tap reaches both kinds of subscriber; a plain tap reaches only
+// OnNotificationTap's. That split is the point: a tap on a stale missed-alarm
+// banner must not start a ring.
+func TestOnRingingAlarmTapHearsOnlyRingingTaps(t *testing.T) {
+	var taps, ringing []string
+	stopTaps := OnNotificationTap(func(id string) { taps = append(taps, id) })
+	defer stopTaps()
+	stopRinging := OnRingingAlarmTap(func(id string) { ringing = append(ringing, id) })
+	defer stopRinging()
+
+	ReceiveHostEvent(hostEventNotificationTap, map[string]any{"id": "banner"})
+	ReceiveHostEvent(hostEventNotificationTap, map[string]any{"id": "alarm", notificationTapRinging: true})
+	ReceiveHostEvent(hostEventNotificationTap, map[string]any{"id": "quiet", notificationTapRinging: false})
+	ReceiveHostEvent(hostEventNotificationTap, map[string]any{"id": "", notificationTapRinging: true})
+
+	if want := []string{"banner", "alarm", "quiet"}; !slices.Equal(taps, want) {
+		t.Errorf("OnNotificationTap heard %v, want %v", taps, want)
+	}
+	if want := []string{"alarm"}; !slices.Equal(ringing, want) {
+		t.Errorf("OnRingingAlarmTap heard %v, want %v", ringing, want)
 	}
 }

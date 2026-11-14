@@ -175,6 +175,11 @@ func TestTheIOSShellDeclaresAUsageDescriptionPerPermission(t *testing.T) {
 		"NSMicrophoneUsageDescription",
 		"NSLocationWhenInUseUsageDescription",
 		"NSPhotoLibraryUsageDescription",
+		// permission.Alarms. In grmob's own shell for the tutorial; `grmob
+		// ios` removes it from an app that did not opt in, and the shell
+		// checks for it before asking (Alarms.swift), so its absence there
+		// is "unavailable", not a crash.
+		"NSAlarmKitUsageDescription",
 	} {
 		// A key with a non-empty value, matched as a whole property rather
 		// than as a substring: an empty description is as fatal as a missing

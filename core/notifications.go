@@ -98,6 +98,38 @@ import (
 // scheduled notification down before it fires, and posting again under the
 // same ID replaces the pending request with the new time.
 
+// # Alarms: a ringing screen rather than a banner
+//
+// LocalNotification.Alarm asks the host to present the notification as an
+// alarm clock does — a screen that rings until it is answered, with Snooze and
+// Stop — instead of a banner that chimes once. Only an app that opted in at
+// build time gets one (`"alarms": true` in grmob.json, which keeps the
+// permission and usage string below in the exported shell), and only once the
+// user has allowed it (permission.Alarms). Everywhere else the field is
+// ignored and the post is the ordinary banner, so a caller sets it without
+// asking what the host can do.
+//
+//	              wire: "alarm" = {snooze: ms?, ring_for: ms?}, absent for a banner
+//	Android   An "Alarms" channel on the alarm audio stream; the sound repeats
+//	          until the notification is answered (FLAG_INSISTENT) or RingFor
+//	          passes. A full-screen intent opens the app over the lock screen
+//	          when the device is locked or asleep (USE_FULL_SCREEN_INTENT,
+//	          which Android 14+ grants only to alarm and calling apps — the
+//	          Play declaration is the app's). Unlocked and in use, the system
+//	          shows a heads-up instead. Snooze and Stop are notification
+//	          actions handled by the shell, with no Go running.
+//	iOS 26+   AlarmKit: the system alarm UI, over the lock screen and through
+//	          Silent mode and Focus, with Stop and (when Snooze > 0) Snooze,
+//	          which the system re-rings by itself. Needs
+//	          NSAlarmKitUsageDescription and the AlarmKit authorization.
+//	iOS < 26  The banner.
+//	Browser   The banner.
+//
+// A snooze pressed on the system's UI is the OS's to ring again; the app hears
+// about it the way it hears about every off-screen ring — OnNotificationTap if
+// the user opens the app from it, and a sweep's fired list — and the snoozed
+// notification keeps its ID, so a cancel or a sweep still reaches it.
+
 // LocalNotification is one banner to post. ID is required; Title and Body may
 // each be empty but not both.
 type LocalNotification struct {
@@ -113,6 +145,25 @@ type LocalNotification struct {
 	// immediately. See "Scheduled notifications" above for what each host
 	// promises.
 	At time.Time
+
+	// Alarm, when set, presents the notification as a ringing alarm where
+	// the app opted in and the user allowed it, and as a banner everywhere
+	// else. See "Alarms" above.
+	Alarm *NotificationAlarm
+}
+
+// NotificationAlarm is how an alarm-style notification behaves once it rings.
+// Both lengths are rounded to whole seconds on the wire; neither host can
+// time anything finer.
+type NotificationAlarm struct {
+	// Snooze is how long the system's Snooze button silences the alarm for.
+	// Zero leaves the button off, so Stop is the only answer.
+	Snooze time.Duration
+
+	// RingFor is how long the alarm rings unanswered before it stops by
+	// itself, on Android; zero means 10 minutes there. AlarmKit has no such
+	// setting, so on iOS the system decides how long an alarm rings.
+	RingFor time.Duration
 }
 
 // The two event names and the two commands, which are the whole wire
@@ -123,7 +174,12 @@ const (
 	hostEventNotificationTap = "notification_tap"
 	notificationPost         = "post"
 	notificationCancel       = "cancel"
+	notificationAnswered     = "answered"
 	notificationAt           = "at"
+	notificationAlarm        = "alarm"
+	notificationAlarmSnooze  = "snooze"
+	notificationAlarmRingFor = "ring_for"
+	notificationTapRinging   = "ringing"
 
 	notificationSweep          = "sweep"
 	hostEventNotificationSwept = "notification_swept"
@@ -150,7 +206,25 @@ func PostNotification(n LocalNotification) {
 	if !n.At.IsZero() && n.At.After(notificationNow()) {
 		payload[notificationAt] = n.At.UnixMilli()
 	}
+	if n.Alarm != nil {
+		payload[notificationAlarm] = n.Alarm.wire()
+	}
 	SendSystemEvent(systemEventNotification, payload)
+}
+
+// wire is the "alarm" object. Lengths travel as whole milliseconds, like "at",
+// rounded to the second (see NotificationAlarm). A zero or negative length is
+// left out rather than sent as 0, so a host has one spelling of "unset" — an
+// absent key — and never has to decide what a snooze of no time means.
+func (a NotificationAlarm) wire() map[string]any {
+	out := map[string]any{}
+	if s := a.Snooze.Round(time.Second); s > 0 {
+		out[notificationAlarmSnooze] = s.Milliseconds()
+	}
+	if r := a.RingFor.Round(time.Second); r > 0 {
+		out[notificationAlarmRingFor] = r.Milliseconds()
+	}
+	return out
 }
 
 // notificationNow is time.Now, replaceable by tests that need a fixed instant.
@@ -185,6 +259,56 @@ func OnNotificationTap(fn func(id string)) (cancel func()) {
 			return
 		}
 		fn(id)
+	})
+}
+
+// OnRingingAlarmTap subscribes fn to the taps OnNotificationTap hears that
+// landed on an alarm (LocalNotification.Alarm) while it was still ringing,
+// with the ID it was posted under. That includes the launch Android makes on
+// its own when an alarm rings on a locked or sleeping device: the full-screen
+// intent opens the app exactly as a tap would, and is reported as one.
+//
+// It is what lets an app take a ring over — show its own ringing screen, play
+// its own sound — from the system, which keeps ringing until the app cancels
+// the notification (CancelNotification). hooks.UseAlarms does both. The
+// ordinary subscribers hear the same tap; this one exists so that a tap on a
+// stale missed-alarm banner, which is not ringing, does not start a ring.
+//
+//	wire: "notification_tap" {id, ringing: true}   ringing absent or false
+//	                                               for every other tap
+//
+// Only Android reports ringing taps today. iOS's AlarmKit alert is the
+// system's own screen, with its own Stop and Snooze, and tells the app
+// nothing; an iOS banner chimes once and is never ringing when tapped.
+func OnRingingAlarmTap(fn func(id string)) (cancel func()) {
+	return OnHostEvent(hostEventNotificationTap, func(data map[string]any) {
+		id, _ := data["id"].(string)
+		ringing, _ := data[notificationTapRinging].(bool)
+		if id == "" || !ringing {
+			return
+		}
+		fn(id)
+	})
+}
+
+// AlarmAnswered tells the host that the ring the app took over from the alarm
+// notification id (see OnRingingAlarmTap) has been answered — dismissed,
+// snoozed or timed out on the app's own screen — so the host can undo what it
+// did to show the app for it. On Android that is showing over the lock
+// screen: a full-screen alarm brings the app up without unlocking, and it
+// stays up only until this call, after which the keyguard covers it again
+// rather than leaving the app open to whoever holds the phone. Elsewhere
+// there is nothing to undo and the call does nothing. hooks.UseAlarms calls
+// it; an app driving alarms by hand calls it once per takeover.
+//
+//	wire: "notification" {command: "answered", id}
+func AlarmAnswered(id string) {
+	if id == "" {
+		return
+	}
+	SendSystemEvent(systemEventNotification, map[string]any{
+		"command": notificationAnswered,
+		"id":      id,
 	})
 }
 

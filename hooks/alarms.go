@@ -49,6 +49,11 @@ type AlarmOptions struct {
 	// as notifications with the app suspended or closed. See "Off screen"
 	// on UseAlarms. The app asks for permission.Notifications itself; without
 	// it the OS drops the notifications silently.
+	//
+	// Each one is posted as an alarm (core.LocalNotification.Alarm, with this
+	// Snooze and RingFor), so in an app built with `"alarms": true` that also
+	// holds permission.Alarms it rings as a ringing screen rather than a
+	// banner; see "A ringing screen" on UseAlarms.
 	Notify bool
 
 	// NotifyText writes a scheduled notification's title and body. Nil uses
@@ -213,6 +218,12 @@ type alarmsRecord struct {
 	scheduled []string
 	awaySince time.Time
 
+	// takeovers maps an alarm the app took over from a ringing notification
+	// (takeOver) to that notification's id, until the alarm is silenced: its
+	// silence is the answer core.AlarmAnswered reports, which on Android
+	// lets the keyguard back over the app.
+	takeovers map[string]string
+
 	// sweepOnReturn is set when the hook mounted in the background: the
 	// sweep of a previous process's notifications waits for the first return
 	// to the foreground, because sweeping while away would cancel the alarms
@@ -282,10 +293,36 @@ func (o AlarmOptions) ringFor() time.Duration {
 // goroutine) keeps running in the background: without it the alarm would
 // ring twice at once, as a notification and as a sound from a hidden app.
 //
-// A notification is one banner with the platform's notification sound, not
-// a ringing screen with Snooze: tapping it opens the app, which is not
-// ringing. OnRing hears about each alarm the OS rang when the app returns,
-// so a one-time alarm is switched off the same way as one rung in the app.
+// OnRing hears about each alarm the OS rang when the app returns, so a
+// one-time alarm is switched off the same way as one rung in the app.
+//
+// # A ringing screen
+//
+// What the OS shows depends on the build and the platform (see "Alarms" in
+// core/notifications.go). Every notification this hook schedules is posted as
+// an alarm, and a host that cannot ring one posts the banner instead:
+//
+//	                     opted in + permission.Alarms      otherwise
+//	Android              rings until answered; opens the   banner, one chime
+//	                     app over the lock screen; Snooze
+//	                     and Stop on the notification
+//	iOS 26+              AlarmKit's alarm screen, with     banner, one chime
+//	                     Stop and Snooze
+//	iOS < 26, browser    banner, one chime
+//
+// When the user opens the app from an alarm that is still ringing — a tap, or
+// Android's full-screen launch on a locked phone — the hook takes the ring
+// over: Ringing() reports the alarm, Sound and Haptics start, and the OS's
+// notification is cancelled so its sound stops. The app's own ringing screen
+// is then the one on display, with this hook's Snooze and Dismiss. OnRing is
+// not called again for it; the return to the foreground (or the sweep, after a
+// cold launch) already reported it. A tap on a banner that has stopped
+// chiming opens the app without ringing, as before.
+//
+// A Snooze pressed on the system's screen belongs to the OS, which rings the
+// same notification again later; the hook does not see it, so Snoozed() does
+// not report it, and a sweep after a relaunch cancels it along with the rest
+// of the old process's notifications.
 //
 // An app that was closed rather than backgrounded lost that record with its
 // process, so the hook asks the host instead: when it mounts (or, if it
@@ -358,14 +395,26 @@ func UseAlarms(ctx *core.Context, alarms []alarm.Alarm, opts AlarmOptions) Alarm
 	stopLifecycle := core.OnLifecycle(func(state core.LifecycleState) {
 		rec.awayChanged(state == core.LifecycleBackground, time.Now())
 	})
+	// Taken at mount, during the first render, so the tap that cold-launched
+	// the app (Android's full-screen alarm) is heard: hosts report it after
+	// the runtime's first render (see core/notifications.go, "What a tap
+	// means"). Not gated on Notify for the reason the lifecycle subscription
+	// is not.
+	stopRingingTaps := core.OnRingingAlarmTap(func(id string) {
+		if rec.takeOver(id, time.Now()) {
+			ctx.RequestRender()
+		}
+	})
 
 	done := make(chan struct{})
 	ctx.OnClose(func() {
 		close(done)
 		stopLifecycle()
+		stopRingingTaps()
 		rec.mu.Lock()
 		rec.started = false
 		rec.silence()
+		rec.answerTakeovers()
 		rec.mu.Unlock()
 	})
 
@@ -488,14 +537,35 @@ func (r *alarmsRecord) keepRinging(now time.Time) {
 
 // silence stops the ringing alarm, if any. Called with mu held. The queue is
 // left alone: an alarm waiting behind this one rings on the next check.
+//
+// An alarm the app took over from the OS is answered here, whichever way it
+// ends (Snooze, Dismiss, RingFor, leaving the screen), and the host is told
+// so (core.AlarmAnswered). That call is a system event made under mu, as
+// AudioStop below is: both are fire-and-forget into the host, which never
+// calls back into this hook on the same stack.
 func (r *alarmsRecord) silence() {
 	if r.ringing == nil {
 		return
+	}
+	if id, ok := r.takeovers[r.ringing.ID]; ok {
+		delete(r.takeovers, r.ringing.ID)
+		core.AlarmAnswered(id)
 	}
 	r.ringing = nil
 	if r.opts.Sound.URL != "" {
 		core.AudioStop()
 	}
+}
+
+// answerTakeovers reports every takeover still recorded as answered, for the
+// moments the queue behind the ringing alarm is dropped (leaving the screen,
+// unmounting): an alarm that will now never ring here must not keep the app
+// over the lock screen. Called with mu held, after silence.
+func (r *alarmsRecord) answerTakeovers() {
+	for _, id := range r.takeovers {
+		core.AlarmAnswered(id)
+	}
+	r.takeovers = nil
 }
 
 // awayChanged records a move into or out of the background and, with Notify
@@ -567,6 +637,7 @@ func (r *alarmsRecord) setAway(away bool, now time.Time) (rangAway []alarm.Alarm
 		// is simply answered.
 		r.silence()
 		r.queue = nil
+		r.answerTakeovers()
 		post = r.notifications(now)
 		for _, n := range post {
 			r.scheduled = append(r.scheduled, n.ID)
@@ -672,9 +743,90 @@ func (r *alarmsRecord) notifications(now time.Time) []core.LocalNotification {
 			Title: title,
 			Body:  body,
 			At:    d.at,
+			// The OS's ringing screen snoozes and gives up after the same
+			// lengths as the in-app ringer, so an alarm behaves alike
+			// whichever of the two answers it.
+			Alarm: &core.NotificationAlarm{Snooze: r.opts.snooze(), RingFor: r.opts.ringFor()},
 		})
 	}
 	return out
+}
+
+// takeOver moves a ring the OS is making into the app: the alarm named by a
+// ringing notification id starts ringing here (or waits its turn behind the
+// one that already is), and the notification is cancelled, which on Android
+// stops its insistent sound. It reports whether there is anything new to
+// render. See "A ringing screen" on UseAlarms.
+//
+//	OS: alarm notification ringing ──tap / full-screen launch──▶ app
+//	    takeOver(id): ringing = alarm, sound + haptics ─┬─▶ Ringing() shows it
+//	                  CancelNotification(id) ───────────┘   OS sound stops
+//
+// An id that is not this configuration's, or whose alarm is no longer in the
+// list, is left alone: the OS keeps ringing it, which is better than an alarm
+// that falls silent with nothing on screen to answer it. A tap on the alarm
+// that is already ringing here only cancels the notification.
+//
+// ringSince is the takeover, not the original ring: RingFor counts how long
+// the app's own screen has gone unanswered. OnRing is not called; see
+// UseAlarms.
+func (r *alarmsRecord) takeOver(id string, now time.Time) bool {
+	r.mu.Lock()
+	a, ok := r.alarmFromNotifyID(id)
+	if ok {
+		if r.takeovers == nil {
+			r.takeovers = map[string]string{}
+		}
+		r.takeovers[a.ID] = id
+	}
+	changed := false
+	switch {
+	case !ok:
+	case r.ringing == nil:
+		r.ringing = &a
+		r.ringSince = now
+		if r.opts.Sound.URL != "" {
+			core.AudioLoad(r.opts.Sound, core.AudioAutoplay(true))
+		}
+		if r.opts.Haptics {
+			core.Haptic(core.HapticHeavy)
+		}
+		changed = true
+	case r.ringing.ID != a.ID && !slices.ContainsFunc(r.queue, func(q alarm.Alarm) bool { return q.ID == a.ID }):
+		// Two alarms close together: the second waits, as it would have in
+		// the app, rather than being dropped with its notification.
+		r.queue = append(r.queue, a)
+	}
+	r.mu.Unlock()
+	if ok {
+		// Outside mu, like every call into the host (see awayChanged).
+		core.CancelNotification(id)
+	}
+	return changed
+}
+
+// alarmFromNotifyID finds the alarm a notification id of this configuration
+// names, in the current list whether or not it is still enabled (a one-time
+// alarm is switched off by OnRing before its tap can arrive). Called with mu
+// held.
+func (r *alarmsRecord) alarmFromNotifyID(id string) (alarm.Alarm, bool) {
+	rest, ok := strings.CutPrefix(id, r.opts.notifyPrefix())
+	if !ok {
+		return alarm.Alarm{}, false
+	}
+	dot := strings.LastIndexByte(rest, '.')
+	if dot <= 0 {
+		return alarm.Alarm{}, false
+	}
+	if _, ok := notifyInstant(rest); !ok {
+		return alarm.Alarm{}, false
+	}
+	for _, a := range r.alarms {
+		if a.ID == rest[:dot] {
+			return a, true
+		}
+	}
+	return alarm.Alarm{}, false
 }
 
 // sweepPrevious cancels every alarm notification a previous process left with

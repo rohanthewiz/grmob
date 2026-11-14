@@ -11,6 +11,7 @@ One of 11 topic pages of [package core](core.md), which has the package overview
 ## Index
 
 - [Constants](#constants) — `DefaultMapZoom`
+- [`func AlarmAnswered`](#func-alarmanswered)
 - [`func AngleDelta`](#func-angledelta)
 - [`func AudioLoad`](#func-audioload)
 - [`func AudioPause`](#func-audiopause)
@@ -41,6 +42,7 @@ One of 11 topic pages of [package core](core.md), which has the package overview
 - [`func OnMarkerTap`](#func-onmarkertap)
 - [`func OnNotificationTap`](#func-onnotificationtap)
 - [`func OnRegionChange`](#func-onregionchange)
+- [`func OnRingingAlarmTap`](#func-onringingalarmtap)
 - [`func OnWindow`](#func-onwindow)
 - [`func ParseLatLng`](#func-parselatlng)
 - [`func PostNotification`](#func-postnotification)
@@ -91,6 +93,7 @@ One of 11 topic pages of [package core](core.md), which has the package overview
 - [`type LocalNotification`](#type-localnotification)
 - [`type Location`](#type-location)
     - [`func CurrentLocation`](#func-currentlocation)
+- [`type NotificationAlarm`](#type-notificationalarm)
 - [`type Posture`](#type-posture)
 - [`type Region`](#type-region)
     - [`func ParseRegion`](#func-parseregion)
@@ -118,6 +121,18 @@ const DefaultMapZoom = 14.0
 <small>[core/mapview.go:182](https://github.com/rohanthewiz/grmob/blob/master/core/mapview.go#L182)</small>
 
 ## Functions
+
+### func AlarmAnswered
+
+```go
+func AlarmAnswered(id string)
+```
+
+AlarmAnswered tells the host that the ring the app took over from the alarm notification id (see OnRingingAlarmTap) has been answered — dismissed, snoozed or timed out on the app's own screen — so the host can undo what it did to show the app for it. On Android that is showing over the lock screen: a full-screen alarm brings the app up without unlocking, and it stays up only until this call, after which the keyguard covers it again rather than leaving the app open to whoever holds the phone. Elsewhere there is nothing to undo and the call does nothing. hooks.UseAlarms calls it; an app driving alarms by hand calls it once per takeover.
+
+	wire: "notification" {command: "answered", id}
+
+<small>[core/notifications.go:305](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L305)</small>
 
 ### func AngleDelta
 
@@ -229,7 +244,7 @@ func CancelNotification(id string)
 
 CancelNotification takes down the notification posted under id, whether it is still on screen or already in the notification list. Cancelling one that is not there is harmless on every host.
 
-<small>[core/notifications.go:162](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L162)</small>
+<small>[core/notifications.go:236](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L236)</small>
 
 ### func Cardinal
 
@@ -528,7 +543,7 @@ OnNotificationTap subscribes fn to taps on the app's notifications; fn receives 
 
 Like OnDeepLink, a typed wrapper over OnHostEvent and nothing more: core keeps no record of taps, because a tap is an instruction ("show me this") rather than a state anyone reads later. fn runs on the goroutine that delivered the host event and must not block. An empty or absent id is dropped — a subscriber cannot route a tap it cannot identify.
 
-<small>[core/notifications.go:181](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L181)</small>
+<small>[core/notifications.go:255](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L255)</small>
 
 ### func OnRegionChange
 
@@ -543,6 +558,23 @@ OnRegionChange reports where the user moved the map to, after they stop moving i
 The region arrives through the text callback channel as "lat,lng,zoom", which is how Slider's float crosses and why no new bridge channel was added for this node. A payload that does not parse is dropped rather than delivered as zeros: 0,0 is a real place, and an app that centred on it because of a formatting bug in one host would be looking at the Gulf of Guinea with no error anywhere.
 
 <small>[core/mapview.go:241](https://github.com/rohanthewiz/grmob/blob/master/core/mapview.go#L241)</small>
+
+### func OnRingingAlarmTap
+
+```go
+func OnRingingAlarmTap(fn func(id string)) (cancel func())
+```
+
+OnRingingAlarmTap subscribes fn to the taps OnNotificationTap hears that landed on an alarm (LocalNotification.Alarm) while it was still ringing, with the ID it was posted under. That includes the launch Android makes on its own when an alarm rings on a locked or sleeping device: the full-screen intent opens the app exactly as a tap would, and is reported as one.
+
+It is what lets an app take a ring over — show its own ringing screen, play its own sound — from the system, which keeps ringing until the app cancels the notification (CancelNotification). hooks.UseAlarms does both. The ordinary subscribers hear the same tap; this one exists so that a tap on a stale missed-alarm banner, which is not ringing, does not start a ring.
+
+	wire: "notification_tap" {id, ringing: true}   ringing absent or false
+	                                               for every other tap
+
+Only Android reports ringing taps today. iOS's AlarmKit alert is the system's own screen, with its own Stop and Snooze, and tells the app nothing; an iOS banner chimes once and is never ringing when tapped.
+
+<small>[core/notifications.go:283](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L283)</small>
 
 ### func OnWindow
 
@@ -574,7 +606,7 @@ func PostNotification(n LocalNotification)
 
 PostNotification asks the host to show n — now, or at n.At — replacing any notification already showing or scheduled under the same ID. Dropped without an ID or without any text; see the file comment for why the ID is required and for permissions.
 
-<small>[core/notifications.go:135](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L135)</small>
+<small>[core/notifications.go:191](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L191)</small>
 
 ### func ReadClipboard
 
@@ -743,7 +775,7 @@ SweepNotifications cancels every notification still scheduled under an ID beginn
 
 An empty prefix is refused (fn runs with no ids and nothing is sent): sweeping everything would take down notifications this caller never posted. With no host registered fn runs at once on the caller's goroutine, as ReadClipboard's does; otherwise on the goroutine that delivers the reply.
 
-<small>[core/notifications.go:246](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L246)</small>
+<small>[core/notifications.go:370](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L370)</small>
 
 ### func WrapLongitude
 
@@ -1226,12 +1258,17 @@ type LocalNotification struct {
 	// immediately. See "Scheduled notifications" above for what each host
 	// promises.
 	At time.Time
+
+	// Alarm, when set, presents the notification as a ringing alarm where
+	// the app opted in and the user allowed it, and as a banner everywhere
+	// else. See "Alarms" above.
+	Alarm *NotificationAlarm
 }
 ```
 
 LocalNotification is one banner to post. ID is required; Title and Body may each be empty but not both.
 
-<small>[core/notifications.go:103](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L103)</small>
+<small>[core/notifications.go:135](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L135)</small>
 
 ### type Location
 
@@ -1313,6 +1350,25 @@ func CurrentLocation() Location
 CurrentLocation returns the last fix, exactly as it arrived — the notification filter does not apply here. Safe from any goroutine.
 
 <small>[core/location.go:278](https://github.com/rohanthewiz/grmob/blob/master/core/location.go#L278)</small>
+
+### type NotificationAlarm
+
+```go
+type NotificationAlarm struct {
+	// Snooze is how long the system's Snooze button silences the alarm for.
+	// Zero leaves the button off, so Stop is the only answer.
+	Snooze time.Duration
+
+	// RingFor is how long the alarm rings unanswered before it stops by
+	// itself, on Android; zero means 10 minutes there. AlarmKit has no such
+	// setting, so on iOS the system decides how long an alarm rings.
+	RingFor time.Duration
+}
+```
+
+NotificationAlarm is how an alarm-style notification behaves once it rings. Both lengths are rounded to whole seconds on the wire; neither host can time anything finer.
+
+<small>[core/notifications.go:158](https://github.com/rohanthewiz/grmob/blob/master/core/notifications.go#L158)</small>
 
 ### type Posture
 

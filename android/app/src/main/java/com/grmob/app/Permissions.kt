@@ -149,6 +149,10 @@ object Permissions {
         // status() and request() answer it by their own arm — see
         // [exactAlarmStatus].
         "exact_alarms" to emptyArray(),
+        // Empty for the same reason: USE_FULL_SCREEN_INTENT is a normal
+        // permission below 14 and a special app access from 14, never a
+        // dialog. Answered by [alarmStatus].
+        "alarms" to emptyArray(),
     )
 
     private var activity: ComponentActivity? = null
@@ -285,6 +289,24 @@ object Permissions {
             send(kind, current)
             return
         }
+        // Alarms: the same shape as exact alarms — a Settings page from 14,
+        // opened only when it can change the answer ("denied"; "unavailable"
+        // is a build without the declaration, where the page has no switch
+        // for this app).
+        if (kind == "alarms") {
+            if (current == "denied" && Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                try {
+                    host.startActivity(
+                        Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
+                            Uri.parse("package:" + host.packageName)),
+                    )
+                } catch (e: Exception) {
+                    Log.w(TAG, "cannot open the full-screen-intent settings page", e)
+                }
+            }
+            send(kind, current)
+            return
+        }
         // A kind with no runtime permission (notifications below 13) has no
         // dialog either: launching an empty request would answer "denied"
         // whatever the switch says, so the current status is the answer.
@@ -318,6 +340,7 @@ object Permissions {
             return if (NotificationManagerCompat.from(app).areNotificationsEnabled()) "granted" else "denied"
         }
         if (app != null && kind == "exact_alarms") return exactAlarmStatus(app)
+        if (app != null && kind == "alarms") return alarmStatus(app)
         val host = activity ?: return "unavailable"
         if (wanted.isEmpty() || !declared(host, wanted)) return "unavailable"
 
@@ -348,6 +371,24 @@ object Permissions {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return "granted"
         val alarms = context.getSystemService(AlarmManager::class.java) ?: return "denied"
         return if (alarms.canScheduleExactAlarms()) "granted" else "denied"
+    }
+
+    /**
+     * permission.Alarms: whether an alarm notification may open the app over
+     * the lock screen — the question Notifications.kt asks before it sets a
+     * full-screen intent, answered by the same function so the two agree.
+     *
+     *     USE_FULL_SCREEN_INTENT not declared   -> unavailable (not opted in)
+     *     API < 34, declared                    -> granted
+     *     canUseFullScreenIntent() true          -> granted
+     *     otherwise                              -> denied
+     *
+     * Never "prompt", for the reason [exactAlarmStatus] gives.
+     */
+    private fun alarmStatus(context: Context): String = when {
+        !Notifications.alarmsDeclared(context) -> "unavailable"
+        Notifications.canUseFullScreenIntent(context) -> "granted"
+        else -> "denied"
     }
 
     /**

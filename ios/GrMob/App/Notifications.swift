@@ -63,6 +63,15 @@ import UserNotifications
 /// Entries more than a week past their time are pruned whenever the record is
 /// written.
 ///
+/// # Alarms
+///
+/// A post carrying `alarm` ({snooze?, ring_for?} in ms) is handed to AlarmKit
+/// when Alarms.usable says it can be — iOS 26+, the opt-in usage key, and the
+/// user's authorization — and is the banner otherwise. An alarm is recorded
+/// like any scheduled post, so a sweep reports it, and cancel and sweep reach
+/// it through Alarms as well as through the notification center. `ring_for`
+/// is not used: AlarmKit rings until the system's own limit. See Alarms.swift.
+///
 /// Authorization is the permission package's (Permissions.swift). A post the
 /// user has not allowed is dropped by the system without an error, which is
 /// the contract core documents.
@@ -119,11 +128,20 @@ final class Notifications: NSObject, UNUserNotificationCenterDelegate {
             // JSONSerialization hands a number back as NSNumber whatever its
             // Go type was.
             let at = (data["at"] as? NSNumber).map { Date(timeIntervalSince1970: $0.doubleValue / 1000) }
-            post(id: id, title: data["title"] as? String ?? "", body: data["body"] as? String ?? "", at: at)
+            let title = data["title"] as? String ?? ""
+            let body = data["body"] as? String ?? ""
+            if let alarm = data["alarm"] as? [String: Any], Alarms.usable {
+                postAlarm(id: id, title: title, body: body, at: at, alarm: alarm)
+                return
+            }
+            post(id: id, title: title, body: body, at: at)
         case "cancel":
             let center = UNUserNotificationCenter.current()
             center.removePendingNotificationRequests(withIdentifiers: [id])
             center.removeDeliveredNotifications(withIdentifiers: [id])
+            // Whichever way it was posted: a banner then, an alarm now, or the
+            // reverse after the authorization changed.
+            Alarms.cancel(id: id)
             forget(id)
         default:
             break
@@ -159,6 +177,20 @@ final class Notifications: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
+    /// Posts `id` as an AlarmKit alarm (see "Alarms"). A banner pending or shown
+    /// under the id is taken down first, as a re-post replaces one on every
+    /// host. The record is written for a future time, as for a scheduled
+    /// banner, so a sweep can report it.
+    private func postAlarm(id: String, title: String, body: String, at: Date?, alarm: [String: Any]) {
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: [id])
+        center.removeDeliveredNotifications(withIdentifiers: [id])
+        let when = at ?? Date()
+        if when > Date() { remember(id, at: when) } else { forget(id) }
+        let snooze = ((alarm["snooze"] as? NSNumber)?.doubleValue ?? 0) / 1000
+        Alarms.schedule(id: id, title: title, body: body, at: when, snooze: snooze)
+    }
+
     /// Cancels what is still pending under `prefix` and reports the recorded
     /// ids whose time had come; delivered banners stay. See "The scheduled
     /// record, and sweeping".
@@ -169,6 +201,9 @@ final class Notifications: NSObject, UNUserNotificationCenterDelegate {
         let fired = matched.filter { $0.value <= now }.map(\.key).sorted()
         if !matched.isEmpty {
             UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: Array(matched.keys))
+            // The same ids as alarms, if they were posted as alarms; one that
+            // is ringing right now stays, like a delivered banner.
+            Alarms.sweep(ids: Array(matched.keys))
             record = all.filter { !$0.key.hasPrefix(prefix) }
         }
         guard let data = try? JSONSerialization.data(withJSONObject: ["request": request, "fired": fired]),

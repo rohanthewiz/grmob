@@ -185,12 +185,16 @@ func urlScheme(cfg appConfig) string { return strings.ToLower(cfg.ID) }
 // namespace (and the Kotlin package) stays com.grmob.app, because it names the
 // shell's own classes, not the app, and Android allows the two to differ.
 //
-// The permission declarations are left as they are. Android declarations carry
-// no user-facing text, and removing one makes permission.Request answer
-// "unavailable" for it — a build-time fact an app should choose to create, not
-// inherit from a scaffold.
+// The permission declarations are left as they are, with one exception.
+// Android declarations carry no user-facing text, and removing one makes
+// permission.Request answer "unavailable" for it — a build-time fact an app
+// should choose to create, not inherit from a scaffold. The exception is
+// USE_FULL_SCREEN_INTENT (permission.Alarms), which runs the other way: Play
+// asks every app that declares it to justify it, and grants it only to alarm
+// clocks and calling apps, so an app has to choose to have it. It is removed
+// unless grmob.json says "alarms": true (see appConfig.Alarms).
 func androidPatches(cfg appConfig) []patch {
-	return []patch{
+	patches := []patch{
 		{"app/build.gradle", replaceOnce(`applicationId = "com.grmob.app"`, `applicationId = "`+cfg.ID+`"`)},
 		{"app/src/main/AndroidManifest.xml", replaceOnce(`android:label="GrMob"`, `android:label="`+xmlEscape(cfg.Name)+`"`)},
 		{"app/src/main/AndroidManifest.xml", replaceOnce(`<data android:scheme="grmob" />`, `<data android:scheme="`+urlScheme(cfg)+`" />`)},
@@ -200,7 +204,17 @@ func androidPatches(cfg appConfig) []patch {
 		// path is the demo's, so it goes too.
 		{"app/src/main/AndroidManifest.xml", replaceOnce(`-d "grmob://lesson/4.12"`, `-d "`+urlScheme(cfg)+`://"`)},
 	}
+	if !cfg.Alarms {
+		// The comment above the declaration goes with it: it explains a line
+		// the app no longer has.
+		patches = append(patches, patch{"app/src/main/AndroidManifest.xml",
+			removeLines("<!-- permission.Alarms", `<uses-permission android:name="`+fullScreenIntent+`" />`)})
+	}
+	return patches
 }
+
+// fullScreenIntent is the Android permission behind permission.Alarms.
+const fullScreenIntent = "android.permission.USE_FULL_SCREEN_INTENT"
 
 // iosUsageKeys are the permission prompts' usage descriptions in project.yml,
 // and what the app is said to use for each.
@@ -219,6 +233,9 @@ var iosUsageKeys = []struct{ key, use string }{
 	{"NSLocationWhenInUseUsageDescription", "your location"},
 	{"NSPhotoLibraryUsageDescription", "your photo library"},
 }
+
+// alarmKitUsageKey is the Info.plist key AlarmKit requires (permission.Alarms).
+const alarmKitUsageKey = "NSAlarmKitUsageDescription"
 
 // iosPatches set the app's identity in project.yml. The target stays
 // GrMobApp (it names the Xcode target and scheme this command builds); the
@@ -262,6 +279,18 @@ func iosPatches(cfg appConfig) []patch {
 	for _, u := range iosUsageKeys {
 		patches = append(patches, patch{"project.yml",
 			replaceLine(u.key+":", u.key+": "+strconv.Quote(cfg.Name+" uses "+u.use+" when you allow it."))})
+	}
+	// AlarmKit's usage key is the app's to choose (see appConfig.Alarms): kept
+	// and rewritten for an app that rings alarms, removed with its comment for
+	// every other. Removing it is safe where removing the others is not: the
+	// iOS shell checks for the key before it asks (Permissions.swift), and
+	// answers permission.Alarms "unavailable" without it rather than crashing.
+	if cfg.Alarms {
+		patches = append(patches, patch{"project.yml",
+			replaceLine(alarmKitUsageKey+":", alarmKitUsageKey+": "+strconv.Quote(cfg.Name+" rings the alarms you set, even when your phone is locked or silenced."))})
+	} else {
+		patches = append(patches, patch{"project.yml",
+			removeLines("# permission.Alarms", alarmKitUsageKey+":")})
 	}
 	// Order matters for the last one: "GrMobUITests: [test]" is only unique by
 	// its full text, and the target block removed first is the other line

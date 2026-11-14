@@ -61,6 +61,11 @@ targets:
         NSMicrophoneUsageDescription: Demonstrates permission.Microphone. Nothing is recorded or stored.
         NSLocationWhenInUseUsageDescription: Demonstrates permission.Location, and lets the compass report true north instead of magnetic north.
         NSPhotoLibraryUsageDescription: Demonstrates permission.Storage. Nothing is read or written.
+        # permission.Alarms (App/Notifications.swift, AlarmKit on iOS 26+).
+        # `grmob ios` keeps this key only for an app with "alarms": true in
+        # grmob.json, and removes it with this comment otherwise; without it
+        # the shell answers Alarms "unavailable" instead of asking.
+        NSAlarmKitUsageDescription: Demonstrates permission.Alarms. An alarm set in the tutorial rings on the lock screen.
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: com.grmob.demo
       # gomobile's generated glue is Objective-C; the app is Swift-only, but

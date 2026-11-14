@@ -74,6 +74,15 @@
     <!-- Lets NotificationBootReceiver re-arm scheduled notifications after a
          reboot. A normal permission: granted at install, never prompted. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- permission.Alarms (app/Notifications.kt, "Alarms"): an alarm
+         notification opens the app over the lock screen when the device is
+         locked or asleep. Android 14+ grants it at install only to apps whose
+         Play listing declares an alarm-clock or calling core function; others
+         get a Settings switch, and without either the alarm is a heads-up
+         that rings instead. `grmob android` keeps this line only for an app
+         with "alarms": true in grmob.json, and removes it with this comment
+         otherwise (cmd/grmob/native.go, androidPatches). -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
 
     <!-- enableOnBackInvokedCallback opts in to predictive back: on Android 13+
          a back gesture previews its destination (the home screen, from the
@@ -171,6 +180,12 @@
              only this app's own PendingIntents reach it. -->
         <receiver
             android:name=".NotificationAlarmReceiver"
+            android:exported="false" />
+
+        <!-- Snooze and Stop on a ringing alarm (Notifications.kt, "Alarms").
+             Not exported, for the same reason as the receiver above. -->
+        <receiver
+            android:name=".NotificationActionReceiver"
             android:exported="false" />
 
         <!-- Re-arms scheduled notifications after a reboot or an update, both

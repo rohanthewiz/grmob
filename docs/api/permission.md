@@ -76,7 +76,7 @@ Check asks what the platform currently says about p, without prompting.
 
 Safe on mount and safe to repeat, which is what makes it the right call on a lifecycle change: a user can grant or revoke a permission in the system settings and come back, and nothing tells an app that happened. Re-checking when core.CurrentLifecycle returns to "active" is how a screen notices, and WatchForeground is that arrangement written once — one check per permission per resume however many screens are watching. hooks.UsePermissionLive is this and the mount check together, and is what most callers want.
 
-<small>[permission/permission.go:309](https://github.com/rohanthewiz/grmob/blob/master/permission/permission.go#L309)</small>
+<small>[permission/permission.go:338](https://github.com/rohanthewiz/grmob/blob/master/permission/permission.go#L338)</small>
 
 ### func IsGranted
 
@@ -88,7 +88,7 @@ Granted reports whether p is usable right now. Sugar for the comparison every ca
 
 Note which way the unknown cases fall: only Granted is true, so a status that has not come back yet is treated as not-yet-usable rather than optimistically allowed. That is the safe direction — the alternative reaches for a camera the OS has not opened.
 
-<small>[permission/permission.go:351](https://github.com/rohanthewiz/grmob/blob/master/permission/permission.go#L351)</small>
+<small>[permission/permission.go:380](https://github.com/rohanthewiz/grmob/blob/master/permission/permission.go#L380)</small>
 
 ### func On
 
@@ -102,7 +102,7 @@ fn runs on whichever goroutine delivered the host event — a bridge call on the
 
 Only \*changes\* notify. A host that answers a Check with the status already on record — which is every repeat check on an unchanged permission, and a lifecycle-driven re-check is mostly those — reaches here and stops, so the screen does not re-render for news that is not news.
 
-<small>[permission/permission.go:366](https://github.com/rohanthewiz/grmob/blob/master/permission/permission.go#L366)</small>
+<small>[permission/permission.go:395](https://github.com/rohanthewiz/grmob/blob/master/permission/permission.go#L395)</small>
 
 ### func Receive
 
@@ -114,7 +114,7 @@ Receive is the typed entry point for a host that builds the answer in Go — a t
 
 It validates exactly as the JSON path does rather than trusting a typed caller: the two constants are strings, so a typed caller can produce the same nonsense a malformed payload can.
 
-<small>[permission/permission.go:422](https://github.com/rohanthewiz/grmob/blob/master/permission/permission.go#L422)</small>
+<small>[permission/permission.go:451](https://github.com/rohanthewiz/grmob/blob/master/permission/permission.go#L451)</small>
 
 ### func Request
 
@@ -130,7 +130,7 @@ Call it from a user gesture. Every platform here either requires that (a browser
 
 Requesting something already Granted is harmless and re-reports the same status; requesting something Denied usually shows nothing at all, which is what Denied's doc is about.
 
-<small>[permission/permission.go:298](https://github.com/rohanthewiz/grmob/blob/master/permission/permission.go#L298)</small>
+<small>[permission/permission.go:327](https://github.com/rohanthewiz/grmob/blob/master/permission/permission.go#L327)</small>
 
 ### func WatchForeground
 
@@ -250,6 +250,35 @@ const (
 	// on; an exact alarm with banners refused rings nothing, and a banner
 	// without exact alarms rings late.
 	ExactAlarms Permission = "exact_alarms"
+
+	// Alarms is whether a scheduled alarm (core.LocalNotification with an
+	// Alarm, which hooks.UseAlarms posts with Notify) rings as an alarm clock
+	// does — a screen over the lock screen, ringing until answered — rather
+	// than as a banner. Without it the host posts the banner, so an app that
+	// never asks still rings, just less insistently.
+	//
+	// It exists only in apps built with `"alarms": true` in grmob.json, which
+	// keeps the platform declarations below in the exported shell; anywhere
+	// else the answer is Unavailable. Both platforms gate the capability on
+	// what the app is for (see core/notifications.go, "Alarms"), which is why
+	// it is opt-in rather than in every app.
+	//
+	//	iOS       26+: AlarmManager.authorizationState, and requestAuthorization
+	//	          to ask (a dialog). Below 26, or with no
+	//	          NSAlarmKitUsageDescription, Unavailable.
+	//	Android   USE_FULL_SCREEN_INTENT. Not declared: Unavailable. Below 34 it
+	//	          is granted with the declaration. From 34,
+	//	          NotificationManager.canUseFullScreenIntent(): Play grants it
+	//	          at install to apps whose declared core function is an alarm
+	//	          clock or calling, and to others it is a Settings page, so —
+	//	          like ExactAlarms — Request opens the page, the answer is
+	//	          Granted or Denied, and UsePermissionLive hears the change.
+	//	Browser   Unavailable: a page cannot ring over the lock screen.
+	//
+	// The ringing itself needs Notifications as well on Android, where the
+	// alarm is a notification; on iOS AlarmKit's authorization is the whole
+	// answer.
+	Alarms Permission = "alarms"
 )
 ```
 
@@ -263,7 +292,7 @@ Permissions returns every declared Permission, in declaration order.
 
 Pinned to the const block above by permission\_enum\_test.go and consumed by the host coverage checks, on the same footing as core.Roles(): a host that has no arm for a permission drops it silently, which on this bridge is indistinguishable from a user who has not answered yet.
 
-<small>[permission/permission.go:174](https://github.com/rohanthewiz/grmob/blob/master/permission/permission.go#L174)</small>
+<small>[permission/permission.go:203](https://github.com/rohanthewiz/grmob/blob/master/permission/permission.go#L203)</small>
 
 ### type PermissionStatus
 
@@ -275,7 +304,7 @@ PermissionStatus is the name this type had when the package was a vocabulary wit
 
 Deprecated: use Status. permission.PermissionStatus stutters, and the alias costs one line where a rename would break an import that may exist outside this repository.
 
-<small>[permission/permission.go:187](https://github.com/rohanthewiz/grmob/blob/master/permission/permission.go#L187)</small>
+<small>[permission/permission.go:216](https://github.com/rohanthewiz/grmob/blob/master/permission/permission.go#L216)</small>
 
 ### type Status
 
@@ -285,7 +314,7 @@ type Status string
 
 Status is what the platform says about one Permission.
 
-<small>[permission/permission.go:179](https://github.com/rohanthewiz/grmob/blob/master/permission/permission.go#L179)</small>
+<small>[permission/permission.go:208](https://github.com/rohanthewiz/grmob/blob/master/permission/permission.go#L208)</small>
 
 ```go
 const (
@@ -351,7 +380,7 @@ func Current(p Permission) Status
 
 Current returns the last status recorded for p, or Unknown if none. Safe from any goroutine.
 
-<small>[permission/permission.go:337](https://github.com/rohanthewiz/grmob/blob/master/permission/permission.go#L337)</small>
+<small>[permission/permission.go:366](https://github.com/rohanthewiz/grmob/blob/master/permission/permission.go#L366)</small>
 
 #### func Statuses
 
@@ -363,5 +392,5 @@ Statuses returns every status a host can report, in declaration order.
 
 Unknown is excluded for the reason core.RoleNone is excluded from Roles(): it is the field's zero value rather than one of the answers, no host has an arm for it, and a coverage check that demanded one would be asking each platform to implement "we have not asked yet".
 
-<small>[permission/permission.go:249](https://github.com/rohanthewiz/grmob/blob/master/permission/permission.go#L249)</small>
+<small>[permission/permission.go:278](https://github.com/rohanthewiz/grmob/blob/master/permission/permission.go#L278)</small>
 

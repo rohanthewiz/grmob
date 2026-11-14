@@ -36,13 +36,10 @@ with each item's `raised` traced back through all session docs.
 - In the seed, a non-goal's `declined` stem is where the item was first
   raised; the decision itself may have come in a later doc.
 
-**Next ID:** N-148
+**Next ID:** N-152
 
 ## Open
 
-- **N-009** · raised `2026-0916-1032-clocks-canvas-alarm` · value low
-  **A Notify alarm is a banner, not a ringing screen.** The route is AlarmKit
-  or full-screen intents. (was #15; lapsed@0917-1659)
 - **N-015** · raised `2026-0916-1229-next-list-exact-alarms-boot-rearm-and-sweeps` · value low (user's decision)
   **Compose Rows don't shrink children in proportion.** Seen on the Fold6's
   cover screen. (was #18; lapsed@0917-1659)
@@ -241,6 +238,24 @@ with each item's `raised` traced back through all session docs.
   scroll container, perhaps) taking focus with no text. Check other lessons
   with a code block, find the node, and give it a name or take it out of
   the walk.
+- **N-149** · raised `2026-1114-0017-n009-ringing-alarms-alarmkit-full-screen-intent` · value low
+  **A snooze pressed on the OS's alarm is invisible to UseAlarms.** Android's
+  notification Snooze and AlarmKit's Snooze re-ring the same id by
+  themselves. `AlarmRinger.Snoozed()` does not report it, and a relaunch's
+  sweep cancels it with the dead process's other notifications, so a snooze
+  pending across a relaunch is lost. Options: report snoozes in the sweep's
+  reply (`snoozed: [{id, at}]`) and fold them into the hook's snoozes, or
+  have the sweep leave snoozed entries alone.
+- **N-150** · raised `2026-1114-0017-n009-ringing-alarms-alarmkit-full-screen-intent` · value low
+  **An Android alarm that rings out leaves no missed-alarm record.**
+  `setTimeoutAfter(ring_for)` removes the notification, so unlike a banner
+  nothing stays in the shade. OnRing still hears about it on return. A
+  quiet "Missed alarm" banner posted on timeout would restore the record.
+- **N-151** · raised `2026-1114-0017-n009-ringing-alarms-alarmkit-full-screen-intent` · value medium
+  **`TestComposeDoesNotRepeatWhatALabelledGroupAlreadySaid` fails at HEAD.**
+  762584b (N-101) changed `Renderer.kt`'s RenderNode and `spokenByLabel`
+  (`ownStop`, the phrase split), and `mobile/verify/group_echo_test.go`
+  still pins the old lines. Update the pinned strings to the new code.
 
 ## Validate
 
@@ -852,6 +867,14 @@ defect, which then becomes its own Open item.
   VoiceOver, and the 2026-10-10 XCUITest tree listed "Ben" and "1h" as
   nodes of their own, which does not fit a combine. Hear it on a device, or
   check what that XCUITest tree really showed.
+- **N-148** · raised `2026-1114-0017-n009-ringing-alarms-alarmkit-full-screen-intent` · value medium
+  **Ringing alarms on hardware.** Seen on the API 36 emulators and the iOS
+  26.5 simulator (see N-009 in Closed). Still to see: the Fold6 behind a PIN
+  (a secure keyguard: the app shows over it, and Dismiss puts it back), on
+  the cover screen and folded, with a real alarm volume and Do Not Disturb.
+  Also a real iPhone on iOS 26.0, the one release that takes the Stop
+  button from the app (`Alarms.alert`), and on 17–25, where the build must
+  launch (AlarmKit is weak-linked) and post banners.
 
 ## Roadmap
 
@@ -985,6 +1008,29 @@ defect, which then becomes its own Open item.
 
 ## Closed
 
+- **N-009** · raised `2026-0916-1032-clocks-canvas-alarm` · value low
+  · closed 2026-11-14, `2026-1114-0017-n009-ringing-alarms-alarmkit-full-screen-intent` — both routes built, opt-in per app; hardware checks split out as N-148.
+  - The user chose both platforms, opt-in per app: `"alarms": true` in
+    grmob.json keeps `USE_FULL_SCREEN_INTENT` and
+    `NSAlarmKitUsageDescription` in the copied shell, and without it both are
+    removed (`androidPatches`, `iosPatches`).
+  - Go: `core.LocalNotification.Alarm` (snooze, ring_for), which every host
+    without the opt-in or the grant posts as the banner. Also
+    `core.OnRingingAlarmTap`, `core.AlarmAnswered` and `permission.Alarms`.
+    `hooks.UseAlarms` posts every Notify notification as an alarm and takes
+    a ringing one over when the app is opened from it.
+  - Android: an "Alarms" channel on the alarm stream, FLAG_INSISTENT,
+    setTimeoutAfter, Snooze and Stop actions (NotificationActionReceiver),
+    and a full-screen intent. MainActivity shows over the lock screen for a
+    ringing alarm until Go says it was answered.
+  - iOS 26+: AlarmKit (`Alarms.swift`), with ids hashed to UUIDs and every
+    call serialized. Snooze uses `.countdown`, which re-rings without a
+    widget extension.
+  - Seen: the iOS 26.5 simulator, `TutorialAlarmKitUITests` (dialog, alarm
+    with Snooze, re-ring after a minute, Stop). The API 36 foldable emulator
+    with a swipe keyguard: full-screen launch over the keyguard, takeover
+    into the app's ringing screen, Dismiss puts the keyguard back. Unlocked,
+    a heads-up with Snooze and Stop; Snooze re-rang a minute later.
 - **N-101** · raised `2026-1010-1955-next-list-n043-caret-burst-n091-natives-look-n100-align-self` · value low
   · closed 2026-11-13 (no session doc yet) — heard on Android and fixed; iOS reasoned, split out as N-147.
   - Heard on the API 36 emulator with Google TalkBack, not the Fold6 (it was

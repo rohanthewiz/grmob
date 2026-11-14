@@ -592,6 +592,11 @@ type AlarmOptions struct {
 	// as notifications with the app suspended or closed. See "Off screen"
 	// on UseAlarms. The app asks for permission.Notifications itself; without
 	// it the OS drops the notifications silently.
+	//
+	// Each one is posted as an alarm (core.LocalNotification.Alarm, with this
+	// Snooze and RingFor), so in an app built with `"alarms": true` that also
+	// holds permission.Alarms it rings as a ringing screen rather than a
+	// banner; see "A ringing screen" on UseAlarms.
 	Notify bool
 
 	// NotifyText writes a scheduled notification's title and body. Nil uses
@@ -623,7 +628,7 @@ type AlarmRinger struct {
 
 AlarmRinger is what UseAlarms returns: the ringing alarm, if any, and the two things a person can do about it.
 
-<small>[hooks/alarms.go:117](https://github.com/rohanthewiz/grmob/blob/master/hooks/alarms.go#L117)</small>
+<small>[hooks/alarms.go:122](https://github.com/rohanthewiz/grmob/blob/master/hooks/alarms.go#L122)</small>
 
 #### func UseAlarms
 
@@ -662,7 +667,23 @@ What the OS already rang is left on screen. Its banner is the one record the use
 
 Standing down while away matters on Android, where the process (and this goroutine) keeps running in the background: without it the alarm would ring twice at once, as a notification and as a sound from a hidden app.
 
-A notification is one banner with the platform's notification sound, not a ringing screen with Snooze: tapping it opens the app, which is not ringing. OnRing hears about each alarm the OS rang when the app returns, so a one-time alarm is switched off the same way as one rung in the app.
+OnRing hears about each alarm the OS rang when the app returns, so a one-time alarm is switched off the same way as one rung in the app.
+
+##### A ringing screen
+
+What the OS shows depends on the build and the platform (see "Alarms" in core/notifications.go). Every notification this hook schedules is posted as an alarm, and a host that cannot ring one posts the banner instead:
+
+	                     opted in + permission.Alarms      otherwise
+	Android              rings until answered; opens the   banner, one chime
+	                     app over the lock screen; Snooze
+	                     and Stop on the notification
+	iOS 26+              AlarmKit's alarm screen, with     banner, one chime
+	                     Stop and Snooze
+	iOS < 26, browser    banner, one chime
+
+When the user opens the app from an alarm that is still ringing — a tap, or Android's full-screen launch on a locked phone — the hook takes the ring over: Ringing() reports the alarm, Sound and Haptics start, and the OS's notification is cancelled so its sound stops. The app's own ringing screen is then the one on display, with this hook's Snooze and Dismiss. OnRing is not called again for it; the return to the foreground (or the sweep, after a cold launch) already reported it. A tap on a banner that has stopped chiming opens the app without ringing, as before.
+
+A Snooze pressed on the system's screen belongs to the OS, which rings the same notification again later; the hook does not see it, so Snoozed() does not report it, and a sweep after a relaunch cancels it along with the rest of the old process's notifications.
 
 An app that was closed rather than backgrounded lost that record with its process, so the hook asks the host instead: when it mounts (or, if it mounts in the background, when the app first comes forward) it sweeps every "grmob.alarm." notification with core.SweepNotifications. That cancels what the dead process left scheduled — an alarm switched off after a relaunch must not still ring — and the host's reply names the ones that already fired, which reach OnRing for every alarm still in the list, soonest first, once each. The reply is asynchronous, so those calls arrive shortly after the first render rather than during it. The sweep covers this call's NotifyGroup only, so an app with two UseAlarms with Notify gives them different groups; two in one group would sweep each other's notifications. Occurrences are scheduled a week ahead and capped at 60 in all (iOS's pending limit is 64); an app away for longer is rescheduled the next time it runs and leaves the screen.
 
@@ -674,7 +695,7 @@ A render is requested only when the ringing state changes, so an app with alarms
 
 The alarm list is re-read from each render, so editing, adding or disabling an alarm takes effect at the next check. Like the other timer hooks, the goroutine stops when the context tree closes, not when the component leaves the view.
 
-<small>[hooks/alarms.go:321](https://github.com/rohanthewiz/grmob/blob/master/hooks/alarms.go#L321)</small>
+<small>[hooks/alarms.go:358](https://github.com/rohanthewiz/grmob/blob/master/hooks/alarms.go#L358)</small>
 
 #### func (AlarmRinger) Dismiss
 
@@ -684,7 +705,7 @@ func (r AlarmRinger) Dismiss()
 
 Dismiss silences the ringing alarm until its next scheduled time. Nothing happens if no alarm is ringing.
 
-<small>[hooks/alarms.go:163](https://github.com/rohanthewiz/grmob/blob/master/hooks/alarms.go#L163)</small>
+<small>[hooks/alarms.go:168](https://github.com/rohanthewiz/grmob/blob/master/hooks/alarms.go#L168)</small>
 
 #### func (AlarmRinger) Ringing
 
@@ -694,7 +715,7 @@ func (r AlarmRinger) Ringing() (alarm.Alarm, bool)
 
 Ringing returns the alarm that is ringing now, and whether one is.
 
-<small>[hooks/alarms.go:123](https://github.com/rohanthewiz/grmob/blob/master/hooks/alarms.go#L123)</small>
+<small>[hooks/alarms.go:128](https://github.com/rohanthewiz/grmob/blob/master/hooks/alarms.go#L128)</small>
 
 #### func (AlarmRinger) Snooze
 
@@ -704,7 +725,7 @@ func (r AlarmRinger) Snooze()
 
 Snooze silences the ringing alarm and rings it again after the snooze length. Nothing happens if no alarm is ringing.
 
-<small>[hooks/alarms.go:151](https://github.com/rohanthewiz/grmob/blob/master/hooks/alarms.go#L151)</small>
+<small>[hooks/alarms.go:156](https://github.com/rohanthewiz/grmob/blob/master/hooks/alarms.go#L156)</small>
 
 #### func (AlarmRinger) Snoozed
 
@@ -714,7 +735,7 @@ func (r AlarmRinger) Snoozed() (alarm.Alarm, time.Time, bool)
 
 Snoozed returns the soonest snoozed alarm and when it will ring again, and whether there is one — for a "Snoozed until 6:39" line.
 
-<small>[hooks/alarms.go:134](https://github.com/rohanthewiz/grmob/blob/master/hooks/alarms.go#L134)</small>
+<small>[hooks/alarms.go:139](https://github.com/rohanthewiz/grmob/blob/master/hooks/alarms.go#L139)</small>
 
 ### type Async
 

@@ -1,12 +1,17 @@
 package com.grmob.app
 
 import android.app.AlarmManager
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.media.AudioAttributes
+import android.media.AudioManager
+import android.media.RingtoneManager
 import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -127,6 +132,48 @@ import org.json.JSONObject
  * pending alarm through [schedule]'s exact branch. It also asks Permissions
  * to re-check, so a screen using hooks.UsePermissionLive hears the grant
  * without waiting for the app to come to the foreground.
+ *
+ * # Alarms ("alarm" on a post)
+ *
+ * A post carrying `alarm` ({snooze?, ring_for?} in ms) rings rather than
+ * chimes — but only in an app that declares USE_FULL_SCREEN_INTENT, which
+ * `grmob android` keeps only for "alarms": true in grmob.json (see
+ * [alarmsDeclared]). Everywhere else the field is ignored and the post is the
+ * banner above, so Go never has to ask what the build can do.
+ *
+ * ```
+ *   post(alarm) ─▶ "Alarms" channel (alarm stream, the default alarm tone)
+ *                  FLAG_INSISTENT: the tone repeats until the notification goes
+ *                  setTimeoutAfter(ring_for): …which it does by itself after
+ *                  CATEGORY_ALARM, actions Snooze (if snooze > 0) and Stop
+ *                  full-screen intent, if [canUseFullScreenIntent]:
+ *                      locked / asleep ─▶ MainActivity over the lock screen
+ *                      in use          ─▶ a heads-up instead (the system's call)
+ *
+ *   Snooze ─▶ NotificationActionReceiver: take it down, schedule the same id
+ *             again at now + snooze (the store keeps the first ring as "rang")
+ *   Stop   ─▶ NotificationActionReceiver: take it down
+ *   tap / full-screen launch ─▶ MainActivity: "notification_tap" {id, ringing}
+ *             ringing = still inside ring_for of when it was posted (see
+ *             [tapRinging]); Go's UseAlarms takes the ring over and cancels
+ *             the id, which stops the tone
+ * ```
+ *
+ * Snooze keeps the id so everything keyed by it still works: a cancel or a
+ * sweep from Go reaches the snoozed alarm, and the tap of its next ring names
+ * the same alarm. The store's "rang" field remembers the first ring, so a
+ * sweep reports the alarm as fired even while its snooze is still pending.
+ *
+ * # Over the lock screen, and back under it
+ *
+ * The full-screen intent only gets the Activity started; showing it over the
+ * keyguard is the Activity's own flag. MainActivity sets it for a ringing
+ * alarm launch only ([lockScreen] holds the id that did it), never for an
+ * ordinary launch, because everything the app shows while it is set is
+ * visible without unlocking. It is cleared when that alarm is answered —
+ * Stop on the notification, or Go's core.AlarmAnswered once the app's own
+ * ringing screen is dismissed or snoozed ("answered") — so the keyguard comes
+ * back over the app rather than leaving it open to whoever holds the phone.
  */
 object Notifications {
     /** The intent extra that carries a tapped notification's Go id. */
@@ -134,9 +181,48 @@ object Notifications {
     private const val EXTRA_TITLE = "com.grmob.notification.title"
     private const val EXTRA_BODY = "com.grmob.notification.body"
 
+    /**
+     * On a tap intent, when the post was an alarm: when it started ringing
+     * and for how long it rings (ms), which [tapRinging] turns into the tap's
+     * "ringing". On an action intent, the alarm object as JSON, so Snooze can
+     * re-post an alarm that was never in the store (one posted for now).
+     */
+    private const val EXTRA_RANG_AT = "com.grmob.notification.rangAt"
+    private const val EXTRA_RING_FOR = "com.grmob.notification.ringFor"
+    private const val EXTRA_ALARM = "com.grmob.notification.alarm"
+
     private const val TAG = "GrMobNotifications"
     private const val CHANNEL_ID = "grmob"
     private const val NOTIFY_ID = 1
+
+    /**
+     * The alarms' own channel. Separate from [CHANNEL_ID] because a channel's
+     * sound and audio stream are fixed once created and belong to the user
+     * after that: an alarm needs the alarm stream (it plays at alarm volume,
+     * through a silenced ringer) and the alarm tone, and a banner needs
+     * neither. "One channel" above is about categories core has no word for;
+     * this is a different kind of notification, which core does name.
+     */
+    private const val ALARM_CHANNEL_ID = "grmob.alarms"
+
+    /** RingFor when Go sent none; the same default as hooks.AlarmOptions. */
+    private const val DEFAULT_RING_FOR_MS = 10L * 60 * 1000
+
+    /** The action intents' actions; see [NotificationActionReceiver]. */
+    internal const val ACTION_SNOOZE = "com.grmob.notification.SNOOZE"
+    internal const val ACTION_STOP = "com.grmob.notification.STOP"
+
+    /** The permission behind alarms; see [alarmsDeclared]. */
+    private const val FULL_SCREEN_PERMISSION = "android.permission.USE_FULL_SCREEN_INTENT"
+
+    /**
+     * The id of the alarm that put MainActivity over the lock screen, and the
+     * Activity's way of leaving it; see "Over the lock screen". Both are set
+     * by MainActivity and read on the main thread, where every command and
+     * every receiver runs.
+     */
+    private var lockScreen: String? = null
+    private var releaseLockScreen: (() -> Unit)? = null
 
     /**
      * The file the pending-post store lives in. Its own file, like
@@ -167,8 +253,18 @@ object Notifications {
     private fun store(context: Context) =
         context.applicationContext.getSharedPreferences(STORE_NAME, Context.MODE_PRIVATE)
 
-    private fun remember(context: Context, id: String, title: String, body: String, at: Long) {
+    /**
+     * Stores a scheduled post. [alarm] is kept so a re-arm after a reboot
+     * posts an alarm, not a banner; [rang] is the first ring of a snoozed
+     * alarm (see "Alarms"), absent for a post that has not rung yet.
+     */
+    private fun remember(
+        context: Context, id: String, title: String, body: String, at: Long,
+        alarm: JSONObject? = null, rang: Long = 0L,
+    ) {
         val entry = JSONObject().put("title", title).put("body", body).put("at", at).put("fired", false)
+        if (alarm != null) entry.put("alarm", alarm)
+        if (rang > 0) entry.put("rang", rang)
         synchronized(lock) {
             store(context).edit().putString(id, entry.toString()).apply()
         }
@@ -235,10 +331,13 @@ object Notifications {
             }
         }
         for ((id, entry) in future) {
-            schedule(app, id, entry.optString("title"), entry.optString("body"), entry.optLong("at"))
+            schedule(
+                app, id, entry.optString("title"), entry.optString("body"), entry.optLong("at"),
+                entry.optJSONObject("alarm"), entry.optLong("rang", 0L),
+            )
         }
         for ((id, entry) in due) {
-            post(app, id, entry.optString("title"), entry.optString("body"))
+            post(app, id, entry.optString("title"), entry.optString("body"), entry.optJSONObject("alarm"))
         }
     }
 
@@ -262,8 +361,11 @@ object Notifications {
             for ((id, raw) in store(context).all) {
                 if (!id.startsWith(prefix)) continue
                 ids += id
+                // A snoozed alarm's "at" is its next ring, still to come;
+                // "rang" is its first, which is what makes it fired.
                 val at = try {
-                    JSONObject(raw as? String ?: "").optLong("at", 0L)
+                    val entry = JSONObject(raw as? String ?: "")
+                    entry.optLong("rang", 0L).takeIf { it > 0 } ?: entry.optLong("at", 0L)
                 } catch (e: Exception) {
                     0L
                 }
@@ -296,6 +398,54 @@ object Notifications {
         }
     }
 
+    /**
+     * The alarms' channel; see [ALARM_CHANNEL_ID]. Created only when an alarm
+     * is posted, so an app that never rings one has no "Alarms" row in its
+     * notification settings.
+     */
+    private fun ensureAlarmChannel(context: Context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val channel = NotificationChannel(ALARM_CHANNEL_ID, "Alarms", NotificationManager.IMPORTANCE_HIGH).apply {
+            setSound(
+                RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM),
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ALARM)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build(),
+            )
+            enableVibration(true)
+            lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+        }
+        context.getSystemService(NotificationManager::class.java)?.createNotificationChannel(channel)
+    }
+
+    /**
+     * Whether this build opted in to alarms: the manifest asks for
+     * USE_FULL_SCREEN_INTENT, which `grmob android` keeps only for "alarms":
+     * true. Read from the package rather than from a flag of its own, so the
+     * line an app keeps or deletes is the whole switch. Also Permissions.kt's
+     * "unavailable" test for permission.Alarms.
+     */
+    internal fun alarmsDeclared(context: Context): Boolean = try {
+        @Suppress("DEPRECATION") // the flags overload is 33+; minSdk is 24
+        val info = context.packageManager.getPackageInfo(context.packageName, PackageManager.GET_PERMISSIONS)
+        info.requestedPermissions?.contains(FULL_SCREEN_PERMISSION) == true
+    } catch (e: PackageManager.NameNotFoundException) {
+        false
+    }
+
+    /**
+     * Whether a full-screen intent will be honoured: declared, and from 14
+     * granted (Play grants it at install to alarm and calling apps; for the
+     * rest it is a Settings switch). Below 14 the declaration is the grant.
+     * Permissions.kt reports this as permission.Alarms.
+     */
+    internal fun canUseFullScreenIntent(context: Context): Boolean {
+        if (!alarmsDeclared(context)) return false
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return true
+        return context.getSystemService(NotificationManager::class.java)?.canUseFullScreenIntent() == true
+    }
+
     fun handle(data: JSONObject) {
         val context = appContext ?: return
         // The one command addressed by prefix rather than id.
@@ -311,10 +461,12 @@ object Notifications {
             "post" -> {
                 val title = data.optString("title")
                 val body = data.optString("body")
+                // Absent means a banner; see "Alarms".
+                val alarm = data.optJSONObject("alarm")
                 // Absent means now; Go leaves the key off for a past time.
                 val at = data.optLong("at", 0L)
                 if (at > System.currentTimeMillis()) {
-                    schedule(context, id, title, body, at)
+                    schedule(context, id, title, body, at, alarm)
                 } else {
                     // "Posting again under the same ID replaces the pending
                     // request" (core/notifications.go): an immediate post takes
@@ -323,7 +475,7 @@ object Notifications {
                     // second banner later.
                     alarmManager(context)?.cancel(alarmIntent(context, id, "", ""))
                     forget(context, id)
-                    post(context, id, title, body)
+                    post(context, id, title, body, alarm)
                 }
             }
             "cancel" -> {
@@ -331,6 +483,9 @@ object Notifications {
                 forget(context, id)
                 NotificationManagerCompat.from(context).cancel(id, NOTIFY_ID)
             }
+            // The app's own ringing screen for this alarm is done (Go's
+            // core.AlarmAnswered); see "Over the lock screen".
+            "answered" -> leaveLockScreen(id)
         }
     }
 
@@ -358,7 +513,10 @@ object Notifications {
         )
     }
 
-    private fun schedule(context: Context, id: String, title: String, body: String, at: Long) {
+    private fun schedule(
+        context: Context, id: String, title: String, body: String, at: Long,
+        alarm: JSONObject? = null, rang: Long = 0L,
+    ) {
         val alarms = alarmManager(context) ?: return
         val pending = alarmIntent(context, id, title, body)
         // A banner already showing under this id is replaced by the scheduled
@@ -367,7 +525,7 @@ object Notifications {
         // Written before the alarm is set, so a process killed between the two
         // leaves an entry the next rearm schedules rather than an alarm the
         // store does not know about.
-        remember(context, id, title, body, at)
+        remember(context, id, title, body, at, alarm, rang)
         val exact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarms.canScheduleExactAlarms()
         try {
             if (exact) {
@@ -385,17 +543,28 @@ object Notifications {
     /** Called by [NotificationAlarmReceiver] when a scheduled post is due. */
     internal fun postScheduled(context: Context, intent: Intent) {
         val id = intent.getStringExtra(EXTRA_ID)?.takeIf { it.isNotEmpty() } ?: return
-        // Claimed rather than forgotten: see "Fired entries".
-        if (!synchronized(lock) { claim(context, id) }) return
+        // Claimed rather than forgotten: see "Fired entries". The alarm
+        // object comes from the entry, which the claim has just proved
+        // exists, rather than from an extra: the store is what a re-arm
+        // reads too, so the two paths cannot disagree about it.
+        val alarm = synchronized(lock) {
+            if (!claim(context, id)) return
+            entry(context, id)?.optJSONObject("alarm")
+        }
         post(
             context.applicationContext,
             id,
             intent.getStringExtra(EXTRA_TITLE).orEmpty(),
             intent.getStringExtra(EXTRA_BODY).orEmpty(),
+            alarm,
         )
     }
 
-    private fun post(context: Context, id: String, title: String, body: String) {
+    private fun post(context: Context, id: String, title: String, body: String, alarm: JSONObject? = null) {
+        if (alarm != null && alarmsDeclared(context)) {
+            postAlarm(context, id, title, body, alarm)
+            return
+        }
         ensureChannel(context)
         val manager = NotificationManagerCompat.from(context)
         // False when the user has not granted POST_NOTIFICATIONS (13+) or has
@@ -439,6 +608,172 @@ object Notifications {
     }
 
     /**
+     * Posts [id] as a ringing alarm; see "Alarms" for the whole shape. Same
+     * permission gate and tag/NOTIFY_ID keying as [post], so a cancel or a
+     * re-post under the id finds it.
+     */
+    private fun postAlarm(context: Context, id: String, title: String, body: String, alarm: JSONObject) {
+        ensureAlarmChannel(context)
+        val manager = NotificationManagerCompat.from(context)
+        if (!manager.areNotificationsEnabled()) return
+
+        val now = System.currentTimeMillis()
+        val ringFor = alarm.optLong("ring_for", 0L).takeIf { it > 0 } ?: DEFAULT_RING_FOR_MS
+        val snooze = alarm.optLong("snooze", 0L)
+
+        // One PendingIntent serves the tap and the full-screen launch: both
+        // open the app on this alarm, and both are reported as a tap that is
+        // ringing while ring_for lasts (see [tapRinging]).
+        val open = Intent(context, MainActivity::class.java)
+            .putExtra(EXTRA_ID, id)
+            .putExtra(EXTRA_RANG_AT, now)
+            .putExtra(EXTRA_RING_FOR, ringFor)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        val openPending = PendingIntent.getActivity(
+            context,
+            id.hashCode(),
+            open,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+
+        val builder = NotificationCompat.Builder(context, ALARM_CHANNEL_ID)
+            .setSmallIcon(smallIcon(context))
+            .setContentTitle(title.ifEmpty { null })
+            .setContentText(body.ifEmpty { null })
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            // Pre-O has no channels: the priority and sound live here.
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM), AudioManager.STREAM_ALARM)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setContentIntent(openPending)
+            // A tap answers the ring by opening the app, which takes it over;
+            // so the tone stops with the tap rather than playing on under it.
+            .setAutoCancel(true)
+            // Not swiped away by accident while it rings; Stop is the way.
+            .setOngoing(true)
+            .setTimeoutAfter(ringFor)
+        if (snooze > 0) {
+            builder.addAction(0, "Snooze", actionIntent(context, ACTION_SNOOZE, id, title, body, alarm))
+        }
+        builder.addAction(0, "Stop", actionIntent(context, ACTION_STOP, id, title, body, alarm))
+        if (canUseFullScreenIntent(context)) {
+            builder.setFullScreenIntent(openPending, true)
+        }
+        val notification = builder.build()
+        // The tone repeats until the notification is cancelled — by Stop,
+        // Snooze, a tap, Go's takeover, or the timeout above.
+        notification.flags = notification.flags or Notification.FLAG_INSISTENT
+        try {
+            manager.notify(id, NOTIFY_ID, notification)
+        } catch (e: SecurityException) {
+            Log.w(TAG, "alarm $id refused", e)
+        }
+    }
+
+    /**
+     * Snooze's or Stop's broadcast for [id]. Keyed by action and id in the
+     * data, like [alarmIntent], so each alarm's two buttons are two
+     * PendingIntents and neither is another alarm's.
+     */
+    private fun actionIntent(
+        context: Context, action: String, id: String, title: String, body: String, alarm: JSONObject,
+    ): PendingIntent {
+        val intent = Intent(context, NotificationActionReceiver::class.java)
+            .setAction(action)
+            .setData(android.net.Uri.fromParts("grmob-notification-action", id, action))
+            .putExtra(EXTRA_ID, id)
+            .putExtra(EXTRA_TITLE, title)
+            .putExtra(EXTRA_BODY, body)
+            .putExtra(EXTRA_ALARM, alarm.toString())
+        return PendingIntent.getBroadcast(
+            context,
+            id.hashCode(),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+    }
+
+    /**
+     * Snooze or Stop pressed on a ringing alarm; no Go runs for either. See
+     * "Alarms". Snooze schedules the same id again, keeping the first ring as
+     * "rang" so a sweep still reports the alarm as fired.
+     */
+    internal fun onAction(context: Context, intent: Intent) {
+        val id = intent.getStringExtra(EXTRA_ID)?.takeIf { it.isNotEmpty() } ?: return
+        val app = context.applicationContext
+        NotificationManagerCompat.from(app).cancel(id, NOTIFY_ID)
+        leaveLockScreen(id)
+        if (intent.action != ACTION_SNOOZE) return
+        val alarm = try {
+            JSONObject(intent.getStringExtra(EXTRA_ALARM) ?: return)
+        } catch (e: Exception) {
+            return
+        }
+        val snooze = alarm.optLong("snooze", 0L).takeIf { it > 0 } ?: return
+        val now = System.currentTimeMillis()
+        // The first ring: the stored one if this alarm was scheduled (and
+        // perhaps snoozed before), otherwise now — it was posted for now.
+        val rang = synchronized(lock) {
+            entry(app, id)?.let { it.optLong("rang", 0L).takeIf { r -> r > 0 } ?: it.optLong("at", 0L) }
+        }?.takeIf { it > 0 } ?: now
+        schedule(
+            app, id,
+            intent.getStringExtra(EXTRA_TITLE).orEmpty(), intent.getStringExtra(EXTRA_BODY).orEmpty(),
+            now + snooze, alarm, rang,
+        )
+    }
+
+    /**
+     * Whether a launch intent is a ringing alarm's: posted as an alarm, and
+     * still inside its ring_for. A tap on a banner, or on an alarm whose ring
+     * has timed out, is not — which is what keeps a stale tap from starting
+     * a ring in the app (core.OnRingingAlarmTap). MainActivity puts this in
+     * the tap's "ringing" and shows over the lock screen for it.
+     */
+    fun tapRinging(intent: Intent?): Boolean {
+        val rangAt = intent?.getLongExtra(EXTRA_RANG_AT, 0L) ?: 0L
+        if (rangAt <= 0) return false
+        val ringFor = intent?.getLongExtra(EXTRA_RING_FOR, DEFAULT_RING_FOR_MS) ?: DEFAULT_RING_FOR_MS
+        return System.currentTimeMillis() < rangAt + ringFor
+    }
+
+    /**
+     * Records that MainActivity is over the lock screen for alarm [id], and
+     * how to take it back under; see "Over the lock screen".
+     */
+    fun showingOverLockScreen(id: String, release: () -> Unit) {
+        lockScreen = id
+        releaseLockScreen = release
+        // One line per alarm, like the sweep's: the log is the only place a
+        // person can see the app went over the lock screen, and back under.
+        Log.i(TAG, "over the lock screen for alarm $id")
+    }
+
+    /** Ends what [showingOverLockScreen] started, if [id] is the alarm that did. */
+    private fun leaveLockScreen(id: String) {
+        if (lockScreen != id) return
+        lockScreen = null
+        releaseLockScreen?.invoke()
+        releaseLockScreen = null
+        Log.i(TAG, "alarm $id answered; back under the lock screen")
+    }
+
+    /** The alarm holding the lock screen, for a recreated MainActivity to resume. */
+    fun lockScreenAlarm(): String? = lockScreen
+
+    /**
+     * Forgets the release of an Activity being destroyed, so a later
+     * "answered" does not call into it. The flag is the Activity's own, so
+     * once it is gone the lock screen is already back — unless [changing]
+     * says a configuration change is replacing it, when the alarm's claim is
+     * kept for the new Activity to take up (MainActivity.onCreate).
+     */
+    fun activityGone(changing: Boolean) {
+        releaseLockScreen = null
+        if (!changing) lockScreen = null
+    }
+
+    /**
      * The status-bar icon. It must be a monochrome drawable — the system tints
      * it — and an app icon is usually neither, so an adopting app supplies
      * `res/drawable/ic_notification`. Until it does, a platform drawable keeps
@@ -466,6 +801,19 @@ object Notifications {
 class NotificationAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         Notifications.postScheduled(context, intent)
+    }
+}
+
+/**
+ * Snooze and Stop on a ringing alarm; see "Alarms" on [Notifications]. Not
+ * exported: only the PendingIntents [Notifications] builds reach it, and the
+ * action is checked for the reason [NotificationBootReceiver] checks its own.
+ */
+class NotificationActionReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        when (intent.action) {
+            Notifications.ACTION_SNOOZE, Notifications.ACTION_STOP -> Notifications.onAction(context, intent)
+        }
     }
 }
 

@@ -3623,6 +3623,13 @@ func lessonClocksAndDrawing() Lesson {
 			// Settings page: it re-checks when the app comes back to the
 			// foreground, which a mount-only check would never see.
 			exactStatus := hooks.UsePermissionLive(ctx, permission.ExactAlarms)
+			// The third: whether an alarm rings as an alarm clock — over the
+			// lock screen, until answered — or as a banner. Unavailable in a
+			// build without "alarms": true in grmob.json, below iOS 26 and in
+			// the browser, where the row stays hidden. Prompt (iOS asks with a
+			// dialog) and Denied (Android 14+ sends the user to Settings) both
+			// show it. Live for the Settings round trip, as above.
+			alarmsStatus := hooks.UsePermissionLive(ctx, permission.Alarms)
 
 			// The chart: a line over an area, both built from the same points.
 			series := slices.Clone(tutorialSeries)
@@ -3883,6 +3890,17 @@ if a, ok := ringer.Ringing(); ok {
 							},
 							caption("Without it Android may ring a minute late."),
 						)),
+					core.If(alarmsStatus == permission.Prompt || alarmsStatus == permission.Denied,
+						core.Row(
+							core.Gap(12),
+							core.AlignItemsProp(core.AlignItemsCenter),
+							comps.Button{
+								Label:    "Ring on the lock screen",
+								Emphasis: comps.EmphasisOutlined,
+								OnTap:    func() { permission.Request(permission.Alarms) },
+							},
+							caption("Rings like an alarm clock instead of a banner."),
+						)),
 				),
 				keyPoints(
 					"Clock widgets take a time.Time; hooks.UseNow ticks on the wall clock's boundary.",
@@ -3891,6 +3909,7 @@ if a, ok := ringer.Ringing(); ok {
 					"Paths flatten to move, line, cubic and close in Go, so every target draws the same curve.",
 					"hooks.UseAlarms rings alarms that fell due since its last check; with Notify the OS rings them while the app is away.",
 					"Switch one-time alarms off in OnRing, which also hears about alarms the OS rang while the app was away.",
+					"With \"alarms\": true in grmob.json and permission.Alarms, the OS rings them as alarms, not banners.",
 				),
 			)
 		},

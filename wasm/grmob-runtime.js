@@ -10264,6 +10264,11 @@ const GrMob = (() => {
             // a timer in this tab, exact for as long as the tab is open, so
             // query answers "granted" without asking the browser anything.
             exact_alarms: null,
+            // A page cannot ring over the lock screen, so there is nothing to
+            // grant: null answers "unavailable", and core's alarm posts fall
+            // back to the ordinary banner (see "Alarms" in
+            // core/notifications.go).
+            alarms: null,
         };
 
         function report(kind, status) {
@@ -10404,8 +10409,12 @@ const GrMob = (() => {
             // than sent through the query, which has no descriptor for it.
             // Answered rather than dropped, so a screen waiting on it stops
             // waiting.
-            if (kind === "storage") {
-                report("storage", "unavailable");
+            // Alarms likewise: a page has no ringing screen to grant (see
+            // DESCRIPTORS), and without this arm the query's "unavailable"
+            // would fall through to prompt(), which has no case for it and
+            // would answer nothing.
+            if (kind === "storage" || kind === "alarms") {
+                report(kind, "unavailable");
                 return;
             }
             query(kind).then((state) => {

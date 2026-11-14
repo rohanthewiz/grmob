@@ -124,7 +124,7 @@ puts the APK on a connected device or emulator; `-run` installs and launches
 the iOS build on the booted simulator. The copied
 shell belongs to the app from then on; `-refresh` copies a newer one over it.
 
-The copy is made the app's own in three more places than its name:
+The copy is made the app's own in four more places than its name:
 
 - **Deep links.** The shells claim the `grmob://` scheme for the demo; a copy
   claims the application ID in lower case (`com.example.hello://`), so two
@@ -136,6 +136,24 @@ The copy is made the app's own in three more places than its name:
   missing. Rewrite them to say *why* before shipping — App Review reads them.
 - **UI tests (iOS).** `GrMobUITests` drives the demo by its labels, so it is not
   copied and its target and scheme test action are removed from `project.yml`.
+- **Ringing alarms (opt-in).** `permission.Alarms` needs two declarations
+  that the stores gate on what the app is for: Android's
+  `USE_FULL_SCREEN_INTENT`, which Play grants only to alarm-clock and calling
+  apps and asks every declaring app to justify, and iOS's
+  `NSAlarmKitUsageDescription`. They are copied only when `grmob.json` says
+  so, and the iOS string then names the app:
+
+  ```json
+  { "name": "Wake", "id": "com.example.wake", "alarms": true }
+  ```
+
+  Without the key both declarations are removed, `permission.Alarms` answers
+  Unavailable, and a `core.LocalNotification` with `Alarm` (which
+  `hooks.UseAlarms` posts with `Notify`) is an ordinary banner. With it, an
+  alarm rings as one: Android's alarm channel, ringing until answered, with
+  Snooze and Stop on the notification and a full-screen launch over the lock
+  screen; on iOS 26+ AlarmKit's alarm screen, and below 26 the banner. The key is
+  read when the shell is copied, so changing it needs `-refresh`.
 
 gomobile and gobind are recorded in the app's `go.mod` as `tool` directives,
 the way this repository records them, so `go mod tidy` keeps

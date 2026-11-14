@@ -22,6 +22,7 @@ import UserNotifications
 ///     storage      PHPhotoLibrary.authorizationStatus(for: .readWrite)
 ///     notifications UNUserNotificationCenter.getNotificationSettings  (async)
 ///     exact_alarms  always "granted" — iOS has no such gate (see check)
+///     alarms        AlarmManager.authorizationState, iOS 26+ (Alarms.swift)
 ///
 /// Notifications need no usage-description key: the system prompt carries the
 /// app's name and nothing the app writes.
@@ -112,6 +113,10 @@ final class Permissions: NSObject, CLLocationManagerDelegate {
             // UNCalendarNotificationTrigger fires at its second. Whether it
             // may show at all is the "notifications" kind's question.
             send(kind, "granted")
+        case "alarms":
+            // "unavailable" below iOS 26 and in a build without the usage key
+            // (an app that did not opt in); see Alarms.status.
+            send(kind, Alarms.status())
         default: break
         }
     }
@@ -159,6 +164,11 @@ final class Permissions: NSObject, CLLocationManagerDelegate {
         case "exact_alarms":
             // Always granted here (see check), so there is nothing to ask.
             send(kind, "granted")
+        case "alarms":
+            // Prompts only while undecided, and never without the usage key —
+            // AlarmKit would refuse, and an app that did not opt in has
+            // nothing to ask for.
+            Alarms.request { [weak self] status in self?.send(kind, status) }
         default:
             break
         }
