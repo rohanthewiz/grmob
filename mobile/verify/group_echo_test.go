@@ -32,16 +32,32 @@ import (
 func TestComposeDoesNotRepeatWhatALabelledGroupAlreadySaid(t *testing.T) {
 	render := codeOf(t, kotlinRenderer, "fun RenderNode(")
 	for _, pin := range []struct{ expr, why string }{
-		{"val said = spokenByLabel(node)",
+		{"val said = if (ownStop) emptySet() else spokenByLabel(node)",
 			"what this node's own label and value put into the announcement"},
-		{"val says = said.isNotEmpty() && said != LocalGrMobGroupSaid.current",
-			"a labelled node replaces the scope; an unlabelled one inherits it"},
+		{"val says = (said.isNotEmpty() || ownStop) && said != LocalGrMobGroupSaid.current",
+			"a labelled node replaces the scope, an unlabelled tappable one empties it, any other inherits it"},
+		// An unlabelled tappable node is a stop of its own: gestureModifier's
+		// combinedClickable merges its descendants, so its Texts are its whole
+		// announcement and an outer label's phrase must not silence them
+		// (N-101). The condition has to mirror gestureModifier's, including
+		// the disabled case, which gets no clickable and so does not merge.
+		{"val ownStop = node.style?.accessibilityLabel.isNullOrEmpty() &&",
+			"only a node with no label of its own can be a silent stop"},
+		{"!node.isDisabled()",
+			"a disabled node gets no clickable, so it stays in the outer scope"},
 		{"if (says) add(LocalGrMobGroupSaid provides said)",
 			"provided with the other subtree locals"},
 	} {
 		if !strings.Contains(render, pin.expr) {
 			t.Errorf("%s: RenderNode has lost %q — %s", kotlinRenderer, pin.expr, pin.why)
 		}
+	}
+
+	// The gesture names are string literals, which codeOf masks, so this pin
+	// reads the declaration with its values kept.
+	if gestures := `(node.stringProp("onClick").isNotEmpty() || node.stringProp("onLongPress").isNotEmpty()) &&`; !strings.Contains(valuesOf(t, kotlinRenderer, "fun RenderNode("), gestures) {
+		t.Errorf("%s: RenderNode's ownStop has lost %q — the same gestures gestureModifier makes clickable",
+			kotlinRenderer, gestures)
 	}
 
 	// The scope must be *replaced* at each labelled node, never latched on the
@@ -60,8 +76,16 @@ func TestComposeDoesNotRepeatWhatALabelledGroupAlreadySaid(t *testing.T) {
 	for _, pin := range []struct{ expr, why string }{
 		{`if (s.accessibilityHidden || s.accessibilityLabel.isEmpty()) return emptySet()`,
 			"no label means no merge, so nothing of this node's is read with its children's"},
-		{`mutableSetOf(s.accessibilityLabel.trim().lowercase())`,
+		{`val label = s.accessibilityLabel.trim().lowercase()`,
 			"the label, folded — a reader speaks \"Notebook\" and \"notebook \" alike"},
+		{`val said = mutableSetOf(label)`,
+			"the whole label is always one of the things said"},
+		// Each ", "-separated phrase too: a Discussion header row named
+		// "Ben, reply to Ana, 1h" draws the Texts "Ben" and "1h", which TalkBack
+		// read again after the label until N-101. The split is on ", " so a
+		// number like "1,234" stays whole.
+		{`label.split(", ").map { it.trim() }.filterTo(said) { it.isNotEmpty() }`,
+			"each phrase of the label counts as said"},
 		{`val value = s.accessibilityValue.text`,
 			"and the stated value, which becomes stateDescription"},
 	} {

@@ -251,11 +251,6 @@ with each item's `raised` traced back through all session docs.
   `setTimeoutAfter(ring_for)` removes the notification, so unlike a banner
   nothing stays in the shade. OnRing still hears about it on return. A
   quiet "Missed alarm" banner posted on timeout would restore the record.
-- **N-151** · raised `2026-1114-0017-n009-ringing-alarms-alarmkit-full-screen-intent` · value medium
-  **`TestComposeDoesNotRepeatWhatALabelledGroupAlreadySaid` fails at HEAD.**
-  762584b (N-101) changed `Renderer.kt`'s RenderNode and `spokenByLabel`
-  (`ownStop`, the phrase split), and `mobile/verify/group_echo_test.go`
-  still pins the old lines. Update the pinned strings to the new code.
 
 ## Validate
 
@@ -1008,6 +1003,11 @@ defect, which then becomes its own Open item.
 
 ## Closed
 
+- **N-151** · raised `2026-1114-0017-n009-ringing-alarms-alarmkit-full-screen-intent` · value medium
+  · closed 2026-11-14 — `group_echo_test.go` pins the new lines: `ownStop` (its three
+  conditions, the gesture names through `valuesOf` since `codeOf` masks string
+  literals), the `said`/`says` pair that reads it, and `spokenByLabel`'s folded
+  label plus its ", " phrase split. `go test ./mobile/verify` passes.
 - **N-009** · raised `2026-0916-1032-clocks-canvas-alarm` · value low
   · closed 2026-11-14, `2026-1114-0017-n009-ringing-alarms-alarmkit-full-screen-intent` — both routes built, opt-in per app; hardware checks split out as N-148.
   - The user chose both platforms, opt-in per app: `"alarms": true` in
