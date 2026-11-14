@@ -47,7 +47,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
 | --- | --- | --- |
 | [Views & state](core-views.md) | View, Node, Context and state slots; text and inline runs; conditionals, caching, error boundaries and debug-mode concerns. | 13 types, 69 functions and methods |
 | [Layout](core-layout.md) | Rows, columns, stacks, scrolls and lists, and the alignment vocabulary they are placed with. | 2 types, 28 functions and methods |
-| [Styling: the Style struct](core-style.md) | Style and the value types its fields take: alignment, flex, position, weights and edge insets. | 11 types, 12 functions and methods |
+| [Styling: the Style struct](core-style.md) | Style and the value types its fields take: alignment, flex, position, weights and edge insets. | 11 types, 13 functions and methods |
 | [Styling: style props](core-style-props.md) | The StyleProp constructors: spacing and per-side insets, flex, typography, colour, borders, per-corner radii and animation. | 2 types, 74 functions and methods |
 | [Theming](core-theme.md) | Themes, palettes, typography and spacing scales, and per-component defaults. | 5 types, 22 functions and methods |
 | [Controls](core-controls.md) | Buttons, text inputs, switches, sliders, selects, images, tab views, text grids and vector canvases. | 23 types, 48 functions and methods |

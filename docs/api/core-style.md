@@ -26,6 +26,7 @@ One of 11 topic pages of [package core](core.md), which has the package overview
 - [`type Position`](#type-position)
 - [`type ResponsiveStyle`](#type-responsivestyle)
 - [`type Style`](#type-style)
+    - [`func (*Style) Equal`](#func-style-equal)
     - [`func (Style) OpacityFactor`](#func-style-opacityfactor)
     - [`func (*Style) Radii`](#func-style-radii)
     - [`func (Style) ShrinkFactor`](#func-style-shrinkfactor)
@@ -1195,6 +1196,18 @@ It is declined, and the number is only half of why. The other half is that verba
 And it is dominated. The same payload's other lever — sending only the core.List children near the viewport — is worth 66-76% of the bytes rather than 17-28%, on the same screen, with no change to how a field is spelled. See TestWhatWindowingWouldSave in examples/tutorial for that profile and for what it is still waiting on.
 
 <small>[core/style.go:94](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L94)</small>
+
+#### func (*Style) Equal
+
+```go
+func (s *Style) Equal(o *Style) bool
+```
+
+Equal reports whether s and o hold the same style, field by field: what reflect.DeepEqual would say, without the reflection. reconcile asks it of every node on every pass. Either side may be nil; two nils are equal.
+
+Generated from the struct's 70 fields by internal/styleeq, whose test fails when a field is added and this file is not regenerated.
+
+<small>[core/style_equal_gen.go:11](https://github.com/rohanthewiz/grmob/blob/master/core/style_equal_gen.go#L11)</small>
 
 #### func (Style) OpacityFactor
 

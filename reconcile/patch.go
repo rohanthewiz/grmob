@@ -41,29 +41,76 @@ type Patch struct {
 // Until then, a keyed mismatch rebuilds the slot — visually correct, though the
 // replaced subtree loses transient native state (focus, scroll offset).
 func Diff(old, new *core.Node, path string) []Patch {
+	d := differ{root: path}
+	d.idx = d.idxBuf[:0]
+	d.diff(old, new)
+	return d.patches
+}
+
+// differ is one Diff call's walk: the patches so far, and where in the tree
+// the walk is, kept as child indices from the root rather than as a string.
+//
+// # Why the path is not a string on the way down
+//
+// Every patch names its node by path ("root/12/0"), so the walk used to build
+// each child's path string before recursing into it: a concatenation and an
+// allocation per node, on every pass, for paths that almost always went
+// unused, since most nodes produce no patch. At 1,001 nodes that was all 1,150
+// of an unchanged diff's allocations (N-138, plan P2). Now the walk pushes an
+// index on the way down and pops it on the way up, and a path is spelled only
+// when a patch is emitted (path, childPath).
+//
+// idxBuf backs idx for trees up to 32 levels deep without an allocation; a
+// deeper tree grows idx onto the heap, once per Diff.
+type differ struct {
+	root    string
+	idx     []int
+	idxBuf  [32]int
+	patches []Patch
+}
+
+// path spells the current node's path, root first.
+func (d *differ) path() string {
+	if len(d.idx) == 0 {
+		return d.root
+	}
+	b := make([]byte, 0, len(d.root)+4*len(d.idx))
+	b = append(b, d.root...)
+	for _, i := range d.idx {
+		b = append(b, '/')
+		b = strconv.AppendInt(b, int64(i), 10)
+	}
+	return string(b)
+}
+
+// childPath spells the path of the current node's child i.
+func (d *differ) childPath(i int) string {
+	return d.path() + "/" + strconv.Itoa(i)
+}
+
+func (d *differ) emit(typ string, target string, changes any) {
+	d.patches = append(d.patches, Patch{Type: typ, TargetID: target, Changes: changes})
+}
+
+func (d *differ) diff(old, new *core.Node) {
 	// Same pointer: the subtree is unchanged by definition, since nodes are
 	// frozen after render (see core.Node's immutability contract). This is the
 	// fast path core.Cached buys — a cached view returns the identical *Node
 	// every pass, so its whole subtree costs one comparison here instead of a
 	// deep props/style/children walk. Also covers old == new == nil.
 	if old == new {
-		return nil
+		return
 	}
 	// One side absent (both-absent was handled by the pointer guard above).
 	// These nil checks also protect the recursive calls below from
 	// dereferencing nil when a slot is empty on one side.
 	if old == nil {
-		return []Patch{{
-			Type:     "add",
-			TargetID: path,
-			Changes:  new,
-		}}
+		d.emit("add", d.path(), new)
+		return
 	}
 	if new == nil {
-		return []Patch{{
-			Type:     "remove",
-			TargetID: path,
-		}}
+		d.emit("remove", d.path(), nil)
+		return
 	}
 	// Both keyed, keys differ: a logically different node now occupies this
 	// position, so rebuild rather than diff. Diffing across different keys
@@ -76,67 +123,46 @@ func Diff(old, new *core.Node, path string) []Patch {
 	// root is exactly the node that must be replaced on navigation — see
 	// core.withFrameKey.
 	if old.Key != "" && new.Key != "" && old.Key != new.Key {
-		return []Patch{{
-			Type:     "replace",
-			TargetID: path,
-			Changes:  new,
-		}}
+		d.emit("replace", d.path(), new)
+		return
 	}
 	if old.Type != new.Type {
-		return []Patch{{
-			Type:     "replace",
-			TargetID: path,
-			Changes:  new,
-		}}
+		d.emit("replace", d.path(), new)
+		return
 	}
-
-	var patches []Patch
 
 	if propsChanged(old.Props, new.Props) {
-		patches = append(patches, Patch{
-			Type:     "update-props",
-			TargetID: path,
-			Changes:  wireProps(new.Props),
-		})
+		d.emit("update-props", d.path(), wireProps(new.Props))
 	}
 	if styleChanged(old.Style, new.Style) {
-		patches = append(patches, Patch{
-			Type:     "update-style",
-			TargetID: path,
-			Changes:  wireStyle(new.Style),
-		})
+		d.emit("update-style", d.path(), wireStyle(new.Style))
 	}
 
 	// Recurse into the children both trees have, pairwise by index.
 	minLen := min(len(old.Children), len(new.Children))
 	for i := range minLen {
-		childPath := path + "/" + strconv.Itoa(i)
 		// A keyed slot whose occupant changed becomes a replace inside the
-		// recursive call (the key check at the top of Diff).
-		patches = append(patches, Diff(old.Children[i], new.Children[i], childPath)...)
+		// recursive call (the key check at the top of diff).
+		d.idx = append(d.idx, i)
+		d.diff(old.Children[i], new.Children[i])
+		d.idx = d.idx[:len(d.idx)-1]
 	}
 
 	// New tree has extra children: append them in order. add-child targets the
 	// parent, so these are index-shift safe by construction.
-	for i := minLen; i < len(new.Children); i++ {
-		patches = append(patches, Patch{
-			Type:     "add-child",
-			TargetID: path,
-			Changes:  new.Children[i],
-		})
+	if len(new.Children) > minLen {
+		at := d.path()
+		for i := minLen; i < len(new.Children); i++ {
+			d.emit("add-child", at, new.Children[i])
+		}
 	}
 
 	// Old tree has extra children: remove them highest-index-first. A renderer
 	// that resolves paths against its live tree would otherwise remove index N
 	// and then find index N+1 pointing at the wrong (shifted) sibling.
 	for i := len(old.Children) - 1; i >= minLen; i-- {
-		patches = append(patches, Patch{
-			Type:     "remove-child",
-			TargetID: path + "/" + strconv.Itoa(i),
-		})
+		d.emit("remove-child", d.childPath(i), nil)
 	}
-
-	return patches
 }
 
 // propsChanged reports whether two prop maps differ.
@@ -156,11 +182,36 @@ func propsChanged(a, b map[string]any) bool {
 		if !ok {
 			return true
 		}
-		if !reflect.DeepEqual(av, bv) {
+		if !sameProp(av, bv) {
 			return true
 		}
 	}
 	return false
+}
+
+// sameProp is reflect.DeepEqual with a fast path for the kinds nearly every
+// prop holds: a callback ID or a text is a string, a flag a bool, a count an
+// int, a figure a float64. A type switch answers those with one comparison
+// where DeepEqual went through reflection (N-138, plan P2). Both sides must
+// be the same type, as DeepEqual requires: an int 1 and an int64 1 differ.
+// Anything else (a slice, a map, a struct, a func) goes to DeepEqual as
+// before.
+func sameProp(a, b any) bool {
+	switch av := a.(type) {
+	case string:
+		bv, ok := b.(string)
+		return ok && av == bv
+	case bool:
+		bv, ok := b.(bool)
+		return ok && av == bv
+	case int:
+		bv, ok := b.(int)
+		return ok && av == bv
+	case float64:
+		bv, ok := b.(float64)
+		return ok && av == bv
+	}
+	return reflect.DeepEqual(a, b)
 }
 
 // wireProps is the Changes of an update-props patch: the node's whole new props
@@ -202,12 +253,16 @@ func wireStyle(s *core.Style) *core.Style {
 
 // styleChanged reports whether two styles differ by value.
 //
-// DeepEqual follows pointers, so two distinct allocations with equal contents
-// compare equal. That property is load-bearing here: every render rebuilds the
-// tree and re-allocates every Style, so the previous pointer comparison
-// (`a != b`) flagged every styled node as changed on every render, turning the
-// "minimal" diff into a near-full tree broadcast. It also correctly handles
-// nested pointers inside Style (HoverStyle, FocusStyle, PseudoStates).
+// By value, not by pointer, is load-bearing: every render rebuilds the tree
+// and re-allocates every Style, so the old pointer comparison (`a != b`)
+// flagged every styled node as changed on every render, turning the
+// "minimal" diff into a near-full tree broadcast. The nested styles
+// (HoverStyle, FocusStyle, PseudoStates) are compared by value too.
+//
+// It was reflect.DeepEqual, which was most of an unchanged diff's time.
+// core.Style.Equal is generated from the struct (internal/styleeq) and
+// agrees with DeepEqual on every style, which that package's test fuzzes;
+// 975 µs to about a tenth of that at 1,001 nodes (N-138, plan P2).
 func styleChanged(a, b *core.Style) bool {
-	return !reflect.DeepEqual(a, b)
+	return !a.Equal(b)
 }

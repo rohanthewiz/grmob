@@ -192,6 +192,16 @@ with each item's `raised` traced back through all session docs.
     (20 taps, 20 roots), `TestAWriteDuringATapsPassStillGetsItsOwnPass`
     (fails with a plain `ClearDirty`), core's `dirty_test.go`. Go suite and
     `wasm/verify/run.sh` (headless Chrome) pass. P2 and P3 remain.
+  - P2 landed 2026-11-14. `core.Style.Equal` is generated
+    (`go run ./internal/styleeq/gen`, from core's source, not by reflection,
+    so a removed field cannot block its own regeneration). Its test fails on
+    a stale file and fuzzes agreement with `reflect.DeepEqual` over 20,000
+    pairs. Props compare string, bool, int and float64 without reflection.
+    The walk keeps child indices and spells a path only when it emits a
+    patch. On an M3: `BenchmarkDiffUnchanged` at 1,001 nodes went from
+    1.08 ms and 1,150 allocs to 120 µs and 1; at 10,001, 11.7 ms to 1.27 ms.
+    `BenchmarkManagerNoopPass` at 250 rows went from 1.59 ms to about
+    0.8 ms. P3 remains.
 - **N-139** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value low
   **Host and library hot spots (plan P6-P9).** The one felt daily is P7:
   the dev watcher runs `go list -deps` on every 250 ms poll, about half a
