@@ -21,7 +21,10 @@ func JSON() Highlighter { return jsonHighlighter{} }
 type jsonHighlighter struct{}
 
 func (jsonHighlighter) Rows(src string, scheme Scheme) []core.GridRow {
-	return rowsOf(src, scanJSON(src), scheme)
+	// Cached by source and scheme; see cache.go.
+	return cachedRows(rowKey{lexer: "json", scheme: scheme, src: src}, func() []core.GridRow {
+		return rowsOf(src, scanJSON(src), scheme)
+	})
 }
 
 // scanJSON classifies every byte of src.

@@ -45,11 +45,14 @@ type goHighlighter struct{}
 // typing, and the honest answer for that keystroke is plain ink until the
 // quote is closed.
 func (goHighlighter) Rows(src string, scheme Scheme) []core.GridRow {
-	classes, ok := scanGo(src)
-	if !ok {
-		return plainRows(src)
-	}
-	return rowsOf(src, classes, scheme)
+	// Cached by source and scheme; see cache.go.
+	return cachedRows(rowKey{lexer: "go", scheme: scheme, src: src}, func() []core.GridRow {
+		classes, ok := scanGo(src)
+		if !ok {
+			return plainRows(src)
+		}
+		return rowsOf(src, classes, scheme)
+	})
 }
 
 // predeclared is Go's universe block — the identifiers that are always in

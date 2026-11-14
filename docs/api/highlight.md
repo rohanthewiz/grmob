@@ -123,7 +123,7 @@ func Languages() []string
 
 Languages lists every language name ForLanguage lexes, sorted. A caller mapping its own names (a Markdown fence's "js", a file's ".py") onto these can check its table against this list rather than against the docs.
 
-<small>[highlight/table.go:457](https://github.com/rohanthewiz/grmob/blob/master/highlight/table.go#L457)</small>
+<small>[highlight/table.go:461](https://github.com/rohanthewiz/grmob/blob/master/highlight/table.go#L461)</small>
 
 ### func LineComment
 
@@ -133,7 +133,7 @@ func LineComment(lang string) (prefix string, ok bool)
 
 LineComment is the line-comment marker of a language ForLanguage lexes: "#" for Python and shell, "--" for SQL and Lua, "//" for the C family and JavaScript. ok is true for every language this package knows, and prefix is "" for one with no line comment (JSON, CSS, HTML, XML), so an editor's comment command can tell "no marker" apart from "unknown language". comps.CodeEditor uses it to pick the marker its comment command toggles.
 
-<small>[highlight/table.go:472](https://github.com/rohanthewiz/grmob/blob/master/highlight/table.go#L472)</small>
+<small>[highlight/table.go:476](https://github.com/rohanthewiz/grmob/blob/master/highlight/table.go#L476)</small>
 
 ## Types
 

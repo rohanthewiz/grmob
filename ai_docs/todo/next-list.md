@@ -177,6 +177,18 @@ with each item's `raised` traced back through all session docs.
     `TestTheWatcherReadsTheBuildGraphOnlyWhenItMayHaveChanged`: five polls
     make one read, a new file makes none, go.mod or a build makes one. P6, P8
     and P9 remain.
+  - P8a and P8d landed 2026-11-14. The built-in highlighters (Go, JSON, and
+    the table lexers) answer from a 16-entry LRU keyed by lexer, scheme and
+    source (`highlight/cache.go`). A hit returns the same rows, so the diff
+    also compares an unchanged editor's rows by identity. A caller's own
+    Highlighter is not cached. `BenchmarkRows500Lines`: cold 365 µs and
+    1.3 MB, warm 0.37 µs and 0 allocs.
+    - P8b is a decision: DataTable promises "holds no state and calls no
+      hook". Sorting only when the rows or the sort change needs either a hook
+      slot or a cache keyed on the Rows slice's identity, and the second goes
+      stale if a caller reorders Rows in place. Left until a 10,000-row table
+      shows up.
+    - P8c (form error reads) remains.
 - **N-141** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
   **CLI: `go tool grmob`, a one-ABI bind, and shell upgrades that keep the
   app's edits (plan C3-C5).** Register `cmd/grmob` as a `go.mod` tool in the

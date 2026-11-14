@@ -89,7 +89,11 @@ type langSpec struct {
 type tableHighlighter struct{ spec *langSpec }
 
 func (h tableHighlighter) Rows(src string, scheme Scheme) []core.GridRow {
-	return rowsOf(src, h.spec.classify(src), scheme)
+	// Cached by source and scheme, the spec pointer naming the language; see
+	// cache.go.
+	return cachedRows(rowKey{lexer: h.spec, scheme: scheme, src: src}, func() []core.GridRow {
+		return rowsOf(src, h.spec.classify(src), scheme)
+	})
 }
 
 // classify produces one class byte per source byte, as every lexer in this
