@@ -242,14 +242,6 @@ with each item's `raised` traced back through all session docs.
     both corrected with N-140's UseAsync docs. The rest of D6 (README's 84
     lessons, `docs/index.md`'s five hooks, `build.sh`'s 40%,
     `wasm/index.html`'s 51) and D3, D5, D7 remain.
-- **N-145** · raised `2026-1111-1851-n140-n144-n138-grmobtest-useasync-shuffle-fake-clocks-p0` · value low
-  **Nothing compresses the 13.1 MB wasm module (plan P10d).** gzip gives
-  2.98 MB and brotli 2.07 MB, and `serve` never sets `Content-Encoding`.
-  The fix the plan names: precompress in `build.sh` and serve the `.br` or
-  `.gz` when the request accepts it; what GitHub Pages does for `.wasm` was
-  not checked. Split out of N-144 when its P10 landed, because N-144 is
-  repairs to tests and CI only and this one changes what `serve` sends.
-  Related: N-142's `grmob web -dist` with precompressed assets (C7).
 
 ## Validate
 
@@ -983,6 +975,37 @@ defect, which then becomes its own Open item.
 
 ## Closed
 
+- **N-145** · raised `2026-1111-1851-n140-n144-n138-grmobtest-useasync-shuffle-fake-clocks-p0` · value low
+  · closed 2026-11-13, `2026-1113-2300-n145-precompressed-wasm-siblings` — `serve` sends precompressed siblings; the site needed nothing.
+  - GitHub Pages was checked first (2026-11-13, curl of the live
+    `main.wasm`). It gzips `application/wasm` on the fly with
+    `Vary: Accept-Encoding` (13,176,265 → 3,131,849 bytes), never offers br,
+    and has no sibling negotiation. So `site.yml` sets
+    `GRMOB_PRECOMPRESS=0`, and its stage step never copied the siblings.
+  - `build.sh` deletes the old `.gz`/`.br`/`.tmp` siblings of `main.wasm`,
+    `wasm_exec.js`, `grmob-runtime.js` and `index.html`. It then writes
+    `gzip -9 -n` (always) and `brotli -q 9` (when the CLI is on PATH) in
+    parallel, each through a `.tmp` and a rename. A cached build grows from
+    0.2 s to 1.3 s. Brotli q11 was measured at 2.09 MB but 19.5 s, so q9
+    (2.38 MB, 0.85 s) was chosen. `serve -dev` passes
+    `GRMOB_PRECOMPRESS=0`, so rebuilds stay fast and no stale copy survives.
+  - `serve/encoding.go`: `pickSibling` prefers br, then gzip, and skips a
+    sibling older than its original (hand-edited `index.html` or runtime
+    JS). `acceptsEncoding` implements RFC 9110 q=0 refusal, `*` and
+    `x-gzip`, and treats a malformed weight as not accepted. `serveFile`
+    sends `Vary: Accept-Encoding` on every file response, 304s included,
+    plus `Content-Encoding`. It keeps the original's Content-Type
+    (application/wasm) and Last-Modified, and falls back to the original
+    if a sibling read fails.
+  - Seen working: curl decodes both codings to `main.wasm`'s exact bytes.
+    Headless Chrome 157 boots the tutorial from `serve`. On localhost and
+    127.0.0.1 it sent `gzip, deflate, br, zstd` and got br. On the LAN
+    address over http it sent `gzip, deflate` and got gzip. Two new tests in
+    `serve/main_test.go` each fail when the age check, the q=0 refusal, the
+    q parsing or the Vary header is removed.
+  - Not done here: the app scaffold's `build.sh` (`grmob new`) makes no
+    siblings. That belongs to N-142's `grmob web -dist` (C7), which can
+    reuse the same naming, since `serve` already understands it.
 - **N-140** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value high
   · closed 2026-11-11, `2026-1111-1851-n140-n144-n138-grmobtest-useasync-shuffle-fake-clocks-p0` — both halves landed.
   - C1 (`5adce9a`): `grmobtest.New(t, App)` returns a Driver over

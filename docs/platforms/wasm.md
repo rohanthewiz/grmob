@@ -27,6 +27,17 @@ files the site workflow publishes to
 <https://rohanthewiz.github.io/grmob/>, so the local page and the live one
 are the same bytes.
 
+The module is about 13 MB, so `build.sh` also writes a gzip copy of it and
+of the page's other files (`main.wasm.gz`, about 3.0 MB), plus a brotli copy
+(`main.wasm.br`, about 2.4 MB) when the `brotli` command is installed.
+`serve` sends the best copy the browser's `Accept-Encoding` allows, with
+`Content-Encoding` set and the original's `Content-Type` kept, and it skips
+a copy older than its original. Chrome asks for brotli on `localhost` and
+gzip only over plain http on a LAN address, so a phone gets the gzip copy.
+`serve -dev` builds no copies, because they would slow every rebuild. GitHub
+Pages ignores the copies and gzips `main.wasm` itself (3.1 MB), so the site
+workflow does not build them.
+
 **An app in its own module** cannot dot-import itself into this repository's
 `wasm` package, so the host wiring is also a library: `webhost.Run` installs
 the whole `GrMobWASM` surface below (including `Shutdown`, so hot reload

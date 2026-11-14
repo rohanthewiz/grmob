@@ -7,7 +7,9 @@
 // .instantiateStreaming refuses a module served as anything but
 // application/wasm. RWeb's file helper (rweb.FileWithModTime) maps .wasm to
 // exactly that, so no Python http.server or other second toolchain is needed
-// to put the page on localhost.
+// to put the page on localhost. Plain mode also sends the .br or .gz copy
+// build.sh writes next to a file when the browser accepts it (encoding.go):
+// 13 MB of main.wasm goes out as 2–3 MB.
 //
 // Dev (`go run ./serve -dev`) is the hot-reload loop: it runs ./build.sh
 // itself at startup and again whenever a Go file in the module's build graph
@@ -187,6 +189,14 @@ func (f *staticFiles) serveFile(ctx rweb.Context, name string) error {
 		}
 	}
 
+	// The body may come from a precompressed sibling (encoding.go), so the
+	// response depends on Accept-Encoding and caches must key on it. Sent on
+	// every file, including 304s, rather than only on files that have a
+	// sibling now: siblings come and go between builds (dev skips them), and
+	// a cache that stored a brotli body under a header-less key would hand it
+	// to a client that cannot decode it.
+	ctx.Response().SetHeader("Vary", "Accept-Encoding")
+
 	// Conditional GET. Last-Modified has one-second resolution, so compare at
 	// that grain, as http.FileServer does. That shares its blind spot too: a
 	// rewrite within the same second as the copy the browser holds reads as
@@ -197,6 +207,21 @@ func (f *staticFiles) serveFile(ctx rweb.Context, name string) error {
 		if t, err := http.ParseTime(ims); err == nil && !info.ModTime().Truncate(time.Second).After(t) {
 			ctx.SetStatus(http.StatusNotModified)
 			return nil
+		}
+	}
+
+	// A sibling read can fail the same way as the original's below (build.sh
+	// deletes every sibling before it rewrites them), and the original is
+	// always a correct answer, so a failed sibling falls back to it instead
+	// of failing the request.
+	if sibling, coding := f.pickSibling(name, info, ctx.Request().Header("Accept-Encoding")); sibling != "" {
+		if body, err := f.root.ReadFile(sibling); err == nil {
+			ctx.Response().SetHeader("Content-Encoding", coding)
+			// The original's name and time, not the sibling's: the type
+			// comes from the extension (main.wasm, never main.wasm.br) and
+			// Last-Modified must agree with the If-Modified-Since check
+			// above, which compared the original.
+			return rweb.FileWithModTime(ctx, path.Base(name), body, info.ModTime())
 		}
 	}
 

@@ -95,6 +95,12 @@ jobs:
           go-version-file: go.mod
       - name: Build wasm
         run: ./build.sh
+        # No .gz/.br siblings: Pages serves no sibling files by content
+        # negotiation, it gzips application/wasm on its own (3.13 MB of the
+        # 13.1 MB module, checked 2026-11-13; it never offered br), and the
+        # stage step below copies by name, so they would only cost time.
+        env:
+          GRMOB_PRECOMPRESS: '0'
       # Only the host page and what it loads. wasm/verify (the test harness)
       # and wasm/main.go are not site files.
       - name: Stage site

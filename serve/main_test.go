@@ -166,3 +166,105 @@ func TestBLBProxyRoute(t *testing.T) {
 		t.Errorf("/app.js = %q; the proxy route swallowed a file", got)
 	}
 }
+
+// A file with precompressed siblings goes out as the best one the request's
+// Accept-Encoding allows, labelled with Content-Encoding but keeping the
+// original's Content-Type (application/wasm, which instantiateStreaming
+// requires) and its Last-Modified. A request that accepts neither coding,
+// or sends no header, gets the plain file. Every response carries
+// Vary: Accept-Encoding, since the choice depends on it.
+func TestStaticPrecompressedSiblings(t *testing.T) {
+	s, dir := plainTestServer(t, map[string]string{
+		"main.wasm":    "\x00asm plain",
+		"main.wasm.br": "BROTLI",
+		"main.wasm.gz": "GZIP",
+	})
+	mod := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	for _, name := range []string{"main.wasm", "main.wasm.br", "main.wasm.gz"} {
+		if err := os.Chtimes(filepath.Join(dir, name), mod, mod); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tc := range []struct {
+		accept   string // "" sends no header
+		body     string
+		encoding string
+	}{
+		{"gzip, deflate, br, zstd", "BROTLI", "br"}, // Chromium over HTTPS
+		{"gzip, deflate", "GZIP", "gzip"},           // a browser over plain http
+		{"br;q=0, gzip", "GZIP", "gzip"},            // br refused outright
+		{"BR", "BROTLI", "br"},                      // tokens are case-insensitive
+		{"x-gzip", "GZIP", "gzip"},                  // the legacy alias
+		{"*", "BROTLI", "br"},                       // "*" accepts every coding
+		{"*, br;q=0", "GZIP", "gzip"},               // ...but not one refused by name
+		{"gzip;q=0, br;q=0", "\x00asm plain", ""},   // both refused
+		{"gzip;q=nope", "\x00asm plain", ""},        // a malformed weight is not acceptance
+		{"identity", "\x00asm plain", ""},
+		{"", "\x00asm plain", ""},
+	} {
+		var hdr []rweb.Header
+		if tc.accept != "" {
+			hdr = []rweb.Header{{Key: "Accept-Encoding", Value: tc.accept}}
+		}
+		res := s.Request("GET", "/main.wasm", hdr, nil)
+		if got := string(res.Body()); got != tc.body {
+			t.Errorf("Accept-Encoding %q: body %q, want %q", tc.accept, got, tc.body)
+		}
+		if got := res.Header("Content-Encoding"); got != tc.encoding {
+			t.Errorf("Accept-Encoding %q: Content-Encoding %q, want %q", tc.accept, got, tc.encoding)
+		}
+		if got := res.Header("Content-Type"); got != "application/wasm" {
+			t.Errorf("Accept-Encoding %q: Content-Type %q, want application/wasm", tc.accept, got)
+		}
+		if got := res.Header("Last-Modified"); got != mod.Format(http.TimeFormat) {
+			t.Errorf("Accept-Encoding %q: Last-Modified %q, want the original's %q", tc.accept, got, mod.Format(http.TimeFormat))
+		}
+		if got := res.Header("Vary"); got != "Accept-Encoding" {
+			t.Errorf("Accept-Encoding %q: Vary %q, want Accept-Encoding", tc.accept, got)
+		}
+	}
+
+	// A 304 carries Vary too: it revalidates one of the variants.
+	res := s.Request("GET", "/main.wasm", []rweb.Header{
+		{Key: "Accept-Encoding", Value: "br"},
+		{Key: "If-Modified-Since", Value: mod.Format(http.TimeFormat)},
+	}, nil)
+	if res.Status() != http.StatusNotModified || res.Header("Vary") != "Accept-Encoding" {
+		t.Errorf("revalidation: status %d Vary %q, want 304 with Vary", res.Status(), res.Header("Vary"))
+	}
+}
+
+// A sibling older than its original is from an earlier build (or the
+// original was edited by hand since), so it is skipped and the next coding
+// or the plain file goes out instead. A directory with a sibling's name is
+// not a sibling.
+func TestStaticStaleSiblingSkipped(t *testing.T) {
+	s, dir := plainTestServer(t, map[string]string{
+		"grmob-runtime.js":    "// edited",
+		"grmob-runtime.js.br": "OLD BROTLI",
+		"grmob-runtime.js.gz": "FRESH GZIP",
+		"index.html":          "page",
+		"index.html.br/x":     "a directory named like a sibling",
+	})
+	mod := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	for name, at := range map[string]time.Time{
+		"grmob-runtime.js":    mod,
+		"grmob-runtime.js.br": mod.Add(-time.Minute),
+		"grmob-runtime.js.gz": mod.Add(time.Minute),
+	} {
+		if err := os.Chtimes(filepath.Join(dir, name), at, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	both := []rweb.Header{{Key: "Accept-Encoding", Value: "br, gzip"}}
+
+	res := s.Request("GET", "/grmob-runtime.js", both, nil)
+	if string(res.Body()) != "FRESH GZIP" || res.Header("Content-Encoding") != "gzip" {
+		t.Errorf("stale .br: body %q encoding %q, want the fresh gzip", res.Body(), res.Header("Content-Encoding"))
+	}
+
+	res = s.Request("GET", "/index.html", both, nil)
+	if string(res.Body()) != "page" || res.Header("Content-Encoding") != "" {
+		t.Errorf("directory as sibling: body %q encoding %q, want the plain page", res.Body(), res.Header("Content-Encoding"))
+	}
+}

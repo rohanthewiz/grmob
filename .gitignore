@@ -27,6 +27,11 @@ coverage.html
 # wasm_exec.js is NOT ignored — it is copied from the Go toolchain and tracked
 # so the page works without a local Go install.
 wasm/main.wasm
+# build.sh's precompressed copies of the page's files (serve sends them to
+# browsers that accept them), and the .tmp each is written through.
+wasm/*.gz
+wasm/*.br
+wasm/*.tmp
 
 # htmlout demo output. Several examples render to a static page in the working
 # directory (examples/chat -> social.html, examples/layout -> layout.html,

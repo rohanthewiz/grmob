@@ -26,8 +26,8 @@ actual phone; nothing is installed and nothing leaves your browser.
 Locally it is two commands from the repository root:
 
 ```bash
-./build.sh          # wasm/main.wasm + a matching wasm/wasm_exec.js
-go run ./serve      # http://localhost:8080, serving wasm/
+./build.sh          # wasm/main.wasm + a matching wasm/wasm_exec.js (+ .gz/.br copies)
+go run ./serve      # http://localhost:8080, serving wasm/ (compressed when accepted)
 ```
 
 Or, while editing lessons, one:

@@ -396,7 +396,7 @@ encode durations, patch count and payload bytes per pass, readable through
 | a | CI runs the race detector over source-census packages | `wasm/verify` takes 5.7 s plain and 54.9 s under `-race` locally; 68 s in CI | `-race` on product packages only; plain `go test` for `wasm/verify`, `internal/...`, `mobile/verify`, `aria/...`. Expect 30–60 s off the longest job (estimate) |
 | b | Timer tests sleep real time | About 7 of `examples/tutorial`'s 10 s; `hooks/debounce_test.go` has 11 sleeps | `testing/synctest`. A probe ran `UseDebounce`, `UseInterval`, `UseTimeout` and `UseNow` through a real Manager: 10 fake seconds in 0.57 ms |
 | c | The site workflow repeats CI | `site.yml`'s `verify` job re-runs the tutorial tests and `wasm/verify/run.sh` (108 s) | Depend on the CI run instead |
-| d | Nothing compresses the 13.1 MB module | gzip gives 2.98 MB, brotli 2.07 MB; `serve` never sets `Content-Encoding` | Precompress in `build.sh` and serve the `.br`/`.gz` when accepted. Check what GitHub Pages does for `.wasm`; not verified |
+| d | Nothing compresses the 13.1 MB module | gzip gives 2.98 MB, brotli 2.07 MB; `serve` never sets `Content-Encoding` | Precompress in `build.sh` and serve the `.br`/`.gz` when accepted. Check what GitHub Pages does for `.wasm`; not verified. **Landed 2026-11-13 (N-145)** for `serve`. Pages already gzips `.wasm` on the fly (3.13 MB, no br) and serves no siblings, so the site is unchanged |
 
 Continuous events are a possible eleventh item: a slider dispatches one full
 pass per pointer move into an unbounded queue (`Renderer.kt:1811-1815`,

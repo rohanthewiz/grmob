@@ -336,6 +336,13 @@ func (d *devServer) build() {
 	start := time.Now()
 	cmd := exec.Command("sh", "build.sh")
 	cmd.Dir = d.root
+	// No precompressed siblings in dev: they add a second or more to every
+	// rebuild, and dev serves localhost with no-store, where the transfer
+	// they save costs less than making them. build.sh still deletes the old
+	// ones, so a plain build's .gz cannot outlive the module it was made
+	// from (serveFile's age check would skip it anyway). An app's own
+	// build.sh from `grmob new` makes no siblings and ignores the variable.
+	cmd.Env = append(os.Environ(), "GRMOB_PRECOMPRESS=0")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		msg := strings.TrimSpace(string(out))
