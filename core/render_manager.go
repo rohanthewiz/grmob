@@ -27,12 +27,22 @@ func NewRenderManager() *RenderManager {
 	}
 }
 
-// TriggerRender invokes the handler registered under id, if any.
+// TriggerRender invokes the handler registered under id, if any, on the
+// caller's goroutine.
+//
+// It used to start a goroutine per notification ("go fn()"), to keep a
+// render off the writer's stack. But the one handler ever registered is
+// render.Manager's requestRender, which is already a non-blocking send into a
+// one-slot channel, so the goroutine bought nothing and cost a spawn on every
+// State.Set (N-138, plan P1). The handler is copied out and called after the
+// lock is released, so a handler that itself registers or notifies cannot
+// deadlock on r.mu.
 func (r *RenderManager) TriggerRender(id string) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	if fn, ok := r.subs[id]; ok {
-		go fn() // async
+	fn := r.subs[id]
+	r.mu.Unlock()
+	if fn != nil {
+		fn()
 	}
 }
 
@@ -46,9 +56,11 @@ const defaultRenderTarget = "default"
 // for the whole app, so later registrations replace earlier ones rather than
 // fanning out duplicate render passes.
 //
-// fn is invoked on a fresh goroutine per notification (see TriggerRender), so
-// it must be safe to call concurrently and should be cheap — the intended
-// pattern is a non-blocking nudge into a coalescing channel, not a render.
+// fn is invoked synchronously on whichever goroutine wrote the state (see
+// TriggerRender), often inside an event handler that holds the render lock,
+// so it must be safe to call concurrently, must not block, and must not
+// render: the intended pattern is a non-blocking nudge into a coalescing
+// channel.
 func (ctx *Context) OnStateChange(fn func()) {
 	ctx.renderManager.mu.Lock()
 	defer ctx.renderManager.mu.Unlock()

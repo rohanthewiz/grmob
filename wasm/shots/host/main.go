@@ -172,7 +172,8 @@ func renderAgain(this js.Value, args []js.Value) any {
 	if push.Delivering() {
 		return js.ValueOf("[]")
 	}
-	return js.ValueOf(manager.RenderAgain())
+	// See wasm/main.go: a pass only when a write is still undrawn.
+	return js.ValueOf(manager.RenderIfDirty())
 }
 
 func isDirty(this js.Value, args []js.Value) any {

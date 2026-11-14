@@ -3,6 +3,7 @@ package render_test
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -135,18 +136,18 @@ func TestPassStatsAreOffWithDebugMode(t *testing.T) {
 	}
 }
 
-// How many times one tap renders the root, with a host listening. Today it
-// is twice: the dispatch renders the pass the tap needs, and the handler's
-// State.Set also left a token for the pump, which wakes and renders again to
-// find nothing ("[]"). Plan item P1 (N-138) removes the second pass with a
-// generation counter; when it lands this pin changes to one, which is the
-// point of having it.
+// How many times one tap renders the root, with a host listening: once. It
+// used to be twice: the dispatch rendered the pass the tap needed, and the
+// handler's State.Set also left a token for the pump, which woke and
+// rendered again to find nothing ("[]"). Plan item P1 (N-138) gave the dirty
+// flag a generation, so the pump now sees the write was already drawn and
+// skips. The pin started at two per tap and was changed to one by that fix.
 //
 // In a fake-clock bubble the 10 ms between taps lets the pump run to
 // completion each time, so the count is exact rather than a race between
 // the pump and the next tap. The passes are counted twice over, by the root
 // function and by the debug-mode pass record, and the two must agree.
-func TestATapRendersTheRootTwiceToday(t *testing.T) {
+func TestATapRendersTheRootOnce(t *testing.T) {
 	withDebugMode(t)
 	grmobtest.WithFakeClock(t, func(t *testing.T) {
 		var roots atomic.Int32
@@ -176,7 +177,7 @@ func TestATapRendersTheRootTwiceToday(t *testing.T) {
 			time.Sleep(10 * time.Millisecond)
 		}
 
-		const perTap = 2 // P1 makes this 1
+		const perTap = 1 // was 2 before P1
 		if got := roots.Load(); got != taps*perTap {
 			t.Fatalf("%d taps rendered the root %d times, want %d (%d per tap)", taps, got, taps*perTap, perTap)
 		}
@@ -195,6 +196,66 @@ func TestATapRendersTheRootTwiceToday(t *testing.T) {
 		if dispatches != taps || renders != taps*(perTap-1) {
 			t.Fatalf("the pass record has %d dispatches and %d renders, want %d and %d",
 				dispatches, renders, taps, taps*(perTap-1))
+		}
+	})
+}
+
+// payloadLog keeps every pushed payload, for the tests that ask what
+// the pump sent rather than how often it rendered.
+type payloadLog struct {
+	mu   sync.Mutex
+	sent []string
+}
+
+func (l *payloadLog) ApplyPatches(p string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.sent = append(l.sent, p)
+}
+
+func (l *payloadLog) all() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return strings.Join(l.sent, "\n")
+}
+
+// The other half of P1: skipping the pump's pass must not skip a write the
+// dispatch's pass never saw. Here the tap's own pass writes a second state
+// while it builds (the shape of an effect's Set, or a timer firing on another
+// goroutine mid-pass). That write is newer than the generation the pass
+// started from, so it stays dirty, and the pump must render it and push it.
+// Clearing the flag outright at the end of the pass would have swallowed it:
+// the screen would say "echo=0" until some unrelated event.
+func TestAWriteDuringATapsPassStillGetsItsOwnPass(t *testing.T) {
+	grmobtest.WithFakeClock(t, func(t *testing.T) {
+		var roots atomic.Int32
+		app := grmobtest.New(t, func(ctx *core.Context) core.View {
+			roots.Add(1)
+			n := core.NewState(ctx, 0)
+			echo := core.NewState(ctx, 0)
+			if n.Get() != echo.Get() {
+				echo.Set(n.Get()) // a write during the build
+			}
+			return core.Column(
+				core.Text(fmt.Sprintf("echo=%d", echo.Get())),
+				core.Button("+", func() { n.Set(n.Get() + 1) }),
+			)
+		})
+		app.Tree()
+		l := &payloadLog{}
+		app.Manager().SetListener(l)
+		time.Sleep(10 * time.Millisecond)
+
+		id := app.Find(grmobtest.Button("+")).Props["onClick"].(string)
+		roots.Store(0)
+		app.Manager().DispatchCallback(id)
+		time.Sleep(10 * time.Millisecond)
+
+		if got := roots.Load(); got != 2 {
+			t.Fatalf("the tap rendered the root %d times, want 2: its own pass and the pump's for the write made during it", got)
+		}
+		if !strings.Contains(l.all(), "echo=1") {
+			t.Fatalf("the write made during the tap's pass never reached the host; pushed:\n%s", l.all())
 		}
 	})
 }

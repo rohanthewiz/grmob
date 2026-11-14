@@ -192,6 +192,14 @@ func (m *Manager) renderAndPush() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	// The token that woke the pump may belong to a write some other pass
+	// has already drawn: a tap's handler writes state (leaving a token), and
+	// the dispatch renders that write under this same lock before the pump
+	// can take it. Asked under mu, so the answer cannot change between the
+	// question and the pass. See core's dirtyFlag (N-138, plan P1).
+	if !m.context.IsDirty() {
+		return
+	}
 	out := m.renderAgainLocked()
 	if out == "[]" {
 		return
@@ -288,6 +296,8 @@ func (r *Manager) renderInitialLocked() string {
 		start = time.Now()
 	}
 
+	// The writes this pass can see; see renderAgainLocked.
+	gen := r.context.DirtyGeneration()
 	r.context.BeginRenderPass()
 	r.context.Reset()
 
@@ -341,6 +351,10 @@ func (r *Manager) renderInitialLocked() string {
 		stoodIn = true
 	}
 	r.currentTree = tree
+	// The mount drew every write up to gen, so the pump has nothing to do
+	// for them. It used to leave the flag standing, which cost one empty
+	// pass after every mount.
+	r.context.ClearDirtyThrough(gen)
 	// A placeholder's mount is not the app's cost, so it is not recorded.
 	if timed && !stoodIn {
 		core.RecordPassStat(core.PassStat{
@@ -385,6 +399,32 @@ func (r *Manager) RenderAgain() string {
 	return r.renderAgainLocked()
 }
 
+// RenderIfDirty is RenderAgain for a host that asks after every event: it
+// renders only when some write has not been drawn yet, and otherwise answers
+// "[]" without building anything.
+//
+// # Why the web hosts need it
+//
+// A browser page calls GrMobWASM.ReceiveEvent and then RenderAgain for every
+// DOM event. With the push listener attached, the handler's writes reach the
+// page through the pump, which on js/wasm runs inside ReceiveEvent, so the
+// RenderAgain that followed built the whole app again to return "[]"; 1.2 to
+// 6.0 ms a tap in the plan's measurements (N-138, P1). Asked under mu, the
+// same as the pump's check, so the answer cannot go stale before the pass.
+//
+// RenderAgain itself keeps rendering unconditionally: a test or a host
+// driving passes by hand may want a pass whatever the flag says (state read
+// from outside any State, for instance), and that is what it has always
+// promised.
+func (r *Manager) RenderIfDirty() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !r.context.IsDirty() {
+		return "[]"
+	}
+	return r.renderAgainLocked()
+}
+
 // renderAgainLocked is the diff-producing render pass; callers must hold mu.
 func (r *Manager) renderAgainLocked() string {
 	// The dispatch's handler half, if a dispatch started this pass; cleared
@@ -396,6 +436,12 @@ func (r *Manager) renderAgainLocked() string {
 	if timed {
 		start = time.Now()
 	}
+
+	// The writes this pass can see. Read before the build, so a write that
+	// lands during it (an effect's Set, a timer on another goroutine) is
+	// newer than gen and stays dirty when the pass clears through gen: the
+	// pump then gives it a pass of its own. See core's dirtyFlag.
+	gen := r.context.DirtyGeneration()
 
 	// BeginRenderPass must precede the render so callback IDs restart from
 	// zero and re-registrations line up with the previous pass; the purge
@@ -427,12 +473,12 @@ func (r *Manager) renderAgainLocked() string {
 		//   reports drift that says nothing except that a panic happened,
 		//   which the log line above already said.
 		//
-		// The dirty flag IS cleared: the state change that prompted this pass
+		// The dirty flag IS cleared (through gen): the state change that prompted this pass
 		// has been consumed, and a deterministic panic will not render any
 		// better on an immediate retry — leaving it set would just make a
 		// polling host (WASM) re-panic on every poll.
 		logRenderPanic("render pass", rerr)
-		r.context.ClearDirty()
+		r.context.ClearDirtyThrough(gen)
 		return "[]"
 	}
 
@@ -484,7 +530,7 @@ func (r *Manager) renderAgainLocked() string {
 	out, err := encodePass(patches)
 	if err != nil {
 		r.unencodable("render pass", err, newTree)
-		r.context.ClearDirty()
+		r.context.ClearDirtyThrough(gen)
 		return "[]"
 	}
 	if timed {
@@ -506,7 +552,7 @@ func (r *Manager) renderAgainLocked() string {
 		core.RecordPassStat(stat)
 	}
 	r.currentTree = newTree
-	r.context.ClearDirty()
+	r.context.ClearDirtyThrough(gen)
 	r.context.PurgeUnusedCallbacks()
 	return out
 }
@@ -519,10 +565,11 @@ func (r *Manager) renderAgainLocked() string {
 // because dispatching a handler without an immediate render (the async shape)
 // is only wanted by hosts that poll or rely purely on the push channel.
 //
-// Handlers may call State.Set freely: the resulting RequestRender nudge is
-// asynchronous (a buffered-channel send plus a goroutine hop), so nothing in
-// the handler path re-enters this mutex. The pump's follow-up pass then finds
-// an empty diff and pushes nothing.
+// Handlers may call State.Set freely: the resulting RequestRender nudge is a
+// non-blocking buffered-channel send, so nothing in the handler path
+// re-enters this mutex. The pump then wakes on that nudge, finds the write
+// already drawn by this dispatch's pass (core's dirtyFlag generation), and
+// renders nothing (N-138, plan P1).
 //
 // With a listener attached the patches are handed to it before the lock is
 // released and the return value is "[]"; without one they are returned. Every

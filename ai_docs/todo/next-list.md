@@ -181,6 +181,17 @@ with each item's `raised` traced back through all session docs.
     to 1. Debug mode records a `core.PassStat` per pass (handler, build,
     diff, encode, patches, bytes) in `core.PassStats` (last 512), with
     `core.SetPassLogging` for a line per pass. P1, P2 and P3 remain.
+  - P1 landed 2026-11-14. The dirty flag is a generation: a pass reads
+    `DirtyGeneration` before it builds and `ClearDirtyThrough` that gen when
+    it commits, so a write made during the pass stays dirty. The pump skips
+    when `IsDirty` is false under the render lock, and the mount clears too.
+    `TriggerRender` calls the handler inline, not on a goroutine. `State.Set`
+    of an unchanged built-in scalar requests nothing. The web hosts bind
+    `RenderAgain` to `render.Manager.RenderIfDirty`, and the runtime's
+    per-frame `IsDirty` poll is gone. Pins: `TestATapRendersTheRootOnce`
+    (20 taps, 20 roots), `TestAWriteDuringATapsPassStillGetsItsOwnPass`
+    (fails with a plain `ClearDirty`), core's `dirty_test.go`. Go suite and
+    `wasm/verify/run.sh` (headless Chrome) pass. P2 and P3 remain.
 - **N-139** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value low
   **Host and library hot spots (plan P6-P9).** The one felt daily is P7:
   the dev watcher runs `go list -deps` on every 250 ms poll, about half a

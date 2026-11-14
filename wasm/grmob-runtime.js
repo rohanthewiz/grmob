@@ -11075,13 +11075,15 @@ window.GrMobSystemEvent = function (name, payloadJSON) {
 // The patch push channel the WASM host feature-checks at startup (wasm/
 // main.go's renderInitial): when this exists, async state changes — timers,
 // goroutines — arrive here directly from the manager's pump, on the state
-// write's own schedule. Without it the host falls back to the IsDirty poll
-// below, which rides requestAnimationFrame — and rAF is fully suspended in a
-// hidden tab, so an UseInterval clock froze the moment the tab lost
-// visibility even though the Go ticker kept running. Defined at page level,
-// before the wasm module is instantiated, so the host's check finds it; the
-// poll loop stays as a harmless fallback (with a listener attached the pump
-// consumes the diff, so the poll sees a clean tree).
+// write's own schedule. Defined at page level, before the wasm module is
+// instantiated, so the host's check finds it.
+//
+// There used to be an IsDirty poll on requestAnimationFrame beside it, as the
+// fallback for a page without this function. But every page that loads this
+// file has it, so with the listener attached the pump consumed every diff
+// and the poll never found work: it cost a Go call per frame, and it threw
+// once when Go exited (N-138, plan P1). It is gone. A page that drives Go
+// without this file still has GrMobWASM.IsDirty and RenderAgain to poll with.
 //
 // applyPushed rather than patch: Go holds its render lock for the whole of
 // this call, and the runtime has to know that to keep a call the batch causes
@@ -11090,21 +11092,11 @@ window.GrMobApplyPatches = function (patchJSON) {
     GrMob.applyPushed(patchJSON);
 };
 
-function checkLoop() {
-
-    if (window.GrMobWASM.IsDirty()) {
-        const patch = window.GrMobWASM.RenderAgain();
-        GrMob.patch(patch);
-    }
-    requestAnimationFrame(checkLoop);
-}
-
 function waitForWasm() {
     if (window.GrMobWASM) {
         // The size the page loaded at, which no resize will ever report;
         // see windowMetrics.
         GrMob.windowMetrics.report();
-        checkLoop();
     } else {
         setTimeout(waitForWasm, 100);
     }

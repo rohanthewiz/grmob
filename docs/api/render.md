@@ -46,6 +46,7 @@ PatchListener.ApplyPatches is called from a background goroutine. A native imple
     - [`func (*Manager) DispatchTextEdit`](#func-manager-dispatchtextedit)
     - [`func (*Manager) RenderAgain`](#func-manager-renderagain)
     - [`func (*Manager) RenderAndGetPatches`](#func-manager-renderandgetpatches)
+    - [`func (*Manager) RenderIfDirty`](#func-manager-renderifdirty)
     - [`func (*Manager) RenderInitial`](#func-manager-renderinitial)
     - [`func (*Manager) Resync`](#func-manager-resync)
     - [`func (*Manager) SetListener`](#func-manager-setlistener)
@@ -91,7 +92,7 @@ Dispatch runs fn under the render mutex — the same serialization the callback 
 
 Before the initial mount there is no tree to diff against, so fn runs and the state it wrote is simply part of the RenderInitial that follows; the "\[]" tells the host nothing needs applying. That case is rare (a status tick cannot precede the Load that caused it, and Load needs a rendered button) but a host that sent it would otherwise receive a diff against nothing, which no renderer can apply.
 
-<small>[render/manager.go:585](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L585)</small>
+<small>[render/manager.go:632](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L632)</small>
 
 #### func (*Manager) DispatchBoolCallback
 
@@ -101,7 +102,7 @@ func (m *Manager) DispatchBoolCallback(id string, value bool) string
 
 DispatchBoolCallback is DispatchCallback for bool-carrying events.
 
-<small>[render/manager.go:558](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L558)</small>
+<small>[render/manager.go:605](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L605)</small>
 
 #### func (*Manager) DispatchCallback
 
@@ -111,11 +112,11 @@ func (m *Manager) DispatchCallback(id string) string
 
 DispatchCallback runs the void handler registered under id (a button tap, say), then renders and returns the resulting patches — the whole sequence under the render mutex, so the handler cannot interleave with a pump render pass and its state writes are diffed in the same lock hold. This is the event path native bridges should use; the Dispatch\*/Trigger split exists because dispatching a handler without an immediate render (the async shape) is only wanted by hosts that poll or rely purely on the push channel.
 
-Handlers may call State.Set freely: the resulting RequestRender nudge is asynchronous (a buffered-channel send plus a goroutine hop), so nothing in the handler path re-enters this mutex. The pump's follow-up pass then finds an empty diff and pushes nothing.
+Handlers may call State.Set freely: the resulting RequestRender nudge is a non-blocking buffered-channel send, so nothing in the handler path re-enters this mutex. The pump then wakes on that nudge, finds the write already drawn by this dispatch's pass (core's dirtyFlag generation), and renders nothing (N-138, plan P1).
 
 With a listener attached the patches are handed to it before the lock is released and the return value is "\[]"; without one they are returned. Every Dispatch\* below does the same. See deliverLocked for the ordering hole the return value left open.
 
-<small>[render/manager.go:531](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L531)</small>
+<small>[render/manager.go:578](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L578)</small>
 
 #### func (*Manager) DispatchIntCallback
 
@@ -125,7 +126,7 @@ func (m *Manager) DispatchIntCallback(id string, value int) string
 
 DispatchIntCallback is DispatchCallback for int-carrying events.
 
-<small>[render/manager.go:566](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L566)</small>
+<small>[render/manager.go:613](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L613)</small>
 
 #### func (*Manager) DispatchTextCallback
 
@@ -135,7 +136,7 @@ func (m *Manager) DispatchTextCallback(id string, value string) string
 
 DispatchTextCallback is DispatchCallback for string-carrying events.
 
-<small>[render/manager.go:539](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L539)</small>
+<small>[render/manager.go:586](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L586)</small>
 
 #### func (*Manager) DispatchTextEdit
 
@@ -145,7 +146,7 @@ func (m *Manager) DispatchTextEdit(id string, value string, seq, epoch int) stri
 
 DispatchTextEdit is DispatchTextCallback for a native text field's keystroke, carrying the host's sequence number and adopted rewrite epoch. An edit typed against text Go has since rewritten is acknowledged without reaching the handler; see core/text\_edit.go for the protocol.
 
-<small>[render/manager.go:550](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L550)</small>
+<small>[render/manager.go:597](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L597)</small>
 
 #### func (*Manager) RenderAgain
 
@@ -155,7 +156,7 @@ func (r *Manager) RenderAgain() string
 
 RenderAgain ReRender Used after an event (input/click/state change) to get diff
 
-<small>[render/manager.go:382](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L382)</small>
+<small>[render/manager.go:396](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L396)</small>
 
 #### func (*Manager) RenderAndGetPatches
 
@@ -167,7 +168,23 @@ RenderAndGetPatches renders one pass and returns whichever payload the host need
 
 It delegates rather than re-implementing the two passes, which is the whole of the fix here. Its own copy had drifted badly: it reset the root cursor with \`r.context.Cursor = 0\` instead of \`Reset()\`, so every child scope kept its cursor from the previous pass and its slots grew by one per render; and it never called PurgeUnusedCallbacks or ClearDirty, so handlers for vanished nodes stayed dispatchable and a polling host re-rendered forever.
 
-<small>[render/manager.go:725](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L725)</small>
+<small>[render/manager.go:772](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L772)</small>
+
+#### func (*Manager) RenderIfDirty
+
+```go
+func (r *Manager) RenderIfDirty() string
+```
+
+RenderIfDirty is RenderAgain for a host that asks after every event: it renders only when some write has not been drawn yet, and otherwise answers "\[]" without building anything.
+
+##### Why the web hosts need it
+
+A browser page calls GrMobWASM.ReceiveEvent and then RenderAgain for every DOM event. With the push listener attached, the handler's writes reach the page through the pump, which on js/wasm runs inside ReceiveEvent, so the RenderAgain that followed built the whole app again to return "\[]"; 1.2 to 6.0 ms a tap in the plan's measurements (N-138, P1). Asked under mu, the same as the pump's check, so the answer cannot go stale before the pass.
+
+RenderAgain itself keeps rendering unconditionally: a test or a host driving passes by hand may want a pass whatever the flag says (state read from outside any State, for instance), and that is what it has always promised.
+
+<small>[render/manager.go:419](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L419)</small>
 
 #### func (*Manager) RenderInitial
 
@@ -175,7 +192,7 @@ It delegates rather than re-implementing the two passes, which is the whole of t
 func (r *Manager) RenderInitial() string
 ```
 
-<small>[render/manager.go:275](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L275)</small>
+<small>[render/manager.go:283](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L283)</small>
 
 #### func (*Manager) Resync
 
@@ -195,7 +212,7 @@ currentTree, which is the tree the last committed pass left the host with (an un
 
 It goes out like a dispatch (deliverLocked): through the listener inside the lock when one is attached, so it cannot be overtaken by a pass and cannot overtake one, and returned otherwise. Before the mount there is nothing to send, and the answer is "\[]".
 
-<small>[render/manager.go:625](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L625)</small>
+<small>[render/manager.go:672](https://github.com/rohanthewiz/grmob/blob/master/render/manager.go#L672)</small>
 
 #### func (*Manager) SetListener
 

@@ -148,7 +148,9 @@ func (h *host) renderAgain(this js.Value, args []js.Value) any {
 	if h.push.Delivering() {
 		return js.ValueOf("[]")
 	}
-	return js.ValueOf(h.manager.RenderAgain())
+	// Only when a write is still undrawn: after ReceiveEvent the pump has
+	// usually pushed it already (render.Manager.RenderIfDirty, N-138).
+	return js.ValueOf(h.manager.RenderIfDirty())
 }
 
 func (h *host) isDirty(this js.Value, args []js.Value) any {

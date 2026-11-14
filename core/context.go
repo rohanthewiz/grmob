@@ -90,9 +90,42 @@ type Context struct {
 // Its own mutex rather than Context.lock: the two guard unrelated things, and
 // keeping them apart means marking the tree dirty never contends with hook
 // slot access on a context that happens to be busy rendering.
+//
+// # A generation, not a bit
+//
+// It was a bool, which could say "something changed" but not "something
+// changed since *this* pass began". That was enough while every state write
+// also left a token for render.Manager's pump, and the pump always rendered on
+// a token, but it cost a pass per event: a tap's handler writes state, the
+// dispatch renders that write, and the pump then wakes on the handler's token
+// and renders again to find nothing (N-138, plan P1; 20 taps ran the root 40
+// times).
+//
+// So a write bumps gen, and a pass records the gen it started from and, when
+// it commits, marks everything up to that gen rendered (ClearDirtyThrough).
+// The pump asks IsDirty before it renders and skips the pass when gen has not
+// moved past what was rendered:
+//
+//	handler: Set ─► gen 7 ─► token            pump wakes on the token
+//	dispatch pass: starts at gen 7            IsDirty? clean 7 == gen 7: skip
+//	               commits, clean = 7
+//
+//	write lands mid-pass:
+//	dispatch pass: starts at gen 7
+//	   effect Set ─► gen 8 ─► token
+//	               commits, clean = 7         IsDirty? 7 != 8: render
+//
+// The second case is what the token alone used to guarantee and still does:
+// a write the running pass may not have seen always gets a pass of its own.
+// Clearing to the *starting* gen rather than to the current one is what
+// keeps it; a plain ClearDirty at the end of the pass would have swallowed
+// the effect's write as if the pass had drawn it.
+//
+// uint64 cannot wrap in practice (one write a nanosecond for 584 years).
 type dirtyFlag struct {
-	mu  sync.Mutex
-	set bool
+	mu    sync.Mutex
+	gen   uint64 // bumped by every MarkDirty
+	clean uint64 // the newest gen a committed (or abandoned) pass has consumed
 }
 
 func newDirtyFlag() *dirtyFlag { return &dirtyFlag{} }
@@ -104,7 +137,7 @@ func newDirtyFlag() *dirtyFlag { return &dirtyFlag{} }
 func (ctx *Context) MarkDirty() {
 	ctx.dirty.mu.Lock()
 	defer ctx.dirty.mu.Unlock()
-	ctx.dirty.set = true
+	ctx.dirty.gen++
 }
 
 // IsDirty reports whether the tree has changes no pass has consumed yet. It
@@ -112,13 +145,35 @@ func (ctx *Context) MarkDirty() {
 func (ctx *Context) IsDirty() bool {
 	ctx.dirty.mu.Lock()
 	defer ctx.dirty.mu.Unlock()
-	return ctx.dirty.set
+	return ctx.dirty.gen != ctx.dirty.clean
 }
 
+// ClearDirty marks every write so far as rendered. A pass should prefer
+// DirtyGeneration at its start and ClearDirtyThrough at its end, which leaves
+// a write that landed during the pass standing; see dirtyFlag.
 func (ctx *Context) ClearDirty() {
 	ctx.dirty.mu.Lock()
 	defer ctx.dirty.mu.Unlock()
-	ctx.dirty.set = false
+	ctx.dirty.clean = ctx.dirty.gen
+}
+
+// DirtyGeneration is the count of writes so far. A render pass reads it
+// before it builds, and hands it to ClearDirtyThrough when it is done.
+func (ctx *Context) DirtyGeneration() uint64 {
+	ctx.dirty.mu.Lock()
+	defer ctx.dirty.mu.Unlock()
+	return ctx.dirty.gen
+}
+
+// ClearDirtyThrough marks the writes up to gen as rendered, and no later
+// ones. It never moves the mark backwards, so a pass that read an older gen
+// cannot re-dirty what a newer pass already consumed.
+func (ctx *Context) ClearDirtyThrough(gen uint64) {
+	ctx.dirty.mu.Lock()
+	defer ctx.dirty.mu.Unlock()
+	if gen > ctx.dirty.clean {
+		ctx.dirty.clean = gen
+	}
 }
 
 type AppConfig struct {
@@ -303,6 +358,17 @@ func NewState[T any](ctx *Context, initial T) State[T] {
 		},
 		set: func(val T) {
 			owner.lock.Lock()
+			// A write of the value the slot already holds changes nothing on
+			// screen, so it requests no pass: `open.Set(false)` on a menu
+			// that is already shut, a field handler echoing the text it was
+			// given. Asked only for the built-in scalar kinds, where == is
+			// both cheap and the whole truth (see unchangedScalar); a
+			// struct, slice or pointer is always taken as a change, as it
+			// was before (N-138, plan P1's companion).
+			if unchangedScalar(owner.slots[index], val) {
+				owner.lock.Unlock()
+				return
+			}
 			owner.slots[index] = val
 			// Unlock before notifying: RequestRender -> MarkDirty takes the
 			// same (non-reentrant) lock, and holding it across the notify
@@ -315,6 +381,31 @@ func NewState[T any](ctx *Context, initial T) State[T] {
 			owner.RequestRender()
 		},
 	}
+}
+
+// unchangedScalar reports whether next is a built-in scalar (string, bool,
+// or one of the integer and float types) equal to prev.
+//
+// The type switch is on the unnamed kinds only, on purpose. Comparing two
+// `any` values with == panics when the dynamic type is not comparable (a
+// slice, a map, a func, a struct holding one), so a general "compare if you
+// can" needs reflect on every Set; the switch costs one type check and is
+// safe for every T. A named scalar (`type Mode int`) falls through and keeps
+// the old always-render behaviour, which is correct, only not free.
+//
+// A float NaN is never equal to itself, so a Set of NaN always renders: the
+// old behaviour, and harmless.
+func unchangedScalar(prev, next any) bool {
+	switch next.(type) {
+	case string, bool,
+		int, int8, int16, int32, int64,
+		uint, uint8, uint16, uint32, uint64, uintptr,
+		float32, float64:
+		// prev holds the same T (the slot was seeded and written only through
+		// this State), so the interface comparison compares like with like.
+		return prev == next
+	}
+	return false
 }
 
 func (ctx *Context) With(opts ...func(*Context)) *Context {

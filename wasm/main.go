@@ -85,7 +85,9 @@ func renderAgain(this js.Value, args []js.Value) any {
 	if push.Delivering() {
 		return js.ValueOf("[]")
 	}
-	out := manager.RenderAgain()
+	// Only when a write is still undrawn: after ReceiveEvent the pump has
+	// usually pushed it already (render.Manager.RenderIfDirty, N-138).
+	out := manager.RenderIfDirty()
 	return js.ValueOf(out)
 }
 
