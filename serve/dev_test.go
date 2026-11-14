@@ -250,3 +250,55 @@ func TestTheWatcherSkipsOnlyTheModuleCache(t *testing.T) {
 		t.Error("with no GOMODCACHE known, a directory was still excluded")
 	}
 }
+
+// The build graph is read once and then reused across polls (plan P7,
+// N-139): a poll lists and stats the cached packages' files, so a file added
+// to a watched package is still seen at once, while `go list -deps` runs
+// again only when go.mod or go.sum change or a build clears the cache.
+func TestTheWatcherReadsTheBuildGraphOnlyWhenItMayHaveChanged(t *testing.T) {
+	root := t.TempDir()
+	pkg := filepath.Join(root, "app")
+	if err := os.MkdirAll(pkg, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(path, body string) {
+		t.Helper()
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(filepath.Join(root, "go.mod"), "module example.com/app\n")
+	write(filepath.Join(pkg, "a.go"), "package app\n")
+
+	reads := 0
+	d := &devServer{root: root, dir: t.TempDir(), hub: newDevHub(),
+		listGraph: func() []string { reads++; return []string{pkg} }}
+
+	for range 5 {
+		d.stamps()
+	}
+	if reads != 1 {
+		t.Fatalf("five polls read the graph %d times, want 1", reads)
+	}
+
+	write(filepath.Join(pkg, "b.go"), "package app\n")
+	if g, _ := d.stamps(); g[filepath.Join(pkg, "b.go")] == "" {
+		t.Fatal("a file added to a watched package was not seen on the next poll")
+	}
+	if reads != 1 {
+		t.Fatalf("a new file in a known package re-read the graph (%d reads)", reads)
+	}
+
+	// go.mod's stamp is size and mtime; a longer file changes it for sure.
+	write(filepath.Join(root, "go.mod"), "module example.com/app\n\ngo 1.26\n")
+	d.stamps()
+	if reads != 2 {
+		t.Fatalf("a go.mod change did not re-read the graph (%d reads, want 2)", reads)
+	}
+
+	d.pkgDirs = nil // what watch does after a build
+	d.stamps()
+	if reads != 3 {
+		t.Fatalf("a build did not re-read the graph (%d reads, want 3)", reads)
+	}
+}

@@ -54,6 +54,12 @@ import (
 // as `go list -deps` reports it, so an edit to examples/social does not
 // rebuild a tutorial that never imports it, and an import added to a file is
 // picked up because the graph is re-read after every build.
+//
+// The graph is the slow part: `go list -deps` takes about 0.1 s, and it used
+// to run on every poll, about half a core while idle and 0.6 s added to every
+// save (plan P7, N-139). So the package directories it names are cached
+// (goSources), and only their files are listed and stat'ed each poll; the
+// graph itself is re-read after a build and when go.mod or go.sum change.
 
 //go:embed devclient.js
 var devClient []byte
@@ -89,6 +95,18 @@ type devServer struct {
 	mu       sync.Mutex
 	buildID  string // identity of the main.wasm currently on disk
 	lastFail string // compiler output of the last failed build, "" if it passed
+
+	// pkgDirs caches the package directories of ./wasm's build graph, from
+	// the last `go list -deps`, and graphKey is the go.mod and go.sum stamps
+	// it was read under; see goSources. Touched only by the watch goroutine.
+	// A nil pkgDirs means "read the graph on the next poll", which is how
+	// watch asks for a fresh one after a build.
+	pkgDirs  []string
+	graphKey string
+
+	// listGraph replaces listPackageDirs when set, so a test can count how
+	// often the graph is read without running the go command.
+	listGraph func() []string
 }
 
 type sseEvent struct {
@@ -300,9 +318,10 @@ func (d *devServer) watch() {
 			goFiles = g
 			log.Printf("changed: %s", strings.Join(changed, ", "))
 			d.build()
-			// The build graph may have grown (a new import); re-stamp so the
-			// new files are watched from now on, without treating their
-			// appearance as a second change.
+			// The build graph may have grown (a new import); re-read it and
+			// re-stamp so the new files are watched from now on, without
+			// treating their appearance as a second change.
+			d.pkgDirs = nil
 			goFiles, _ = d.stamps()
 		}
 		if changed := diffStamps(hostFiles, h); len(changed) > 0 {
@@ -410,23 +429,39 @@ func (d *devServer) stamps() (goFiles, hostFiles map[string]string) {
 // (see watchesPackageDir), plus the module files and the build script. `go list -e` tolerates a package that
 // currently fails to parse, so a half-typed edit keeps the set intact rather
 // than emptying it.
+//
+// # What is cached and what is not
+//
+// The package directories are cached (pkgDirs); the files in them are listed
+// afresh on every call. That split is what keeps the cache honest:
+//
+//	a file is added to or removed from a watched package   seen next poll (ReadDir)
+//	an import is added, pulling in a new package          seen after the build
+//	                                                       that the edit causes
+//	go.mod or go.sum changes (a require, a replace)        graph re-read now
+//
+// The middle row costs nothing in practice: an import is added by editing a
+// file that is already watched, so that edit's build runs, and watch clears
+// pkgDirs after every build.
 func (d *devServer) goSources() []string {
-	cmd := exec.Command("go", "list", "-e", "-deps", "-f", "{{if not .Standard}}{{.Dir}}{{end}}", "./wasm")
-	cmd.Dir = d.root
-	cmd.Env = append(os.Environ(), "GOOS=js", "GOARCH=wasm")
-	out, err := cmd.Output()
-	if err != nil {
-		log.Printf("go list: %v", err)
-	}
 	files := []string{
 		filepath.Join(d.root, "go.mod"),
 		filepath.Join(d.root, "go.sum"),
 		filepath.Join(d.root, "build.sh"),
 	}
-	for _, dir := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		if !watchesPackageDir(dir, d.modCache) {
-			continue
+	// go.mod and go.sum decide which directory each import resolves to (a
+	// replace, a version bump into the cache), so a change to either
+	// invalidates the graph on its own, without waiting for a build.
+	key := stamp(files[0]) + "|" + stamp(files[1])
+	if d.pkgDirs == nil || key != d.graphKey {
+		if d.listGraph != nil {
+			d.pkgDirs = d.listGraph()
+		} else {
+			d.pkgDirs = d.listPackageDirs()
 		}
+		d.graphKey = key
+	}
+	for _, dir := range d.pkgDirs {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
 			continue
@@ -441,6 +476,27 @@ func (d *devServer) goSources() []string {
 	}
 	sort.Strings(files)
 	return files
+}
+
+// listPackageDirs runs `go list -deps` over ./wasm for js/wasm and returns
+// the directories goSources watches. Never nil, so an empty graph (go list
+// failing outright) is cached as empty rather than re-run every poll; the
+// next build or go.mod change re-reads it.
+func (d *devServer) listPackageDirs() []string {
+	cmd := exec.Command("go", "list", "-e", "-deps", "-f", "{{if not .Standard}}{{.Dir}}{{end}}", "./wasm")
+	cmd.Dir = d.root
+	cmd.Env = append(os.Environ(), "GOOS=js", "GOARCH=wasm")
+	out, err := cmd.Output()
+	if err != nil {
+		log.Printf("go list: %v", err)
+	}
+	dirs := []string{}
+	for _, dir := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if watchesPackageDir(dir, d.modCache) {
+			dirs = append(dirs, dir)
+		}
+	}
+	return dirs
 }
 
 // watchesPackageDir reports whether goSources watches a package directory

@@ -170,6 +170,13 @@ with each item's `raised` traced back through all session docs.
   node (P6); `CodeEditor` re-tokenising, `DataTable` re-sorting, O(fields²)
   form error reads (P8); iOS min-content re-measurement and uncached,
   full-resolution images (P9).
+  - P7 landed 2026-11-14. `serve -dev` caches the package directories from
+    `go list -deps` and only lists and stats their files each poll. The graph
+    is re-read after a build, and when go.mod or go.sum change. A file added
+    to a watched package is still seen on the next poll. Pinned by
+    `TestTheWatcherReadsTheBuildGraphOnlyWhenItMayHaveChanged`: five polls
+    make one read, a new file makes none, go.mod or a build makes one. P6, P8
+    and P9 remain.
 - **N-141** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
   **CLI: `go tool grmob`, a one-ABI bind, and shell upgrades that keep the
   app's edits (plan C3-C5).** Register `cmd/grmob` as a `go.mod` tool in the
