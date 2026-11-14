@@ -789,52 +789,6 @@ defect, which then becomes its own Open item.
     "Psalms 23:2 (KJV)";
   - BLB's study page on a phone browser landing on the named tab
     (Cross-Refs, not the default Interlinear).
-- **N-144** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
-  **Test order, a CI flake, and CI time (plan R9n, R9o, P10).** Repairs to
-  tests and CI scripts only. `go test -shuffle` fails on seeds 2 and 3
-  (`hooks/location_test.go:48`, `examples/todoapp/app_test.go:128`) through
-  process-wide singletons; fix both and add `-shuffle=on` to CI (the reset
-  helper comes with N-140). The Android remedy drill failed run 40020908087
-  in its cleanup trap after printing its own `OK:`
-  (`android/verify/remedy.sh:67`; `ios/verify/remedy.sh:42` has the same
-  shape). CI runs the race detector over source-census packages
-  (`wasm/verify` 5.7 s plain, 54.9 s under `-race`); timer tests sleep real
-  time where `testing/synctest` ran 10 fake seconds in 0.57 ms; the site
-  workflow repeats CI's verify.
-  - R9o landed 2026-11-11 (`2026-1111-1142-n137-d-e-lazy-keys-and-web-teardown`).
-    Under `set -e`, a command that fails in an EXIT trap becomes the
-    script's status (shown in sh, bash and dash), and the Android drill's
-    `rm -rf` raced the gradle daemon that `sources.sh` leaves writing into
-    the drill's `GRADLE_USER_HOME`. Both drills' cleanup now cannot fail:
-    Android stops that daemon first (only if one ran) and then removes
-    `"${cold:?}"`, with `|| true` on each step. INT and TERM `exit`, so the
-    cleanup runs once from EXIT instead of deleting the directory and
-    carrying on. `ios/verify/remedy.sh` passed end to end. The Android
-    drill was not run here (it fills a cold gradle cache from the network),
-    so whether CI stays green is this item's check. R9n and P10 remain.
-  - R9n and P10 a–c landed 2026-11-11 (`2026-1111-1851-n140-n144-n138-grmobtest-useasync-shuffle-fake-clocks-p0`),
-    and the item moved here from Open: what is left is watching CI.
-    - R9n: hooks tests that feed a device or permission record start with
-      `freshProcessState` (`grmobtest.Reset` in and out); todoapp's two
-      journeys start with `freshApp`. CI runs `-shuffle=on`. The full suite
-      passed under eight seeds and once with `-race -shuffle=on`.
-    - P10a: the race step covers product packages only; the source
-      censuses (`CENSUS_PKGS` in ci.yml) run in their own step without
-      `-race` (about 32 s against 127 s over that set, locally).
-    - P10b: timer tests run on `grmobtest.WithFakeClock` (synctest plus a
-      30 s watchdog): hooks 5.3 s to 0.3 s, the tutorial 9.4 s to 1.6 s.
-    - P10c: site.yml deploys on a green CI `workflow_run` of a push to
-      master, checking out `head_sha`; a manual dispatch keeps the old gate.
-    - P10d (serving a compressed module) is a product change, split out as
-      N-145.
-    - The R9o check so far: run 43070809214 (2026-11-11, `15f2b4c`) ran
-      `android/verify/remedy.sh` and its Android job passed. The flake was
-      intermittent, so one green run is not yet the answer.
-  Checks left: the Android remedy drill stays green across CI runs; the
-  split test steps and `-shuffle=on` run green in CI; the site workflow's
-  first `workflow_run` deploy succeeds after CI and publishes the commit CI
-  verified.
-
 - **N-147** · raised 2026-11-13 (split from N-101) · value low
   **VoiceOver on Discussion's header rows.** Android is heard and fixed
   (N-101). On iOS a header row holds no controls, so grMobChildMode gives it
@@ -984,6 +938,58 @@ defect, which then becomes its own Open item.
 
 ## Closed
 
+- **N-144** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
+  · closed 2026-11-14 — CI watched. The Android remedy drill passed in all seven
+  runs since R9o (43070809214 through 43649142856). The only two red runs,
+  762584b and fdb0a2b, were N-151's stale pins in the Go job, fixed in
+  5ba0f27. The split race/census steps and `-shuffle=on` are green on every
+  run since. The site's `workflow_run` deploys of f53119e, 5ba0f27 and
+  ccae046 succeeded, and the deploy log checks out exactly the `head_sha` CI
+  verified (`git checkout --force f53119e…`).
+  **Test order, a CI flake, and CI time (plan R9n, R9o, P10).** Repairs to
+  tests and CI scripts only. `go test -shuffle` fails on seeds 2 and 3
+  (`hooks/location_test.go:48`, `examples/todoapp/app_test.go:128`) through
+  process-wide singletons; fix both and add `-shuffle=on` to CI (the reset
+  helper comes with N-140). The Android remedy drill failed run 40020908087
+  in its cleanup trap after printing its own `OK:`
+  (`android/verify/remedy.sh:67`; `ios/verify/remedy.sh:42` has the same
+  shape). CI runs the race detector over source-census packages
+  (`wasm/verify` 5.7 s plain, 54.9 s under `-race`); timer tests sleep real
+  time where `testing/synctest` ran 10 fake seconds in 0.57 ms; the site
+  workflow repeats CI's verify.
+  - R9o landed 2026-11-11 (`2026-1111-1142-n137-d-e-lazy-keys-and-web-teardown`).
+    Under `set -e`, a command that fails in an EXIT trap becomes the
+    script's status (shown in sh, bash and dash), and the Android drill's
+    `rm -rf` raced the gradle daemon that `sources.sh` leaves writing into
+    the drill's `GRADLE_USER_HOME`. Both drills' cleanup now cannot fail:
+    Android stops that daemon first (only if one ran) and then removes
+    `"${cold:?}"`, with `|| true` on each step. INT and TERM `exit`, so the
+    cleanup runs once from EXIT instead of deleting the directory and
+    carrying on. `ios/verify/remedy.sh` passed end to end. The Android
+    drill was not run here (it fills a cold gradle cache from the network),
+    so whether CI stays green is this item's check. R9n and P10 remain.
+  - R9n and P10 a–c landed 2026-11-11 (`2026-1111-1851-n140-n144-n138-grmobtest-useasync-shuffle-fake-clocks-p0`),
+    and the item moved here from Open: what is left is watching CI.
+    - R9n: hooks tests that feed a device or permission record start with
+      `freshProcessState` (`grmobtest.Reset` in and out); todoapp's two
+      journeys start with `freshApp`. CI runs `-shuffle=on`. The full suite
+      passed under eight seeds and once with `-race -shuffle=on`.
+    - P10a: the race step covers product packages only; the source
+      censuses (`CENSUS_PKGS` in ci.yml) run in their own step without
+      `-race` (about 32 s against 127 s over that set, locally).
+    - P10b: timer tests run on `grmobtest.WithFakeClock` (synctest plus a
+      30 s watchdog): hooks 5.3 s to 0.3 s, the tutorial 9.4 s to 1.6 s.
+    - P10c: site.yml deploys on a green CI `workflow_run` of a push to
+      master, checking out `head_sha`; a manual dispatch keeps the old gate.
+    - P10d (serving a compressed module) is a product change, split out as
+      N-145.
+    - The R9o check so far: run 43070809214 (2026-11-11, `15f2b4c`) ran
+      `android/verify/remedy.sh` and its Android job passed. The flake was
+      intermittent, so one green run is not yet the answer.
+  Checks left: the Android remedy drill stays green across CI runs; the
+  split test steps and `-shuffle=on` run green in CI; the site workflow's
+  first `workflow_run` deploy succeeds after CI and publishes the commit CI
+  verified.
 - **N-138** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
   · closed 2026-11-14 — P0–P3 all landed. P3: the callback registry deletes
   unmarked entries in place and `clear`s its marks instead of allocating five
