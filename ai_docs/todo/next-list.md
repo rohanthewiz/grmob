@@ -939,7 +939,7 @@ defect, which then becomes its own Open item.
 ## Closed
 
 - **N-144** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
-  · closed 2026-11-14 — CI watched. The Android remedy drill passed in all seven
+  · closed 2026-11-14, `2026-1114-1650-n151-n138-n144-group-echo-pins-one-pass-per-event-generated-style-equal` — CI watched. The Android remedy drill passed in all seven
   runs since R9o (43070809214 through 43649142856). The only two red runs,
   762584b and fdb0a2b, were N-151's stale pins in the Go job, fixed in
   5ba0f27. The split race/census steps and `-shuffle=on` are green on every
@@ -991,7 +991,7 @@ defect, which then becomes its own Open item.
   first `workflow_run` deploy succeeds after CI and publishes the commit CI
   verified.
 - **N-138** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
-  · closed 2026-11-14 — P0–P3 all landed. P3: the callback registry deletes
+  · closed 2026-11-14, `2026-1114-1650-n151-n138-n144-group-echo-pins-one-pass-per-event-generated-style-equal` — P0–P3 all landed. P3: the callback registry deletes
   unmarked entries in place and `clear`s its marks instead of allocating five
   maps a pass; `BenchmarkManagerNoopPass` at 250 rows is now about 0.58 ms and
   8,314 allocs, from 1.59 ms and 9,501 before P1–P3. Go suite and
@@ -1036,7 +1036,7 @@ defect, which then becomes its own Open item.
     `BenchmarkManagerNoopPass` at 250 rows went from 1.59 ms to about
     0.8 ms. P3 remains.
 - **N-151** · raised `2026-1114-0017-n009-ringing-alarms-alarmkit-full-screen-intent` · value medium
-  · closed 2026-11-14 — `group_echo_test.go` pins the new lines: `ownStop` (its three
+  · closed 2026-11-14, `2026-1114-1650-n151-n138-n144-group-echo-pins-one-pass-per-event-generated-style-equal` — `group_echo_test.go` pins the new lines: `ownStop` (its three
   conditions, the gesture names through `valuesOf` since `codeOf` masks string
   literals), the `said`/`says` pair that reads it, and `spokenByLabel`'s folded
   label plus its ", " phrase split. `go test ./mobile/verify` passes.
