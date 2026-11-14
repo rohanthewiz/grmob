@@ -117,7 +117,9 @@ import (
 //	          which Android 14+ grants only to alarm and calling apps — the
 //	          Play declaration is the app's). Unlocked and in use, the system
 //	          shows a heads-up instead. Snooze and Stop are notification
-//	          actions handled by the shell, with no Go running.
+//	          actions handled by the shell, with no Go running. An alarm
+//	          that rings out unanswered is replaced, under the same ID, by
+//	          a silent "Missed alarm" banner, so the shade keeps a record.
 //	iOS 26+   AlarmKit: the system alarm UI, over the lock screen and through
 //	          Silent mode and Focus, with Stop and (when Snooze > 0) Snooze,
 //	          which the system re-rings by itself. Needs

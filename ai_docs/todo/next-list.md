@@ -276,11 +276,6 @@ with each item's `raised` traced back through all session docs.
   pending across a relaunch is lost. Options: report snoozes in the sweep's
   reply (`snoozed: [{id, at}]`) and fold them into the hook's snoozes, or
   have the sweep leave snoozed entries alone.
-- **N-150** · raised `2026-1114-0017-n009-ringing-alarms-alarmkit-full-screen-intent` · value low
-  **An Android alarm that rings out leaves no missed-alarm record.**
-  `setTimeoutAfter(ring_for)` removes the notification, so unlike a banner
-  nothing stays in the shade. OnRing still hears about it on return. A
-  quiet "Missed alarm" banner posted on timeout would restore the record.
 - **N-153** · raised `2026-1114-1745-n146-talkback-walks-charts-poll-grid-cart-biblestudy-share` · value low
   **TalkBack's swipe order skips row 2's Category cell in lesson 4.37's
   EditableGrid.** Seen on every Alt+Right walk on the emulator (2026-11-14):
@@ -1034,6 +1029,21 @@ defect, which then becomes its own Open item.
 
 ## Closed
 
+- **N-150** · raised `2026-1114-0017-n009-ringing-alarms-alarmkit-full-screen-intent` · value low
+  · closed 2026-11-14 — the ringing notification now has a delete intent.
+  The system sends it when `setTimeoutAfter` removes the alarm, but not for
+  this app's own cancels (Snooze, Stop, Go's takeover) or a tap.
+  `Notifications.onRangOut` then posts a silent banner under the same id:
+  the title, and "Missed alarm · <body>". It skips a swipe that came before
+  ring_for passed (Android 14+ lets ongoing alarms be swiped). Seen on the
+  API 36 foldable emulator with a temporary 25s RingFor on 4.19 (reverted).
+  "Try it" rang at 17:43:00 on `grmob.alarms`, and at 17:43:25 the shade
+  held "Try it / Missed alarm · 5:43 PM" on `grmob`, flags AUTO_CANCEL|SILENT.
+  Android lint is clean. core's alarm table says so.
+  **An Android alarm that rings out leaves no missed-alarm record.**
+  `setTimeoutAfter(ring_for)` removes the notification, so unlike a banner
+  nothing stays in the shade. OnRing still hears about it on return. A
+  quiet "Missed alarm" banner posted on timeout would restore the record.
 - **N-146** · raised 2026-11-13 (N-101's walk) · value medium
   · closed 2026-11-14, `2026-1114-1745-n146-talkback-walks-charts-poll-grid-cart-biblestudy-share` — the premise was the harness's, not
   the app's. TalkBack does read the code block at that stop: the whole

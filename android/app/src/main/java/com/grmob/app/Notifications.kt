@@ -153,6 +153,9 @@ import org.json.JSONObject
  *   Snooze ─▶ NotificationActionReceiver: take it down, schedule the same id
  *             again at now + snooze (the store keeps the first ring as "rang")
  *   Stop   ─▶ NotificationActionReceiver: take it down
+ *   ring_for passes ─▶ the system removes it and sends its delete intent
+ *             ─▶ NotificationActionReceiver: a quiet "Missed alarm" banner
+ *             under the same id (see [onRangOut])
  *   tap / full-screen launch ─▶ MainActivity: "notification_tap" {id, ringing}
  *             ringing = still inside ring_for of when it was posted (see
  *             [tapRinging]); Go's UseAlarms takes the ring over and cancels
@@ -211,6 +214,8 @@ object Notifications {
     /** The action intents' actions; see [NotificationActionReceiver]. */
     internal const val ACTION_SNOOZE = "com.grmob.notification.SNOOZE"
     internal const val ACTION_STOP = "com.grmob.notification.STOP"
+    /** The ringing alarm's delete intent; see [onRangOut]. */
+    internal const val ACTION_RANG_OUT = "com.grmob.notification.RANG_OUT"
 
     /** The permission behind alarms; see [alarmsDeclared]. */
     private const val FULL_SCREEN_PERMISSION = "android.permission.USE_FULL_SCREEN_INTENT"
@@ -560,7 +565,10 @@ object Notifications {
         )
     }
 
-    private fun post(context: Context, id: String, title: String, body: String, alarm: JSONObject? = null) {
+    private fun post(
+        context: Context, id: String, title: String, body: String, alarm: JSONObject? = null,
+        silent: Boolean = false,
+    ) {
         if (alarm != null && alarmsDeclared(context)) {
             postAlarm(context, id, title, body, alarm)
             return
@@ -598,6 +606,9 @@ object Notifications {
             .setPriority(NotificationCompat.PRIORITY_HIGH) // pre-O heads-up
             .setContentIntent(pending)
             .setAutoCancel(true)
+            // A record rather than an alert: no sound, vibration or heads-up,
+            // on a channel whose sound the user may have set (see onRangOut).
+            .setSilent(silent)
             .build()
         try {
             manager.notify(id, NOTIFY_ID, notification)
@@ -652,6 +663,12 @@ object Notifications {
             // Not swiped away by accident while it rings; Stop is the way.
             .setOngoing(true)
             .setTimeoutAfter(ringFor)
+            // Sent by the system when the timeout above removes it (and when a
+            // user swipes it away on Android 14+, where ongoing no longer
+            // stops that). Not sent for a cancel from this app, which is how
+            // Snooze, Stop and Go's takeover take it down, nor for a tap,
+            // which autoCancel handles. See [onRangOut].
+            .setDeleteIntent(rangOutIntent(context, id, title, body, now, ringFor))
         if (snooze > 0) {
             builder.addAction(0, "Snooze", actionIntent(context, ACTION_SNOOZE, id, title, body, alarm))
         }
@@ -690,6 +707,72 @@ object Notifications {
             id.hashCode(),
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+    }
+
+    /**
+     * The ringing alarm's delete intent. Keyed by its own action in the data,
+     * like [actionIntent]'s, so it is never one of the alarm's buttons.
+     */
+    private fun rangOutIntent(
+        context: Context, id: String, title: String, body: String, rangAt: Long, ringFor: Long,
+    ): PendingIntent {
+        val intent = Intent(context, NotificationActionReceiver::class.java)
+            .setAction(ACTION_RANG_OUT)
+            .setData(android.net.Uri.fromParts("grmob-notification-action", id, ACTION_RANG_OUT))
+            .putExtra(EXTRA_ID, id)
+            .putExtra(EXTRA_TITLE, title)
+            .putExtra(EXTRA_BODY, body)
+            .putExtra(EXTRA_RANG_AT, rangAt)
+            .putExtra(EXTRA_RING_FOR, ringFor)
+        return PendingIntent.getBroadcast(
+            context,
+            id.hashCode(),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+    }
+
+    /**
+     * A ringing alarm left the shade without being answered (N-150).
+     *
+     * # Why a banner is posted
+     *
+     * A banner that nobody tapped stays in the shade, so the user can see
+     * later that something happened. An alarm does not: `setTimeoutAfter`
+     * removes it when ring_for passes, and an alarm that rang out on a phone
+     * in a drawer then left no trace at all. Go hears about it only when the
+     * app next runs (the sweep's fired list). So the delete intent puts back
+     * what a banner would have left: a silent notification under the same
+     * id, saying the alarm was missed. Silent because the alarm already made
+     * its noise for ring_for; this is the record of it, not a second alert.
+     *
+     * Its tap is an ordinary banner tap ("notification_tap" with ringing
+     * false: there is no rang-at extra), which core.OnRingingAlarmTap
+     * ignores, so a stale record never starts a ring. A cancel or a sweep
+     * from Go reaches it by the same id.
+     *
+     * # A swipe is not a timeout
+     *
+     * From Android 14 a user can swipe an ongoing notification away, and that
+     * sends the delete intent too. Someone who swiped a ringing alarm did not
+     * miss it, so the banner is posted only once ring_for has passed. One
+     * second of slack covers the system's timer firing a little early.
+     */
+    internal fun onRangOut(context: Context, intent: Intent) {
+        val id = intent.getStringExtra(EXTRA_ID)?.takeIf { it.isNotEmpty() } ?: return
+        val rangAt = intent.getLongExtra(EXTRA_RANG_AT, 0L)
+        val ringFor = intent.getLongExtra(EXTRA_RING_FOR, 0L)
+        val app = context.applicationContext
+        leaveLockScreen(id)
+        if (rangAt <= 0 || System.currentTimeMillis() < rangAt + ringFor - 1000) return
+        val title = intent.getStringExtra(EXTRA_TITLE).orEmpty()
+        val body = intent.getStringExtra(EXTRA_BODY).orEmpty()
+        post(
+            app, id,
+            title.ifEmpty { "Missed alarm" },
+            if (title.isEmpty()) body else if (body.isEmpty()) "Missed alarm" else "Missed alarm · $body",
+            silent = true,
         )
     }
 
@@ -813,6 +896,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         when (intent.action) {
             Notifications.ACTION_SNOOZE, Notifications.ACTION_STOP -> Notifications.onAction(context, intent)
+            Notifications.ACTION_RANG_OUT -> Notifications.onRangOut(context, intent)
         }
     }
 }
