@@ -86,8 +86,9 @@ CSS forbids a negative flex-shrink — the property's grammar is \<number \[0,�
 	WASM runtime   writes flexShrink "0"
 	SwiftUI        GrMobFlexSolver takes a per-item shrink factor and gives a
 	               zero one none of the deficit
-	Compose        measures the child with an unbounded main axis and reports
-	               its own size, so the Row overflows around it
+	Compose        measures the child with an unbounded main axis and draws it
+	               at its own size from the start of its slot, past the Row's
+	               end
 
 The Compose arm is the one that needed an argument, and it is worth having here because it is also the limit of what the field means on that target. A Compose Row has no proportional shrink at all — an unweighted child is measured against whatever main-axis space the ones before it did not take — so there is no factor for a FRACTIONAL flex-shrink to be, and Android ignores one. Zero is not a proportion but a refusal, and a refusal is expressible: Modifier.pinMainAxis in Renderer.kt is that, and it is why core.FlexShrink(0) is a declaration that means the same thing on all four targets while core.FlexShrink(0.5) means something on three.
 
@@ -97,7 +98,7 @@ The Compose arm is the one that needed an argument, and it is worth having here 
 const ShrinkNone = -1
 ```
 
-<small>[core/style.go:1562](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1562)</small>
+<small>[core/style.go:1563](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1563)</small>
 
 ## Variables
 
@@ -1251,7 +1252,7 @@ The two returns are the two questions a renderer has, and they are separate beca
 
 It exists so the ShrinkNone rule is stated once rather than in each renderer. The two DOM renderers spell their guards independently — that is deliberate elsewhere in this framework — but the mapping from a stored number to a meaning is not a spelling, it is the contract, and three copies of it is how this field got into trouble in the first place.
 
-<small>[core/style.go:1579](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1579)</small>
+<small>[core/style.go:1580](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1580)</small>
 
 #### func (Style) With
 

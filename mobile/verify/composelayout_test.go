@@ -311,11 +311,19 @@ func composeLayoutVersion(t *testing.T) string {
 //	the gap collapses too       spaceAfterLastNoWeight is min(spacing, what is
 //	                            left), so a Row that has overflowed inserts no
 //	                            spacing after a child
-//	the Row overflows itself    mainAxisLayoutSize is max(content, mainAxisMin)
+//	the Row's own size          mainAxisLayoutSize is max(content, mainAxisMin)
 //	                            with no upper bound anywhere, and SizeNode
-//	                            reports `layout(placeable.width, …)` unclamped
-//	                            — which is what makes a pin an overflow on this
-//	                            target rather than a clip
+//	                            reports `layout(placeable.width, …)` unclamped.
+//	                            This was read as what makes a pin an overflow
+//	                            rather than a clip. It is not (N-130): compose-ui
+//	                            clamps each child's width into its offer before
+//	                            the Row sums it, so `content` never passes the
+//	                            maximum and the absence of an upper bound is
+//	                            never exercised by a bounded Row. The overflow
+//	                            is the pinned child's content drawn past its
+//	                            slot. The row stays, as a true reading of the
+//	                            source that no longer carries the weight it was
+//	                            written for
 //
 // So the table lists them. Each row names what would be wrong if the reading
 // changed, in the words of whichever document rests on it, and MeasureCompose's
@@ -473,13 +481,12 @@ func TestTheComposeCensusClaimsAreWhatTheSourceSays(t *testing.T) {
 			// its end, which is exactly how the first version of this row
 			// passed a break-test.
 			absence: []string{").coerceAtMost(constraints.mainAxisMax)"},
-			why: "internal/pinfixture says a fixed-width Row whose children overflow " +
-				"reports the OVERFLOWING width rather than clipping to its own, and " +
-				"that this is what makes core.FlexShrink(0) an overflow on Compose " +
-				"rather than a clip. The claim is that the size is raised to the Row's " +
-				"minimum and never lowered to its maximum. A clamp added here would " +
-				"make the pinned child spill out of a box the Row believed it fitted " +
-				"inside, which is the spelling mobile/verify refuses in Renderer.kt",
+			why: "internal/pinfixture's MeasureCompose transcribes this line as " +
+				"max(fixedSpace, mainAxisMin) with no upper bound. Since N-130 that " +
+				"absence changes no number in the fixture — fixedSpace is a sum of " +
+				"slots, each clamped into its offer by compose-ui, so it cannot pass " +
+				"the maximum — but the line is still quoted there and in the census, " +
+				"and a release that added a clamp would make the quote wrong",
 		},
 		{
 			file:   "Size.kt",
@@ -498,9 +505,9 @@ func TestTheComposeCensusClaimsAreWhatTheSourceSays(t *testing.T) {
 			why: "both harnesses mount a fixed-size Box, so this node is what every " +
 				"child in internal/pinfixture is. Its unpinned branch is " +
 				"min(base, offered) because of the constrain above, and the pinned " +
-				"branch of Renderer.kt's Modifier.pinMainAxis is a copy of the layout " +
-				"call below it — measure unbounded, report what was measured. A " +
-				"constrained report here would mean the Row never overflowed",
+				"child, measured unbounded by Renderer.kt's Modifier.pinMainAxis, " +
+				"comes back from this node at its full base, which is the extent the " +
+				"fixture's Mains column records",
 		},
 	} {
 		src := jarEntry(t, jar, claim.file)

@@ -317,10 +317,12 @@ func checkPinnedRow(_ cases: [PinCase]) -> [String] {
         // The other half of what a pin does, and the half no census row states.
         // A definite offer smaller than the content wins here: the container
         // takes its declared extent and the child spills out of it, which is
-        // `overflow: visible`. foundation-layout's mainAxisLayoutSize is
-        // max(content, mainAxisMin) with NO upper bound, and Size.kt's own node
-        // reports the measured size unclamped — so the Compose Row is measured
-        // wider than it was told to be.
+        // `overflow: visible`. The Compose Row agrees on its own extent, and
+        // for the same reason: foundation-layout's mainAxisLayoutSize is a sum
+        // of slots, and compose-ui clamps every child's reported width into the
+        // offer it was measured against (pinMainAxis reports that clamp itself,
+        // N-130), so a definite Row is its declared width and the pinned child
+        // is drawn past its end rather than counted.
         let container = solver.containerMain(offered: c.offer, bases: bases, weights: weights)
         if abs(container - c.offer) > pinEpsilon {
             problems.append("\(c.what): the container is \(container)pt for a declared "
@@ -328,9 +330,11 @@ func checkPinnedRow(_ cases: [PinCase]) -> [String] {
                 + "win — that is what makes the next line an overflow rather than an "
                 + "ordinary layout")
         }
-        if c.compose.rowMain < c.offer - pinEpsilon {
+        if abs(c.compose.rowMain - c.offer) > pinEpsilon {
             problems.append("\(c.what): the Compose Row reports \(c.compose.rowMain)pt for "
-                + "a declared \(c.offer)pt, which is smaller than its own minimum")
+                + "a declared \(c.offer)pt. It sums slots, each clamped into its offer, "
+                + "so it is neither smaller than its own minimum nor wider than its "
+                + "maximum however far a pinned child is drawn past it")
         }
     }
 

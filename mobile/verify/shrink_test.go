@@ -51,8 +51,9 @@ import (
 // this repository can run androidx's measure policy, so what stands between the
 // fixture and the renderer is the pair of pins below: the renderer applies the
 // modifier on the right axis from both loops, and the modifier measures
-// unbounded and reports what it measured. Change either and the fixture goes on
-// producing the same numbers about code that no longer exists.
+// unbounded and reports its slot, the measured size clamped into the offer.
+// Change either and the fixture goes on producing the same numbers about code
+// that no longer exists.
 
 // The SwiftUI renderer must hand the solver the reading, not the raw field.
 //
@@ -112,38 +113,52 @@ func TestTheComposeChildrenLoopsPinOnTheirOwnAxis(t *testing.T) {
 	}
 }
 
-// And pinMainAxis must do the two things that make it a pin.
+// And pinMainAxis must do the three things that make it a pin.
 //
-// Both halves are load-bearing and each fails silently on its own:
+// Each fails silently on its own:
 //
 //	measure unbounded   without it the child is measured against the space that
 //	                    is left, which is the squeeze the declaration exists to
 //	                    refuse
 //
-//	report the measured a `layout(constraints.constrain(...))` compiles, looks
-//	size                more correct — a well-behaved layout respects its
-//	                    constraints — and clamps the size the parent is told
-//	                    about, so the Row's running total never exceeds its own
-//	                    maximum, nothing overflows, and the child is drawn
-//	                    clipped to a box the parent still believes fits
-func TestTheComposePinMeasuresUnboundedAndReportsWhatItMeasured(t *testing.T) {
+//	report the slot     the main axis clamped into the offer. This used to be
+//	                    refused, on the theory that an unclamped report lets the
+//	                    Row's running total overflow. It never reached the Row:
+//	                    Compose coerces a reported size into the constraints it
+//	                    was measured with (ui's Placeable.kt) and centres the
+//	                    surplus, so all the unclamped spelling did was draw the
+//	                    pinned child half its overflow off the leading edge of
+//	                    its slot (N-121's tape started 1000px left of its clip;
+//	                    N-130). Reporting the clamp ourselves is what stops the
+//	                    centring.
+//
+//	draw from the start placeRelative(0, 0): the overflow runs toward the end,
+//	                    right in LTR and left under RTL. place(0, 0) would run
+//	                    it right under RTL too, off the slot's START.
+//
+// The bare unclamped report is refused by name, because it compiles, reads as
+// the more faithful of the two, and is the one this file used to require.
+func TestTheComposePinMeasuresUnboundedAndDrawsFromItsSlot(t *testing.T) {
 	body := codeOf(t, kotlinRenderer, "private fun Modifier.pinMainAxis(")
 	for _, want := range []string{
 		"maxWidth = Constraints.Infinity",
 		"maxHeight = Constraints.Infinity",
-		"layout(placeable.width, placeable.height)",
+		"placeable.width.coerceIn(constraints.minWidth, constraints.maxWidth)",
+		"placeable.height.coerceIn(constraints.minHeight, constraints.maxHeight)",
+		"placeable.placeRelative(0, 0)",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("%s: pinMainAxis does not contain %q. Without it the modifier is "+
-				"applied, named after what it no longer does, and core.FlexShrink(0) is "+
-				"inert on this target again.", kotlinRenderer, want)
+				"applied, named after what it no longer does, and a pinned child is "+
+				"either squeezed or drawn centred on its slot instead of from its "+
+				"leading edge.", kotlinRenderer, want)
 		}
 	}
-	if strings.Contains(body, "constraints.constrain(") {
-		t.Errorf("%s: pinMainAxis constrains the size it reports. The parent then "+
-			"learns a size that fits, so its running total never overflows and the "+
-			"pinned child is drawn spilling out of a box the Row believes it fits in "+
-			"— which is neither the squeeze nor the overflow, and matches no target.",
+	if strings.Contains(body, "layout(placeable.width, placeable.height)") {
+		t.Errorf("%s: pinMainAxis reports the size it measured, unclamped. Compose "+
+			"coerces that into the offer before the Row reads it and centres the "+
+			"surplus, so the Row's arithmetic is unchanged and the pinned child is "+
+			"drawn half its overflow off the leading edge of its slot (N-130).",
 			kotlinRenderer)
 	}
 }

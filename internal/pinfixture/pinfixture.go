@@ -5,9 +5,9 @@
 // # What was missing
 //
 // Renderer.kt honours core.FlexShrink(0) with Modifier.pinMainAxis: the child
-// is measured with an unbounded main axis and reports its own size, so it keeps
-// its extent and the Row overflows. Everything holding that up was source-level
-// — mobile/verify reads the call sites, the axis argument and the two lines
+// is measured with an unbounded main axis, so it keeps its extent and is drawn
+// past the end of the Row. Everything holding that up was source-level
+// — mobile/verify reads the call sites, the axis argument and the lines
 // inside the modifier, and `compileDebugKotlin` proves it parses. Nothing
 // anywhere produced the arithmetic it causes.
 //
@@ -37,9 +37,18 @@
 //	                    no version at all and lets the platform resolve it, so
 //	                    the source read is the source the app builds against.
 //	the renderer's half TestTheComposeChildrenLoopsPinOnTheirOwnAxis and
-//	                    TestTheComposePinMeasuresUnboundedAndReportsWhatItMeasured
-//	                    hold Renderer.kt to the two lines PinnedChild below is
-//	                    a transcription of.
+//	                    TestTheComposePinMeasuresUnboundedAndDrawsFromItsSlot
+//	                    hold Renderer.kt to the lines the pinned branch below
+//	                    is a transcription of.
+//	the clamp           every child's width is clamped into its offer before
+//	                    the Row adds it up. That is compose-ui's, not
+//	                    foundation-layout's (Placeable.width is the measured
+//	                    width coerced into the constraints it was measured
+//	                    with, ui's Placeable.kt), so no jar this repository
+//	                    reads holds it: what holds it is the API 36 emulator,
+//	                    where comps.StockTicker's tape was drawn centred on that
+//	                    clamp (N-121), and Renderer.kt's pinMainAxis, which
+//	                    now reports the clamp itself (N-130).
 //
 // # The link that used to be weaker than the list above made it look
 //
@@ -220,8 +229,14 @@ type Measured struct {
 	// and a CSS flex line inserts it regardless. Three documents repeat that
 	// sentence and until this field nothing measured it.
 	Gaps []int `json:"gaps"`
-	// RowMain is the measure policy's mainAxisLayoutSize — the Row's own extent
-	// — which is NOT clamped to the maximum it was given. See MeasureCompose.
+	// RowMain is the measure policy's mainAxisLayoutSize — the Row's own extent.
+	// The policy does not clamp it to the maximum it was given, and it does not
+	// need to: it is a sum of slots, each already inside its offer, so for every
+	// case here it is the offer exactly. See MeasureCompose.
+	//
+	// Mains is NOT what this sums. A pinned child's entry in Mains is the extent
+	// it is drawn at; the Row adds up its slot, which is that extent clamped into
+	// what it was offered.
 	RowMain int `json:"rowMain"`
 }
 
@@ -287,14 +302,20 @@ type Measured struct {
 //	                        after a child is 0 as well. Nothing in the census
 //	                        said so, and it follows from the same two lines.
 //
-//	the Row overflows its   mainAxisLayoutSize is max(content, mainAxisMin) and
-//	                        is never coerced DOWN to mainAxisMax, and Size.kt's
-//	                        own node reports `layout(placeable.width, ...)`
-//	                        unclamped — so a fixed-width Row whose children
-//	                        overflow reports the overflowing width rather than
-//	                        clipping to its own. That is what makes the pin an
-//	                        overflow on this target rather than a clip, which is
-//	                        what `overflow: visible` does on the other three.
+//	the Row does NOT        mainAxisLayoutSize is max(content, mainAxisMin) and
+//	overflow its own        is never coerced DOWN to mainAxisMax, which reads as
+//	maximum                 though a Row whose children overflow would report
+//	                        the overflowing width. This file said so until
+//	                        N-130. But `content` is a sum of Placeable widths,
+//	                        and each is clamped into the offer it was measured
+//	                        against (see "the clamp" above), so a bounded Row's
+//	                        children never sum past its maximum. The overflow
+//	                        is in the DRAWING: the pinned child's content is its
+//	                        measured size, not clipped, and runs past the end
+//	                        of its slot, which is what `overflow: visible` does
+//	                        on the other three. What the clamp costs is the
+//	                        next sibling's position: it follows the slot, not
+//	                        the pinned child's real extent.
 //
 // # What each child does with what it is offered
 //
@@ -304,15 +325,15 @@ type Measured struct {
 // the incoming range. With an offer of `remaining` that is min(base,
 // remaining); with the pin's unbounded offer it is the base.
 //
-// The pinned branch is Renderer.kt's Modifier.pinMainAxis, whose two lines are
-// the whole of it: measure against Constraints.Infinity, and report
-// `layout(placeable.width, placeable.height)` — the measured size, NOT
-// constrained back on the way out. Reporting a constrained size compiles and
-// looks better behaved, and would make `fixedSpace` never exceed the Row's
-// maximum, so nothing would overflow and the child would be drawn spilling out
-// of a box the Row believed it fitted inside. mobile/verify refuses that
-// spelling in the renderer by name; here it would show up as a RowMain that
-// never passes Offer.
+// The pinned branch is Renderer.kt's Modifier.pinMainAxis: measure against
+// Constraints.Infinity, so the child's extent is its base whatever `remaining`
+// is, and report the slot — the base clamped into the offer — with the content
+// drawn from the slot's leading edge. The Row adds up the slot. Before N-130
+// the modifier reported the base unclamped and this transcription added THAT
+// up, which made every pinned Row here overflow its own maximum on paper; on a
+// device Compose clamped the report anyway (see "the clamp" in this package's
+// header) and centred the content on the slot. Mains still carries the base,
+// because it is the drawn extent and the number CSS is compared with.
 func MeasureCompose(offer, gap int, children []Child) Measured {
 	m := Measured{
 		Offered: make([]int, len(children)),
@@ -340,7 +361,7 @@ func MeasureCompose(offer, gap int, children []Child) Measured {
 		if c.Pinned {
 			// pinMainAxis: the offer is replaced by Constraints.Infinity, so
 			// `remaining` is ignored entirely — which is why a pin is honoured
-			// wherever the child sits — and the size reported back is the one
+			// wherever the child sits — and the child is drawn at the size it
 			// measured.
 			size = c.Base
 		} else {
@@ -349,11 +370,18 @@ func MeasureCompose(offer, gap int, children []Child) Measured {
 		}
 		m.Mains[i] = size
 
+		// placeable.mainAxisSize(): what the Row reads is the slot, the size
+		// clamped into the offer. A no-op for an unpinned child, whose size is
+		// already inside it; for a pinned one wider than what is left it is
+		// `remaining`, and the overflow is drawn past the slot's end rather than
+		// counted (see the RowMain field).
+		slot := min(size, remaining)
+
 		// The spacing after this child is itself clamped to what is left, so a
-		// Row that has already overflowed inserts none.
-		spaceAfterLastNoWeight = min(gap, max(mainAxisMax-fixedSpace-size, 0))
+		// Row that has spent its main axis inserts none.
+		spaceAfterLastNoWeight = min(gap, max(mainAxisMax-fixedSpace-slot, 0))
 		m.Gaps[i] = spaceAfterLastNoWeight
-		fixedSpace += size + spaceAfterLastNoWeight
+		fixedSpace += slot + spaceAfterLastNoWeight
 	}
 	// No weighted children, so the trailing spacing counted by the loop is not
 	// part of the Row. Taken off the record as well as off the total: a gap
@@ -364,8 +392,8 @@ func MeasureCompose(offer, gap int, children []Child) Measured {
 		m.Gaps[len(children)-1] = 0
 	}
 
-	// weightedSpace is 0 here. Note the absence of any upper bound: this is
-	// where the overflow becomes the Row's own size.
+	// weightedSpace is 0 here. There is no upper bound in the source line, and
+	// none is needed: every slot was inside its offer, so fixedSpace is too.
 	m.RowMain = max(max(fixedSpace, 0), mainAxisMin)
 	return m
 }
@@ -833,10 +861,11 @@ func caseNumbers(c Case) []pinReading {
 			pinBoth(cite("pinSame(measured, c.gap)", "c.gap"),
 				cite("abs(c.compose.gaps[i] - c.gap) > pinEpsilon", "c.gap"))},
 		{c.Compose.RowMain, "the Compose Row's own extent",
-			"pin.swift holds it to being no smaller than the offer — the measure " +
-				"policy does not clamp mainAxisLayoutSize to the maximum it was given",
+			"pin.swift holds it to the offer — the measure policy sums slots, and " +
+				"every slot is clamped into its offer, so a definite Row is its own " +
+				"width however far a pinned child is drawn past it",
 			map[string]pinCite{"pin.swift": cite(
-				"c.compose.rowMain < c.offer - pinEpsilon", "c.compose.rowMain")}},
+				"abs(c.compose.rowMain - c.offer) > pinEpsilon", "c.compose.rowMain")}},
 	}
 	for i, ch := range c.Children {
 		out = append(out, pinReading{ch.Base, ch.Name + "'s base",

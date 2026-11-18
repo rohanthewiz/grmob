@@ -77,9 +77,13 @@ func TestComposeUnweightedRowChildHugsItsContent(t *testing.T) {
 //	                    fits. The Row's running total then never exceeds its
 //	                    own maximum: nothing overflows, and the next sibling is
 //	                    laid out on top of a child that is drawn wider than the
-//	                    parent believes. That is the mistake
-//	                    TestTheComposePinMeasuresUnboundedAndReportsWhatItMeasured
-//	                    refuses for pinMainAxis, for the same reason.
+//	                    parent believes. pinMainAxis was once held to the same
+//	                    rule and now clamps (N-130): Compose coerces a reported
+//	                    width into the offer before the Row reads it and centres
+//	                    the surplus, so the Row believed every child fit either
+//	                    way. Whether this floor should follow is its own next-
+//	                    list item; until a device has looked, it stays as it
+//	                    was.
 func TestComposeFloorsARowChildAtItsMinContentWidth(t *testing.T) {
 	body := codeOf(t, kotlinRenderer, "private fun Modifier.rowChildWidth(")
 	for _, c := range []struct{ expr, why string }{
@@ -100,8 +104,9 @@ func TestComposeFloorsARowChildAtItsMinContentWidth(t *testing.T) {
 		t.Errorf("%s: rowChildWidth coerces the width it reports back into the "+
 			"incoming constraints. The Row then believes every child fits, so a "+
 			"child held at its min-content floor is drawn over the sibling after "+
-			"it instead of pushing the row past its own maximum. See pinMainAxis, "+
-			"which refuses the same spelling.", kotlinRenderer)
+			"it instead of pushing the row past its own maximum. (pinMainAxis clamps "+
+			"since N-130, because Compose coerces the report anyway; this floor has "+
+			"not been looked at on a device under that light yet.)", kotlinRenderer)
 	}
 	// The gate, which is what makes the floor reach a Button at all.
 	gate := codeOf(t, kotlinRenderer, "private fun sizedByRow(")

@@ -1540,8 +1540,9 @@ const (
 //	WASM runtime   writes flexShrink "0"
 //	SwiftUI        GrMobFlexSolver takes a per-item shrink factor and gives a
 //	               zero one none of the deficit
-//	Compose        measures the child with an unbounded main axis and reports
-//	               its own size, so the Row overflows around it
+//	Compose        measures the child with an unbounded main axis and draws it
+//	               at its own size from the start of its slot, past the Row's
+//	               end
 //
 // The Compose arm is the one that needed an argument, and it is worth having
 // here because it is also the limit of what the field means on that target. A

@@ -124,28 +124,19 @@ with each item's `raised` traced back through all session docs.
   composable, so TalkBack re-read a focused quote's new price at a tick
   without losing it (2026-10-31, emulator). Low until a consumer needs a
   reorder to keep focus or a scroll offset.
-- **N-130** · raised `2026-1031-2336-n121-stock-ticker-natives` · value low
-  **Compose centres a lone pinned child that overflows a bounded Row of
-  mixed children.** Compose coerces a Placeable's width into the constraints
-  the child was measured with and applies the surplus as a centring offset
-  (ui 1.7.6 `Placeable.kt`, `recalculateWidthAndHeight` /
-  `apparentToRealOffset`), so `pinMainAxis`'s unclamped report never reaches
-  the Row: a pinned child wider than its offer is placed as the offer's width
-  with its content shifted left by half the overflow, and the next sibling
-  follows the offer, not the real width. Seen with `comps.StockTicker`'s two
-  gliding copies on the API 36 emulator (each 2835px in an 834px clip, drawn
-  over each other 417px apart, starting 1000px left of the clip). Fixed for a
-  Row whose every child is pinned and none weighted
-  (`overflowsAtContentWidth` in Renderer.kt measures such a Row unbounded
-  and places the overflow from the leading edge, `placeRelative`), which is
-  the glide's shape; pinned by `TestTheComposePinnedStripIsMeasuredUnboundedAndPlacedFromTheStart`.
-  Left: a pinned child among unpinned siblings in a bounded Row (CSS would
-  start-align it and push the siblings out; Compose centres it and lays the
-  siblings over it). No bundled screen hits it: every pinned child in comps
-  fits its Row. `internal/pinfixture`'s transcription of the Row loop sums
-  real widths and is right only under an unbounded maximum; its header and
-  `docs/platforms/native.md`'s census prose should say so when this is
-  taken up (native.md has a one-paragraph correction already).
+- **N-154** · raised N-130's session (2026-11-15) · value low
+  **`rowChildWidth`'s min-content floor is centred where it binds.** The
+  same coercion N-130 fixed for `pinMainAxis`: when a Row child's
+  min-content passes its offer, `rowChildWidth` reports
+  `maxOf(placeable.width, constraints.minWidth)` unclamped. Compose clamps
+  that into the offer and centres the surplus, so the word is drawn half
+  its overflow off the leading edge of its slot, not from it as a browser
+  draws it. Lessons 1.1 ("Following") and 8.2 ("Repair (set B = A)") are
+  where it binds. Fix: the main axis clamped into the offer and
+  `placeRelative(0, 0)`, as `pinMainAxis` now does.
+  `TestComposeFloorsARowChildAtItsMinContentWidth` refuses
+  `placeable.width.coerceIn(` and has to flip with it. Look at both lessons
+  on the emulator, LTR and Arabic, before and after.
 - **N-134** · raised `2026-1111-0120-reliability-performance-convenience-plan` · value medium
   **Android builds a new runtime, store and bridge in every
   `MainActivity.onCreate` (plan R5, R6, P5, R9m).** Rotation, a dark-mode
@@ -1029,6 +1020,27 @@ defect, which then becomes its own Open item.
 
 ## Closed
 
+- **N-130** · raised `2026-1031-2336-n121-stock-ticker-natives` · value low
+  · closed 2026-11-15 (session doc not yet saved) — `pinMainAxis` reports
+  its main axis clamped into the offer and draws with `placeRelative(0, 0)`.
+  Compose clamped the old unclamped report anyway (Placeable.width) and
+  centred the surplus, so the clamp changes nothing in the Row's arithmetic.
+  It only stops the centring: a pinned child among unpinned siblings is
+  drawn from its slot's leading edge, overflowing toward the end. Seen on
+  the GrMob_Foldable emulator with a scratch app (deleted): a 400dp pin in a
+  240dp Row, first and between siblings. START sat at the slot's leading
+  edge in LTR and at its right edge under Arabic. The sibling after it
+  still follows the slot (offered 0, drawn at the Row's end, over the
+  overflow) and not the real width as CSS places it. That part stays,
+  documented in Renderer.kt and native.md. `overflowsAtContentWidth` is
+  still needed for the glide: a clamped first copy would put the second
+  834px into it. `internal/pinfixture`'s transcription sums slots now, so
+  `RowMain` is the offer in every case rather than 200/260/300/268/320; its
+  header, `pin.swift` (now an equality), the census `why` strings and
+  native.md's census prose were corrected. The guard is now
+  `TestTheComposePinMeasuresUnboundedAndDrawsFromItsSlot`, which refuses
+  the unclamped spelling it used to require. Same shape left in
+  `rowChildWidth`: N-154.
 - **N-150** · raised `2026-1114-0017-n009-ringing-alarms-alarmkit-full-screen-intent` · value low
   · closed 2026-11-14, `2026-1114-1744-n150-missed-alarm-banner-and-run-summary` — the ringing notification now has a delete intent.
   The system sends it when `setTimeoutAfter` removes the alarm, but not for

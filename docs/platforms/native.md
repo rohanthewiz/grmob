@@ -1676,8 +1676,11 @@ reported width into the child's own constraints before the Row reads it
 bounded Row the overflow is real but centred, and the next sibling follows the
 offer rather than the real width. A Row of nothing but pinned children is
 therefore measured with no width limit (`overflowsAtContentWidth`), which is
-what lets a gliding tape place its second copy after the first's real width;
-a lone pinned child among unpinned siblings is still centred, which is N-130.
+what lets a gliding tape place its second copy after the first's real width.
+`pinMainAxis` now reports the clamp itself and draws from the slot's leading
+edge (N-130), so a lone pinned child among unpinned siblings starts where CSS
+starts it; the sibling after it still follows the slot. The min-content floor
+above still reports unclamped and is still centred where it binds.
 
 Two children the hug used to skip are in now.
 
@@ -1748,22 +1751,36 @@ private fun Modifier.pinMainAxis(horizontal: Boolean): Modifier = layout { measu
     val unbounded = if (horizontal) constraints.copy(minWidth = 0, maxWidth = Constraints.Infinity)
                     else            constraints.copy(minHeight = 0, maxHeight = Constraints.Infinity)
     val placeable = measurable.measure(unbounded)
-    layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+    // the main axis clamped into the offer; the cross axis as measured
+    val width  = if (horizontal) placeable.width.coerceIn(constraints.minWidth, constraints.maxWidth) else placeable.width
+    val height = if (horizontal) placeable.height else placeable.height.coerceIn(constraints.minHeight, constraints.maxHeight)
+    layout(width, height) { placeable.placeRelative(0, 0) }
 }
 ```
 
 The child is measured against its own content rather than against what is left,
-and — the half that is easy to get wrong — the size reported back to the `Row`
-is the measured one, not a value clamped to the incoming constraints. So the
-row's running total passes its own maximum and the overflow is visible, which is
-what `flex-shrink: 0` does everywhere else. Clamping on the way out compiles,
-looks better behaved, and produces a third thing that matches no target: a child
-drawn spilling out of a box its parent still believes it fits inside.
-`mobile/verify` refuses that spelling by name.
+so it keeps its extent, and it is drawn from the leading edge of its slot,
+overflowing toward the end — which is what `flex-shrink: 0` does everywhere
+else under `overflow: visible`.
+
+The report is the half that was easy to get wrong, and it was got wrong the
+other way first. The modifier used to report the measured size unclamped, so
+that the `Row` would learn the real width and its running total would pass its
+own maximum; `mobile/verify` refused the clamp by name. The report never
+reached the `Row`. Compose coerces whatever a node reports into the constraints
+it was measured with before the parent reads it, and applies the surplus as a
+centring offset (compose-ui's `Placeable.kt`, `recalculateWidthAndHeight` and
+`apparentToRealOffset`), so the `Row` always summed the clamp, and the only
+thing the unclamped spelling decided was that the child was drawn half its
+overflow off the leading edge of its slot. That was seen on the API 36 emulator
+with `comps.StockTicker`'s tape (N-121), and the clamp plus `placeRelative` is
+the fix (N-130); `mobile/verify` now refuses the unclamped spelling instead.
 
 ```
-   Row(maxWidth = 120)   [  pinned child, 200 wide  ][ next child ]
-                         └──── reports 200 ────┘      └ offered 0 ┘
+   Row(maxWidth = 120)   [ pinned child, 200 wide ]·····[ next child ]?
+                         └─ slot 120 ─────────────┘     └ CSS: after the 200
+                                                   next child, Compose:
+                                                   offered 0, placed at 120
 ```
 
 What still diverges is the siblings, and that sentence used to be the end of the
@@ -1803,13 +1820,19 @@ shrinkable children to zero because the deficit exceeds their bases, and Compose
 offers them nothing because the pinned child had already taken more than the
 `Row` had.
 
-One consequence falls out of the same two lines and no census row had stated it.
-`mainAxisLayoutSize` is `max(content, mainAxisMin)` and is never coerced *down*
-to `mainAxisMax`, and `Size.kt`'s own node reports `layout(placeable.width, …)`
-unclamped — so a fixed-width `Row` whose children overflow is measured wider than
-it was told to be (200, 260, 300 above) rather than clipping. That is what makes
-the pin an overflow on this target rather than a clip, which is what
-`overflow: visible` does on the other three. The spacing collapses with it:
+One consequence falls out of the same two lines. `mainAxisLayoutSize` is
+`max(content, mainAxisMin)` and is never coerced *down* to `mainAxisMax`, and
+this paragraph used to conclude that a fixed-width `Row` whose children overflow
+is measured wider than it was told to be (200, 260, 300 above). It is not:
+`content` is a sum of `Placeable` widths, and compose-ui clamps each into the
+offer it was measured against, so every `Row` above is 120. The transcription
+used to sum the pinned child's real width and was right only where nothing
+clamps it — a `Row` measured with an unbounded maximum, such as a horizontal
+`Scroll`'s strip or `overflowsAtContentWidth`'s. It sums slots now (N-130). The
+overflow is in the drawing: the pinned child's content is its full extent,
+unclipped, past the end of its slot, which is what `overflow: visible` does on
+the other three. What a bounded `Row` cannot do is place the next sibling after
+that extent, as a flex line does. The spacing collapses with it:
 `spaceAfterLastNoWeight` is `min(spacing, what is left)`, so a `Row` that has
 spent its main axis inserts no gap after the child that spent it.
 

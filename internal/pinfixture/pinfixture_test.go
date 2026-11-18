@@ -56,27 +56,28 @@ func TestTheFixtureIsTheTableInTheHeader(t *testing.T) {
 		// it asked for and the last one nothing.
 		{"no pin: every child shrinks", []int{120, 60, 0}, []int{60, 60, 0},
 			[]int{0, 0, 0}, 120, []int{24, 80, 16}, false, true},
-		// The pin first. `fixedSpace` passes the Row's maximum on the first
-		// child, so both siblings are offered 0 — which is the same three
-		// numbers CSS produces, by a different route.
+		// The pin first. Its slot is the whole of the Row's maximum, so both
+		// siblings are offered 0 — which is the same three numbers CSS
+		// produces, by a different route. The Row is 120 in this row and every
+		// other: it sums slots, and each slot is clamped into its offer.
 		{"the pinned child first", []int{120, 0, 0}, []int{200, 0, 0},
-			[]int{0, 0, 0}, 200, []int{200, 0, 0}, true, true},
+			[]int{0, 0, 0}, 120, []int{200, 0, 0}, true, true},
 		// The pin in the middle: offered 60 and ignoring it.
 		{"the pinned child between its siblings", []int{120, 60, 0}, []int{60, 200, 0},
-			[]int{0, 0, 0}, 260, []int{0, 200, 0}, false, true},
+			[]int{0, 0, 0}, 120, []int{0, 200, 0}, false, true},
 		// The pin last: offered 20 and ignoring it. The most direct statement
 		// of "remaining is ignored", since the number ignored is neither the
 		// whole offer nor nothing.
 		{"the pinned child last", []int{120, 60, 20}, []int{60, 40, 200},
-			[]int{0, 0, 0}, 300, []int{0, 0, 200}, false, true},
+			[]int{0, 0, 0}, 120, []int{0, 0, 200}, false, true},
 		// The spacing row. Both columns of extents are the pin-middle row's,
 		// unchanged, which is what makes this a statement about spacing: the
 		// Row charges 8 after the lead child and nothing after the pin, and a
-		// CSS flex line charges 8 in both places. The Row is therefore 8 wider
-		// than its children and 8 narrower than a flex line laying the same
-		// three out.
+		// CSS flex line charges 8 in both places. The Row is still 120: the
+		// pinned child's slot is the 52 left after the gap, and a flex line
+		// laying the same three out draws the pin 8 further along.
 		{"the pinned child between its siblings, with spacing", []int{120, 52, 0},
-			[]int{60, 200, 0}, []int{8, 0, 0}, 268, []int{0, 200, 0}, false, false},
+			[]int{60, 200, 0}, []int{8, 0, 0}, 120, []int{0, 200, 0}, false, false},
 		// The partial gap, which is the middle arm of the same min and the one
 		// no other row reaches. Both columns of extents are the pin-last row's,
 		// unchanged: the lead child is offered 120 and the tail 44, and both
@@ -84,7 +85,7 @@ func TestTheFixtureIsTheTableInTheHeader(t *testing.T) {
 		// reaches the tail child, and charges 4 — neither the spacing nor zero,
 		// which is the whole reason this row is here.
 		{"the pinned child last, with partial spacing", []int{120, 44, 0},
-			[]int{60, 40, 200}, []int{16, 4, 0}, 320, []int{0, 0, 200}, false, false},
+			[]int{60, 40, 200}, []int{16, 4, 0}, 120, []int{0, 0, 200}, false, false},
 	}
 
 	cases := Cases()
@@ -271,41 +272,42 @@ func TestComposeMeasuresEachChildAgainstWhatIsLeft(t *testing.T) {
 	}
 }
 
-// The Row reports the overflow instead of clipping it.
+// The Row is its own width, and the pinned child is drawn past it.
 //
-// mainAxisLayoutSize is max(content, mainAxisMin) and is never coerced down to
-// mainAxisMax, and Size.kt's own node reports layout(placeable.width, …)
-// unclamped. So a fixed-width Row whose children overflow is measured wider
-// than it was told to be, which is what makes the pinned child visible rather
-// than cut off — the Compose analogue of `overflow: visible`.
+// This test used to hold the opposite: that mainAxisLayoutSize, being
+// max(content, mainAxisMin) with no upper bound, made a fixed-width Row whose
+// children overflow report the overflowing width. The source line is still
+// unbounded. What it sums is not: each child's width reaches the Row clamped
+// into the offer it was measured against (compose-ui's Placeable.width), so
+// the sum never passes the Row's maximum. The overflow is in the drawing — a
+// pinned child's content is its measured extent, unclipped, from the leading
+// edge of its slot (Renderer.kt's pinMainAxis, N-130) — and not in any size
+// the Row computes.
 //
-// This is also where the mis-spelling of pinMainAxis that mobile/verify refuses
-// by name would show up. Reporting `constraints.constrain(...)` instead of the
-// measured size keeps fixedSpace inside the Row's maximum, so RowMain would
-// never pass Offer and the child would be drawn spilling out of a box the Row
-// believed it fitted inside.
-func TestTheRowReportsTheOverflowRatherThanClippingIt(t *testing.T) {
+// Both halves are asserted, so that neither can go quiet: the Row is the offer
+// in every case, and every pinned case draws more than the offer.
+func TestTheRowIsItsOwnWidthAndThePinIsDrawnPastIt(t *testing.T) {
 	overflowed := 0
 	for _, c := range Cases() {
-		// The children and the spacing that survived the clamp — fixedSpace,
-		// which is what mainAxisLayoutSize is the max of.
-		content := 0
+		if c.Compose.RowMain != c.Offer {
+			t.Errorf("%s: the Row reports %d for an offer of %d. Every slot is "+
+				"clamped into its offer, so a definite Row's children cannot sum "+
+				"past it; a RowMain wider than the offer is the arithmetic this "+
+				"fixture used to do, which summed the pinned child's real width.",
+				c.What, c.Compose.RowMain, c.Offer)
+		}
+		// What is drawn: each child at its extent, and the spacing the Row
+		// charged between them.
+		drawn := 0
 		for i, m := range c.Compose.Mains {
-			content += m + c.Compose.Gaps[i]
+			drawn += m + c.Compose.Gaps[i]
 		}
-		if want := max(content, c.Offer); c.Compose.RowMain != want {
-			t.Errorf("%s: the Row reports %d, and its children occupy %d of an offered "+
-				"%d. mainAxisLayoutSize is max(fixedSpace, mainAxisMin) with no upper "+
-				"bound; a Row clamped to its own maximum is one that clips a pinned "+
-				"child instead of overflowing with it.",
-				c.What, c.Compose.RowMain, content, c.Offer)
-		}
-		if c.Compose.RowMain > c.Offer {
+		if drawn > c.Offer {
 			overflowed++
 		}
 	}
 	if want := len(Cases()) - 1; overflowed != want {
-		t.Errorf("%d of the %d rows overflow their container, and every pinned one is "+
+		t.Errorf("%d of the %d rows draw past their container, and every pinned one is "+
 			"supposed to: a pinned child whose base exceeds the Row's extent cannot fit "+
 			"inside it by construction, and the control is the only row without one",
 			overflowed, len(Cases()))
@@ -337,13 +339,14 @@ func TestTheSpacingCollapsesOnceTheRowHasOverflowed(t *testing.T) {
 	}
 
 	// Overflowing, the gap after the pinned child has nowhere to come from: the
-	// Row is the lead child, one gap, and the pinned child, with nothing after.
+	// Row is the lead child, one gap, and the pinned child's slot (the 52 left),
+	// with nothing after.
 	tight := MeasureCompose(120, 8, children)
-	if want := 60 + 8 + 200; tight.RowMain != want {
-		t.Errorf("overflowing, the Row is %d wide and the gaps that fit come to %d. "+
-			"min(spacing, what is left) is the source line; a Row that kept spending "+
-			"spacing it did not have would report a width no child accounts for.",
-			tight.RowMain, want)
+	if want := 60 + 8 + 52; tight.RowMain != want {
+		t.Errorf("overflowing, the Row is %d wide and the lead child, its gap and the "+
+			"pinned child's slot come to %d. min(spacing, what is left) is the source "+
+			"line; a Row that kept spending spacing it did not have would report a "+
+			"width no child accounts for.", tight.RowMain, want)
 	}
 	if tight.Offered[2] != 0 {
 		t.Errorf("the child after the overflow was offered %d rather than 0",
